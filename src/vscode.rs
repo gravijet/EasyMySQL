@@ -57,7 +57,12 @@ fn json_str(s: &str) -> String {
 
 /// Legt den Arbeitsordner samt .vscode-Einstellungen an.
 pub fn prepare_workspace(database: &str) -> Result<PathBuf, String> {
-    let dir = workspace_dir();
+    prepare_folder(&workspace_dir(), database)
+}
+
+/// .vscode-Einstellungen (SQLTools-Verbindung) in einem Ordner anlegen.
+pub fn prepare_folder(dir: &Path, database: &str) -> Result<PathBuf, String> {
+    let dir = dir.to_path_buf();
     let vs = dir.join(".vscode");
     std::fs::create_dir_all(&vs).map_err(|e| format!("{}: {e}", vs.display()))?;
     let settings = format!(
@@ -166,6 +171,17 @@ pub fn open_workspace(database: &str) -> Result<PathBuf, String> {
     let (exe, _) = find_vscode().ok_or_else(|| NOT_FOUND.to_string())?;
     launch(&exe, &[&dir])?;
     Ok(dir)
+}
+
+/// Oeffnet eine vorhandene Datei (samt Projektordner) in VS Code.
+pub fn open_path(project: Option<&Path>, file: &Path, database: &str) -> Result<PathBuf, String> {
+    let dir = match project {
+        Some(p) => prepare_folder(p, database)?,
+        None => prepare_workspace(database)?,
+    };
+    let (exe, _) = find_vscode().ok_or_else(|| NOT_FOUND.to_string())?;
+    launch(&exe, &[&dir, file])?;
+    Ok(file.to_path_buf())
 }
 
 /// Speichert eine Abfrage im Arbeitsordner und oeffnet sie in VS Code.

@@ -165,14 +165,14 @@ impl SafetyTab {
         ui.label(
             RichText::new("Zusätzlich wird automatisch gesichert, bevor Datenbanken/Tabellen gelöscht oder geleert werden.")
                 .small()
-                .color(style::NULL_TEXT),
+                .color(style::pal().null_text),
         );
         ui.add_space(4.0);
         style::sunken_frame().show(ui, |ui| {
             ui.set_min_width(ui.available_width());
             egui::ScrollArea::vertical().id_salt("backuplist").max_height(220.0).show(ui, |ui| {
                 if self.list.is_empty() {
-                    ui.label(RichText::new("Noch keine Sicherungen vorhanden.").color(style::NULL_TEXT));
+                    ui.label(RichText::new("Noch keine Sicherungen vorhanden.").color(style::pal().null_text));
                 }
                 egui::Grid::new("backups").striped(true).num_columns(5).spacing([16.0, 4.0]).show(ui, |ui| {
                     for h in ["Zeitpunkt", "Anlass", "Datenbanken", "Größe", ""] {
@@ -283,7 +283,7 @@ impl SafetyTab {
                  neuen Datenordner eingespielt. Der alte Ordner bleibt immer erhalten.",
             )
             .small()
-            .color(style::NULL_TEXT),
+            .color(style::pal().null_text),
         );
     }
 
@@ -316,10 +316,10 @@ impl SafetyTab {
                                 "Die vorhandene Datenbank \"{}\" wird ersetzt (vorher wird sie automatisch gesichert).",
                                 dlg.target
                             ))
-                            .color(style::ERROR_TEXT),
+                            .color(style::pal().error_text),
                         );
                     } else {
-                        ui.label(RichText::new("Wird als neue Datenbank angelegt.").color(style::OK_TEXT));
+                        ui.label(RichText::new("Wird als neue Datenbank angelegt.").color(style::pal().ok_text));
                     }
                     ui.separator();
                     ui.horizontal(|ui| {
@@ -417,6 +417,10 @@ impl TabView for SafetyTab {
         Some("safety".into())
     }
 
+    fn session(&self) -> Option<String> {
+        Some("safety".into())
+    }
+
     fn busy(&self) -> bool {
         self.job.is_some()
     }
@@ -454,8 +458,8 @@ impl TabView for SafetyTab {
             }
             if let Some(r) = &self.result {
                 match r {
-                    Ok(m) => ui.label(RichText::new(m).color(style::OK_TEXT)),
-                    Err(e) => ui.label(RichText::new(format!("Fehler: {e}")).color(style::ERROR_TEXT)),
+                    Ok(m) => ui.label(RichText::new(m).color(style::pal().ok_text)),
+                    Err(e) => ui.label(RichText::new(format!("Fehler: {e}")).color(style::pal().error_text)),
                 };
             }
             if !self.log.is_empty() {

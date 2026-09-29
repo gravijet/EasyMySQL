@@ -215,6 +215,10 @@ impl TabView for BuilderTab {
         "Abfrage-Assistent".into()
     }
 
+    fn session(&self) -> Option<String> {
+        Some(format!("builder\t{}", self.db))
+    }
+
     fn execute(&mut self, cx: &mut Ctx) {
         self.run(cx);
     }
@@ -409,10 +413,10 @@ impl TabView for BuilderTab {
             ui.label(RichText::new(&sql).monospace());
         });
         if let Some(e) = &self.error {
-            ui.label(RichText::new(format!("Fehler: {e}")).color(style::ERROR_TEXT));
+            ui.label(RichText::new(format!("Fehler: {e}")).color(style::pal().error_text));
         }
         if let Some(rs) = &self.result {
-            ui.label(RichText::new(format!("{} Zeile(n)", rs.rows.len())).color(style::OK_TEXT));
+            ui.label(RichText::new(format!("{} Zeile(n)", rs.rows.len())).color(style::pal().ok_text));
             grid::show(ui, "bgrid", &rs.columns, &rs.rows, false, &mut self.grid);
         }
     }

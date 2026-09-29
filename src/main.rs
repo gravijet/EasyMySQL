@@ -14,6 +14,7 @@ mod sqledit;
 mod style;
 mod tabs;
 mod vscode;
+mod workspace;
 
 use eframe::egui;
 

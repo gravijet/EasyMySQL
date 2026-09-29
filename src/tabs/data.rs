@@ -261,6 +261,10 @@ impl TabView for DataTab {
         Some(format!("data:{}.{}", self.db, self.table))
     }
 
+    fn session(&self) -> Option<String> {
+        Some(format!("data\t{}\t{}", self.db, self.table))
+    }
+
     fn execute(&mut self, cx: &mut Ctx) {
         self.reload(cx);
     }
@@ -353,17 +357,17 @@ impl TabView for DataTab {
                 self.reload(cx);
             }
             if !self.has_pk() && !is_view && self.info.is_some() {
-                ui.label(RichText::new("⚠ kein Primärschlüssel").color(style::ERROR_TEXT))
+                ui.label(RichText::new("⚠ kein Primärschlüssel").color(style::pal().error_text))
                     .on_hover_text("Änderungen werden über alle Spaltenwerte zugeordnet.");
             }
         });
         if let Some(e) = &self.error {
-            ui.label(RichText::new(format!("Fehler: {e}")).color(style::ERROR_TEXT));
+            ui.label(RichText::new(format!("Fehler: {e}")).color(style::pal().error_text));
         }
         ui.label(
             RichText::new("Doppelklick auf eine Zelle zum Bearbeiten, Enter speichert, Esc bricht ab. Rechtsklick für mehr.")
                 .small()
-                .color(style::NULL_TEXT),
+                .color(style::pal().null_text),
         );
         let editable = !self.info.as_ref().map(|i| i.is_view).unwrap_or(false);
         let events = grid::show(ui, ("datagrid", &self.db, &self.table), &self.columns, &self.rows, editable, &mut self.grid);

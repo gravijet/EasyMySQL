@@ -68,8 +68,6 @@ pub struct QueryOutput {
     pub error: Option<String>,
     pub elapsed: Duration,
     pub database: Option<String>,
-    /// Zusatzhinweis (z. B. "vorher gesichert")
-    pub note: Option<String>,
 }
 
 pub const MAX_ROWS: usize = 50_000;
@@ -107,6 +105,41 @@ pub fn opt_to_value(v: &Option<String>) -> Value {
     match v {
         None => Value::NULL,
         Some(s) => Value::Bytes(s.clone().into_bytes()),
+    }
+}
+
+/// Fehlermeldung lesbar machen: "MySqlError { ERROR 1146 (42S02): ... }" -> "ERROR 1146 (42S02): ..."
+/// und fuer haeufige Fehler einen deutschen Hinweis anhaengen.
+pub fn err_text(e: impl ToString) -> String {
+    let s = e.to_string();
+    let t = s.strip_prefix("MySqlError { ").and_then(|x| x.strip_suffix(" }")).unwrap_or(&s).to_string();
+    let code: Option<u32> = t
+        .strip_prefix("ERROR ")
+        .and_then(|x| x.split_whitespace().next())
+        .and_then(|c| c.parse().ok());
+    let hint = match code {
+        Some(1064) => Some("Syntaxfehler – Schreibweise prüfen (fehlendes Komma, Klammer oder Anführungszeichen?)."),
+        Some(1146) => Some("Diese Tabelle gibt es (in der gewählten Datenbank) nicht."),
+        Some(1054) => Some("Diese Spalte gibt es nicht – Schreibweise oder Tabelle prüfen."),
+        Some(1049) => Some("Diese Datenbank gibt es nicht."),
+        Some(1046) => Some("Keine Datenbank ausgewählt – oben eine Datenbank wählen oder USE datenbank; ausführen."),
+        Some(1050) => Some("Die Tabelle existiert bereits (tipp: CREATE TABLE IF NOT EXISTS)."),
+        Some(1007) => Some("Die Datenbank existiert bereits (tipp: CREATE DATABASE IF NOT EXISTS)."),
+        Some(1062) => Some("Doppelter Wert in einer eindeutigen Spalte (z. B. Primärschlüssel)."),
+        Some(1048) => Some("Diese Spalte darf nicht leer (NULL) sein."),
+        Some(1364) => Some("Für eine Pflichtspalte ohne Standardwert wurde kein Wert angegeben."),
+        Some(1451) => Some("Der Datensatz wird noch von einer anderen Tabelle referenziert (Fremdschlüssel) – erst die abhängigen Datensätze löschen."),
+        Some(1452) => Some("Der Fremdschlüssel verweist auf einen Datensatz, den es nicht gibt."),
+        Some(1045) => Some("Anmeldung fehlgeschlagen – Benutzer oder Passwort falsch."),
+        Some(1136) => Some("Anzahl der Werte passt nicht zur Anzahl der Spalten."),
+        Some(1265) | Some(1366) => Some("Der Wert passt nicht zum Datentyp der Spalte."),
+        Some(1406) => Some("Der Text ist zu lang für diese Spalte."),
+        Some(1215) | Some(1005) => Some("Fremdschlüssel nicht möglich – gleicher Datentyp und ein Index/Primärschlüssel in der Zieltabelle nötig."),
+        _ => None,
+    };
+    match hint {
+        Some(h) => format!("{t}\nHinweis: {h}"),
+        None => t,
     }
 }
 
@@ -185,7 +218,7 @@ pub fn run_script<C: Queryable>(conn: &mut C, sql: &str) -> QueryOutput {
                             rs.rows.push(r);
                         }
                         Err(e) => {
-                            failed = Some(e.to_string());
+                            failed = Some(err_text(e));
                             break;
                         }
                     }
@@ -197,7 +230,7 @@ pub fn run_script<C: Queryable>(conn: &mut C, sql: &str) -> QueryOutput {
                 }
             }
         }
-        Err(e) => out.error = Some(e.to_string()),
+        Err(e) => out.error = Some(err_text(e)),
     }
     out.elapsed = start.elapsed();
     out.database = conn
@@ -272,9 +305,65 @@ pub struct Schema {
     pub name: String,
     pub tables: Vec<TableInfo>,
     pub fks: Vec<ForeignKey>,
+    /// Eindeutige Indizes (inkl. Primaerschluessel): (Tabelle, Spalten)
+    pub unique_keys: Vec<(String, Vec<String>)>,
+}
+
+/// Art einer Beziehung
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum RelKind {
+    OneToOne,
+    OneToMany,
 }
 
 impl Schema {
+    /// 1:1, wenn die Fremdschluessel-Spalten eindeutig sind, sonst 1:n.
+    pub fn rel_kind(&self, fk: &ForeignKey) -> RelKind {
+        let mut cols = fk.columns.clone();
+        cols.sort();
+        let unique = self.unique_keys.iter().any(|(t, k)| {
+            let mut k = k.clone();
+            k.sort();
+            *t == fk.table && k == cols
+        });
+        if unique { RelKind::OneToOne } else { RelKind::OneToMany }
+    }
+
+    /// Darf die Beziehung leer sein (FK-Spalte erlaubt NULL)?
+    pub fn rel_optional(&self, fk: &ForeignKey) -> bool {
+        self.table(&fk.table)
+            .map(|t| fk.columns.iter().any(|c| t.columns.iter().any(|x| &x.name == c && x.nullable)))
+            .unwrap_or(false)
+    }
+
+    /// Zwischentabellen fuer n:m-Beziehungen: (Tabelle, Index FK1, Index FK2).
+    /// Erkennung: genau zwei Fremdschluessel auf verschiedene Tabellen, die zusammen den
+    /// Primaerschluessel (bzw. einen eindeutigen Schluessel) bilden.
+    pub fn junctions(&self) -> Vec<(String, usize, usize)> {
+        let mut out = Vec::new();
+        for t in &self.tables {
+            let fks: Vec<usize> = self.fks.iter().enumerate().filter(|(_, f)| f.table == t.name).map(|(i, _)| i).collect();
+            if fks.len() != 2 {
+                continue;
+            }
+            let (a, b) = (&self.fks[fks[0]], &self.fks[fks[1]]);
+            if a.ref_table == b.ref_table || a.ref_table == t.name || b.ref_table == t.name {
+                continue;
+            }
+            let mut both: Vec<String> = a.columns.iter().chain(b.columns.iter()).cloned().collect();
+            both.sort();
+            let pk_match = self.unique_keys.iter().any(|(tt, k)| {
+                let mut k = k.clone();
+                k.sort();
+                *tt == t.name && k == both
+            });
+            if pk_match {
+                out.push((t.name.clone(), fks[0], fks[1]));
+            }
+        }
+        out
+    }
+
     pub fn table(&self, name: &str) -> Option<&TableInfo> {
         self.tables.iter().find(|t| t.name == name)
     }
@@ -324,11 +413,11 @@ fn s(v: &Option<String>) -> String {
 
 impl Db {
     pub fn connect(info: &ConnInfo) -> Result<Db, String> {
-        let pool = Pool::new(info.opts()).map_err(|e| e.to_string())?;
-        let mut conn = pool.get_conn().map_err(|e| e.to_string())?;
+        let pool = Pool::new(info.opts()).map_err(err_text)?;
+        let mut conn = pool.get_conn().map_err(err_text)?;
         let version: Option<String> = conn
             .query_first("SELECT VERSION()")
-            .map_err(|e| e.to_string())?;
+            .map_err(err_text)?;
         Ok(Db {
             pool,
             info: info.clone(),
@@ -338,16 +427,16 @@ impl Db {
 
     /// Eigene, dauerhafte Verbindung (z. B. fuer ein SQL-Fenster).
     pub fn new_conn(&self) -> Result<Conn, String> {
-        Conn::new(self.info.opts()).map_err(|e| e.to_string())
+        Conn::new(self.info.opts()).map_err(err_text)
     }
 
     fn conn(&self) -> Result<mysql::PooledConn, String> {
-        self.pool.get_conn().map_err(|e| e.to_string())
+        self.pool.get_conn().map_err(err_text)
     }
 
     pub fn rows(&self, sql: &str, params: impl Into<Params>) -> Result<Vec<Row>, String> {
         let mut c = self.conn()?;
-        let res: Vec<mysql::Row> = c.exec(sql, params).map_err(|e| e.to_string())?;
+        let res: Vec<mysql::Row> = c.exec(sql, params).map_err(err_text)?;
         Ok(res
             .into_iter()
             .map(|r| r.unwrap().iter().map(value_to_string).collect())
@@ -368,7 +457,7 @@ impl Db {
     pub fn query_in(&self, db: &str, sql: &str) -> Result<ResultSet, String> {
         let mut c = self.conn()?;
         c.query_drop(format!("USE {}", q(db)))
-            .map_err(|e| e.to_string())?;
+            .map_err(err_text)?;
         let mut out = run_script(&mut c, sql);
         if let Some(e) = out.error.take() {
             return Err(e);
@@ -378,15 +467,15 @@ impl Db {
 
     pub fn exec(&self, sql: &str, params: impl Into<Params>) -> Result<u64, String> {
         let mut c = self.conn()?;
-        c.exec_drop(sql, params).map_err(|e| e.to_string())?;
+        c.exec_drop(sql, params).map_err(err_text)?;
         Ok(c.affected_rows())
     }
 
     pub fn exec_in(&self, db: &str, sql: &str) -> Result<u64, String> {
         let mut c = self.conn()?;
         c.query_drop(format!("USE {}", q(db)))
-            .map_err(|e| e.to_string())?;
-        c.query_drop(sql).map_err(|e| e.to_string())?;
+            .map_err(err_text)?;
+        c.query_drop(sql).map_err(err_text)?;
         Ok(c.affected_rows())
     }
 
@@ -451,6 +540,23 @@ impl Db {
              ORDER BY k.TABLE_NAME, k.CONSTRAINT_NAME, k.ORDINAL_POSITION",
             (db,),
         )?;
+        let uniq = self.rows(
+            "SELECT TABLE_NAME, INDEX_NAME, COLUMN_NAME FROM information_schema.STATISTICS \
+             WHERE TABLE_SCHEMA = ? AND NON_UNIQUE = 0 ORDER BY TABLE_NAME, INDEX_NAME, SEQ_IN_INDEX",
+            (db,),
+        )?;
+        let mut last: Option<(String, String)> = None;
+        for r in uniq {
+            let key = (s(&r[0]), s(&r[1]));
+            if last.as_ref() == Some(&key) {
+                if let Some(u) = schema.unique_keys.last_mut() {
+                    u.1.push(s(&r[2]));
+                }
+            } else {
+                schema.unique_keys.push((key.0.clone(), vec![s(&r[2])]));
+                last = Some(key);
+            }
+        }
         for r in fks {
             let name = s(&r[0]);
             let table = s(&r[1]);
@@ -718,6 +824,13 @@ mod tests {
     use super::*;
 
     #[test]
+    fn error_text() {
+        let e = err_text("MySqlError { ERROR 1146 (42S02): Table 'a.b' doesn't exist }");
+        assert!(e.starts_with("ERROR 1146 (42S02): Table 'a.b' doesn't exist\nHinweis: "), "{e}");
+        assert_eq!(err_text("anderer Fehler"), "anderer Fehler");
+    }
+
+    #[test]
     fn quoting() {
         assert_eq!(q("a`b"), "`a``b`");
         assert_eq!(lit("O'Neil"), "'O''Neil'");
@@ -768,6 +881,7 @@ mod tests {
                 ForeignKey { table: "note".into(), ref_table: "schueler".into(), ..Default::default() },
                 ForeignKey { table: "schueler".into(), ref_table: "klasse".into(), ..Default::default() },
             ],
+            unique_keys: vec![],
         };
         assert_eq!(s.ordered_tables(), vec!["klasse", "schueler", "note"]);
     }
@@ -790,5 +904,218 @@ mod tests {
         }
         assert_eq!(db.schema("schule_kopie").unwrap().fks.len(), db.schema("schule").unwrap().fks.len());
         c.query_drop("DROP DATABASE schule_kopie").unwrap();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Anweisungen einzeln ausfuehren
+
+/// Eine einzelne SQL-Anweisung aus einem Skript.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Stmt {
+    pub sql: String,
+    /// Position im Skript (Zeichenindizes)
+    pub start: usize,
+    pub end: usize,
+    /// Zeile (0-basiert), in der die Anweisung beginnt
+    pub line: usize,
+}
+
+/// Zerlegt ein SQL-Skript in Anweisungen. Beachtet Texte, Kommentare, `Bezeichner`
+/// und DELIMITER (fuer Prozeduren/Trigger).
+pub fn split_statements(text: &str) -> Vec<Stmt> {
+    let chars: Vec<char> = text.chars().collect();
+    let n = chars.len();
+    let mut out = Vec::new();
+    let mut delim: Vec<char> = vec![';'];
+    let mut i = 0;
+    let mut start: Option<usize> = None;
+    let mut line = 0usize;
+    let mut start_line = 0usize;
+    let at_line_start = |i: usize| i == 0 || chars[i - 1] == '\n';
+    let push = |out: &mut Vec<Stmt>, s: usize, e: usize, l: usize| {
+        let sql: String = chars[s..e].iter().collect();
+        if !sql.trim().is_empty() && !is_only_comments(&sql) {
+            out.push(Stmt { sql: sql.trim().to_string(), start: s, end: e, line: l });
+        }
+    };
+    while i < n {
+        let c = chars[i];
+        let nx = chars.get(i + 1).copied().unwrap_or('\0');
+        // DELIMITER-Zeile (nur am Zeilenanfang, ausserhalb einer Anweisung)
+        if start.is_none() && at_line_start(i) {
+            let rest: String = chars[i..].iter().take(10).collect();
+            if rest.to_uppercase().starts_with("DELIMITER ") {
+                let mut j = i + 10;
+                let mut d = Vec::new();
+                while j < n && chars[j] != '\n' {
+                    if !chars[j].is_whitespace() {
+                        d.push(chars[j]);
+                    }
+                    j += 1;
+                }
+                if !d.is_empty() {
+                    delim = d;
+                }
+                i = j;
+                continue;
+            }
+        }
+        if c == '\n' {
+            line += 1;
+        }
+        if start.is_none() && !c.is_whitespace() {
+            // Kommentarzeilen vor einer Anweisung gehoeren nicht dazu
+            if (c == '-' && nx == '-') || c == '#' {
+                while i < n && chars[i] != '\n' {
+                    i += 1;
+                }
+                continue;
+            }
+            start = Some(i);
+            start_line = line;
+        }
+        if (c == '-' && nx == '-') || c == '#' {
+            while i < n && chars[i] != '\n' {
+                i += 1;
+            }
+            continue;
+        }
+        if c == '/' && nx == '*' {
+            i += 2;
+            while i < n && !(chars[i] == '*' && i + 1 < n && chars[i + 1] == '/') {
+                if chars[i] == '\n' {
+                    line += 1;
+                }
+                i += 1;
+            }
+            i += 2;
+            continue;
+        }
+        if c == '\'' || c == '"' || c == '`' {
+            i += 1;
+            while i < n && chars[i] != c {
+                if chars[i] == '\\' && c != '`' {
+                    i += 1;
+                } else if chars[i] == '\n' {
+                    line += 1;
+                }
+                i += 1;
+            }
+            i += 1;
+            continue;
+        }
+        if chars[i..].starts_with(&delim) {
+            if let Some(s) = start.take() {
+                push(&mut out, s, i, start_line);
+            }
+            i += delim.len();
+            continue;
+        }
+        i += 1;
+    }
+    if let Some(s) = start {
+        push(&mut out, s, n, start_line);
+    }
+    out
+}
+
+fn is_only_comments(sql: &str) -> bool {
+    sql.lines().all(|l| {
+        let t = l.trim();
+        t.is_empty() || t.starts_with("--") || t.starts_with('#')
+    }) && !sql.contains("/*!")
+}
+
+/// Ergebnis einer einzelnen Anweisung.
+#[derive(Clone, Debug, Default)]
+pub struct StmtResult {
+    pub line: usize,
+    pub preview: String,
+    pub sets: Vec<ResultSet>,
+    pub affected: u64,
+    pub error: Option<String>,
+    /// Zeile des Fehlers im Skript (0-basiert), falls bekannt
+    pub error_line: Option<usize>,
+    pub elapsed: Duration,
+}
+
+/// Fuehrt die Anweisungen nacheinander aus; bricht beim ersten Fehler ab.
+pub fn run_statements<C: Queryable>(conn: &mut C, stmts: &[Stmt]) -> Vec<StmtResult> {
+    let mut out = Vec::new();
+    for st in stmts {
+        let start = Instant::now();
+        let mut r = run_script(conn, &st.sql);
+        let mut res = StmtResult {
+            line: st.line,
+            preview: st.sql.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(90).collect(),
+            affected: r.sets.iter().filter(|s| !s.has_table()).map(|s| s.affected).sum(),
+            sets: std::mem::take(&mut r.sets).into_iter().filter(|s| s.has_table()).collect(),
+            error: r.error.take(),
+            error_line: None,
+            elapsed: start.elapsed(),
+        };
+        if let Some(e) = &res.error {
+            // MariaDB meldet "... at line N" relativ zur Anweisung
+            let rel = e
+                .rsplit("at line ")
+                .next()
+                .and_then(|t| t.trim().trim_end_matches(|c: char| !c.is_ascii_digit()).parse::<usize>().ok())
+                .filter(|_| e.contains("at line "));
+            // Zeilen vor dem ersten Zeichen der Anweisung (fuehrende Leerzeilen) beachten
+            res.error_line = Some(st.line + rel.map(|l| l.saturating_sub(1)).unwrap_or(0));
+            out.push(res);
+            break;
+        }
+        out.push(res);
+    }
+    out
+}
+
+/// Anweisung, in der der Cursor steht (oder die direkt davor endet).
+pub fn statement_at(stmts: &[Stmt], cursor: usize) -> Option<&Stmt> {
+    stmts
+        .iter()
+        .find(|s| cursor >= s.start && cursor <= s.end + 1)
+        .or_else(|| stmts.iter().rev().find(|s| s.end <= cursor))
+}
+
+#[cfg(test)]
+mod split_tests {
+    use super::*;
+
+    #[test]
+    fn split_basic() {
+        let t = "-- Kommentar\nSELECT 1;\nSELECT 'a;b';  -- x\n\nUPDATE t SET a = \"x;\" WHERE `c;` = 1;\nSELECT 3";
+        let s = split_statements(t);
+        assert_eq!(s.len(), 4);
+        assert_eq!(s[0].sql, "SELECT 1");
+        assert_eq!(s[0].line, 1);
+        assert_eq!(s[1].sql, "SELECT 'a;b'");
+        assert_eq!(s[2].line, 4);
+        assert_eq!(s[3].sql, "SELECT 3");
+    }
+
+    #[test]
+    fn split_delimiter() {
+        let t = "DELIMITER //\nCREATE PROCEDURE p()\nBEGIN\n  SELECT 1;\n  SELECT 2;\nEND //\nDELIMITER ;\nCALL p();";
+        let s = split_statements(t);
+        assert_eq!(s.len(), 2, "{s:?}");
+        assert!(s[0].sql.starts_with("CREATE PROCEDURE") && s[0].sql.ends_with("END"));
+        assert_eq!(s[1].sql, "CALL p()");
+    }
+
+    #[test]
+    fn cursor_statement() {
+        let t = "SELECT 1;\nSELECT 2;";
+        let s = split_statements(t);
+        assert_eq!(statement_at(&s, 3).unwrap().sql, "SELECT 1");
+        assert_eq!(statement_at(&s, 12).unwrap().sql, "SELECT 2");
+        assert_eq!(statement_at(&s, 9).unwrap().sql, "SELECT 1");
+    }
+
+    #[test]
+    fn only_comments() {
+        assert!(split_statements("-- nur\n# Kommentar\n").is_empty());
     }
 }

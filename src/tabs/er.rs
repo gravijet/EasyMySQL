@@ -16,15 +16,9 @@ const HEADER_H: f32 = 22.0;
 const ROW_H: f32 = 17.0;
 const CHAR_W: f32 = 6.8;
 
-const BOX_STROKE: Color32 = Color32::from_rgb(0x60, 0x60, 0x60);
-const HEADER_FILL: Color32 = Color32::from_rgb(0xDC, 0xE8, 0xF5);
-const VIEW_FILL: Color32 = Color32::from_rgb(0xE8, 0xF3, 0xE0);
-const LINE: Color32 = Color32::from_rgb(0x30, 0x50, 0x90);
-const LINE_DIM: Color32 = Color32::from_rgb(0xB8, 0xC4, 0xD8);
 const LINE_HI: Color32 = Color32::from_rgb(0xE0, 0x6C, 0x00);
 const PK_COLOR: Color32 = Color32::from_rgb(0xB0, 0x80, 0x00);
 const FK_COLOR: Color32 = Color32::from_rgb(0x20, 0x60, 0xC0);
-const TYPE_COLOR: Color32 = Color32::from_rgb(0x70, 0x70, 0x70);
 
 const RULES: &[&str] = &["RESTRICT", "CASCADE", "SET NULL", "NO ACTION"];
 
@@ -567,7 +561,7 @@ impl ErTab {
     fn draw(&mut self, ui: &mut egui::Ui, cx: &mut Ctx) {
         let (resp, painter) = ui.allocate_painter(ui.available_size(), Sense::click_and_drag());
         let rect = resp.rect;
-        painter.rect_filled(rect, 0.0, Color32::WHITE);
+        painter.rect_filled(rect, 0.0, style::pal().er_canvas);
         let origin = rect.min;
         let Some(schema) = self.schema.clone() else { return };
         if self.fit_pending && rect.width() > 50.0 {
@@ -722,7 +716,7 @@ impl ErTab {
         // Hintergrundraster (dezent)
         let grid = 40.0 * z;
         if grid > 12.0 {
-            let dot = Color32::from_gray(0xE4);
+            let dot = if style::pal().dark { Color32::from_gray(0x33) } else { Color32::from_gray(0xE4) };
             let start = origin + vec2(self.offset.x.rem_euclid(grid), self.offset.y.rem_euclid(grid));
             let mut x = start.x;
             while x < rect.right() {
@@ -747,9 +741,9 @@ impl ErTab {
             let (color, width) = if is_hover || related == Some(true) {
                 (LINE_HI, 2.2)
             } else if related == Some(false) {
-                (LINE_DIM, 1.2)
+                (style::pal().er_line_dim, 1.2)
             } else {
-                (LINE, 1.4)
+                (style::pal().er_line, 1.4)
             };
             let stroke = Stroke::new((width * z).max(1.0), color);
             for seg in path {
@@ -789,12 +783,12 @@ impl ErTab {
             }
             let focused = focus_table.as_deref() == Some(t.name.as_str());
             painter.rect_filled(r.translate(vec2(3.0, 3.0) * z), 0.0, Color32::from_black_alpha(22));
-            painter.rect_filled(r, 0.0, Color32::WHITE);
+            painter.rect_filled(r, 0.0, style::pal().er_box);
             let head = Rect::from_min_size(r.min, vec2(r.width(), HEADER_H * z));
-            painter.rect_filled(head, 0.0, if t.is_view { VIEW_FILL } else { HEADER_FILL });
-            painter.line_segment([head.left_bottom(), head.right_bottom()], Stroke::new(1.0, BOX_STROKE));
+            painter.rect_filled(head, 0.0, if t.is_view { style::pal().er_view_header } else { style::pal().er_header });
+            painter.line_segment([head.left_bottom(), head.right_bottom()], Stroke::new(1.0, style::pal().border));
             let title = if t.is_view { format!("{} (Sicht)", t.name) } else { t.name.clone() };
-            painter.text(head.left_center() + vec2(6.0 * z, 0.0), Align2::LEFT_CENTER, title, bold.clone(), Color32::BLACK);
+            painter.text(head.left_center() + vec2(6.0 * z, 0.0), Align2::LEFT_CENTER, title, bold.clone(), style::pal().text);
             for (i, c) in t.columns.iter().enumerate() {
                 let y = r.top() + (HEADER_H + 3.0 + ROW_H * i as f32 + ROW_H / 2.0) * z;
                 let is_fk = schema.is_fk_column(&t.name, &c.name);
@@ -809,16 +803,16 @@ impl ErTab {
                     label.push_str(" *");
                 }
                 let nf = if c.is_pk() { bold.clone() } else { font.clone() };
-                painter.text(pos2(x0 + 22.0 * z, y), Align2::LEFT_CENTER, label, nf, Color32::from_gray(0x20));
+                painter.text(pos2(x0 + 22.0 * z, y), Align2::LEFT_CENTER, label, nf, style::pal().text);
                 if self.show_types {
-                    painter.text(pos2(r.right() - 16.0 * z, y), Align2::RIGHT_CENTER, &c.col_type, font.clone(), TYPE_COLOR);
+                    painter.text(pos2(r.right() - 16.0 * z, y), Align2::RIGHT_CENTER, &c.col_type, font.clone(), style::pal().er_type);
                 }
                 // Anfasser zum Verknuepfen (nur bei Maus ueber der Tabelle)
                 if focused && !t.is_view && matches!(self.drag, Drag::None) {
-                    painter.circle(pos2(r.right() - 7.0 * z, y), 3.5 * z, Color32::WHITE, Stroke::new(1.2, LINE_HI));
+                    painter.circle(pos2(r.right() - 7.0 * z, y), 3.5 * z, style::pal().er_box, Stroke::new(1.2, LINE_HI));
                 }
             }
-            let stroke = if focused { Stroke::new(1.8, LINE_HI) } else { Stroke::new(1.0, BOX_STROKE) };
+            let stroke = if focused { Stroke::new(1.8, LINE_HI) } else { Stroke::new(1.0, style::pal().border) };
             painter.rect_stroke(r, 0.0, stroke, StrokeKind::Inside);
         }
 
@@ -855,9 +849,9 @@ impl ErTab {
         }
 
         if schema.tables.is_empty() {
-            painter.text(rect.center(), Align2::CENTER_CENTER, "Diese Datenbank enthält noch keine Tabellen.", FontId::proportional(14.0), Color32::GRAY);
+            painter.text(rect.center(), Align2::CENTER_CENTER, "Diese Datenbank enthält noch keine Tabellen.", FontId::proportional(14.0), style::pal().text_weak);
         }
-        painter.rect_stroke(rect, 0.0, Stroke::new(1.0, style::SHADOW), StrokeKind::Inside);
+        painter.rect_stroke(rect, 0.0, Stroke::new(1.0, style::pal().border), StrokeKind::Inside);
 
         // Kontextmenue
         let menu = self.menu.clone();
@@ -977,11 +971,11 @@ impl ErTab {
                 if let (Some(a), Some((rt, rc))) = (ty(&dlg.table, &dlg.column), dlg.target.split_once('.')) {
                     if let Some(b) = ty(rt, rc) {
                         if a != b {
-                            ui.label(RichText::new(format!("Hinweis: Datentypen unterscheiden sich ({a} / {b}).")).color(style::ERROR_TEXT).small());
+                            ui.label(RichText::new(format!("Hinweis: Datentypen unterscheiden sich ({a} / {b}).")).color(style::pal().error_text).small());
                         }
                     }
                 }
-                ui.label(RichText::new("Beispiel: schueler.klasse_id verweist auf klasse.id").small().color(style::NULL_TEXT));
+                ui.label(RichText::new("Beispiel: schueler.klasse_id verweist auf klasse.id").small().color(style::pal().null_text));
                 ui.separator();
                 ui.horizontal(|ui| {
                     let valid = !dlg.table.is_empty() && !dlg.column.is_empty() && dlg.target.contains('.');
@@ -1092,6 +1086,10 @@ impl TabView for ErTab {
         Some(format!("er:{}", self.db))
     }
 
+    fn session(&self) -> Option<String> {
+        Some(format!("er\t{}", self.db))
+    }
+
     fn execute(&mut self, cx: &mut Ctx) {
         self.load(cx);
     }
@@ -1182,11 +1180,11 @@ impl TabView for ErTab {
                     s.fks.len()
                 ))
                 .small()
-                .color(style::NULL_TEXT),
+                .color(style::pal().null_text),
             );
         }
         if let Some(e) = &self.error {
-            ui.label(RichText::new(e).color(style::ERROR_TEXT));
+            ui.label(RichText::new(e).color(style::pal().error_text));
         }
         self.draw(ui, cx);
         let ctx = ui.ctx().clone();
@@ -1225,6 +1223,7 @@ mod tests {
                 table("note", &["id", "schueler_id", "lehrer_id"]),
                 table("einsam", &["id"]),
             ],
+            unique_keys: vec![],
             fks: vec![fk("schueler", "klasse_id", "klasse"), fk("note", "schueler_id", "schueler"), fk("note", "lehrer_id", "lehrer")],
         };
         let mut er = ErTab::new("x".into());

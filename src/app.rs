@@ -1,5 +1,8 @@
 // Hauptfenster von EasyMySQL.
 
+mod shell;
+use shell::{ExplorerDlg, SideView};
+
 use crate::db::{self, ConnInfo, Db, q};
 use crate::platform::{self, TrayCmd};
 use crate::server::{Server, State};
@@ -21,6 +24,7 @@ enum Dialog {
     About,
     Help,
     Myisam(Vec<(String, String)>),
+    Settings,
 }
 
 pub struct EasyApp {
@@ -45,6 +49,14 @@ pub struct EasyApp {
     backup_last_check: Option<std::time::Instant>,
     check_job: Option<Receiver<Result<crate::repair::CheckResult, String>>>,
     myisam_hint_done: bool,
+    // VS-Code-artige Oberflaeche
+    project: std::path::PathBuf,
+    tree: Option<crate::workspace::Node>,
+    tree_scan: Option<std::time::Instant>,
+    side_view: SideView,
+    sidebar: bool,
+    explorer_dlg: Option<ExplorerDlg>,
+    session_saved: std::time::Instant,
 }
 
 const COLLATIONS: &[&str] = &[
@@ -58,8 +70,8 @@ const COLLATIONS: &[&str] = &[
 
 impl EasyApp {
     pub fn new(cc: &eframe::CreationContext) -> Self {
-        style::apply(&cc.egui_ctx);
         let settings = Settings::load();
+        style::apply(&cc.egui_ctx, settings.dark);
         let server = Server::new(3306);
         let hwnd = platform::window_handle(cc);
         let tray = platform::create_tray(&cc.egui_ctx, hwnd);
@@ -75,7 +87,14 @@ impl EasyApp {
         }
         let ctx = cc.egui_ctx.clone();
         server.start(move || ctx.request_repaint());
-        EasyApp {
+        let session = crate::workspace::Session::load();
+        let default_project = crate::workspace::ensure_default_project();
+        let project = session
+            .as_ref()
+            .map(|s| crate::workspace::projects_root().join(&s.project))
+            .filter(|p| !p.as_os_str().is_empty() && p.is_dir() && p != &crate::workspace::projects_root())
+            .unwrap_or(default_project);
+        let mut app = EasyApp {
             settings,
             server,
             db: None,
@@ -97,7 +116,16 @@ impl EasyApp {
             backup_last_check: None,
             check_job: None,
             myisam_hint_done: false,
-        }
+            project,
+            tree: None,
+            tree_scan: None,
+            side_view: SideView::Explorer,
+            sidebar: true,
+            explorer_dlg: None,
+            session_saved: std::time::Instant::now(),
+        };
+        app.restore_session(session);
+        app
     }
 
     // ------------------------------------------------------------------
@@ -244,6 +272,7 @@ impl EasyApp {
                 schemas: &mut self.schemas,
                 databases: &self.databases,
                 server: &self.server,
+                project: &self.project,
                 actions: &mut actions,
             };
             for t in self.tabs.iter_mut() {
@@ -277,6 +306,9 @@ impl EasyApp {
 
     fn close_tab(&mut self, i: usize) {
         if i < self.tabs.len() {
+            if !self.tabs[i].on_close() {
+                return;
+            }
             self.tabs.remove(i);
             if self.active >= self.tabs.len() {
                 self.active = self.tabs.len().saturating_sub(1);
@@ -320,7 +352,8 @@ impl EasyApp {
                     self.open_tab(Box::new(StructureTab::new(db, table)));
                 }
                 Action::OpenSql { db, sql, run } => {
-                    let mut tab = SqlTab::new(db, sql);
+                    let db = db.filter(|d| !d.is_empty()).or_else(|| Some(self.current_db.clone()));
+                    let mut tab = SqlTab::scratch(db, sql);
                     if run {
                         let mut acts = Vec::new();
                         let mut cx = Ctx {
@@ -328,6 +361,7 @@ impl EasyApp {
                             schemas: &mut self.schemas,
                             databases: &self.databases,
                             server: &self.server,
+                project: &self.project,
                             actions: &mut acts,
                         };
                         tab.execute(&mut cx);
@@ -352,6 +386,7 @@ impl EasyApp {
                         schemas: &mut self.schemas,
                         databases: &self.databases,
                         server: &self.server,
+                project: &self.project,
                         actions: &mut acts,
                     };
                     for t in self.tabs.iter_mut() {
@@ -375,6 +410,7 @@ impl EasyApp {
                     crate::backup::set_env(None);
                 }
                 Action::OpenSafety => self.open_tab(Box::new(crate::tabs::safety::SafetyTab::new())),
+                Action::FilesChanged => self.tree_scan = None,
             }
         }
     }
@@ -440,6 +476,7 @@ impl EasyApp {
 
     fn quit(&mut self) {
         self.quitting = true;
+        self.save_all();
         if let Some(h) = self.hwnd {
             platform::hide_window(h);
         }
@@ -456,15 +493,56 @@ impl EasyApp {
         let ctx = ui.ctx().clone();
         egui::MenuBar::new().ui(ui, |ui| {
             ui.menu_button("Datei", |ui| {
-                if ui.button("Neue SQL-Abfrage          Strg+N").clicked() {
+                if ui.add(egui::Button::new("Neue Datei im Projekt ...").shortcut_text("")).clicked() {
+                    self.explorer_dlg = Some(shell::ExplorerDlg::NewFile {
+                        dir: self.project.clone(),
+                        name: crate::workspace::unique_file(&self.project, "Neue Abfrage", "sql")
+                            .file_stem()
+                            .map(|s| s.to_string_lossy().into_owned())
+                            .unwrap_or_default(),
+                    });
+                    ui.close();
+                }
+                if ui.add(egui::Button::new("Neue unbenannte Abfrage").shortcut_text("Strg+N")).clicked() {
                     actions.push(Action::OpenSql { db: Some(self.current_db.clone()), sql: String::new(), run: false });
                     ui.close();
                 }
-                if ui.button("SQL-Datei öffnen...").clicked() {
+                if ui.button("Datei öffnen ...").clicked() {
                     ui.close();
                     self.open_sql_file(false);
                 }
                 ui.separator();
+                if ui.add(egui::Button::new("Speichern").shortcut_text("Strg+S")).clicked() {
+                    if let Some(t) = self.tabs.get_mut(self.active) {
+                        t.save_now();
+                    }
+                    ui.close();
+                }
+                if ui.button("Alle speichern").clicked() {
+                    self.save_all();
+                    self.status = "Alle Dateien gespeichert.".into();
+                    ui.close();
+                }
+                ui.separator();
+                ui.menu_button("Projekt wechseln", |ui| {
+                    let cur = self.project.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                    for p in crate::workspace::list_projects() {
+                        if ui.selectable_label(p == cur, &p).clicked() {
+                            self.switch_project(crate::workspace::projects_root().join(&p));
+                            ui.close();
+                        }
+                    }
+                });
+                if ui.button("Neues Projekt ...").clicked() {
+                    self.explorer_dlg = Some(shell::ExplorerDlg::NewProject { name: String::new() });
+                    ui.close();
+                }
+                ui.separator();
+                if ui.add(egui::Button::new("Registerkarte schließen").shortcut_text("Strg+W")).clicked() {
+                    let a = self.active;
+                    self.close_tab(a);
+                    ui.close();
+                }
                 if self.tray.is_some() && ui.button("Fenster ausblenden (läuft weiter)").clicked() {
                     ui.close();
                     if let Some(h) = self.hwnd {
@@ -475,6 +553,26 @@ impl EasyApp {
                     ui.close();
                     self.quit();
                 }
+            });
+            ui.menu_button("Ansicht", |ui| {
+                for (v, name) in [
+                    (shell::SideView::Explorer, "Explorer"),
+                    (shell::SideView::Datenbanken, "Datenbanken"),
+                    (shell::SideView::Sicherungen, "Sicherungen"),
+                ] {
+                    if ui.selectable_label(self.sidebar && self.side_view == v, name).clicked() {
+                        self.side_view = v;
+                        self.sidebar = true;
+                        ui.close();
+                    }
+                }
+                ui.separator();
+                if ui.add(egui::Button::new(if self.sidebar { "Seitenleiste ausblenden" } else { "Seitenleiste einblenden" }).shortcut_text("Strg+B")).clicked() {
+                    self.sidebar = !self.sidebar;
+                    ui.close();
+                }
+                ui.separator();
+                self.settings_menu(ui);
             });
             ui.menu_button("Datenbank", |ui| {
                 let connected = self.db.is_some();
@@ -639,72 +737,26 @@ impl EasyApp {
 
     fn open_sql_file(&mut self, run: bool) {
         if let Some(p) = rfd::FileDialog::new().add_filter("SQL-Dateien", &["sql", "txt"]).pick_file() {
-            match std::fs::read(&p) {
-                Ok(b) => {
-                    let mut tab = SqlTab::new(
-                        if self.current_db.is_empty() { None } else { Some(self.current_db.clone()) },
-                        String::from_utf8_lossy(&b).into_owned(),
-                    );
-                    tab.file = Some(p);
-                    if run {
-                        let mut acts = Vec::new();
-                        let mut cx = Ctx {
-                            db: self.db.as_ref(),
-                            schemas: &mut self.schemas,
-                            databases: &self.databases,
-                            server: &self.server,
-                            actions: &mut acts,
-                        };
-                        tab.execute(&mut cx);
-                    }
-                    self.open_tab(Box::new(tab));
-                }
-                Err(e) => self.error(e.to_string()),
+            self.open_file(&p);
+            if run {
+                let mut acts = Vec::new();
+                self.execute_active(&mut acts);
+                self.handle_actions(acts);
             }
         }
     }
 
-    fn toolbar(&mut self, ui: &mut egui::Ui, actions: &mut Vec<Action>) {
-        ui.horizontal_wrapped(|ui| {
-            let connected = self.db.is_some();
-            if ui.button("Neue Abfrage").clicked() {
-                actions.push(Action::OpenSql { db: Some(self.current_db.clone()), sql: String::new(), run: false });
-            }
-            let can_run = self.tabs.get(self.active).map(|t| !t.busy()).unwrap_or(false);
-            if ui.add_enabled(can_run, egui::Button::new("▶ Ausführen (F5)")).clicked() {
-                self.execute_active(actions);
-            }
-            ui.separator();
-            ui.add_enabled_ui(connected, |ui| {
-                if ui.button("Neue Datenbank").clicked() {
-                    self.dialogs.push(Dialog::NewDatabase { name: String::new(), collation: COLLATIONS[0].into() });
-                }
-                if ui.button("Neue Tabelle").clicked() {
-                    if let Some(d) = self.need_db() {
-                        actions.push(Action::NewTable(d));
-                    }
-                }
-                ui.separator();
-                if ui.button("ER-Diagramm").on_hover_text("Reverse Engineering der aktuellen Datenbank").clicked() {
-                    if let Some(d) = self.need_db() {
-                        actions.push(Action::OpenEr(d));
-                    }
-                }
-                if ui.button("Abfrage-Assistent").on_hover_text("Abfragen grafisch erstellen").clicked() {
-                    actions.push(Action::OpenBuilder(Some(self.current_db.clone())));
-                }
-                ui.separator();
-                if ui.button("Aktualisieren").clicked() {
-                    actions.push(Action::RefreshAll);
-                }
-            });
-            ui.separator();
-            ui.label("Aktuelle Datenbank:");
-            let user_dbs = self.user_databases();
-            let mut cur = self.current_db.clone();
-            crate::tabs::db_combo(ui, "curdb", &user_dbs, &mut cur);
-            self.current_db = cur;
-        });
+    /// Datei im Editor oeffnen (oder vorhandene Registerkarte aktivieren).
+    pub(crate) fn open_file(&mut self, p: &std::path::Path) {
+        let key = format!("file:{}", p.to_string_lossy().to_lowercase());
+        if let Some(i) = self.tabs.iter().position(|t| t.key().as_deref() == Some(&key)) {
+            self.active = i;
+            return;
+        }
+        match SqlTab::open_file(p, &self.current_db) {
+            Ok(tab) => self.open_tab(Box::new(tab)),
+            Err(e) => self.error(e),
+        }
     }
 
     fn execute_active(&mut self, actions: &mut Vec<Action>) {
@@ -714,6 +766,7 @@ impl EasyApp {
                 schemas: &mut self.schemas,
                 databases: &self.databases,
                 server: &self.server,
+                project: &self.project,
                 actions,
             };
             t.execute(&mut cx);
@@ -721,10 +774,6 @@ impl EasyApp {
     }
 
     fn tree(&mut self, ui: &mut egui::Ui, actions: &mut Vec<Action>) {
-        ui.horizontal(|ui| {
-            ui.label(RichText::new("Objekt-Explorer").strong());
-        });
-        ui.separator();
         let Some(dbc) = &self.db else {
             ui.label("Nicht verbunden.");
             if ui.button("Verbinden...").clicked() {
@@ -751,7 +800,7 @@ impl EasyApp {
                     match self.schemas.get(Some(dbc), d) {
                         Some(schema) => {
                             if schema.tables.is_empty() {
-                                ui.label(RichText::new("(keine Tabellen)").color(style::NULL_TEXT));
+                                ui.label(RichText::new("(keine Tabellen)").color(style::pal().null_text));
                             }
                             for t in &schema.tables {
                                 let label = if t.is_view { format!("{} (Sicht)", t.name) } else { t.name.clone() };
@@ -811,7 +860,7 @@ impl EasyApp {
                             }
                         }
                         None => {
-                            ui.label(RichText::new("(kein Zugriff)").color(style::ERROR_TEXT));
+                            ui.label(RichText::new("(kein Zugriff)").color(style::pal().error_text));
                         }
                     }
                 });
@@ -866,102 +915,6 @@ impl EasyApp {
         }
     }
 
-    fn tab_strip(&mut self, ui: &mut egui::Ui) {
-        let mut close = None;
-        egui::ScrollArea::horizontal().id_salt("tabstrip").show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 2.0;
-                for (i, t) in self.tabs.iter().enumerate() {
-                    let sel = i == self.active;
-                    let frame = egui::Frame::new()
-                        .fill(if sel { egui::Color32::WHITE } else { style::FACE })
-                        .stroke(egui::Stroke::new(1.0, style::SHADOW))
-                        .inner_margin(egui::Margin::symmetric(6, 2));
-                    frame.show(ui, |ui| {
-                        ui.horizontal(|ui| {
-                            let mut title = t.title();
-                            if t.busy() {
-                                title.push_str(" …");
-                            }
-                            let txt = if sel { RichText::new(title).strong() } else { RichText::new(title) };
-                            let r = ui.add(egui::Label::new(txt).sense(egui::Sense::click()));
-                            if r.clicked() {
-                                self.active = i;
-                            }
-                            if r.middle_clicked() {
-                                close = Some(i);
-                            }
-                            if ui.add(egui::Button::new("×").small().frame(false)).on_hover_text("Schließen (Strg+W)").clicked() {
-                                close = Some(i);
-                            }
-                        });
-                    });
-                }
-            });
-        });
-        if let Some(i) = close {
-            self.close_tab(i);
-        }
-    }
-
-    fn start_page(&mut self, ui: &mut egui::Ui) {
-        let ctx = ui.ctx().clone();
-        ui.add_space(10.0);
-        ui.heading("EasyMySQL");
-        ui.label("MariaDB-Datenbankserver und grafische Verwaltung in einem Programm.");
-        ui.add_space(10.0);
-        style::group_frame().show(ui, |ui| {
-            ui.set_width(560.0);
-            egui::Grid::new("startgrid").num_columns(2).spacing([12.0, 6.0]).show(ui, |ui| {
-                ui.label("Server:");
-                let st = self.server.state();
-                let color = if st.is_running() { style::OK_TEXT } else if matches!(st, State::Failed(_) | State::NotFound) { style::ERROR_TEXT } else { egui::Color32::BLACK };
-                ui.label(RichText::new(format!("{} (Port {})", st.text(), self.server.port)).color(color));
-                ui.end_row();
-                ui.label("Verbindung:");
-                match &self.db {
-                    Some(d) => ui.label(format!("{} – MariaDB {}", d.info.label(), d.version)),
-                    None => ui.label("nicht verbunden"),
-                };
-                ui.end_row();
-                if let Some(p) = &self.server.paths {
-                    ui.label("Datenordner:");
-                    ui.label(p.data.display().to_string());
-                    ui.end_row();
-                }
-            });
-            ui.add_space(6.0);
-            ui.horizontal(|ui| {
-                let st = self.server.state();
-                if !st.is_running() && !st.is_busy() && ui.button("Server starten").clicked() {
-                    self.start_server(&ctx);
-                }
-                if self.db.is_none() && st.is_running() && ui.button("Verbinden").clicked() {
-                    self.connect(true);
-                }
-                if ui.button("Server-Log").clicked() {
-                    self.show_log = true;
-                }
-                if matches!(st, State::Failed(_)) && ui.button("Reparieren...").clicked() {
-                    self.handle_actions(vec![Action::OpenSafety]);
-                }
-            });
-        });
-        ui.add_space(10.0);
-        ui.label(RichText::new("Kommandozeile").strong());
-        ui.label("Solange EasyMySQL geöffnet ist (auch im Hintergrund), kann in der Eingabeaufforderung (cmd) gearbeitet werden:");
-        style::sunken_frame().show(ui, |ui| {
-            ui.set_width(560.0);
-            ui.label(RichText::new("mysql -u root").monospace());
-        });
-        ui.add_space(10.0);
-        ui.label(RichText::new("Erste Schritte").strong());
-        ui.label("1. Links im Objekt-Explorer eine Datenbank aufklappen oder oben \"Neue Datenbank\" wählen.");
-        ui.label("2. Mit \"Neue Tabelle\" Tabellen grafisch anlegen, per Doppelklick Daten ansehen und bearbeiten.");
-        ui.label("3. \"ER-Diagramm\" zeigt Tabellen und Beziehungen (Reverse Engineering).");
-        ui.label("4. \"Neue Abfrage\" für SQL oder \"Abfrage-Assistent\" für Abfragen ohne SQL.");
-    }
-
     fn dialogs_ui(&mut self, ctx: &egui::Context) {
         let Some(dlg) = self.dialogs.last_mut() else { return };
         let mut close = false;
@@ -970,6 +923,9 @@ impl EasyApp {
         let mut export: Option<(String, bool)> = None;
         let mut create_db: Option<(String, String)> = None;
         let mut convert: Option<Vec<(String, String)>> = None;
+        let mut set_dark: Option<bool> = None;
+        let mut open_safety = false;
+        let mut setup_vscode = false;
 
         let frame = egui::Frame::window(&ctx.global_style()).inner_margin(egui::Margin::same(14));
         let modal = egui::Modal::new(egui::Id::new("dialog")).frame(frame).show(ctx, |ui| {
@@ -980,7 +936,7 @@ impl EasyApp {
                     ui.add_space(4.0);
                     egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
                         let t = RichText::new(text.as_str());
-                        ui.label(if *error { t.color(style::ERROR_TEXT) } else { t });
+                        ui.label(if *error { t.color(style::pal().error_text) } else { t });
                     });
                     ui.add_space(6.0);
                     if ui.button("OK").clicked() || ui.input(|i| i.key_pressed(Key::Enter)) {
@@ -1030,7 +986,7 @@ impl EasyApp {
                 Dialog::Connection { info, save_pw, error } => {
                     ui.label(RichText::new("Verbindung zum Datenbankserver").strong());
                     if let Some(e) = error {
-                        ui.label(RichText::new(e.as_str()).color(style::ERROR_TEXT));
+                        ui.label(RichText::new(e.as_str()).color(style::pal().error_text));
                     }
                     ui.add_space(4.0);
                     egui::Grid::new("conn").num_columns(2).show(ui, |ui| {
@@ -1053,7 +1009,7 @@ impl EasyApp {
                         ui.checkbox(save_pw, "Passwort speichern");
                         ui.end_row();
                     });
-                    ui.label(RichText::new("Standard: 127.0.0.1, Port 3306, Benutzer root, kein Passwort").small().color(style::NULL_TEXT));
+                    ui.label(RichText::new("Standard: 127.0.0.1, Port 3306, Benutzer root, kein Passwort").small().color(style::pal().null_text));
                     ui.add_space(6.0);
                     ui.horizontal(|ui| {
                         if ui.button("Verbinden").clicked() {
@@ -1119,6 +1075,48 @@ impl EasyApp {
                         }
                     });
                 }
+                Dialog::Settings => {
+                    ui.label(RichText::new("Einstellungen").strong());
+                    ui.add_space(6.0);
+                    egui::Grid::new("settingsgrid").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
+                        ui.label("Design:");
+                        ui.horizontal(|ui| {
+                            if ui.radio(style::pal().dark, "Dunkel (wie VS Code)").clicked() {
+                                set_dark = Some(true);
+                            }
+                            if ui.radio(!style::pal().dark, "Hell").clicked() {
+                                set_dark = Some(false);
+                            }
+                        });
+                        ui.end_row();
+                        ui.label("Objekt-Explorer:");
+                        let mut sys = self.settings.show_system_dbs;
+                        if ui.checkbox(&mut sys, "Systemdatenbanken zeigen").changed() {
+                            self.settings.show_system_dbs = sys;
+                            self.settings.save();
+                        }
+                        ui.end_row();
+                        ui.label("Sicherungen:");
+                        if ui.button("Sicherungen & Reparatur ...").clicked() {
+                            open_safety = true;
+                            close = true;
+                        }
+                        ui.end_row();
+                        ui.label("Projekte:");
+                        ui.label(RichText::new(crate::workspace::projects_root().display().to_string()).small());
+                        ui.end_row();
+                        ui.label("Visual Studio Code:");
+                        if ui.button("VS Code einrichten (SQLTools + Copilot)").clicked() {
+                            setup_vscode = true;
+                            close = true;
+                        }
+                        ui.end_row();
+                    });
+                    ui.add_space(8.0);
+                    if ui.button("Schließen").clicked() {
+                        close = true;
+                    }
+                }
                 Dialog::Help => {
                     ui.label(RichText::new("Kurzanleitung").strong());
                     ui.add_space(4.0);
@@ -1174,6 +1172,15 @@ impl EasyApp {
                     }
                 }
             }
+        }
+        if let Some(d) = set_dark {
+            self.set_dark(ctx, d);
+        }
+        if open_safety {
+            self.handle_actions(vec![Action::OpenSafety]);
+        }
+        if setup_vscode {
+            self.setup_vscode(ctx);
         }
         if let (Some(list), Some(dbc)) = (convert, &self.db) {
             match crate::repair::convert_to_innodb(&dbc.info, &list, &|_| {}) {
@@ -1243,7 +1250,7 @@ impl EasyApp {
                     ui.label(RichText::new(format!("Programme: {}", p.bin.display())).small());
                     ui.label(RichText::new(format!("Daten: {}", p.data.display())).small());
                 } else {
-                    ui.label(RichText::new("MariaDB wurde nicht gefunden. Bitte EasyMySQL mit dem Setup installieren.").color(style::ERROR_TEXT));
+                    ui.label(RichText::new("MariaDB wurde nicht gefunden. Bitte EasyMySQL mit dem Setup installieren.").color(style::pal().error_text));
                 }
                 ui.horizontal(|ui| {
                     if ui.button("Kopieren").clicked() {
@@ -1261,29 +1268,6 @@ impl EasyApp {
         self.show_log = open;
     }
 
-    fn status_bar(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
-            let st = self.server.state();
-            let color = if st.is_running() {
-                style::OK_TEXT
-            } else if matches!(st, State::Failed(_) | State::NotFound) {
-                style::ERROR_TEXT
-            } else {
-                egui::Color32::BLACK
-            };
-            if st.is_busy() {
-                ui.spinner();
-            }
-            ui.label(RichText::new(format!("Server: {}", st.text())).color(color));
-            ui.separator();
-            match &self.db {
-                Some(d) => ui.label(format!("{} (MariaDB {})", d.info.label(), d.version)),
-                None => ui.label("nicht verbunden"),
-            };
-            ui.separator();
-            ui.add(egui::Label::new(self.status.as_str()).truncate());
-        });
-    }
 }
 
 const HELP_TEXT: &str = "\
@@ -1380,70 +1364,97 @@ impl eframe::App for EasyApp {
         if ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::F5)) {
             self.execute_active(&mut actions);
         }
-        if ctx.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(Modifiers::COMMAND, Key::N))) {
+        if ctx.input_mut(|i| !i.modifiers.alt && i.consume_shortcut(&KeyboardShortcut::new(Modifiers::COMMAND, Key::N))) {
             actions.push(Action::OpenSql { db: Some(self.current_db.clone()), sql: String::new(), run: false });
         }
-        if ctx.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(Modifiers::COMMAND, Key::W))) {
+        if ctx.input_mut(|i| !i.modifiers.alt && i.consume_shortcut(&KeyboardShortcut::new(Modifiers::COMMAND, Key::W))) {
             let a = self.active;
             self.close_tab(a);
         }
+        if ctx.input_mut(|i| !i.modifiers.alt && i.consume_shortcut(&KeyboardShortcut::new(Modifiers::COMMAND, Key::S))) {
+            if let Some(t) = self.tabs.get_mut(self.active) {
+                t.save_now();
+                self.status = "Gespeichert.".into();
+            }
+        }
+        if ctx.input_mut(|i| !i.modifiers.alt && i.consume_shortcut(&KeyboardShortcut::new(Modifiers::COMMAND, Key::B))) {
+            self.sidebar = !self.sidebar;
+        }
 
-        egui::Panel::top("menu").show(ui, |ui| {
-            self.menu_bar(ui, &mut actions);
-        });
-        egui::Panel::top("toolbar").show(ui, |ui| {
-            ui.add_space(2.0);
-            self.toolbar(ui, &mut actions);
-            ui.add_space(2.0);
-        });
-        egui::Panel::bottom("status").show(ui, |ui| {
-            self.status_bar(ui);
-        });
-        egui::Panel::left("tree")
-            .resizable(true)
-            .default_size(240.0)
-            .min_size(150.0)
+        egui::Panel::top("menu")
+            .frame(egui::Frame::new().fill(style::pal().face).inner_margin(egui::Margin::symmetric(4, 2)))
             .show(ui, |ui| {
-                self.tree(ui, &mut actions);
+                self.menu_bar(ui, &mut actions);
             });
-        egui::CentralPanel::default().show(ui, |ui| {
-            if self.tabs.is_empty() {
-                self.start_page(ui);
-            } else {
-                self.tab_strip(ui);
-                ui.add_space(2.0);
-                let active = self.active.min(self.tabs.len() - 1);
-                let tab = &mut self.tabs[active];
-                let mut cx = Ctx {
-                    db: self.db.as_ref(),
-                    schemas: &mut self.schemas,
-                    databases: &self.databases,
-                    server: &self.server,
-                    actions: &mut actions,
-                };
-                egui::Frame::new()
-                    .fill(egui::Color32::from_rgb(0xFA, 0xFA, 0xFA))
-                    .stroke(egui::Stroke::new(1.0, style::SHADOW))
-                    .inner_margin(egui::Margin::same(6))
-                    .show(ui, |ui| {
+        egui::Panel::bottom("status")
+            .exact_size(22.0)
+            .frame(egui::Frame::new().fill(style::pal().status_bg).inner_margin(egui::Margin::symmetric(8, 0)))
+            .show(ui, |ui| {
+                self.status_bar_vs(ui);
+            });
+        egui::Panel::left("activity")
+            .exact_size(48.0)
+            .resizable(false)
+            .frame(egui::Frame::new().fill(style::pal().activity_bg))
+            .show(ui, |ui| {
+                self.activity_bar(ui, &mut actions);
+            });
+        if self.sidebar {
+            egui::Panel::left("sidebar")
+                .resizable(true)
+                .default_size(260.0)
+                .min_size(170.0)
+                .frame(egui::Frame::new().fill(style::pal().sidebar_bg).inner_margin(egui::Margin::symmetric(0, 0)))
+                .show(ui, |ui| {
+                    self.side_panel(ui, &mut actions);
+                });
+        }
+        egui::CentralPanel::default()
+            .frame(egui::Frame::new().fill(style::pal().bg))
+            .show(ui, |ui| {
+                if self.tabs.is_empty() {
+                    self.welcome(ui, &mut actions);
+                } else {
+                    self.tab_bar(ui);
+                    let active = self.active.min(self.tabs.len() - 1);
+                    let tab = &mut self.tabs[active];
+                    let mut cx = Ctx {
+                        db: self.db.as_ref(),
+                        schemas: &mut self.schemas,
+                        databases: &self.databases,
+                        server: &self.server,
+                        project: &self.project,
+                        actions: &mut actions,
+                    };
+                    egui::Frame::new().fill(style::pal().bg).inner_margin(egui::Margin::symmetric(8, 6)).show(ui, |ui| {
                         ui.set_min_size(ui.available_size());
                         tab.ui(ui, &mut cx);
                     });
-            }
-        });
+                }
+            });
 
+        // Sitzung regelmaessig sichern (offene Dateien usw.)
+        if self.session_saved.elapsed().as_secs() >= 5 {
+            self.save_session();
+        }
+        self.explorer_dialogs(&ctx);
         self.handle_actions(actions);
         self.log_window(&ctx);
         self.dialogs_ui(&ctx);
     }
 
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        crate::sqledit::filter_input(ctx, raw_input);
+    }
+
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        self.save_all();
         self.db = None;
         self.server.stop_blocking(&self.settings.conn);
         self.settings.save();
     }
 
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
-        style::FACE.to_normalized_gamma_f32()
+        style::pal().face.to_normalized_gamma_f32()
     }
 }
