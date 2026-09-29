@@ -10,6 +10,8 @@ pub struct Settings {
     pub show_system_dbs: bool,
     pub tray_hint_shown: bool,
     pub dark: bool,
+    /// Schriftgroesse im SQL-Editor (Pixel)
+    pub editor_font: u32,
 }
 
 fn path() -> PathBuf {
@@ -24,6 +26,7 @@ impl Default for Settings {
             show_system_dbs: false,
             tray_hint_shown: false,
             dark: true,
+            editor_font: 13,
         }
     }
 }
@@ -44,6 +47,7 @@ impl Settings {
                 "show_system_dbs" => s.show_system_dbs = v == "1",
                 "tray_hint_shown" => s.tray_hint_shown = v == "1",
                 "dark" => s.dark = v == "1",
+                "editor_font" => s.editor_font = v.parse().unwrap_or(13),
                 _ => {}
             }
         }
@@ -53,14 +57,15 @@ impl Settings {
     pub fn save(&self) {
         let b = |x: bool| if x { "1" } else { "0" };
         let mut text = format!(
-            "host={}\nport={}\nuser={}\nsave_password={}\nshow_system_dbs={}\ntray_hint_shown={}\ndark={}\n",
+            "host={}\nport={}\nuser={}\nsave_password={}\nshow_system_dbs={}\ntray_hint_shown={}\ndark={}\neditor_font={}\n",
             self.conn.host,
             self.conn.port,
             self.conn.user,
             b(self.save_password),
             b(self.show_system_dbs),
             b(self.tray_hint_shown),
-            b(self.dark)
+            b(self.dark),
+            self.editor_font
         );
         if self.save_password {
             text.push_str(&format!("password={}\n", self.conn.password));
