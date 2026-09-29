@@ -1,0 +1,175 @@
+# Baut EasyMySQL (Setup fuer Windows) und veroeffentlicht es als GitHub-Release.
+name: EasyMySQL Release
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  # MariaDB-Reihe (LTS). Es wird automatisch die neueste Version dieser Reihe geholt.
+  MARIADB_SERIES: "11.8"
+  # Rueckfallebene, falls die MariaDB-Download-Schnittstelle nicht erreichbar ist
+  # (archive.mariadb.org bewahrt alle alten Versionen dauerhaft auf).
+  MARIADB_FALLBACK_URL: https://archive.mariadb.org/mariadb-11.8.9/winx64-packages/mariadb-11.8.9-winx64.zip
+  MARIADB_FALLBACK_SHA256: 830c46727d9278eae212ae3eca44eeb9e71b2a68704e95f344a64fba7b1963f5
+  MARIADB_FALLBACK_VERSION: "11.8.9"
+  ODBC_URL: https://dlm.mariadb.com/4785809/Connectors/odbc/connector-odbc-3.2.9/codbc-amd64-windows/mariadb-connector-odbc-3.2.9-win64.msi
+  ODBC_SHA256: 3aaa0202a48e456a692f1864b62da3baeb037eb797692e1737eb675c05fda038
+  VCREDIST_URL: https://aka.ms/vs/17/release/vc_redist.x64.exe
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Version lesen
+        id: ver
+        run: |
+          $v = (Select-String -Path Cargo.toml -Pattern '^version\s*=\s*"(.+)"').Matches[0].Groups[1].Value
+          "version=$v" >> $env:GITHUB_OUTPUT
+          Write-Host "EasyMySQL $v"
+
+      - name: EasyMySQL.exe bauen
+        run: cargo build --release --locked
+
+      - name: MariaDB, ODBC-Treiber und VC++-Laufzeit herunterladen
+        id: mdb
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ProgressPreference = 'SilentlyContinue'
+          New-Item -ItemType Directory -Force build/redist | Out-Null
+
+          function Get-Checked($url, $out, $sha) {
+            for ($i = 1; $i -le 4; $i++) {
+              try { Invoke-WebRequest $url -OutFile $out -UseBasicParsing; break }
+              catch { if ($i -eq 4) { throw }; Start-Sleep -Seconds (2 * $i) }
+            }
+            if ($sha) {
+              $h = (Get-FileHash $out -Algorithm SHA256).Hash.ToLower()
+              if ($h -ne $sha) { throw "Prüfsumme falsch für ${out}: $h" }
+            }
+          }
+
+          # 1. Versuch: neueste Version der LTS-Reihe ueber die offizielle MariaDB-Schnittstelle
+          $ok = $false
+          try {
+            $api = Invoke-RestMethod "https://downloads.mariadb.org/rest-api/mariadb/$($env:MARIADB_SERIES)/latest/"
+            $rel = $api.releases.PSObject.Properties | Select-Object -First 1
+            $file = $rel.Value.files | Where-Object { $_.file_name -like '*-winx64.zip' -and $_.file_name -notlike '*debug*' } | Select-Object -First 1
+            if (-not $file) { throw "keine winx64.zip gefunden" }
+            Write-Host "Neueste MariaDB: $($rel.Name) ($($file.file_download_url))"
+            Get-Checked $file.file_download_url build/mariadb.zip $file.checksum.sha256sum.ToLower()
+            $mdbVersion = $rel.Name
+            $ok = $true
+          } catch {
+            Write-Warning "Neueste MariaDB nicht verfügbar ($_) – verwende feste Version $env:MARIADB_FALLBACK_VERSION"
+          }
+          # 2. Rueckfallebene: fest hinterlegte Version aus dem MariaDB-Archiv
+          if (-not $ok) {
+            Get-Checked $env:MARIADB_FALLBACK_URL build/mariadb.zip $env:MARIADB_FALLBACK_SHA256
+            $mdbVersion = $env:MARIADB_FALLBACK_VERSION
+          }
+          "version=$mdbVersion" >> $env:GITHUB_OUTPUT
+          Expand-Archive build/mariadb.zip -DestinationPath build/tmp
+          Move-Item (Get-ChildItem build/tmp -Directory | Select-Object -First 1).FullName build/mariadb
+          # Nicht benoetigte Entwicklerdateien entfernen (spart Platz)
+          Get-ChildItem build/mariadb -Recurse -Include *.pdb,*.lib | Remove-Item -Force
+          Remove-Item build/mariadb/include -Recurse -Force -ErrorAction SilentlyContinue
+          if (-not (Test-Path build/mariadb/bin/mysql.exe)) {
+            Copy-Item build/mariadb/bin/mariadb.exe build/mariadb/bin/mysql.exe
+          }
+          Get-ChildItem build/mariadb/bin/mysql*.exe | Select-Object Name
+
+          # Treiber sind optional: fehlt ein Download, wird das Setup trotzdem gebaut
+          try { Get-Checked $env:ODBC_URL build/redist/mariadb-connector-odbc.msi $env:ODBC_SHA256 }
+          catch { Write-Warning "ODBC-Treiber nicht verfügbar: $_"; Remove-Item build/redist/mariadb-connector-odbc.msi -ErrorAction SilentlyContinue }
+          try { Get-Checked $env:VCREDIST_URL build/redist/vc_redist.x64.exe $null }
+          catch { Write-Warning "VC++-Laufzeit nicht verfügbar: $_"; Remove-Item build/redist/vc_redist.x64.exe -ErrorAction SilentlyContinue }
+
+      - name: Kurztest (Server einrichten und starten)
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $data = "$env:RUNNER_TEMP\mdbtest"
+          & build/mariadb/bin/mariadb-install-db.exe "--datadir=$data" --port=3399
+          $p = Start-Process build/mariadb/bin/mariadbd.exe -ArgumentList "--datadir=$data","--port=3399","--console" -PassThru -NoNewWindow
+          Start-Sleep -Seconds 8
+          & build/mariadb/bin/mysql.exe -u root -P 3399 -h 127.0.0.1 -e "SELECT VERSION(); CREATE DATABASE t; SHOW DATABASES;"
+          if ($LASTEXITCODE -ne 0) { throw "mysql -u root fehlgeschlagen" }
+          & build/mariadb/bin/mariadb-admin.exe -u root -P 3399 -h 127.0.0.1 shutdown
+          $p.WaitForExit(20000) | Out-Null
+
+      - name: Inno Setup bereitstellen
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress | Out-Null }
+          if (-not (Test-Path $iscc)) { throw "ISCC nicht gefunden" }
+
+      - name: Setup bauen
+        run: |
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=${{ steps.ver.outputs.version }}" "/DMariaDBVersion=${{ steps.mdb.outputs.version }}" installer\EasyMySQL.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC fehlgeschlagen" }
+
+      - name: Portable ZIP bauen
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $p = "build/portable/EasyMySQL"
+          New-Item -ItemType Directory -Force $p | Out-Null
+          Copy-Item target/release/easymysql.exe "$p/EasyMySQL.exe"
+          Copy-Item build/mariadb "$p/mariadb" -Recurse
+          Copy-Item README.md "$p/LIESMICH.md"
+          Compress-Archive -Path $p -DestinationPath "dist/EasyMySQL-portable-${{ steps.ver.outputs.version }}.zip" -CompressionLevel Optimal
+          Get-ChildItem dist | Select-Object Name, Length
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: EasyMySQL-Setup
+          path: dist/*
+
+      - name: GitHub-Release veröffentlichen
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.ver.outputs.version }}
+          name: EasyMySQL ${{ steps.ver.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          make_latest: true
+          files: |
+            dist/EasyMySQL-Setup-${{ steps.ver.outputs.version }}.exe
+            dist/EasyMySQL-portable-${{ steps.ver.outputs.version }}.zip
+          body: |
+            ## EasyMySQL ${{ steps.ver.outputs.version }}
+
+            MariaDB-Server und grafische Datenbankverwaltung für Windows (64 Bit) in einem Programm.
+
+            ### Download
+            - **`EasyMySQL-Setup-${{ steps.ver.outputs.version }}.exe`** – empfohlen. Installiert alles (MariaDB, Treiber, Umgebungsvariablen). Funktioniert komplett offline, MariaDB ist bereits enthalten.
+            - `EasyMySQL-portable-${{ steps.ver.outputs.version }}.zip` – ohne Installation (entpacken, `EasyMySQL.exe` starten). Hier wird `PATH` nicht gesetzt.
+
+            ### Installation
+            1. `EasyMySQL-Setup-${{ steps.ver.outputs.version }}.exe` herunterladen und ausführen.
+               Windows SmartScreen meldet ggf. „Unbekannter Herausgeber“: *Weitere Informationen → Trotzdem ausführen*.
+            2. EasyMySQL starten. Beim ersten Start wird der Datenbankserver automatisch eingerichtet.
+            3. Eingabeaufforderung (cmd) öffnen und `mysql -u root` eingeben.
+
+            ### Enthalten
+            - EasyMySQL ${{ steps.ver.outputs.version }} (Rust)
+            - MariaDB ${{ steps.mdb.outputs.version }} (Server und Kommandozeilenprogramme `mysql`, `mysqldump`, ...)
+            - MariaDB ODBC-Treiber 3.2.9 + ODBC-Datenquelle „EasyMySQL“ (optional)
+            - Microsoft Visual C++ Laufzeit
+            - Umgebungsvariablen: `PATH`, `EASYMYSQL_HOME`, `MARIADB_HOME`
+
+            Der Datenbankserver läuft nur, solange EasyMySQL geöffnet ist (auch im Hintergrund im Infobereich). Kein Autostart.
