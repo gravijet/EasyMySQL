@@ -22,7 +22,7 @@ mod imp {
     use windows_sys::Win32::Foundation::{GetLastError, HWND};
     use windows_sys::Win32::System::Threading::CreateMutexW;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        FindWindowW, IsIconic, MB_ICONINFORMATION, MB_OK, MessageBoxW, SW_HIDE, SW_RESTORE, SW_SHOW,
+        FindWindowW, IsIconic, SW_HIDE, SW_RESTORE, SW_SHOW,
         SetForegroundWindow, ShowWindow,
     };
 
@@ -65,14 +65,6 @@ mod imp {
             // Mutex bleibt bis Prozessende offen (Handle wird absichtlich nicht geschlossen)
         }
         true
-    }
-
-    pub fn message_box(title: &str, text: &str) {
-        let t = wide(title);
-        let m = wide(text);
-        unsafe {
-            MessageBoxW(std::ptr::null_mut(), m.as_ptr(), t.as_ptr(), MB_OK | MB_ICONINFORMATION);
-        }
     }
 
     pub struct Tray {
@@ -175,11 +167,4 @@ pub fn hide_window(hwnd: isize) {
     imp::hide_window(hwnd);
     #[cfg(not(windows))]
     let _ = hwnd;
-}
-
-pub fn message_box(title: &str, text: &str) {
-    #[cfg(windows)]
-    imp::message_box(title, text);
-    #[cfg(not(windows))]
-    eprintln!("{title}: {text}");
 }

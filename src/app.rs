@@ -39,6 +39,7 @@ pub struct EasyApp {
     tray: Option<(platform::Tray, Receiver<TrayCmd>)>,
     quitting: bool,
     last_state: State,
+    vscode_job: Option<Receiver<Result<String, String>>>,
 }
 
 const COLLATIONS: &[&str] = &[
@@ -76,6 +77,7 @@ impl EasyApp {
             tray,
             quitting: false,
             last_state: State::Stopped,
+            vscode_job: None,
         }
     }
 
@@ -384,6 +386,21 @@ impl EasyApp {
                     ui.close();
                 }
                 ui.separator();
+                if ui.button("In VS Code öffnen").clicked() {
+                    ui.close();
+                    match crate::vscode::open_workspace(&self.current_db) {
+                        Ok(d) => self.status = format!("VS Code geöffnet: {}", d.display()),
+                        Err(e) => self.error(e),
+                    }
+                }
+                if ui
+                    .add_enabled(self.vscode_job.is_none(), egui::Button::new("VS Code einrichten (SQLTools + GitHub Copilot)"))
+                    .clicked()
+                {
+                    ui.close();
+                    self.setup_vscode(&ctx);
+                }
+                ui.separator();
                 if ui.button("Verbindung...").clicked() {
                     self.dialogs.push(Dialog::Connection {
                         info: self.settings.conn.clone(),
@@ -434,6 +451,54 @@ impl EasyApp {
                 }
             });
         });
+    }
+
+    fn setup_vscode(&mut self, ctx: &egui::Context) {
+        if crate::vscode::find_vscode().is_none() {
+            self.dialogs.push(Dialog::Message {
+                title: "Visual Studio Code".into(),
+                text: crate::vscode::NOT_FOUND.into(),
+                error: false,
+            });
+            let _ = open_url("https://code.visualstudio.com/download");
+            return;
+        }
+        let _ = crate::vscode::prepare_workspace(&self.current_db);
+        let (tx, rx) = std::sync::mpsc::channel();
+        let ctx = ctx.clone();
+        std::thread::spawn(move || {
+            let _ = tx.send(crate::vscode::install_extensions());
+            ctx.request_repaint();
+        });
+        self.vscode_job = Some(rx);
+        self.status = "VS-Code-Erweiterungen werden installiert ...".into();
+    }
+
+    fn poll_vscode(&mut self) {
+        let Some(rx) = &self.vscode_job else { return };
+        let Ok(res) = rx.try_recv() else { return };
+        self.vscode_job = None;
+        match res {
+            Ok(report) => {
+                self.status = "VS Code ist eingerichtet.".into();
+                self.dialogs.push(Dialog::Message {
+                    title: "VS Code eingerichtet".into(),
+                    text: format!(
+                        "{report}\nWichtig: Beim ersten Öffnen fragt VS Code, ob Sie dem Ordner vertrauen. \
+                         Bitte \"Ja, ich vertraue den Autoren\" (bzw. \"Trust\") wählen, sonst sind die Erweiterungen aus.\n\n\
+                         In VS Code gibt es dann links das Datenbank-Symbol (SQLTools) mit der \
+                         Verbindung \"EasyMySQL\". In .sql-Dateien führt Strg+E Strg+E die Abfrage aus.\n\n\
+                         GitHub Copilot: in VS Code unten rechts auf das Copilot-Symbol klicken und mit dem \
+                         GitHub-Konto anmelden. Danach schlägt Copilot beim Tippen SQL vor.\n\n\
+                         Ordner für Abfragen: {}",
+                        crate::vscode::workspace_dir().display()
+                    ),
+                    error: false,
+                });
+                let _ = crate::vscode::open_workspace(&self.current_db);
+            }
+            Err(e) => self.error(e),
+        }
     }
 
     fn open_sql_file(&mut self, run: bool) {
@@ -1057,6 +1122,11 @@ Daten bearbeiten:
 
 SQL-Abfrage:
   • SQL eingeben, F5 oder Strg+Enter führt aus.
+  • Beim Tippen erscheinen Vorschläge (Tabellen, Spalten, Befehle),
+    Strg+Leertaste öffnet sie jederzeit, Enter/Tab übernimmt.
+  • \"Formatieren\" (Strg+Umschalt+F) macht das SQL übersichtlich.
+  • \"In VS Code öffnen\" bearbeitet die Abfrage in Visual Studio Code
+    (mit SQLTools und GitHub Copilot, siehe Werkzeuge → VS Code einrichten).
   • Ist Text markiert, wird nur dieser ausgeführt.
   • Mehrere Anweisungen mit ; trennen.
 
@@ -1070,6 +1140,18 @@ Abfrage-Assistent:
     Bedingungen und Sortierung einstellen – das SQL wird automatisch erzeugt.
 
 Tastenkürzel: F5 Ausführen, Strg+N neue Abfrage, Strg+W Registerkarte schließen.";
+
+fn open_url(url: &str) -> std::io::Result<std::process::Child> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        std::process::Command::new("cmd").args(["/C", "start", "", url]).creation_flags(0x0800_0000).spawn()
+    }
+    #[cfg(not(windows))]
+    {
+        std::process::Command::new("xdg-open").arg(url).spawn()
+    }
+}
 
 fn open_folder(p: &std::path::Path) {
     #[cfg(windows)]
@@ -1094,22 +1176,12 @@ impl eframe::App for EasyApp {
             }
         }
         self.check_server(ctx);
+        self.poll_vscode();
 
         // Fenster schliessen = im Hintergrund weiterlaufen
         if ctx.input(|i| i.viewport().close_requested()) && !self.quitting {
             if let (Some(h), Some(_)) = (self.hwnd, &self.tray) {
                 ctx.send_viewport_cmd(ViewportCommand::CancelClose);
-                if !self.settings.tray_hint_shown {
-                    self.settings.tray_hint_shown = true;
-                    self.settings.save();
-                    platform::message_box(
-                        "EasyMySQL",
-                        "EasyMySQL läuft im Hintergrund weiter, damit der Datenbankserver erreichbar bleibt \
-                         (z. B. für \"mysql -u root\" in der Eingabeaufforderung).\n\n\
-                         Das Symbol befindet sich im Infobereich neben der Uhr.\n\
-                         Zum Beenden: Rechtsklick auf das Symbol → \"Beenden\".",
-                    );
-                }
                 platform::hide_window(h);
             }
         }
