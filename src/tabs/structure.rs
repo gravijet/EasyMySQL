@@ -300,6 +300,10 @@ impl TabView for StructureTab {
         Some(format!("struct:{}.{}", self.db, self.table))
     }
 
+    fn session(&self) -> Option<String> {
+        Some(format!("struct\t{}\t{}", self.db, self.table))
+    }
+
     fn execute(&mut self, cx: &mut Ctx) {
         self.reload(cx);
     }
@@ -315,7 +319,7 @@ impl TabView for StructureTab {
             self.reload(cx);
         }
         let Some(info) = self.info.clone() else {
-            ui.label(RichText::new(format!("Tabelle {}.{} nicht gefunden.", self.db, self.table)).color(style::ERROR_TEXT));
+            ui.label(RichText::new(format!("Tabelle {}.{} nicht gefunden.", self.db, self.table)).color(style::pal().error_text));
             if ui.button("Aktualisieren").clicked() {
                 self.reload(cx);
             }
@@ -428,7 +432,7 @@ impl TabView for StructureTab {
                         };
                         match &c.default {
                             Some(d) => ui.label(d),
-                            None => ui.label(RichText::new("NULL").italics().color(style::NULL_TEXT)),
+                            None => ui.label(RichText::new("NULL").italics().color(style::pal().null_text)),
                         };
                         ui.label(&c.extra);
                         ui.label(&c.comment);
@@ -442,7 +446,7 @@ impl TabView for StructureTab {
             style::sunken_frame().show(ui, |ui| {
                 ui.set_min_width(ui.available_width());
                 if self.indexes.is_empty() {
-                    ui.label(RichText::new("keine").color(style::NULL_TEXT));
+                    ui.label(RichText::new("keine").color(style::pal().null_text));
                 }
                 let mut drop = None;
                 egui::Grid::new(("idx", &self.table)).striped(true).spacing([14.0, 3.0]).show(ui, |ui| {
@@ -471,7 +475,7 @@ impl TabView for StructureTab {
             style::sunken_frame().show(ui, |ui| {
                 ui.set_min_width(ui.available_width());
                 if self.fks_out.is_empty() && self.fks_in.is_empty() {
-                    ui.label(RichText::new("keine").color(style::NULL_TEXT));
+                    ui.label(RichText::new("keine").color(style::pal().null_text));
                 }
                 let mut drop = None;
                 egui::Grid::new(("fks", &self.table)).striped(true).spacing([14.0, 3.0]).show(ui, |ui| {

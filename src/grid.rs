@@ -2,7 +2,7 @@
 
 use crate::db::Row;
 use crate::style;
-use eframe::egui::{self, Color32, Key, RichText, Sense, Stroke};
+use eframe::egui::{self, Key, RichText, Sense, Stroke};
 use egui_extras::{Column, TableBuilder};
 
 #[derive(Default)]
@@ -38,7 +38,7 @@ fn display(v: &str) -> String {
 fn cell_lines(ui: &egui::Ui) {
     let r = ui.max_rect();
     let p = ui.painter();
-    let st = Stroke::new(1.0, style::GRID_LINE);
+    let st = Stroke::new(1.0, style::pal().grid_line);
     p.hline(r.left()..=r.right() + 4.0, r.bottom() + 1.5, st);
     p.vline(r.right() + 3.5, r.top() - 2.0..=r.bottom() + 2.0, st);
 }
@@ -82,14 +82,14 @@ pub fn show(
         tb.header(22.0, |mut header| {
             header.col(|ui| {
                 ui.painter()
-                    .rect_filled(ui.max_rect().expand(3.0), 0.0, style::FACE);
+                    .rect_filled(ui.max_rect().expand(3.0), 0.0, style::pal().face);
                 cell_lines(ui);
                 ui.label("#");
             });
             for c in columns {
                 header.col(|ui| {
                     ui.painter()
-                        .rect_filled(ui.max_rect().expand(3.0), 0.0, style::FACE);
+                        .rect_filled(ui.max_rect().expand(3.0), 0.0, style::pal().face);
                     cell_lines(ui);
                     ui.label(RichText::new(c).strong());
                 });
@@ -102,10 +102,10 @@ pub fn show(
                 row.set_selected(state.selected == Some(r));
                 row.col(|ui| {
                     ui.painter()
-                        .rect_filled(ui.max_rect().expand(3.0), 0.0, style::FACE);
+                        .rect_filled(ui.max_rect().expand(3.0), 0.0, style::pal().face);
                     cell_lines(ui);
                     let resp = ui.add(
-                        egui::Label::new(RichText::new((r + 1).to_string()).color(Color32::DARK_GRAY))
+                        egui::Label::new(RichText::new((r + 1).to_string()).color(style::pal().text_weak))
                             .sense(Sense::click()),
                     );
                     if resp.clicked() {
@@ -136,7 +136,7 @@ pub fn show(
                         }
                         let resp = match val {
                             None => ui.add(
-                                egui::Label::new(RichText::new("NULL").italics().color(style::NULL_TEXT))
+                                egui::Label::new(RichText::new("NULL").italics().color(style::pal().null_text))
                                     .selectable(false)
                                     .sense(Sense::click()),
                             ),

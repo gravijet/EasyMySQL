@@ -33,6 +33,8 @@ pub enum Action {
     /// Verbindung trennen (z. B. vor der Server-Rettung)
     Disconnect,
     OpenSafety,
+    /// Dateien im Projekt haben sich geaendert (Explorer neu einlesen)
+    FilesChanged,
 }
 
 #[derive(Default)]
@@ -73,6 +75,8 @@ pub struct Ctx<'a> {
     pub schemas: &'a mut SchemaCache,
     pub databases: &'a [String],
     pub server: &'a crate::server::Server,
+    /// Aktuelles Projekt (Ordner)
+    pub project: &'a std::path::Path,
     pub actions: &'a mut Vec<Action>,
 }
 
@@ -101,6 +105,25 @@ pub trait TabView {
     }
     fn busy(&self) -> bool {
         false
+    }
+    /// Eintrag fuer die Sitzungsdatei (zum Wiederherstellen beim Start)
+    fn session(&self) -> Option<String> {
+        None
+    }
+    /// Zugehoerige Datei (fuer den Explorer)
+    fn file(&self) -> Option<&std::path::Path> {
+        None
+    }
+    /// Datei/Ordner wurde im Explorer umbenannt
+    fn file_renamed(&mut self, _old: &std::path::Path, _new: &std::path::Path) {}
+    /// Vor dem Schliessen (speichern). false = nicht schliessen
+    fn on_close(&mut self) -> bool {
+        true
+    }
+    fn save_now(&mut self) {}
+    /// Text fuer die Statusleiste
+    fn status(&self) -> Option<String> {
+        None
     }
 }
 
