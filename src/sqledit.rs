@@ -40,6 +40,17 @@ fn is_keyword(w: &str) -> bool {
 }
 
 /// Farbige Darstellung eines SQL-Textes.
+static FONT_SIZE: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(13);
+
+/// Schriftgroesse des Editors (Einstellungen)
+pub fn set_font_size(px: u32) {
+    FONT_SIZE.store(px.clamp(10, 24), std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn font_size() -> f32 {
+    FONT_SIZE.load(std::sync::atomic::Ordering::Relaxed) as f32
+}
+
 pub fn highlight(text: &str, font: FontId) -> LayoutJob {
     let mut job = LayoutJob::default();
     let chars: Vec<(usize, char)> = text.char_indices().collect();
@@ -791,7 +802,7 @@ impl SqlEditor {
         let ctx = ui.ctx().clone();
         let focused = ctx.memory(|m| m.has_focus(self.id));
         let pal = crate::style::pal();
-        let font = FontId::monospace(13.0);
+        let font = FontId::monospace(font_size());
         let row_h = ctx.fonts_mut(|f| f.row_height(&font));
         if self.prev_text.is_empty() && !text.is_empty() {
             self.prev_text = text.clone();

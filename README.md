@@ -65,34 +65,73 @@ Der Server ist nur vom eigenen PC aus erreichbar (`bind-address=127.0.0.1`).
 
 ## Funktionen
 
-- **Objekt-Explorer**: Datenbanken → Tabellen → Spalten als Baum, Rechtsklick-Menüs.
+Die Oberfläche ist wie Visual Studio Code aufgebaut (dunkles Design, helles Design in den
+Einstellungen): links die Aktivitätsleiste und Seitenleiste, in der Mitte Registerkarten, unten die
+Statusleiste.
+
+- **Explorer mit Projekten**: Projekte liegen in `Dokumente\EasyMySQL\Projekte`. Jedes Projekt ist ein
+  Ordner mit Unterordnern und `.sql`-Dateien. Dateien und Ordner anlegen, umbenennen und löschen
+  per Rechtsklick. Die Datenbank wird je Datei gemerkt.
+- **Automatisch speichern**: jede Änderung wird nach kurzer Pause sicher gespeichert (auch neue,
+  noch unbenannte Dateien). *Frühere Fassungen* stellt ältere Stände einer Datei wieder her.
+  Beim nächsten Start sind alle Registerkarten wieder da.
+- **SQL-Editor**: Syntax-Hervorhebung, Zeilennummern, Minimap, Klammerpaare, Suchen/Ersetzen,
+  Autovervollständigung für Befehle, Funktionen, Tabellen und Spalten (auch nach `alias.`),
+  Zeilen verschieben/kopieren, Kommentieren, Schriftgröße einstellbar.
+  - **Mehrere Anweisungen pro Datei**: `Strg+Alt+S` führt die ganze Datei aus, oder nur den
+    markierten Teil. `Strg+Enter` führt nur die Anweisung aus, in der der Cursor steht.
+  - Jede Anweisung bekommt ein **eigenes Ergebnis** bzw. eine Meldung (betroffene Zeilen, Dauer).
+    Fehler werden rot unterstrichen und auf Deutsch erklärt. `DELIMITER` für Prozeduren/Trigger
+    wird unterstützt.
+  - `Strg+Alt+L` **formatiert** das SQL übersichtlich.
+- **Visual Studio Code + GitHub Copilot**: „In VS Code öffnen“ bearbeitet eine Datei in VS Code.
+  *Werkzeuge → VS Code einrichten* installiert SQLTools mit MariaDB-Treiber und legt die Verbindung
+  „EasyMySQL“ an. GitHub Copilot ist in aktuellem VS Code eingebaut: einmal mit dem GitHub-Konto
+  anmelden, dann schlägt Copilot beim Tippen SQL vor. Beim ersten Öffnen fragt VS Code, ob man dem
+  Ordner vertraut → „Trust“ wählen. Speichert man die Datei in VS Code, übernimmt EasyMySQL die
+  Änderungen automatisch.
+- **Datenbank-Explorer**: Datenbanken → Tabellen → Spalten als Baum, Rechtsklick-Menüs.
 - **Datenbanken und Tabellen erstellen**: Tabellen-Designer mit Datentypen, Primärschlüssel,
   AUTO_INCREMENT, NOT NULL, UNIQUE, Standardwerten und **Fremdschlüsseln (Beziehungen)**.
 - **Daten ansehen und bearbeiten**: Doppelklick auf eine Zelle ändert den Wert, neue Zeilen einfügen,
   Zeilen löschen, Filter (WHERE), Sortierung, Blättern, CSV-Export.
 - **Struktur ändern**: Spalten hinzufügen/ändern/löschen, Indizes, Fremdschlüssel, Tabelle umbenennen.
-- **SQL-Editor**: Syntax-Hervorhebung, Zeilennummern, Autovervollständigung für Befehle,
-  Funktionen, Tabellen und Spalten (auch nach `alias.`), Strg+Leertaste für Vorschläge,
-  **Formatieren** auf Knopfdruck (Strg+Umschalt+F), F5 oder Strg+Enter führt aus (auch nur den
-  markierten Text), SQL-Dateien öffnen/speichern, Ergebnis als CSV.
-- **Visual Studio Code + GitHub Copilot**: „In VS Code öffnen“ bearbeitet eine Abfrage in VS Code.
-  *Werkzeuge → VS Code einrichten* installiert SQLTools mit MariaDB-Treiber und legt die Verbindung
-  „EasyMySQL“ an (Ordner `Dokumente\EasyMySQL`). GitHub Copilot ist in aktuellem VS Code eingebaut:
-  einmal mit dem GitHub-Konto anmelden, dann schlägt Copilot beim Tippen SQL vor. Beim ersten
-  Öffnen fragt VS Code, ob man dem Ordner vertraut → „Trust“ wählen. Speichert man die Datei in
-  VS Code, übernimmt EasyMySQL die Änderungen automatisch.
 - **Abfrage-Assistent**: SELECT-Abfragen grafisch zusammenklicken: Spalten anhaken,
   Tabellen über Beziehungen verknüpfen (JOIN), Bedingungen, Sortierung, COUNT/SUM/AVG/MIN/MAX.
 - **ER-Diagramm (Reverse Engineering)**: liest Tabellen, Spalten, Primär- und Fremdschlüssel einer
-  bestehenden Datenbank aus und zeichnet sie mit Beziehungslinien (Krähenfuß-Notation).
+  bestehenden Datenbank aus und zeichnet sie mit Beziehungslinien.
+  - **Beziehungsarten**: 1:1 (eindeutiger Fremdschlüssel), 1:n und n:m (Zwischentabelle) werden
+    erkannt. Optionale Beziehungen (Fremdschlüssel darf leer sein) sind extra gekennzeichnet.
+  - **Notation wählbar**: Krähenfuß (Standard, mit Beschriftung „1:n“, „1:1“, „n:m“ in der
+    Linienmitte), Chen (1, n, m) oder (min,max).
+  - **n:m zusammenfassen**: reine Zwischentabellen ausblenden und als direkte n:m-Linie zeigen.
   - **Automatisch anordnen**: Ebenen-Layout (referenzierte Tabellen links), Kreuzungen werden
-    minimiert, lange Linien laufen über eigene Spuren um Tabellen herum
-  - **Alles anzeigen** zoomt passend, Maus über Tabelle/Linie hebt die Beziehungen hervor
+    minimiert, lange Linien laufen über eigene Spuren um Tabellen herum, Linien am selben
+    Anschluss werden aufgefächert.
   - **Beziehungen anlegen**: am Punkt ● neben einer Spalte ziehen und auf die Zielspalte fallen
-    lassen (oder „+ Beziehung“); Rechtsklick auf eine Linie löscht sie
-  - Kästen verschiebbar, Zoom, Export als **SVG**, Erzeugen des **SQL-Skripts** (CREATE TABLE ...)
+    lassen (oder „+ Beziehung“). Dabei **1:n, 1:1 oder n:m** wählen: 1:1 macht die Spalte
+    zusätzlich eindeutig, n:m legt die Zwischentabelle mit beiden Schlüsseln an.
+    Rechtsklick auf eine Linie löscht sie.
+  - **Alles anzeigen** zoomt passend, Maus über Tabelle/Linie hebt die Beziehungen hervor und
+    erklärt sie (z. B. „1:n – ein Datensatz in kunde gehört zu vielen in bestellung“).
+  - Kästen verschiebbar, Zoom, Export als **SVG**, Erzeugen des **SQL-Skripts** (CREATE TABLE ...).
 - **SQL-Export/-Import**: ganze Datenbank als `.sql` sichern (Struktur + Daten) und wieder einspielen.
 - **Server-Steuerung**: Starten, Stoppen, Neustart, Server-Log, Datenordner öffnen.
+
+### Tastenkürzel
+
+| Taste | Funktion |
+|---|---|
+| `Strg+Alt+S` (oder `F5`) | ganze Datei bzw. Markierung ausführen |
+| `Strg+Enter` | Anweisung an der Cursorposition ausführen |
+| `Strg+Alt+L` (oder `Strg+Umschalt+F`) | SQL formatieren |
+| `Strg+S` | speichern (passiert auch automatisch) |
+| `Strg+N` / `Strg+W` | neue Abfrage / Registerkarte schließen |
+| `Strg+B` | Seitenleiste ein/aus |
+| `Strg+Leertaste` | Vorschläge |
+| `Strg+F` / `Strg+H` / `Strg+G` | Suchen / Ersetzen / Gehe zu Zeile |
+| `Strg+#` | Zeilen aus-/einkommentieren |
+| `Alt+↑/↓`, `Alt+Umschalt+↑/↓` | Zeile verschieben, Zeile kopieren |
 
 ![SQL-Abfrage](docs/sql-abfrage.png)
 
@@ -120,13 +159,16 @@ Zum Entwickeln unter Linux sucht EasyMySQL `mariadbd` in `/usr/sbin`. Mit der Um
 | Datei | Inhalt |
 |---|---|
 | `src/main.rs` | Programmstart, Fenster, nur eine Instanz |
-| `src/app.rs` | Hauptfenster: Menü, Werkzeugleiste, Objekt-Explorer, Dialoge |
-| `src/server.rs` | MariaDB einrichten, starten, stoppen |
-| `src/db.rs` | Verbindung, Abfragen, Metadaten, SQL-Export |
-| `src/tabs/` | SQL-Editor, Daten, Struktur, Tabellen-Designer, ER-Diagramm, Abfrage-Assistent |
-| `src/sqledit.rs` | Code-Editor: Hervorhebung, Autovervollständigung, Formatierung |
+| `src/app.rs`, `src/app/shell.rs` | Hauptfenster im VS-Code-Stil: Menü, Aktivitätsleiste, Seitenleiste, Registerkarten, Dialoge |
+| `src/workspace.rs` | Projekte, Dateibaum, sicheres Speichern, frühere Fassungen, Sitzung |
+| `src/server.rs` | MariaDB einrichten, starten, sauber stoppen, Absturzerkennung, Rettung |
+| `src/backup.rs`, `src/repair.rs` | Sicherungen (erstellen, aufräumen, wiederherstellen), Prüfen und Reparieren |
+| `src/db.rs` | Verbindung, Abfragen, Anweisungen trennen, Metadaten, Beziehungsarten, SQL-Export |
+| `src/tabs/` | SQL-Editor, Daten, Struktur, Tabellen-Designer, ER-Diagramm, Abfrage-Assistent, Sicherungen |
+| `src/sqledit.rs` | Code-Editor: Hervorhebung, Autovervollständigung, Formatierung, Suchen/Ersetzen |
+| `src/style.rs` | dunkles und helles Farbschema |
 | `src/vscode.rs` | Anbindung an Visual Studio Code (SQLTools, Copilot) |
-| `src/platform.rs` | Windows: Infobereich-Symbol, Fenster aus-/einblenden |
+| `src/platform.rs` | Windows: Infobereich-Symbol, Fenster aus-/einblenden, Herunterfahren abfangen |
 | `installer/EasyMySQL.iss` | Inno-Setup-Skript |
 
 Lizenz: EasyMySQL unter MIT. MariaDB steht unter der GPL v2.

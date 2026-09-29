@@ -72,6 +72,7 @@ impl EasyApp {
     pub fn new(cc: &eframe::CreationContext) -> Self {
         let settings = Settings::load();
         style::apply(&cc.egui_ctx, settings.dark);
+        crate::sqledit::set_font_size(settings.editor_font);
         let server = Server::new(3306);
         let hwnd = platform::window_handle(cc);
         let tray = platform::create_tray(&cc.egui_ctx, hwnd);
@@ -543,6 +544,12 @@ impl EasyApp {
                     self.close_tab(a);
                     ui.close();
                 }
+                ui.separator();
+                if ui.button("Einstellungen ...").clicked() {
+                    self.dialogs.push(Dialog::Settings);
+                    ui.close();
+                }
+                ui.separator();
                 if self.tray.is_some() && ui.button("Fenster ausblenden (läuft weiter)").clicked() {
                     ui.close();
                     if let Some(h) = self.hwnd {
@@ -1089,6 +1096,21 @@ impl EasyApp {
                             }
                         });
                         ui.end_row();
+                        ui.label("Editor-Schrift:");
+                        let mut px = self.settings.editor_font;
+                        if ui.add(egui::Slider::new(&mut px, 10..=24).suffix(" px")).changed() {
+                            self.settings.editor_font = px;
+                            crate::sqledit::set_font_size(px);
+                            self.settings.save();
+                        }
+                        ui.end_row();
+                        ui.label("Speichern:");
+                        ui.label(
+                            RichText::new("Dateien werden automatisch gespeichert, frühere Stände unter „Frühere Fassungen“.")
+                                .small()
+                                .color(style::pal().text_weak),
+                        );
+                        ui.end_row();
                         ui.label("Objekt-Explorer:");
                         let mut sys = self.settings.show_system_dbs;
                         if ui.checkbox(&mut sys, "Systemdatenbanken zeigen").changed() {
@@ -1097,13 +1119,29 @@ impl EasyApp {
                         }
                         ui.end_row();
                         ui.label("Sicherungen:");
-                        if ui.button("Sicherungen & Reparatur ...").clicked() {
-                            open_safety = true;
-                            close = true;
-                        }
+                        ui.horizontal(|ui| {
+                            let cfg = crate::backup::Config::load();
+                            let text = if cfg.auto {
+                                format!("automatisch alle {} h, {} Tage aufbewahren", cfg.interval_hours, cfg.keep_days)
+                            } else {
+                                "automatisch: aus".to_string()
+                            };
+                            ui.label(RichText::new(text).small());
+                            if ui.button("Sicherungen & Reparatur ...").clicked() {
+                                open_safety = true;
+                                close = true;
+                            }
+                        });
                         ui.end_row();
                         ui.label("Projekte:");
-                        ui.label(RichText::new(crate::workspace::projects_root().display().to_string()).small());
+                        ui.horizontal(|ui| {
+                            let root = crate::workspace::projects_root();
+                            ui.label(RichText::new(root.display().to_string()).small());
+                            if ui.small_button("Ordner öffnen").clicked() {
+                                let _ = std::fs::create_dir_all(&root);
+                                open_folder(&root);
+                            }
+                        });
                         ui.end_row();
                         ui.label("Visual Studio Code:");
                         if ui.button("VS Code einrichten (SQLTools + Copilot)").clicked() {
@@ -1111,6 +1149,16 @@ impl EasyApp {
                             close = true;
                         }
                         ui.end_row();
+                    });
+                    ui.add_space(6.0);
+                    egui::CollapsingHeader::new("Tastenkürzel").id_salt("shortcuts").show(ui, |ui| {
+                        egui::Grid::new("keys").num_columns(2).spacing([16.0, 3.0]).striped(true).show(ui, |ui| {
+                            for (k, what) in SHORTCUTS {
+                                ui.label(RichText::new(*k).monospace());
+                                ui.label(*what);
+                                ui.end_row();
+                            }
+                        });
                     });
                     ui.add_space(8.0);
                     if ui.button("Schließen").clicked() {
@@ -1270,6 +1318,24 @@ impl EasyApp {
 
 }
 
+/// Tastenkuerzel (Einstellungen und Hilfe)
+const SHORTCUTS: &[(&str, &str)] = &[
+    ("Strg+Alt+S", "ganze Datei bzw. Markierung ausführen (auch F5)"),
+    ("Strg+Enter", "Anweisung an der Cursorposition ausführen"),
+    ("Strg+Alt+L", "SQL formatieren (auch Strg+Umschalt+F)"),
+    ("Strg+S", "speichern (passiert auch automatisch)"),
+    ("Strg+N", "neue Abfrage"),
+    ("Strg+W", "Registerkarte schließen"),
+    ("Strg+B", "Seitenleiste ein/aus"),
+    ("Strg+Leertaste", "Vorschläge (Tabellen, Spalten, Befehle)"),
+    ("Strg+F / Strg+H", "Suchen / Ersetzen"),
+    ("Strg+G", "Gehe zu Zeile"),
+    ("Strg+#", "Zeilen aus-/einkommentieren"),
+    ("Alt+↑ / Alt+↓", "Zeile verschieben"),
+    ("Alt+Umschalt+↑/↓", "Zeile kopieren"),
+    ("Tab / Umschalt+Tab", "einrücken / ausrücken"),
+];
+
 const HELP_TEXT: &str = "\
 EasyMySQL startet beim Öffnen automatisch den MariaDB-Server (Port 3306).
 Solange das Programm läuft – auch im Hintergrund – kann man in der
@@ -1277,37 +1343,51 @@ Eingabeaufforderung (cmd) mit  mysql -u root  arbeiten.
 
 Fenster schließen (X): EasyMySQL läuft im Infobereich (neben der Uhr) weiter.
 Zum richtigen Beenden: Rechtsklick auf das Symbol → Beenden, oder Datei → Beenden.
-Dabei wird auch der Datenbankserver gestoppt.
+Dabei wird auch der Datenbankserver sauber gestoppt.
 
-Objekt-Explorer (links):
-  • Datenbank aufklappen zeigt Tabellen, Tabelle aufklappen zeigt Spalten.
-  • Doppelklick auf eine Tabelle öffnet die Daten.
-  • Rechtsklick öffnet ein Menü (Struktur, löschen, Export, ...).
+Seitenleiste (links, wie in VS Code):
+  • Explorer: Projekte mit Ordnern und .sql-Dateien. Rechtsklick legt Dateien
+    und Ordner an, benennt um oder löscht. Alles wird automatisch gespeichert,
+    frühere Stände unter \"Frühere Fassungen\".
+  • Datenbanken: aufklappen zeigt Tabellen und Spalten, Doppelklick öffnet die
+    Daten, Rechtsklick öffnet ein Menü (Struktur, löschen, Export, ...).
+  • Beim nächsten Start sind alle Registerkarten wieder da.
+
+SQL-Dateien:
+  • Eine Datei darf beliebig viele Anweisungen enthalten (mit ; trennen).
+  • Strg+Alt+S führt die ganze Datei aus – oder nur den markierten Teil.
+  • Strg+Enter führt nur die Anweisung aus, in der der Cursor steht.
+  • Jede Anweisung bekommt ein eigenes Ergebnis bzw. eine Meldung.
+    Fehler werden rot unterstrichen und auf Deutsch erklärt.
+  • Strg+Alt+L formatiert das SQL übersichtlich.
+  • \"In VS Code öffnen\" bearbeitet die Datei in Visual Studio Code
+    (mit SQLTools und GitHub Copilot, siehe Werkzeuge → VS Code einrichten).
 
 Daten bearbeiten:
   • Doppelklick auf eine Zelle, Wert eingeben, Enter speichert sofort.
   • \"+ Neue Zeile\" fügt Datensätze ein.
 
-SQL-Abfrage:
-  • SQL eingeben, F5 oder Strg+Enter führt aus.
-  • Beim Tippen erscheinen Vorschläge (Tabellen, Spalten, Befehle),
-    Strg+Leertaste öffnet sie jederzeit, Enter/Tab übernimmt.
-  • \"Formatieren\" (Strg+Umschalt+F) macht das SQL übersichtlich.
-  • \"In VS Code öffnen\" bearbeitet die Abfrage in Visual Studio Code
-    (mit SQLTools und GitHub Copilot, siehe Werkzeuge → VS Code einrichten).
-  • Ist Text markiert, wird nur dieser ausgeführt.
-  • Mehrere Anweisungen mit ; trennen.
-
 ER-Diagramm (Reverse Engineering):
   • Liest alle Tabellen, Spalten und Fremdschlüssel und zeichnet sie.
-  • Linien zeigen Beziehungen (Krähenfuß = \"viele\"-Seite).
+  • Beziehungsarten: 1:1, 1:n und n:m, optionale Beziehungen mit Kreis.
+    Notation wählbar: Krähenfuß, Chen (1, n, m) oder (min,max).
+  • \"n:m zusammenfassen\" zeigt Zwischentabellen als direkte n:m-Linie.
+  • Am Punkt ● neben einer Spalte ziehen legt eine Beziehung an;
+    dabei kann 1:n, 1:1 oder n:m (mit Zwischentabelle) gewählt werden.
+  • \"Automatisch anordnen\" ordnet alles ohne Linienwirrwarr an.
   • Als SVG speichern oder als SQL-Skript (CREATE TABLE ...) ausgeben.
 
 Abfrage-Assistent:
   • Haupttabelle wählen, Spalten anhaken, verknüpfte Tabellen hinzufügen,
     Bedingungen und Sortierung einstellen – das SQL wird automatisch erzeugt.
 
-Tastenkürzel: F5 Ausführen, Strg+N neue Abfrage, Strg+W Registerkarte schließen.";
+Datensicherheit:
+  • Die Datenbank ist gegen Abstürze, Abschalten und Stromausfall geschützt.
+  • Sicherungen entstehen automatisch beim Start, alle 2 Stunden und vor
+    jedem Löschen (Werkzeuge → Sicherungen & Reparatur).
+  • Ist etwas kaputt: dort \"Prüfen und reparieren\" oder \"Server retten\".
+
+Alle Tastenkürzel: Datei → Einstellungen → Tastenkürzel.";
 
 fn open_url(url: &str) -> std::io::Result<std::process::Child> {
     #[cfg(windows)]
