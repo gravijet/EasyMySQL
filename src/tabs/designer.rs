@@ -132,7 +132,7 @@ impl TabView for DesignerTab {
             super::str_combo(
                 ui,
                 "designer-engine",
-                &["InnoDB".into(), "MyISAM".into(), "Aria".into(), "MEMORY".into()],
+                &["InnoDB".into(), "Aria".into(), "MEMORY".into()],
                 &mut self.engine,
                 120.0,
             );

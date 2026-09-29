@@ -71,6 +71,50 @@ mod imp {
         _icon: TrayIcon,
     }
 
+    // --- Windows herunterfahren / abmelden: Datenbank vorher sauber beenden ---
+    use windows_sys::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
+    use windows_sys::Win32::System::Shutdown::{ShutdownBlockReasonCreate, ShutdownBlockReasonDestroy};
+    use windows_sys::Win32::UI::Shell::{DefSubclassProc, SetWindowSubclass};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{WM_ENDSESSION, WM_QUERYENDSESSION};
+
+    static SHUTDOWN_HOOK: std::sync::OnceLock<Box<dyn Fn() + Send + Sync>> = std::sync::OnceLock::new();
+
+    unsafe extern "system" fn subclass_proc(
+        hwnd: HWND,
+        msg: u32,
+        wparam: WPARAM,
+        lparam: LPARAM,
+        _id: usize,
+        _data: usize,
+    ) -> LRESULT {
+        unsafe {
+            match msg {
+                WM_QUERYENDSESSION => {
+                    let reason = wide("EasyMySQL beendet die Datenbank sicher ...");
+                    ShutdownBlockReasonCreate(hwnd, reason.as_ptr());
+                    1
+                }
+                WM_ENDSESSION => {
+                    if wparam != 0 {
+                        if let Some(f) = SHUTDOWN_HOOK.get() {
+                            f();
+                        }
+                    }
+                    ShutdownBlockReasonDestroy(hwnd);
+                    0
+                }
+                _ => DefSubclassProc(hwnd, msg, wparam, lparam),
+            }
+        }
+    }
+
+    pub fn install_shutdown_hook(hwnd: isize, f: Box<dyn Fn() + Send + Sync>) {
+        let _ = SHUTDOWN_HOOK.set(f);
+        unsafe {
+            SetWindowSubclass(hwnd as HWND, Some(subclass_proc), 0x454D, 0);
+        }
+    }
+
     pub fn create_tray(ctx: egui::Context, hwnd: isize) -> Option<(Tray, Receiver<TrayCmd>)> {
         let (tx, rx) = channel();
         let menu = Menu::new();
@@ -140,6 +184,16 @@ pub fn single_instance() -> bool {
     {
         true
     }
+}
+
+/// Beim Herunterfahren/Abmelden von Windows `f` ausfuehren (Datenbank sauber beenden).
+pub fn install_shutdown_hook(hwnd: Option<isize>, f: Box<dyn Fn() + Send + Sync>) {
+    #[cfg(windows)]
+    if let Some(h) = hwnd {
+        imp::install_shutdown_hook(h, f);
+    }
+    #[cfg(not(windows))]
+    let _ = (hwnd, f);
 }
 
 pub fn window_handle(cc: &eframe::CreationContext) -> Option<isize> {

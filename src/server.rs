@@ -18,6 +18,7 @@ pub enum State {
     Starting,
     Running { own: bool },
     Stopping,
+    Repairing,
     Failed(String),
 }
 
@@ -31,6 +32,7 @@ impl State {
             State::Running { own: true } => "läuft".into(),
             State::Running { own: false } => "läuft (externer Server)".into(),
             State::Stopping => "wird beendet ...".into(),
+            State::Repairing => "wird repariert ...".into(),
             State::Failed(e) => format!("Fehler: {e}"),
         }
     }
@@ -40,7 +42,7 @@ impl State {
     }
 
     pub fn is_busy(&self) -> bool {
-        matches!(self, State::Initializing | State::Starting | State::Stopping)
+        matches!(self, State::Initializing | State::Starting | State::Stopping | State::Repairing)
     }
 }
 
@@ -52,7 +54,120 @@ pub struct Paths {
     pub ini: PathBuf,
 }
 
+/// Einstellungen, die Datenverlust bei Absturz/Stromausfall verhindern.
+pub const SAFETY_OPTIONS: &str = "\
+# --- Datensicherheit (absturz- und stromausfallsicher) ---
+default-storage-engine=InnoDB
+innodb_flush_log_at_trx_commit=1
+innodb_doublewrite=ON
+innodb_file_per_table=ON
+aria_recover_options=BACKUP,QUICK
+myisam_recover_options=BACKUP,FORCE
+";
+
+/// Versatz der Ortszeit zu UTC in Sekunden (Windows: inkl. Sommerzeit).
+pub fn local_offset_secs() -> i64 {
+    #[cfg(windows)]
+    unsafe {
+        use windows_sys::Win32::Foundation::SYSTEMTIME;
+        use windows_sys::Win32::System::SystemInformation::{GetLocalTime, GetSystemTime};
+        let mut l: SYSTEMTIME = std::mem::zeroed();
+        let mut u: SYSTEMTIME = std::mem::zeroed();
+        GetLocalTime(&mut l);
+        GetSystemTime(&mut u);
+        let m = |t: &SYSTEMTIME| t.wDay as i64 * 1440 + t.wHour as i64 * 60 + t.wMinute as i64;
+        let mut diff = m(&l) - m(&u);
+        // Monatswechsel abfangen
+        if diff > 720 {
+            diff -= 1440 * ((diff + 720) / 1440);
+        } else if diff < -720 {
+            diff += 1440 * ((-diff + 720) / 1440);
+        }
+        diff * 60
+    }
+    #[cfg(not(windows))]
+    {
+        0
+    }
+}
+
+/// Zeitstempel in Ortszeit, z. B. "2026-09-29_21-30-05" (sortierbar).
+pub fn timestamp() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    format_ts((secs + local_offset_secs()).max(0) as u64)
+}
+
+/// Sekunden seit 1970 -> "JJJJ-MM-TT_hh-mm-ss"
+pub fn format_ts(secs: u64) -> String {
+    let days = (secs / 86400) as i64;
+    let rem = secs % 86400;
+    // Algorithmus nach H. Hinnant (civil_from_days)
+    let z = days + 719468;
+    let era = z.div_euclid(146097);
+    let doe = z - era * 146097;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    format!("{y:04}-{m:02}-{d:02}_{:02}-{:02}-{:02}", rem / 3600, (rem % 3600) / 60, rem % 60)
+}
+
+/// Ordner rekursiv kopieren.
+pub fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(to)?;
+    for e in std::fs::read_dir(from)? {
+        let e = e?;
+        let target = to.join(e.file_name());
+        if e.file_type()?.is_dir() {
+            copy_dir(&e.path(), &target)?;
+        } else {
+            std::fs::copy(e.path(), &target)?;
+        }
+    }
+    Ok(())
+}
+
+/// Server sauber beenden lassen, ohne Anmeldung.
+pub fn signal_shutdown(pid: u32) {
+    #[cfg(windows)]
+    unsafe {
+        use windows_sys::Win32::Foundation::CloseHandle;
+        use windows_sys::Win32::System::Threading::{EVENT_MODIFY_STATE, OpenEventW, SetEvent};
+        // mariadbd wartet unter Windows auf das Ereignis "MySQLShutdown<PID>"
+        let name: Vec<u16> = format!("MySQLShutdown{pid}").encode_utf16().chain(std::iter::once(0)).collect();
+        let h = OpenEventW(EVENT_MODIFY_STATE, 0, name.as_ptr());
+        if !h.is_null() {
+            SetEvent(h);
+            CloseHandle(h);
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = Command::new("kill").args(["-TERM", &pid.to_string()]).status();
+    }
+}
+
 impl Paths {
+    /// PID des laufenden Servers aus der PID-Datei
+    pub fn read_pid(&self) -> Option<u32> {
+        let mut files = vec![self.base.join("mysql.pid")];
+        if let Ok(rd) = std::fs::read_dir(&self.data) {
+            files.extend(rd.flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "pid")));
+        }
+        files.iter().find_map(|f| std::fs::read_to_string(f).ok()?.trim().parse().ok())
+    }
+
+    /// Existiert, solange der eigene Server laeuft. Bleibt nach einem Absturz liegen.
+    pub fn session_flag(&self) -> PathBuf {
+        self.base.join("server-laeuft.flag")
+    }
+
     /// Existiert eine PID-Datei? Dann laeuft (vermutlich) unser eigener Server.
     pub fn has_pid_file(&self) -> bool {
         if self.base.join("mysql.pid").exists() {
@@ -71,6 +186,7 @@ struct Shared {
     state: State,
     child: Option<Child>,
     log: Vec<String>,
+    unclean: bool,
 }
 
 #[derive(Clone)]
@@ -148,7 +264,7 @@ fn find_bin_dir() -> Option<PathBuf> {
     candidates.into_iter().find(|d| d.join(&server).exists())
 }
 
-fn find_tool(bin: &Path, name: &str) -> PathBuf {
+pub fn find_tool(bin: &Path, name: &str) -> PathBuf {
     let file = format!("{name}{EXE}");
     let p = bin.join(&file);
     if p.exists() {
@@ -174,7 +290,7 @@ fn is_root_user() -> bool {
         || std::env::var("HOME").map(|h| h == "/root").unwrap_or(false)
 }
 
-fn hidden(cmd: &mut Command) -> &mut Command {
+pub fn hidden(cmd: &mut Command) -> &mut Command {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -210,6 +326,7 @@ impl Server {
                 state,
                 child: None,
                 log: Vec::new(),
+                unclean: false,
             })),
             paths,
             port,
@@ -259,7 +376,7 @@ impl Server {
         });
     }
 
-    fn start_blocking(&self, on_change: &dyn Fn()) -> Result<(), String> {
+    pub fn start_blocking(&self, on_change: &dyn Fn()) -> Result<(), String> {
         if port_open(self.port) {
             if self.paths.as_ref().map(|p| p.has_pid_file()).unwrap_or(false) {
                 // Eigener Server aus einer frueheren (abgebrochenen) Sitzung
@@ -289,80 +406,114 @@ impl Server {
             self.set_state(State::Initializing);
             on_change();
             if paths.data.exists() {
-                let backup = paths.base.join(format!(
-                    "data-defekt-{}",
-                    std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .map(|d| d.as_secs())
-                        .unwrap_or(0)
-                ));
+                let backup = paths.base.join(format!("data-unvollstaendig-{}", timestamp()));
                 let _ = std::fs::rename(&paths.data, &backup);
             }
-            self.log(format!("Richte Datenverzeichnis ein: {}", paths.data.display()));
-            let tool = find_tool(&paths.bin, "mariadb-install-db");
-            let mut cmd = Command::new(&tool);
-            cmd.arg(format!("--datadir={}", paths.data.display()));
-            #[cfg(windows)]
-            {
-                cmd.arg(format!("--port={}", self.port));
-            }
-            #[cfg(not(windows))]
-            {
-                cmd.arg("--auth-root-authentication-method=normal");
-                cmd.arg("--skip-test-db");
-                if is_root_user() {
-                    cmd.arg("--user=root");
-                }
-            }
-            let out = hidden(&mut cmd)
-                .stdin(Stdio::null())
-                .output()
-                .map_err(|e| format!("{} konnte nicht gestartet werden: {e}", tool.display()))?;
-            for l in String::from_utf8_lossy(&out.stdout)
-                .lines()
-                .chain(String::from_utf8_lossy(&out.stderr).lines())
-            {
-                self.log(l.to_string());
-            }
-            if !out.status.success() || !paths.data.join("mysql").exists() {
-                return Err("Einrichtung des Datenverzeichnisses fehlgeschlagen (siehe Server-Log).".into());
-            }
+            self.init_datadir(&paths, &paths.data, self.port)?;
         }
 
         // 2. Konfiguration schreiben
+        self.write_ini(&paths, &paths.data, self.port, &paths.ini, &[])?;
+
+        // Lief der Server beim letzten Mal noch, als EasyMySQL/der PC beendet wurde?
+        if paths.session_flag().exists() {
+            self.log("Hinweis: Der Server wurde beim letzten Mal nicht sauber beendet (Absturz, Stromausfall oder hartes Beenden). MariaDB stellt die Daten jetzt automatisch wieder her, danach werden alle Tabellen geprüft.");
+            self.shared.lock().unwrap().unclean = true;
+        }
+
+        // 3. Server starten
+        self.set_state(State::Starting);
+        on_change();
+        let child = self.spawn_mariadbd(&paths, &paths.ini, &[])?;
+        self.shared.lock().unwrap().child = Some(child);
+
+        // 4. Warten, bis der Port erreichbar ist
+        self.wait_ready(self.port, Duration::from_secs(600))?;
+        self.log(format!("Server bereit auf Port {}.", self.port));
+        let _ = std::fs::write(paths.session_flag(), timestamp());
+        self.upgrade_if_needed(&paths);
+        self.set_state(State::Running { own: true });
+        Ok(())
+    }
+
+    /// Leeres Datenverzeichnis anlegen (mariadb-install-db).
+    pub fn init_datadir(&self, paths: &Paths, data: &Path, port: u16) -> Result<(), String> {
+        self.log(format!("Richte Datenverzeichnis ein: {}", data.display()));
+        let tool = find_tool(&paths.bin, "mariadb-install-db");
+        let mut cmd = Command::new(&tool);
+        cmd.arg(format!("--datadir={}", data.display()));
+        #[cfg(windows)]
+        {
+            cmd.arg(format!("--port={port}"));
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = port;
+            cmd.arg("--auth-root-authentication-method=normal");
+            cmd.arg("--skip-test-db");
+            if is_root_user() {
+                cmd.arg("--user=root");
+            }
+        }
+        let out = hidden(&mut cmd)
+            .stdin(Stdio::null())
+            .output()
+            .map_err(|e| format!("{} konnte nicht gestartet werden: {e}", tool.display()))?;
+        for l in String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .chain(String::from_utf8_lossy(&out.stderr).lines())
+        {
+            self.log(l.to_string());
+        }
+        if !out.status.success() || !data.join("mysql").exists() {
+            return Err("Einrichtung des Datenverzeichnisses fehlgeschlagen (siehe Server-Log).".into());
+        }
+        Ok(())
+    }
+
+    /// Konfigurationsdatei schreiben. `extra` = zusaetzliche Zeilen fuer [mysqld].
+    pub fn write_ini(&self, paths: &Paths, data: &Path, port: u16, ini_path: &Path, extra: &[String]) -> Result<(), String> {
         let mut ini = String::new();
         ini.push_str("# Von EasyMySQL erzeugt\n[mysqld]\n");
-        ini.push_str(&format!("datadir={}\n", slash(&paths.data)));
-        ini.push_str(&format!("port={}\n", self.port));
+        ini.push_str(&format!("datadir={}\n", slash(data)));
+        ini.push_str(&format!("port={port}\n"));
         ini.push_str("bind-address=127.0.0.1\n");
         ini.push_str("character-set-server=utf8mb4\n");
         ini.push_str("collation-server=utf8mb4_unicode_ci\n");
         ini.push_str("innodb_buffer_pool_size=128M\n");
         ini.push_str("max_allowed_packet=64M\n");
+        ini.push_str(SAFETY_OPTIONS);
         #[cfg(not(windows))]
         {
-            ini.push_str(&format!("socket={}\n", slash(&paths.base.join("mysql.sock"))));
-            ini.push_str(&format!("pid-file={}\n", slash(&paths.base.join("mysql.pid"))));
+            let sock = if data == paths.data { paths.base.join("mysql.sock") } else { data.with_extension("sock") };
+            ini.push_str(&format!("socket={}\n", slash(&sock)));
+            if data == paths.data {
+                ini.push_str(&format!("pid-file={}\n", slash(&paths.base.join("mysql.pid"))));
+            }
         }
-        ini.push_str(&format!(
-            "\n[client]\nport={}\n",
-            self.port
-        ));
-        std::fs::write(&paths.ini, ini).map_err(|e| format!("my.ini: {e}"))?;
+        #[cfg(windows)]
+        let _ = paths;
+        for e in extra {
+            ini.push_str(e);
+            ini.push('\n');
+        }
+        ini.push_str(&format!("\n[client]\nport={port}\n"));
+        std::fs::write(ini_path, ini).map_err(|e| format!("my.ini: {e}"))
+    }
 
-        // 3. Server starten
-        self.set_state(State::Starting);
-        on_change();
+    /// mariadbd starten; Ausgaben landen im Server-Log.
+    pub fn spawn_mariadbd(&self, paths: &Paths, ini: &Path, args: &[String]) -> Result<Child, String> {
         let server = find_tool(&paths.bin, "mariadbd");
         self.log(format!("Starte {}", server.display()));
         let mut cmd = Command::new(&server);
-        cmd.arg(format!("--defaults-file={}", paths.ini.display()));
+        cmd.arg(format!("--defaults-file={}", ini.display()));
         #[cfg(windows)]
         cmd.arg("--console");
         #[cfg(not(windows))]
         if is_root_user() {
             cmd.arg("--user=root");
         }
+        cmd.args(args);
         let mut child = hidden(&mut cmd)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -383,9 +534,11 @@ impl Server {
                 }
             });
         }
-        self.shared.lock().unwrap().child = Some(child);
+        Ok(child)
+    }
 
-        // 4. Warten, bis der Port erreichbar ist
+    /// Wartet, bis der eigene Server (self.shared.child) auf `port` antwortet.
+    fn wait_ready(&self, port: u16, timeout: Duration) -> Result<(), String> {
         let start = Instant::now();
         loop {
             {
@@ -395,23 +548,179 @@ impl Server {
                         sh.child = None;
                         drop(sh);
                         return Err(format!(
-                            "Server hat sich sofort beendet ({status}). Ist Port {} belegt? Siehe Server-Log.",
-                            self.port
+                            "Server hat sich sofort beendet ({status}). Siehe Server-Log. \
+                             Falls die Datenbank beschädigt ist: Server → Reparieren."
                         ));
                     }
                 }
             }
-            if port_open(self.port) {
-                self.log(format!("Server bereit auf Port {}.", self.port));
-                self.upgrade_if_needed(&paths);
-                self.set_state(State::Running { own: true });
+            if port_open(port) {
                 return Ok(());
             }
-            if start.elapsed() > Duration::from_secs(90) {
+            if start.elapsed() > timeout {
                 return Err("Server antwortet nicht (Zeitüberschreitung).".into());
             }
             std::thread::sleep(Duration::from_millis(200));
         }
+    }
+
+    /// Wartet, bis ein (Rettungs-)Server auf `port` antwortet.
+    fn wait_child_ready(child: &mut Child, port: u16, timeout: Duration) -> Result<(), String> {
+        let start = Instant::now();
+        loop {
+            if let Ok(Some(status)) = child.try_wait() {
+                return Err(format!("Server beendet ({status})"));
+            }
+            if port_open(port) {
+                return Ok(());
+            }
+            if start.elapsed() > timeout {
+                let _ = child.kill();
+                return Err("Zeitüberschreitung".into());
+            }
+            std::thread::sleep(Duration::from_millis(200));
+        }
+    }
+
+    /// Server-Rettung, wenn MariaDB nicht mehr startet oder die Daten stark beschaedigt sind.
+    /// Der beschaedigte Datenordner bleibt immer erhalten (data-defekt-<Zeit>).
+    pub fn rescue(&self, conn: &ConnInfo, backup_dir: &Path, on_change: &dyn Fn()) -> Result<String, String> {
+        let paths = self.paths.clone().ok_or("MariaDB wurde nicht gefunden.")?;
+        let log = |m: String| self.log(m);
+        let mut report = Vec::new();
+
+        // 0. Laufenden Server beenden
+        if self.state().is_running() {
+            log("Beende laufenden Server ...".into());
+            self.stop_blocking(conn);
+        }
+        if port_open(self.port) {
+            return Err(format!("Port {} ist noch belegt – bitte EasyMySQL neu starten und erneut versuchen.", self.port));
+        }
+        self.set_state(State::Repairing);
+        on_change();
+
+        // 1. Beschaedigten Ordner beiseitelegen (nichts wird geloescht)
+        let ts = timestamp();
+        let broken = paths.base.join(format!("data-defekt-{ts}"));
+        let have_old = paths.data.exists();
+        if have_old {
+            std::fs::rename(&paths.data, &broken)
+                .map_err(|e| format!("Datenordner kann nicht umbenannt werden (noch in Benutzung?): {e}"))?;
+            log(format!("Alter Datenordner gesichert als {}", broken.display()));
+            report.push(format!("Der alte Datenordner bleibt erhalten: {}", broken.display()));
+        }
+
+        // 2. Rettungsversuch auf einer Kopie
+        let mut rescued: Option<PathBuf> = None;
+        if have_old {
+            let work = paths.base.join(format!("rettung-{ts}"));
+            log("Kopiere Daten für den Rettungsversuch ...".into());
+            copy_dir(&broken, &work).map_err(|e| format!("Kopieren fehlgeschlagen: {e}"))?;
+            let rport: u16 = 3399;
+            let ini = paths.base.join("rettung.ini");
+            for level in 0..=6u8 {
+                log(format!("Rettungsversuch mit innodb_force_recovery={level} ..."));
+                let mut extra = vec!["skip-grant-tables".to_string()];
+                if level > 0 {
+                    extra.push(format!("innodb_force_recovery={level}"));
+                }
+                self.write_ini(&paths, &work, rport, &ini, &extra)?;
+                let mut child = match self.spawn_mariadbd(&paths, &ini, &[]) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        log(e);
+                        continue;
+                    }
+                };
+                if Self::wait_child_ready(&mut child, rport, Duration::from_secs(300)).is_err() {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    continue;
+                }
+                let env = crate::backup::Env {
+                    paths: paths.clone(),
+                    conn: ConnInfo { port: rport, ..ConnInfo::default() },
+                    dir: backup_dir.to_path_buf(),
+                    force: true,
+                };
+                let res = crate::backup::create(&env, None, "rettung", &log);
+                // Rettungs-Server beenden
+                if mysql::Conn::new(env.conn.opts()).and_then(|mut c| c.query_drop("SHUTDOWN")).is_err() {
+                    let _ = child.kill();
+                }
+                let _ = child.wait();
+                match res {
+                    Ok(dir) => {
+                        log(format!("Daten gerettet nach {}", dir.display()));
+                        report.push(format!("Daten gerettet (Stufe {level})."));
+                        rescued = Some(dir);
+                        break;
+                    }
+                    Err(e) => log(format!("Sichern fehlgeschlagen: {e}")),
+                }
+            }
+            let _ = std::fs::remove_dir_all(&work);
+            let _ = std::fs::remove_file(&ini);
+        }
+
+        // 3. Frischen Datenordner anlegen und Server starten
+        self.set_state(State::Initializing);
+        on_change();
+        self.init_datadir(&paths, &paths.data, self.port)?;
+        let _ = std::fs::remove_file(paths.session_flag());
+        self.set_state(State::Stopped);
+        self.start_blocking(on_change)?;
+        on_change();
+
+        // 4. Daten einspielen: gerettete Daten oder neueste Sicherung je Datenbank
+        let env = crate::backup::Env {
+            paths: paths.clone(),
+            conn: ConnInfo::default(),
+            dir: backup_dir.to_path_buf(),
+            force: false,
+        };
+        let backups = crate::backup::list(backup_dir);
+        let mut restored = Vec::new();
+        // Welche Datenbanken gab es? (gerettete + alle aus Sicherungen)
+        let mut all_dbs: Vec<String> = Vec::new();
+        for b in &backups {
+            for (db, _) in &b.dbs {
+                if !all_dbs.contains(db) {
+                    all_dbs.push(db.clone());
+                }
+            }
+        }
+        for db in all_dbs {
+            // 1. Wahl: frisch gerettete Daten, 2. Wahl: neueste Sicherung dieser Datenbank
+            let rescued_file = rescued.as_ref().map(|d| d.join(format!("{db}.sql.gz"))).filter(|f| f.exists());
+            let source = match rescued_file {
+                Some(f) => Some((f, "gerettet".to_string())),
+                None => backups
+                    .iter()
+                    .filter(|b| b.reason != "rettung")
+                    .find(|b| b.dbs.iter().any(|(d, _)| *d == db))
+                    .map(|b| (b.path.join(format!("{db}.sql.gz")), format!("Sicherung vom {}", b.time))),
+            };
+            let Some((file, what)) = source else { continue };
+            match crate::backup::restore(&env, &file, &db, &log) {
+                Ok(_) => restored.push(format!("{db} ({what})")),
+                Err(e) => log(format!("{db}: {e}")),
+            }
+        }
+        if restored.is_empty() {
+            report.push("Es waren keine Datenbanken zum Wiederherstellen vorhanden.".into());
+        } else {
+            report.push(format!("Wiederhergestellt: {}", restored.join(", ")));
+        }
+        report.push("Benutzerkonten wurden zurückgesetzt: root ohne Passwort.".into());
+        log("Server-Rettung abgeschlossen.".into());
+        Ok(report.join("\n"))
+    }
+
+    /// Wurde der Server beim letzten Mal nicht sauber beendet? (einmalig abfragen)
+    pub fn take_unclean(&self) -> bool {
+        std::mem::take(&mut self.shared.lock().unwrap().unclean)
     }
 
     /// Nach einem Update auf eine neuere MariaDB-Version die Systemtabellen
@@ -466,9 +775,18 @@ impl Server {
         let mut info = conn.clone();
         info.host = "127.0.0.1".into();
         info.port = self.port;
-        if let Ok(mut c) = mysql::Conn::new(info.opts()) {
-            let _ = c.query_drop("SHUTDOWN");
+        let sql_ok = mysql::Conn::new(info.opts())
+            .and_then(|mut c| c.query_drop("SHUTDOWN"))
+            .is_ok();
+        if !sql_ok {
+            // Ohne Anmeldung: Signal an den Serverprozess (ebenfalls sauberes Herunterfahren)
+            let pid = self.shared.lock().unwrap().child.as_ref().map(|c| c.id()).or_else(|| self.paths.as_ref().and_then(|p| p.read_pid()));
+            if let Some(pid) = pid {
+                self.log(format!("Sende Beenden-Signal an Prozess {pid} ..."));
+                signal_shutdown(pid);
+            }
         }
+        let mut killed = false;
         let start = Instant::now();
         loop {
             let mut sh = self.shared.lock().unwrap();
@@ -480,20 +798,24 @@ impl Server {
                 sh.child = None;
                 break;
             }
-            if start.elapsed() > Duration::from_secs(20) {
+            if start.elapsed() > Duration::from_secs(60) {
                 if let Some(c) = sh.child.as_mut() {
                     let _ = c.kill();
                     let _ = c.wait();
                 }
                 sh.child = None;
                 drop(sh);
-                self.log("Server musste hart beendet werden.");
+                killed = true;
+                self.log("Server musste hart beendet werden (Daten werden beim nächsten Start automatisch wiederhergestellt).");
                 break;
             }
             drop(sh);
             std::thread::sleep(Duration::from_millis(100));
         }
         self.log("Server beendet.");
+        if let (Some(p), false) = (&self.paths, killed) {
+            let _ = std::fs::remove_file(p.session_flag());
+        }
         self.set_state(State::Stopped);
     }
 

@@ -68,6 +68,8 @@ pub struct QueryOutput {
     pub error: Option<String>,
     pub elapsed: Duration,
     pub database: Option<String>,
+    /// Zusatzhinweis (z. B. "vorher gesichert")
+    pub note: Option<String>,
 }
 
 pub const MAX_ROWS: usize = 50_000;

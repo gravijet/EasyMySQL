@@ -90,7 +90,28 @@ impl SqlTab {
                     }
                 }
             }
-            let out = db::run_script(&mut conn, &sql);
+            // Vor DROP/TRUNCATE/DELETE ohne WHERE automatisch sichern
+            let targets = crate::backup::destructive_targets(&sql, Some(&database));
+            let mut note = None;
+            if !targets.is_empty() {
+                if let Some(env) = crate::backup::env() {
+                    match crate::backup::create(&env, Some(targets.clone()), "vor-loeschen", &|_| {}) {
+                        Ok(_) => note = Some(format!("Vorher automatisch gesichert: {}", targets.join(", "))),
+                        Err(e) => {
+                            let out = QueryOutput {
+                                error: Some(format!(
+                                    "Nicht ausgeführt: Die automatische Sicherung vor dem Löschen ist fehlgeschlagen ({e})"
+                                )),
+                                ..Default::default()
+                            };
+                            let _ = tx.send((Some(conn), out));
+                            return;
+                        }
+                    }
+                }
+            }
+            let mut out = db::run_script(&mut conn, &sql);
+            out.note = note;
             if let Some(e) = &out.error {
                 // Verbindung verloren? Dann neu aufbauen lassen.
                 if e.contains("IoError") || e.contains("broken pipe") || e.contains("gone away") {
@@ -307,6 +328,9 @@ impl TabView for SqlTab {
                     msg.push_str(&format!(", {affected} Zeile(n) betroffen"));
                 }
                 ui.label(RichText::new(msg).color(style::OK_TEXT));
+            }
+            if let Some(n) = &out.note {
+                ui.label(RichText::new(n).small().color(style::NULL_TEXT));
             }
         });
         let tables: Vec<usize> = out

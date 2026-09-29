@@ -20,6 +20,7 @@ enum Dialog {
     Export { db: String, with_data: bool },
     About,
     Help,
+    Myisam(Vec<(String, String)>),
 }
 
 pub struct EasyApp {
@@ -40,6 +41,10 @@ pub struct EasyApp {
     quitting: bool,
     last_state: State,
     vscode_job: Option<Receiver<Result<String, String>>>,
+    backup_job: Option<Receiver<Result<String, String>>>,
+    backup_last_check: Option<std::time::Instant>,
+    check_job: Option<Receiver<Result<crate::repair::CheckResult, String>>>,
+    myisam_hint_done: bool,
 }
 
 const COLLATIONS: &[&str] = &[
@@ -58,6 +63,16 @@ impl EasyApp {
         let server = Server::new(3306);
         let hwnd = platform::window_handle(cc);
         let tray = platform::create_tray(&cc.egui_ctx, hwnd);
+        {
+            let srv = server.clone();
+            let conn = settings.conn.clone();
+            platform::install_shutdown_hook(
+                hwnd,
+                Box::new(move || {
+                    srv.stop_blocking(&conn);
+                }),
+            );
+        }
         let ctx = cc.egui_ctx.clone();
         server.start(move || ctx.request_repaint());
         EasyApp {
@@ -78,6 +93,10 @@ impl EasyApp {
             quitting: false,
             last_state: State::Stopped,
             vscode_job: None,
+            backup_job: None,
+            backup_last_check: None,
+            check_job: None,
+            myisam_hint_done: false,
         }
     }
 
@@ -88,8 +107,28 @@ impl EasyApp {
         match Db::connect(&self.settings.conn) {
             Ok(db) => {
                 self.status = format!("Verbunden mit {} (MariaDB {}).", db.info.label(), db.version);
+                let info = db.info.clone();
                 self.db = Some(db);
+                self.update_backup_env();
                 self.refresh_all();
+                // Nach einem Absturz: alle Tabellen im Hintergrund pruefen
+                if self.server.take_unclean() {
+                    let (tx, rx) = std::sync::mpsc::channel();
+                    let conn = info.clone();
+                    std::thread::spawn(move || {
+                        let _ = tx.send(crate::repair::check_all(&conn, false, &|_| {}));
+                    });
+                    self.check_job = Some(rx);
+                    self.status = "Server wurde zuletzt nicht sauber beendet – prüfe alle Tabellen ...".into();
+                }
+                if !self.myisam_hint_done {
+                    self.myisam_hint_done = true;
+                    if let Ok(list) = crate::repair::myisam_tables(&info) {
+                        if !list.is_empty() {
+                            self.dialogs.push(Dialog::Myisam(list));
+                        }
+                    }
+                }
             }
             Err(e) => {
                 self.db = None;
@@ -100,6 +139,83 @@ impl EasyApp {
                         save_pw: self.settings.save_password,
                         error: Some(e),
                     });
+                }
+            }
+        }
+    }
+
+    fn update_backup_env(&mut self) {
+        let env = match (&self.db, &self.server.paths) {
+            (Some(db), Some(paths)) => Some(crate::backup::Env {
+                paths: paths.clone(),
+                conn: db.info.clone(),
+                dir: crate::backup::Config::load().dir(),
+                force: false,
+            }),
+            _ => None,
+        };
+        crate::backup::set_env(env);
+    }
+
+    /// Automatische Sicherung (alle x Stunden) und Pruefergebnisse abholen.
+    fn background_tasks(&mut self, ctx: &egui::Context) {
+        if let Some(rx) = &self.backup_job {
+            if let Ok(r) = rx.try_recv() {
+                self.backup_job = None;
+                match r {
+                    Ok(m) => self.status = m,
+                    Err(e) => self.status = format!("Automatische Sicherung fehlgeschlagen: {e}"),
+                }
+            }
+        }
+        if let Some(rx) = &self.check_job {
+            if let Ok(r) = rx.try_recv() {
+                self.check_job = None;
+                match r {
+                    Ok(res) if res.problems.is_empty() => {
+                        self.status = format!(
+                            "Nach dem unerwarteten Ende wurden {} Tabellen geprüft – alles in Ordnung.",
+                            res.checked
+                        );
+                    }
+                    Ok(res) => {
+                        let list: Vec<String> = res.problems.iter().map(|(t, m)| format!("• {t}: {m}")).collect();
+                        self.dialogs.push(Dialog::Message {
+                            title: "Beschädigte Tabellen gefunden".into(),
+                            text: format!(
+                                "Nach dem unerwarteten Ende wurden Probleme gefunden:\n\n{}\n\n\
+                                 Bitte unter \"Sicherungen & Reparatur\" auf \"Prüfen und reparieren\" klicken.",
+                                list.join("\n")
+                            ),
+                            error: true,
+                        });
+                        self.open_tab(Box::new(crate::tabs::safety::SafetyTab::new()));
+                    }
+                    Err(e) => self.status = format!("Prüfung fehlgeschlagen: {e}"),
+                }
+            }
+        }
+        // Regelmaessige Sicherung
+        let now = std::time::Instant::now();
+        let check = self.backup_last_check.is_none_or(|t| now.duration_since(t).as_secs() >= 60);
+        if check && self.backup_job.is_none() && self.db.is_some() && self.server.state().is_running() {
+            self.backup_last_check = Some(now);
+            let cfg = crate::backup::Config::load();
+            let dir = cfg.dir();
+            if cfg.auto && crate::backup::due(&dir, std::time::Duration::from_secs(cfg.interval_hours * 3600)) {
+                self.update_backup_env();
+                if let Some(env) = crate::backup::env() {
+                    let (tx, rx) = std::sync::mpsc::channel();
+                    let ctx = ctx.clone();
+                    std::thread::spawn(move || {
+                        let r = crate::backup::create(&env, None, "auto", &|_| {}).map(|d| {
+                            crate::backup::rotate(&cfg.dir(), cfg.keep_count, cfg.keep_days);
+                            format!("Automatische Sicherung erstellt ({})", d.file_name().unwrap_or_default().to_string_lossy())
+                        });
+                        let _ = tx.send(r);
+                        ctx.request_repaint();
+                    });
+                    self.backup_job = Some(rx);
                 }
             }
         }
@@ -127,6 +243,7 @@ impl EasyApp {
                 db: self.db.as_ref(),
                 schemas: &mut self.schemas,
                 databases: &self.databases,
+                server: &self.server,
                 actions: &mut actions,
             };
             for t in self.tabs.iter_mut() {
@@ -210,6 +327,7 @@ impl EasyApp {
                             db: self.db.as_ref(),
                             schemas: &mut self.schemas,
                             databases: &self.databases,
+                            server: &self.server,
                             actions: &mut acts,
                         };
                         tab.execute(&mut cx);
@@ -233,6 +351,7 @@ impl EasyApp {
                         db: self.db.as_ref(),
                         schemas: &mut self.schemas,
                         databases: &self.databases,
+                        server: &self.server,
                         actions: &mut acts,
                     };
                     for t in self.tabs.iter_mut() {
@@ -243,6 +362,19 @@ impl EasyApp {
                 Action::Status(s) => self.status = s,
                 Action::Error(e) => self.error(e),
                 Action::Confirm { text, db, sql } => self.dialogs.push(Dialog::Confirm { text, db, sql }),
+                Action::Reconnect => {
+                    self.auto_connect = true;
+                    if self.server.state().is_running() && self.db.is_none() {
+                        self.connect(true);
+                    }
+                }
+                Action::Disconnect => {
+                    self.db = None;
+                    self.databases.clear();
+                    self.schemas.clear();
+                    crate::backup::set_env(None);
+                }
+                Action::OpenSafety => self.open_tab(Box::new(crate::tabs::safety::SafetyTab::new())),
             }
         }
     }
@@ -435,6 +567,10 @@ impl EasyApp {
                         ui.close();
                     }
                 }
+                if ui.button("Sicherungen & Reparatur...").clicked() {
+                    self.handle_actions(vec![Action::OpenSafety]);
+                    ui.close();
+                }
                 if ui.button("Server-Log anzeigen").clicked() {
                     self.show_log = true;
                     ui.close();
@@ -516,6 +652,7 @@ impl EasyApp {
                             db: self.db.as_ref(),
                             schemas: &mut self.schemas,
                             databases: &self.databases,
+                            server: &self.server,
                             actions: &mut acts,
                         };
                         tab.execute(&mut cx);
@@ -576,6 +713,7 @@ impl EasyApp {
                 db: self.db.as_ref(),
                 schemas: &mut self.schemas,
                 databases: &self.databases,
+                server: &self.server,
                 actions,
             };
             t.execute(&mut cx);
@@ -804,6 +942,9 @@ impl EasyApp {
                 if ui.button("Server-Log").clicked() {
                     self.show_log = true;
                 }
+                if matches!(st, State::Failed(_)) && ui.button("Reparieren...").clicked() {
+                    self.handle_actions(vec![Action::OpenSafety]);
+                }
             });
         });
         ui.add_space(10.0);
@@ -828,6 +969,7 @@ impl EasyApp {
         let mut do_connect: Option<(ConnInfo, bool)> = None;
         let mut export: Option<(String, bool)> = None;
         let mut create_db: Option<(String, String)> = None;
+        let mut convert: Option<Vec<(String, String)>> = None;
 
         let frame = egui::Frame::window(&ctx.global_style()).inner_margin(egui::Margin::same(14));
         let modal = egui::Modal::new(egui::Id::new("dialog")).frame(frame).show(ctx, |ui| {
@@ -956,6 +1098,27 @@ impl EasyApp {
                         close = true;
                     }
                 }
+                Dialog::Myisam(list) => {
+                    ui.label(RichText::new("Nicht absturzsichere Tabellen").strong());
+                    ui.add_space(4.0);
+                    ui.label(format!(
+                        "{} Tabelle(n) verwenden die Speicher-Engine MyISAM. Bei einem Absturz oder Stromausfall \
+                         können diese Tabellen beschädigt werden. InnoDB ist absturzsicher.",
+                        list.len()
+                    ));
+                    let names: Vec<String> = list.iter().take(10).map(|(d, t)| format!("{d}.{t}")).collect();
+                    ui.label(RichText::new(names.join(", ")).small());
+                    ui.add_space(6.0);
+                    ui.horizontal(|ui| {
+                        if ui.button("Jetzt in InnoDB umwandeln").clicked() {
+                            convert = Some(list.clone());
+                            close = true;
+                        }
+                        if ui.button("Später").clicked() {
+                            close = true;
+                        }
+                    });
+                }
                 Dialog::Help => {
                     ui.label(RichText::new("Kurzanleitung").strong());
                     ui.add_space(4.0);
@@ -974,6 +1137,21 @@ impl EasyApp {
         }
 
         if let Some((db, sql)) = run_sql {
+            // Vor dem Loeschen automatisch sichern
+            let targets = crate::backup::destructive_targets(&sql, db.as_deref());
+            if !targets.is_empty() {
+                self.update_backup_env();
+                if let Some(env) = crate::backup::env() {
+                    self.status = format!("Sichere {} ...", targets.join(", "));
+                    if let Err(e) = crate::backup::create(&env, Some(targets), "vor-loeschen", &|_| {}) {
+                        self.dialogs.pop();
+                        self.error(format!(
+                            "Die Sicherung vor dem Löschen ist fehlgeschlagen – der Vorgang wurde abgebrochen.\n\n{e}"
+                        ));
+                        return;
+                    }
+                }
+            }
             if let Some(dbc) = &self.db {
                 let res = match &db {
                     Some(d) => dbc.exec_in(d, &sql),
@@ -995,6 +1173,12 @@ impl EasyApp {
                         self.error(e);
                     }
                 }
+            }
+        }
+        if let (Some(list), Some(dbc)) = (convert, &self.db) {
+            match crate::repair::convert_to_innodb(&dbc.info, &list, &|_| {}) {
+                Ok(n) => self.status = format!("{n} Tabelle(n) in InnoDB umgewandelt."),
+                Err(e) => self.error(e),
             }
         }
         if let Some((name, coll)) = create_db {
@@ -1153,7 +1337,7 @@ fn open_url(url: &str) -> std::io::Result<std::process::Child> {
     }
 }
 
-fn open_folder(p: &std::path::Path) {
+pub fn open_folder(p: &std::path::Path) {
     #[cfg(windows)]
     let _ = std::process::Command::new("explorer").arg(p).spawn();
     #[cfg(not(windows))]
@@ -1177,6 +1361,7 @@ impl eframe::App for EasyApp {
         }
         self.check_server(ctx);
         self.poll_vscode();
+        self.background_tasks(ctx);
 
         // Fenster schliessen = im Hintergrund weiterlaufen
         if ctx.input(|i| i.viewport().close_requested()) && !self.quitting {
@@ -1233,6 +1418,7 @@ impl eframe::App for EasyApp {
                     db: self.db.as_ref(),
                     schemas: &mut self.schemas,
                     databases: &self.databases,
+                    server: &self.server,
                     actions: &mut actions,
                 };
                 egui::Frame::new()
