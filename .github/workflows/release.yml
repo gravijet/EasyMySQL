@@ -106,10 +106,15 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $data = "$env:RUNNER_TEMP\mdbtest"
           & build/mariadb/bin/mariadb-install-db.exe "--datadir=$data" --port=3399
-          $p = Start-Process build/mariadb/bin/mariadbd.exe -ArgumentList "--datadir=$data","--port=3399","--console" -PassThru -NoNewWindow
+          # Gleiche Sicherheitseinstellungen wie in der App (src/server.rs, SAFETY_OPTIONS)
+          $safety = "--default-storage-engine=InnoDB","--innodb-flush-log-at-trx-commit=1","--innodb-doublewrite=ON","--innodb-file-per-table=ON","--aria-recover-options=BACKUP,QUICK","--myisam-recover-options=BACKUP,FORCE"
+          $p = Start-Process build/mariadb/bin/mariadbd.exe -ArgumentList (@("--datadir=$data","--port=3399","--console") + $safety) -PassThru -NoNewWindow
           Start-Sleep -Seconds 8
-          & build/mariadb/bin/mysql.exe -u root -P 3399 -h 127.0.0.1 -e "SELECT VERSION(); CREATE DATABASE t; SHOW DATABASES;"
+          & build/mariadb/bin/mysql.exe -u root -P 3399 -h 127.0.0.1 -e "SELECT VERSION(), @@innodb_flush_log_at_trx_commit, @@innodb_doublewrite; CREATE DATABASE t; CREATE TABLE t.x (id INT PRIMARY KEY); INSERT INTO t.x VALUES (1),(2); SHOW DATABASES;"
           if ($LASTEXITCODE -ne 0) { throw "mysql -u root fehlgeschlagen" }
+          # Sicherung und Wiederherstellung wie in der App
+          & build/mariadb/bin/mariadb-dump.exe -u root -P 3399 -h 127.0.0.1 --single-transaction --routines --triggers --events t | Out-File -Encoding utf8 "$env:RUNNER_TEMP\t.sql"
+          if ($LASTEXITCODE -ne 0) { throw "mariadb-dump fehlgeschlagen" }
           & build/mariadb/bin/mariadb-admin.exe -u root -P 3399 -h 127.0.0.1 shutdown
           $p.WaitForExit(20000) | Out-Null
 

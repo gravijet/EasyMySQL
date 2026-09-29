@@ -4,6 +4,7 @@ pub mod builder;
 pub mod data;
 pub mod designer;
 pub mod er;
+pub mod safety;
 pub mod sql;
 pub mod structure;
 
@@ -27,6 +28,11 @@ pub enum Action {
     Error(String),
     /// Nach Bestaetigung SQL ausfuehren
     Confirm { text: String, db: Option<String>, sql: String },
+    /// Nach Server-Rettung/Neustart wieder verbinden
+    Reconnect,
+    /// Verbindung trennen (z. B. vor der Server-Rettung)
+    Disconnect,
+    OpenSafety,
 }
 
 #[derive(Default)]
@@ -66,6 +72,7 @@ pub struct Ctx<'a> {
     pub db: Option<&'a Db>,
     pub schemas: &'a mut SchemaCache,
     pub databases: &'a [String],
+    pub server: &'a crate::server::Server,
     pub actions: &'a mut Vec<Action>,
 }
 

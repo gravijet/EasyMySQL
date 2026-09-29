@@ -32,6 +32,27 @@ Das Setup installiert bzw. setzt:
 Zugang: Server `127.0.0.1`, Port `3306`, Benutzer `root`, **kein Passwort**.
 Der Server ist nur vom eigenen PC aus erreichbar (`bind-address=127.0.0.1`).
 
+## Datensicherheit, Sicherungen und Reparatur
+
+- **Absturzsicher**: MariaDB läuft mit InnoDB und sofortigem Schreiben jeder bestätigten Änderung
+  (`innodb_flush_log_at_trx_commit=1`, Doublewrite). Auch wenn EasyMySQL oder der PC hart beendet
+  wird (Task-Manager, Stromausfall), gehen bestätigte Daten nicht verloren. Getestet mit
+  `kill -9` mitten in zehntausenden Schreibvorgängen: keine einzige bestätigte Zeile fehlte.
+- **Windows herunterfahren/abmelden**: EasyMySQL fährt die Datenbank vorher sauber herunter.
+- **Nach einem Absturz** erkennt EasyMySQL das beim nächsten Start, MariaDB stellt die Daten
+  automatisch wieder her und EasyMySQL prüft danach alle Tabellen.
+- **Automatische Sicherungen** (*Server → Sicherungen & Reparatur*): beim Start und alle 2 Stunden,
+  außerdem automatisch **vor jedem Löschen/Leeren** von Datenbanken und Tabellen (auch im
+  SQL-Editor: `DROP`, `TRUNCATE`, `DELETE`/`UPDATE` ohne `WHERE`). Aufbewahrt werden die letzten 10
+  und eine pro Tag für 14 Tage (einstellbar, Ordner frei wählbar, z. B. USB-Stick).
+  Wiederherstellen per Klick, auch unter neuem Namen.
+- **Reparieren per Knopfdruck**:
+  - *Prüfen und reparieren*: prüft alle Tabellen (`CHECK TABLE`) und repariert beschädigte.
+  - *MyISAM → InnoDB*: wandelt nicht absturzsichere Tabellen um (EasyMySQL weist darauf hin).
+  - *Server retten*: wenn MariaDB gar nicht mehr startet. Der alte Datenordner bleibt erhalten,
+    die Daten werden gerettet (notfalls aus der neuesten Sicherung) und in einen neuen
+    Datenordner eingespielt.
+
 ## Verhalten
 
 - Der Datenbankserver läuft **nur, solange EasyMySQL geöffnet ist**.
