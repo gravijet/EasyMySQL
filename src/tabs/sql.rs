@@ -4,7 +4,8 @@ use super::{Action, Ctx, TabView};
 use crate::db::{self, QueryOutput};
 use crate::grid::{self, GridState};
 use crate::style;
-use eframe::egui::{self, Key, KeyboardShortcut, Modifiers, RichText};
+use crate::sqledit::{self, SqlEditor, Words};
+use eframe::egui::{self, RichText};
 use mysql::Conn;
 use mysql::prelude::*;
 use std::sync::mpsc::{Receiver, channel};
@@ -21,12 +22,18 @@ pub struct SqlTab {
     shown_set: usize,
     grid: GridState,
     pub file: Option<std::path::PathBuf>,
+    file_mtime: Option<std::time::SystemTime>,
+    editor: SqlEditor,
+    selection: Option<String>,
+    words: Words,
+    words_for: String,
 }
 
 impl SqlTab {
     pub fn new(database: Option<String>, text: String) -> Self {
+        let number = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         Self {
-            number: COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            number,
             database: database.unwrap_or_default(),
             text,
             conn: None,
@@ -35,6 +42,11 @@ impl SqlTab {
             shown_set: 0,
             grid: GridState::default(),
             file: None,
+            file_mtime: None,
+            editor: SqlEditor::new(egui::Id::new(("sql-editor", number))),
+            selection: None,
+            words: Words::default(),
+            words_for: "\u{0}".into(),
         }
     }
 
@@ -92,18 +104,6 @@ impl SqlTab {
         self.grid.reset();
     }
 
-    fn selected_or_all(&self, ui: &egui::Ui, id: egui::Id) -> String {
-        if let Some(state) = egui::TextEdit::load_state(ui.ctx(), id) {
-            if let Some(range) = state.cursor.char_range() {
-                let s = range.slice_str(&self.text);
-                if !s.trim().is_empty() {
-                    return s.to_string();
-                }
-            }
-        }
-        self.text.clone()
-    }
-
     fn poll(&mut self, cx: &mut Ctx) {
         if let Some(rx) = &self.job {
             if let Ok((conn, out)) = rx.try_recv() {
@@ -146,6 +146,12 @@ impl TabView for SqlTab {
         self.job.is_some()
     }
 
+    fn schema_changed(&mut self, db: &str, _cx: &mut Ctx) {
+        if db == self.database {
+            self.words_for = "\u{0}".into();
+        }
+    }
+
     fn execute(&mut self, cx: &mut Ctx) {
         let sql = self.text.clone();
         if !sql.trim().is_empty() {
@@ -158,10 +164,22 @@ impl TabView for SqlTab {
         if self.job.is_some() {
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(50));
         }
-        let editor_id = ui.make_persistent_id(("sql-editor", self.number));
+        // Woerter fuer die Autovervollstaendigung (Tabellen/Spalten der Datenbank)
+        if self.words_for != self.database {
+            self.words_for = self.database.clone();
+            self.words = Words::default();
+            if let Some(s) = cx.schema(&self.database) {
+                for t in &s.tables {
+                    self.words.tables.push(t.name.clone());
+                    for c in &t.columns {
+                        self.words.columns.push((t.name.clone(), c.name.clone()));
+                    }
+                }
+            }
+        }
 
         // Werkzeugleiste
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             ui.label("Datenbank:");
             let mut dbs = vec![String::new()];
             dbs.extend(cx.databases.iter().cloned());
@@ -171,8 +189,15 @@ impl TabView for SqlTab {
                 .add_enabled(self.job.is_none(), egui::Button::new("▶ Ausführen (F5)"))
                 .on_hover_text("Führt alles oder nur den markierten Text aus. Auch mit Strg+Enter.");
             if run.clicked() {
-                let sql = self.selected_or_all(ui, editor_id);
+                let sql = self.selection.clone().unwrap_or_else(|| self.text.clone());
                 self.run(cx, sql);
+            }
+            if ui
+                .button("Formatieren")
+                .on_hover_text("SQL schön formatieren (Strg+Umschalt+F)")
+                .clicked()
+            {
+                self.text = sqledit::format_sql(&self.text);
             }
             if ui.button("Leeren").clicked() {
                 self.text.clear();
@@ -204,6 +229,25 @@ impl TabView for SqlTab {
                     }
                 }
             }
+            if ui
+                .button("In VS Code öffnen")
+                .on_hover_text("Abfrage in Visual Studio Code bearbeiten (mit SQLTools und GitHub Copilot)")
+                .clicked()
+            {
+                let name = self
+                    .file
+                    .as_ref()
+                    .and_then(|f| f.file_name())
+                    .map(|f| f.to_string_lossy().into_owned())
+                    .unwrap_or(format!("abfrage-{}.sql", self.number));
+                match crate::vscode::open_sql(&name, &self.text, &self.database) {
+                    Ok(p) => {
+                        cx.status(format!("In VS Code geöffnet: {}", p.display()));
+                        self.file = Some(p);
+                    }
+                    Err(e) => cx.error(e),
+                }
+            }
             if self.job.is_some() {
                 ui.spinner();
                 ui.label("Abfrage läuft ...");
@@ -211,34 +255,33 @@ impl TabView for SqlTab {
         });
         ui.add_space(2.0);
 
-        let ctrl_enter = KeyboardShortcut::new(Modifiers::COMMAND, Key::Enter);
+        // Aenderungen aus VS Code uebernehmen (gleiche Datei)
+        if let Some(f) = &self.file {
+            if let Ok(meta) = std::fs::metadata(f) {
+                let mtime = meta.modified().ok();
+                if self.file_mtime.is_some() && mtime != self.file_mtime {
+                    if let Ok(b) = std::fs::read(f) {
+                        self.text = String::from_utf8_lossy(&b).into_owned();
+                    }
+                }
+                self.file_mtime = mtime;
+            }
+            ui.ctx().request_repaint_after(std::time::Duration::from_secs(1));
+        }
+
         let avail = ui.available_height();
-        let editor_h = (avail * 0.42).max(80.0);
+        let editor_h = (avail * 0.45).max(100.0);
 
         // Editor
-        style::sunken_frame().show(ui, |ui| {
-            egui::ScrollArea::vertical()
-                .id_salt(("sqlscroll", self.number))
-                .max_height(editor_h)
-                .min_scrolled_height(editor_h)
-                .show(ui, |ui| {
-                    let resp = ui.add_sized(
-                        [ui.available_width(), editor_h],
-                        egui::TextEdit::multiline(&mut self.text)
-                            .id(editor_id)
-                            .font(egui::TextStyle::Monospace)
-                            .code_editor()
-                            .frame(egui::Frame::NONE)
-                            .hint_text("SQL hier eingeben, z. B.  SELECT * FROM tabelle;")
-                            .lock_focus(true)
-                            .desired_width(f32::INFINITY),
-                    );
-                    if resp.has_focus() && ui.input_mut(|i| i.consume_shortcut(&ctrl_enter)) {
-                        let sql = self.selected_or_all(ui, editor_id);
-                        self.run(cx, sql);
-                    }
-                });
-        });
+        let out = self.editor.show(ui, &mut self.text, &self.words, editor_h);
+        self.selection = out.selection;
+        if out.format {
+            self.text = sqledit::format_sql(&self.text);
+        }
+        if out.run {
+            let sql = self.selection.clone().unwrap_or_else(|| self.text.clone());
+            self.run(cx, sql);
+        }
         ui.add_space(4.0);
 
         // Ergebnis

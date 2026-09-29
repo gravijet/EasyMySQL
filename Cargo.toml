@@ -1,6 +1,6 @@
 [package]
 name = "easymysql"
-version = "1.0.1"
+version = "1.1.0"
 edition = "2024"
 description = "EasyMySQL - MariaDB fuer Windows, ganz einfach"
 build = "build.rs"
@@ -11,6 +11,7 @@ egui_extras = "0.35.0"
 mysql = { version = "28.0.3", default-features = false, features = ["minimal-rust", "buffer-pool"] }
 raw-window-handle = "0.6"
 rfd = "0.17.2"
+sqlformat = "0.5.0"
 
 [target."cfg(windows)".dependencies]
 # Unter Windows DirectX 12 (mit Software-Fallback WARP) statt nur OpenGL

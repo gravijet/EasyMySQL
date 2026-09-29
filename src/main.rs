@@ -8,8 +8,10 @@ mod icon;
 mod platform;
 mod server;
 mod settings;
+mod sqledit;
 mod style;
 mod tabs;
+mod vscode;
 
 use eframe::egui;
 

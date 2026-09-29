@@ -50,13 +50,26 @@ Der Server ist nur vom eigenen PC aus erreichbar (`bind-address=127.0.0.1`).
 - **Daten ansehen und bearbeiten**: Doppelklick auf eine Zelle ändert den Wert, neue Zeilen einfügen,
   Zeilen löschen, Filter (WHERE), Sortierung, Blättern, CSV-Export.
 - **Struktur ändern**: Spalten hinzufügen/ändern/löschen, Indizes, Fremdschlüssel, Tabelle umbenennen.
-- **SQL-Editor**: beliebige SQL-Anweisungen (auch mehrere mit `;`), F5 oder Strg+Enter,
-  nur markierten Text ausführen, SQL-Dateien öffnen/speichern, Ergebnis als CSV.
+- **SQL-Editor**: Syntax-Hervorhebung, Zeilennummern, Autovervollständigung für Befehle,
+  Funktionen, Tabellen und Spalten (auch nach `alias.`), Strg+Leertaste für Vorschläge,
+  **Formatieren** auf Knopfdruck (Strg+Umschalt+F), F5 oder Strg+Enter führt aus (auch nur den
+  markierten Text), SQL-Dateien öffnen/speichern, Ergebnis als CSV.
+- **Visual Studio Code + GitHub Copilot**: „In VS Code öffnen“ bearbeitet eine Abfrage in VS Code.
+  *Werkzeuge → VS Code einrichten* installiert SQLTools mit MariaDB-Treiber und legt die Verbindung
+  „EasyMySQL“ an (Ordner `Dokumente\EasyMySQL`). GitHub Copilot ist in aktuellem VS Code eingebaut:
+  einmal mit dem GitHub-Konto anmelden, dann schlägt Copilot beim Tippen SQL vor. Beim ersten
+  Öffnen fragt VS Code, ob man dem Ordner vertraut → „Trust“ wählen. Speichert man die Datei in
+  VS Code, übernimmt EasyMySQL die Änderungen automatisch.
 - **Abfrage-Assistent**: SELECT-Abfragen grafisch zusammenklicken: Spalten anhaken,
   Tabellen über Beziehungen verknüpfen (JOIN), Bedingungen, Sortierung, COUNT/SUM/AVG/MIN/MAX.
 - **ER-Diagramm (Reverse Engineering)**: liest Tabellen, Spalten, Primär- und Fremdschlüssel einer
   bestehenden Datenbank aus und zeichnet sie mit Beziehungslinien (Krähenfuß-Notation).
-  Kästen verschiebbar, Zoom, Export als **SVG**, Erzeugen des **SQL-Skripts** (CREATE TABLE ...).
+  - **Automatisch anordnen**: Ebenen-Layout (referenzierte Tabellen links), Kreuzungen werden
+    minimiert, lange Linien laufen über eigene Spuren um Tabellen herum
+  - **Alles anzeigen** zoomt passend, Maus über Tabelle/Linie hebt die Beziehungen hervor
+  - **Beziehungen anlegen**: am Punkt ● neben einer Spalte ziehen und auf die Zielspalte fallen
+    lassen (oder „+ Beziehung“); Rechtsklick auf eine Linie löscht sie
+  - Kästen verschiebbar, Zoom, Export als **SVG**, Erzeugen des **SQL-Skripts** (CREATE TABLE ...)
 - **SQL-Export/-Import**: ganze Datenbank als `.sql` sichern (Struktur + Daten) und wieder einspielen.
 - **Server-Steuerung**: Starten, Stoppen, Neustart, Server-Log, Datenordner öffnen.
 
@@ -90,6 +103,8 @@ Zum Entwickeln unter Linux sucht EasyMySQL `mariadbd` in `/usr/sbin`. Mit der Um
 | `src/server.rs` | MariaDB einrichten, starten, stoppen |
 | `src/db.rs` | Verbindung, Abfragen, Metadaten, SQL-Export |
 | `src/tabs/` | SQL-Editor, Daten, Struktur, Tabellen-Designer, ER-Diagramm, Abfrage-Assistent |
+| `src/sqledit.rs` | Code-Editor: Hervorhebung, Autovervollständigung, Formatierung |
+| `src/vscode.rs` | Anbindung an Visual Studio Code (SQLTools, Copilot) |
 | `src/platform.rs` | Windows: Infobereich-Symbol, Fenster aus-/einblenden |
 | `installer/EasyMySQL.iss` | Inno-Setup-Skript |
 
