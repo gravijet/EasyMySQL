@@ -81,8 +81,9 @@ Root: HKLM; Subkey: "SYSTEM\CurrentControlSet\Control\Session Manager\Environmen
 Filename: "{tmp}\vc_redist.x64.exe"; Parameters: "/install /quiet /norestart"; StatusMsg: "Visual C++ Laufzeitbibliotheken werden installiert ..."; Flags: waituntilterminated
 #endif
 #if HaveOdbc
-Filename: "msiexec.exe"; Parameters: "/i ""{tmp}\mariadb-connector-odbc.msi"" /qn /norestart"; StatusMsg: "MariaDB ODBC-Treiber wird installiert ..."; Tasks: odbc; Flags: waituntilterminated
-Filename: "{sys}\odbcconf.exe"; Parameters: "/a {{CONFIGSYSDSN ""MariaDB ODBC 3.2 Driver"" ""DSN=EasyMySQL|DESCRIPTION=EasyMySQL (lokaler MariaDB-Server)|SERVER=127.0.0.1|PORT=3306|USER=root""}"; StatusMsg: "ODBC-Datenquelle wird angelegt ..."; Tasks: odbc; Flags: runhidden waituntilterminated
+; Datenquelle wird danach direkt in die Registry geschrieben (odbcconf/ConfigDSN
+; des MariaDB-Treibers scheitert waehrend der Installation, da noch kein Server laeuft)
+Filename: "msiexec.exe"; Parameters: "/i ""{tmp}\mariadb-connector-odbc.msi"" /qn /norestart"; StatusMsg: "MariaDB ODBC-Treiber wird installiert ..."; Tasks: odbc; Flags: waituntilterminated; AfterInstall: CreateOdbcDsn
 #endif
 Filename: "{app}\EasyMySQL.exe"; Description: "EasyMySQL jetzt starten"; Flags: postinstall nowait skipifsilent runasoriginaluser
 
@@ -93,6 +94,46 @@ Filename: "{app}\mariadb\bin\mariadb-admin.exe"; Parameters: "-u root --connect-
 [Code]
 const
   EnvKey = 'SYSTEM\CurrentControlSet\Control\Session Manager\Environment';
+  OdbcDrivers = 'SOFTWARE\ODBC\ODBCINST.INI\ODBC Drivers';
+  OdbcSources = 'SOFTWARE\ODBC\ODBC.INI\ODBC Data Sources';
+  DsnKey = 'SOFTWARE\ODBC\ODBC.INI\EasyMySQL';
+
+// Name des installierten MariaDB-ODBC-Treibers suchen (z. B. "MariaDB ODBC 3.2 Driver")
+function FindMariaDbOdbcDriver(var Name, Dll: string): Boolean;
+var
+  Names: TArrayOfString;
+  I: Integer;
+begin
+  Result := False;
+  if not RegGetValueNames(HKLM64, OdbcDrivers, Names) then
+    exit;
+  for I := 0 to GetArrayLength(Names) - 1 do
+    if Pos('MARIADB ODBC', Uppercase(Names[I])) = 1 then
+      if RegQueryStringValue(HKLM64, 'SOFTWARE\ODBC\ODBCINST.INI\' + Names[I], 'Driver', Dll) then
+      begin
+        Name := Names[I];
+        Result := True;
+        exit;
+      end;
+end;
+
+// System-Datenquelle "EasyMySQL" anlegen (ohne Verbindungstest, ohne Dialog)
+procedure CreateOdbcDsn;
+var
+  Name, Dll: string;
+begin
+  if not FindMariaDbOdbcDriver(Name, Dll) then
+  begin
+    Log('MariaDB-ODBC-Treiber nicht gefunden, Datenquelle wird nicht angelegt.');
+    exit;
+  end;
+  RegWriteStringValue(HKLM64, DsnKey, 'Driver', Dll);
+  RegWriteStringValue(HKLM64, DsnKey, 'DESCRIPTION', 'EasyMySQL (lokaler MariaDB-Server)');
+  RegWriteStringValue(HKLM64, DsnKey, 'SERVER', '127.0.0.1');
+  RegWriteStringValue(HKLM64, DsnKey, 'PORT', '3306');
+  RegWriteStringValue(HKLM64, DsnKey, 'USER', 'root');
+  RegWriteStringValue(HKLM64, OdbcSources, 'EasyMySQL', Name);
+end;
 
 function NeedsAddPath(Param: string): Boolean;
 var
@@ -148,6 +189,8 @@ begin
   if CurUninstallStep = usPostUninstall then
   begin
     RemovePath(ExpandConstant('{app}\mariadb\bin'));
+    RegDeleteKeyIncludingSubkeys(HKLM64, DsnKey);
+    RegDeleteValue(HKLM64, OdbcSources, 'EasyMySQL');
     MsgBox('EasyMySQL wurde entfernt.' + #13#10 + #13#10 +
       'Ihre Datenbanken wurden NICHT gelöscht. Sie liegen weiterhin in:' + #13#10 +
       ExpandConstant('{commonappdata}\EasyMySQL'), mbInformation, MB_OK);
