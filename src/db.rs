@@ -350,6 +350,10 @@ impl Schema {
             if a.ref_table == b.ref_table || a.ref_table == t.name || b.ref_table == t.name {
                 continue;
             }
+            // Wird die Tabelle selbst referenziert, ist sie eine eigene Entitaet.
+            if self.fks.iter().any(|f| f.ref_table == t.name) {
+                continue;
+            }
             let mut both: Vec<String> = a.columns.iter().chain(b.columns.iter()).cloned().collect();
             both.sort();
             let pk_match = self.unique_keys.iter().any(|(tt, k)| {
@@ -884,6 +888,54 @@ mod tests {
             unique_keys: vec![],
         };
         assert_eq!(s.ordered_tables(), vec!["klasse", "schueler", "note"]);
+    }
+
+    #[test]
+    fn relationship_kinds() {
+        let col = |n: &str, null: bool| ColumnInfo { name: n.into(), nullable: null, ..Default::default() };
+        let t = |n: &str, cols: Vec<ColumnInfo>| TableInfo { name: n.into(), columns: cols, ..Default::default() };
+        let fk = |t: &str, c: &str, rt: &str| ForeignKey {
+            name: format!("fk_{c}"),
+            table: t.into(),
+            columns: vec![c.into()],
+            ref_table: rt.into(),
+            ref_columns: vec!["id".into()],
+            ..Default::default()
+        };
+        let uk = |t: &str, c: &[&str]| (t.to_string(), c.iter().map(|s| s.to_string()).collect::<Vec<_>>());
+        let s = Schema {
+            name: "x".into(),
+            tables: vec![
+                t("klasse", vec![col("id", false)]),
+                t("schueler", vec![col("id", false), col("klasse_id", true)]),
+                t("ausweis", vec![col("id", false), col("schueler_id", false)]),
+                t("kurs", vec![col("id", false)]),
+                t("belegung", vec![col("schueler_id", false), col("kurs_id", false)]),
+            ],
+            fks: vec![
+                fk("schueler", "klasse_id", "klasse"),
+                fk("ausweis", "schueler_id", "schueler"),
+                fk("belegung", "schueler_id", "schueler"),
+                fk("belegung", "kurs_id", "kurs"),
+            ],
+            unique_keys: vec![
+                uk("klasse", &["id"]),
+                uk("schueler", &["id"]),
+                uk("ausweis", &["id"]),
+                uk("ausweis", &["schueler_id"]),
+                uk("kurs", &["id"]),
+                uk("belegung", &["kurs_id", "schueler_id"]),
+            ],
+        };
+        assert_eq!(s.rel_kind(&s.fks[0]), RelKind::OneToMany);
+        assert!(s.rel_optional(&s.fks[0]));
+        assert_eq!(s.rel_kind(&s.fks[1]), RelKind::OneToOne);
+        assert!(!s.rel_optional(&s.fks[1]));
+        assert_eq!(s.junctions(), vec![("belegung".to_string(), 2, 3)]);
+        // Wird die Zwischentabelle selbst referenziert, ist sie keine reine Zwischentabelle.
+        let mut s2 = s.clone();
+        s2.fks.push(fk("klasse", "belegung_id", "belegung"));
+        assert!(s2.junctions().is_empty());
     }
 
     /// Braucht einen laufenden Server auf 127.0.0.1:3306 mit Datenbank "schule".
