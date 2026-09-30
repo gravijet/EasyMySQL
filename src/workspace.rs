@@ -3,16 +3,78 @@
 use std::path::{Path, PathBuf};
 
 // ---------------------------------------------------------------------------
-// Projekte
+// Speicherorte
 
-/// Dokumente\EasyMySQL\Projekte
-pub fn projects_root() -> PathBuf {
-    crate::vscode::workspace_dir().join("Projekte")
+static ROOT: std::sync::RwLock<Option<PathBuf>> = std::sync::RwLock::new(None);
+
+/// Standard-Speicherordner: Dokumente\EasyMySQL
+pub fn default_root() -> PathBuf {
+    crate::vscode::workspace_dir()
 }
 
-pub const DEFAULT_PROJECT: &str = "Meine Abfragen";
+/// Speicherordner aus den Einstellungen setzen (leer = Standard).
+pub fn set_storage_root(dir: &str) {
+    let p = if dir.trim().is_empty() { None } else { Some(PathBuf::from(dir.trim())) };
+    *ROOT.write().unwrap() = p;
+}
 
-const WELCOME: &str = "-- Willkommen bei EasyMySQL!
+/// Ordner, in dem EasyMySQL alles speichert: neue Projekte, unbenannte Abfragen, Verlauf, ...
+pub fn storage_root() -> PathBuf {
+    ROOT.read().unwrap().clone().unwrap_or_else(default_root)
+}
+
+/// Interne Dateien (unbenannte Abfragen, fruehere Fassungen, Diagramm-Layouts, Assistent)
+pub fn internal_dir() -> PathBuf {
+    storage_root().join(".easymysql")
+}
+
+/// Aus Version 2 (Programmdatenordner, Dokumente\EasyMySQL\Projekte) uebernehmen.
+/// Liefert die gefundenen alten Projektordner.
+pub fn migrate_legacy() -> Vec<PathBuf> {
+    let old = crate::server::app_data_dir();
+    let new = internal_dir();
+    for (from, to) in [("ungespeichert", "ungespeichert"), ("verlauf", "fassungen"), ("layouts", "layouts")] {
+        let src = old.join(from);
+        let dst = new.join(to);
+        if src.is_dir() && !dst.exists() {
+            if let Some(parent) = dst.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            if std::fs::rename(&src, &dst).is_err() && crate::server::copy_dir(&src, &dst).is_ok() {
+                let _ = std::fs::remove_dir_all(&src);
+            }
+        }
+    }
+    let legacy = default_root().join("Projekte");
+    let mut found = Vec::new();
+    if let Ok(rd) = std::fs::read_dir(&legacy) {
+        for e in rd.flatten() {
+            let p = e.path();
+            if !p.is_dir() || e.file_name().to_string_lossy().starts_with('.') {
+                continue;
+            }
+            // Unveraenderte Beispieldatei der Version 2 entfernen
+            let w = p.join("Willkommen.sql");
+            if std::fs::read_to_string(&w).is_ok_and(|t| t == OLD_WELCOME) {
+                let _ = std::fs::remove_file(&w);
+            }
+            // Nur leere Standardprojekte entfernen (hoechstens EasyMySQL-/VS-Code-Einstellungen darin)
+            let empty = std::fs::read_dir(&p)
+                .map(|mut r| r.all(|x| x.is_ok_and(|x| matches!(x.file_name().to_str(), Some(".easymysql" | ".vscode")))))
+                .unwrap_or(false);
+            if empty && e.file_name() == "Meine Abfragen" {
+                let _ = std::fs::remove_dir_all(&p);
+                continue;
+            }
+            found.push(p);
+        }
+    }
+    let _ = std::fs::remove_dir(&legacy);
+    found
+}
+
+/// Beispieldatei der Version 2 (wird entfernt, wenn unveraendert)
+const OLD_WELCOME: &str = "-- Willkommen bei EasyMySQL!
 -- Diese Datei liegt im Projekt \"Meine Abfragen\" (links im Explorer).
 -- Alles wird automatisch gespeichert.
 --
@@ -43,28 +105,38 @@ CREATE TABLE IF NOT EXISTS schueler (
 SELECT * FROM schueler;
 ";
 
-/// Legt beim ersten Start das Standardprojekt an.
-pub fn ensure_default_project() -> PathBuf {
-    let dir = projects_root().join(DEFAULT_PROJECT);
-    if !dir.exists() {
-        let _ = std::fs::create_dir_all(&dir);
-        let _ = atomic_write(&dir.join("Willkommen.sql"), WELCOME);
+/// Inhalt des Speicherordners in einen anderen Ordner verschieben (Projekte, interne Dateien).
+/// Liefert die Anzahl der verschobenen Eintraege.
+pub fn move_storage(from: &Path, to: &Path) -> Result<usize, String> {
+    if from == to {
+        return Ok(0);
     }
-    dir
+    if to.starts_with(from) || from.starts_with(to) {
+        return Err("Der neue Ordner darf nicht im alten liegen (und umgekehrt).".into());
+    }
+    std::fs::create_dir_all(to).map_err(|e| format!("{}: {e}", to.display()))?;
+    let mut n = 0;
+    let Ok(rd) = std::fs::read_dir(from) else { return Ok(0) };
+    for e in rd.flatten() {
+        let src = e.path();
+        let dst = to.join(e.file_name());
+        if dst.exists() {
+            return Err(format!("„{}“ gibt es im neuen Ordner schon.", e.file_name().to_string_lossy()));
+        }
+        if std::fs::rename(&src, &dst).is_err() {
+            // anderes Laufwerk: kopieren, dann loeschen
+            let r = if src.is_dir() { crate::server::copy_dir(&src, &dst) } else { std::fs::copy(&src, &dst).map(|_| ()) };
+            r.map_err(|err| format!("{}: {err}", src.display()))?;
+            let _ = if src.is_dir() { std::fs::remove_dir_all(&src) } else { std::fs::remove_file(&src) };
+        }
+        n += 1;
+    }
+    Ok(n)
 }
 
-pub fn list_projects() -> Vec<String> {
-    let mut v: Vec<String> = std::fs::read_dir(projects_root())
-        .map(|rd| {
-            rd.flatten()
-                .filter(|e| e.path().is_dir())
-                .map(|e| e.file_name().to_string_lossy().into_owned())
-                .filter(|n| !n.starts_with('.'))
-                .collect()
-        })
-        .unwrap_or_default();
-    v.sort_by_key(|s| s.to_lowercase());
-    v
+/// Name eines Ordners fuer die Anzeige
+pub fn dir_name(p: &Path) -> String {
+    p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| p.display().to_string())
 }
 
 pub fn valid_name(name: &str) -> bool {
@@ -203,7 +275,7 @@ fn fnv(s: &str) -> u64 {
 
 fn history_dir(path: &Path) -> PathBuf {
     let key = path.to_string_lossy().to_lowercase();
-    crate::server::app_data_dir().join("verlauf").join(format!("{:016x}", fnv(&key)))
+    internal_dir().join("fassungen").join(format!("{:016x}", fnv(&key)))
 }
 
 /// Alte Fassung sichern (hoechstens alle 5 Minuten eine, max. 50 je Datei).
@@ -296,7 +368,7 @@ pub fn set_file_db(project: &Path, file: &Path, db: &str) {
 // Ungespeicherte Abfragen ("Unbenannt"), bleiben ueber Neustarts erhalten
 
 pub fn scratch_dir() -> PathBuf {
-    crate::server::app_data_dir().join("ungespeichert")
+    internal_dir().join("ungespeichert")
 }
 
 pub fn scratch_path(id: usize) -> PathBuf {
@@ -384,6 +456,13 @@ mod tests {
         assert_eq!(file_db(&dir, &sub.join("x.sql")).as_deref(), Some("shop"));
         set_file_db(&dir, &sub.join("x.sql"), "schule");
         assert_eq!(file_db(&dir, &sub.join("x.sql")).as_deref(), Some("schule"));
+        let target = std::env::temp_dir().join(format!("easymysql-ws2-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&target);
+        assert!(move_storage(&dir, &dir.join("x")).is_err());
+        assert!(move_storage(&dir, &target).unwrap() >= 2);
+        assert!(target.join("Ordner").join("x.sql").exists());
+        assert!(!sub.exists());
+        let _ = std::fs::remove_dir_all(&target);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

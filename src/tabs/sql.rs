@@ -1,8 +1,10 @@
 // SQL-Editor-Registerkarte: eine Datei (oder unbenannte Abfrage), automatisch gespeichert.
 
 use super::{Action, Ctx, TabView};
-use crate::db::{self, StmtResult};
+use crate::db::{self, Stmt, StmtResult};
 use crate::grid::{self, GridState};
+use crate::icons::{self, Icon};
+use crate::keymap::Cmd;
 use crate::sqledit::{self, SqlEditor, Words};
 use crate::style;
 use crate::workspace;
@@ -16,9 +18,10 @@ use std::time::{Duration, Instant};
 type JobResult = (Option<Conn>, Vec<StmtResult>, Option<String>, Option<String>);
 
 pub struct SqlTab {
-    /// Datei (None = unbenannte Abfrage, gesichert unter "ungespeichert")
+    /// Datei (None = unbenannte Abfrage, gesichert im Speicherordner)
     pub file: Option<PathBuf>,
     scratch_id: usize,
+    /// Projektordner, in dem die Datei liegt
     project: Option<PathBuf>,
     pub database: String,
     pub text: String,
@@ -27,6 +30,8 @@ pub struct SqlTab {
     file_mtime: Option<std::time::SystemTime>,
     conn: Option<Conn>,
     job: Option<Receiver<JobResult>>,
+    /// Anweisungen des laufenden Auftrags (fuer den Verlauf)
+    running: Vec<Stmt>,
     results: Vec<StmtResult>,
     note: Option<String>,
     res_tab: usize,
@@ -38,6 +43,8 @@ pub struct SqlTab {
     save_as: Option<String>,
     history: Option<Vec<(String, PathBuf)>>,
     save_error: Option<String>,
+    /// Beim ersten Anzeigen zu dieser Zeile springen
+    pending_line: Option<usize>,
 }
 
 fn next_scratch_id() -> usize {
@@ -60,12 +67,8 @@ fn next_scratch_id() -> usize {
     id
 }
 
-/// Projektordner, zu dem eine Datei gehoert (falls sie in einem Projekt liegt).
-pub fn project_of(path: &Path) -> Option<PathBuf> {
-    let root = workspace::projects_root();
-    let rel = path.strip_prefix(&root).ok()?;
-    let first = rel.components().next()?;
-    Some(root.join(first.as_os_str()))
+fn file_key(p: &Path) -> String {
+    p.to_string_lossy().to_lowercase()
 }
 
 impl SqlTab {
@@ -81,6 +84,7 @@ impl SqlTab {
             file_mtime: None,
             conn: None,
             job: None,
+            running: Vec::new(),
             results: Vec::new(),
             note: None,
             res_tab: 0,
@@ -92,6 +96,7 @@ impl SqlTab {
             save_as: None,
             history: None,
             save_error: None,
+            pending_line: None,
         }
     }
 
@@ -118,18 +123,15 @@ impl SqlTab {
         Some(t)
     }
 
-    pub fn open_file(path: &Path, default_db: &str) -> Result<Self, String> {
+    /// Datei oeffnen. `project`: geoeffneter Projektordner (falls die Datei darin liegt).
+    pub fn open_file(path: &Path, default_db: &str, project: Option<&Path>) -> Result<Self, String> {
         let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
         let mut t = Self::empty();
-        t.editor = SqlEditor::new(egui::Id::new(("sql-file", path.to_string_lossy().to_lowercase())));
+        t.editor = SqlEditor::new(egui::Id::new(("sql-file", file_key(path))));
         t.text = String::from_utf8_lossy(&bytes).into_owned();
         t.saved_text = t.text.clone();
-        t.project = project_of(path);
-        t.database = t
-            .project
-            .as_ref()
-            .and_then(|p| workspace::file_db(p, path))
-            .unwrap_or_else(|| default_db.to_string());
+        t.project = project.filter(|p| path.starts_with(p)).map(|p| p.to_path_buf());
+        t.database = t.project.as_ref().and_then(|p| workspace::file_db(p, path)).unwrap_or_else(|| default_db.to_string());
         t.file_mtime = std::fs::metadata(path).and_then(|m| m.modified()).ok();
         t.file = Some(path.to_path_buf());
         Ok(t)
@@ -178,7 +180,6 @@ impl SqlTab {
         };
         let mut stmts = db::split_statements(&sql);
         if stmts.is_empty() {
-            cx.status("Keine Anweisung zum Ausführen gefunden.");
             return;
         }
         let base_line = sqledit::line_col(&self.text, offset).0;
@@ -197,6 +198,7 @@ impl SqlTab {
         };
         let database = self.database.clone();
         let (tx, rx) = channel();
+        self.running = stmts.clone();
         std::thread::spawn(move || {
             let mut conn = conn;
             let fail = |conn: Conn, msg: String| (Some(conn), vec![StmtResult { error: Some(msg), ..Default::default() }], None, None);
@@ -215,9 +217,9 @@ impl SqlTab {
             if !targets.is_empty() {
                 if let Some(env) = crate::backup::env() {
                     match crate::backup::create(&env, Some(targets.clone()), "vor-loeschen", &|_| {}) {
-                        Ok(_) => note = Some(format!("Vorher automatisch gesichert: {}", targets.join(", "))),
+                        Ok(_) => note = Some(format!("Vorher gesichert: {}", targets.join(", "))),
                         Err(e) => {
-                            let _ = tx.send(fail(conn, format!("Nicht ausgeführt: Die automatische Sicherung vor dem Löschen ist fehlgeschlagen ({e})")));
+                            let _ = tx.send(fail(conn, format!("Nicht ausgeführt: Die Sicherung vor dem Löschen ist fehlgeschlagen ({e})")));
                             return;
                         }
                     }
@@ -247,16 +249,37 @@ impl SqlTab {
         }
     }
 
-    fn run_current(&mut self, cx: &mut Ctx) {
+    fn current_statement(&self) -> Option<Stmt> {
         let stmts = db::split_statements(&self.text);
-        match db::statement_at(&stmts, self.editor.cursor) {
-            Some(s) => {
-                let sql = s.sql.clone();
-                let start = s.start;
-                self.run(cx, sql, start);
-            }
-            None => cx.status("Keine Anweisung am Cursor."),
+        db::statement_at(&stmts, self.editor.cursor).cloned()
+    }
+
+    fn run_current(&mut self, cx: &mut Ctx) {
+        if let Some(s) = self.current_statement() {
+            self.run(cx, s.sql, s.start);
         }
+    }
+
+    /// Ausfuehrungsplan der Anweisung am Cursor
+    fn explain(&mut self, cx: &mut Ctx) {
+        let sql = match self.selection.clone() {
+            Some(s) => s,
+            None => match self.current_statement() {
+                Some(s) => s.sql,
+                None => return,
+            },
+        };
+        let first = sql.split_whitespace().next().unwrap_or("").to_uppercase();
+        if first == "EXPLAIN" || first == "ANALYZE" {
+            self.run(cx, sql, 0);
+        } else {
+            self.run(cx, format!("EXPLAIN {sql}"), 0);
+        }
+    }
+
+    fn format(&mut self) {
+        self.text = sqledit::format_sql(&self.text);
+        self.last_edit = Instant::now();
     }
 
     fn poll(&mut self, cx: &mut Ctx) {
@@ -264,9 +287,25 @@ impl SqlTab {
         let Ok((conn, results, current, note)) = rx.try_recv() else { return };
         self.conn = conn;
         self.job = None;
+        let db_before = self.database.clone();
         if let Some(d) = current {
             self.set_database(d);
         }
+        // Verlauf
+        let now = crate::server::timestamp();
+        let entries: Vec<crate::qhistory::Entry> = results
+            .iter()
+            .zip(self.running.iter())
+            .map(|(r, s)| crate::qhistory::Entry {
+                time: now.clone(),
+                db: db_before.clone(),
+                millis: r.elapsed.as_millis() as u64,
+                error: r.error.is_some(),
+                sql: s.sql.clone(),
+            })
+            .collect();
+        cx.actions.push(Action::History(entries));
+        self.running.clear();
         let changed_structure = results.iter().any(|r| {
             let u = r.preview.to_uppercase();
             ["CREATE", "DROP", "ALTER", "RENAME", "TRUNCATE"].iter().any(|k| u.starts_with(k))
@@ -280,8 +319,6 @@ impl SqlTab {
         let n_sets: usize = results.iter().map(|r| r.sets.len()).sum();
         // Ergebnis zeigen, sonst Meldungen
         self.res_tab = if n_sets > 0 && !results.iter().any(|r| r.error.is_some()) { n_sets - 1 } else { n_sets };
-        let ok = results.iter().filter(|r| r.error.is_none()).count();
-        cx.status(format!("{ok} von {} Anweisung(en) ausgeführt", results.len()));
         self.results = results;
         self.note = note;
     }
@@ -306,23 +343,21 @@ impl SqlTab {
                 }
             }
             let errs = self.results.iter().filter(|r| r.error.is_some()).count();
-            let label = if errs > 0 { format!("Meldungen ⚠ {errs}") } else { format!("Meldungen ({})", self.results.len()) };
+            let label = if errs > 0 { format!("Meldungen ({errs} Fehler)") } else { format!("Meldungen ({})", self.results.len()) };
             let txt = if errs > 0 { RichText::new(label).color(pal.error_text) } else { RichText::new(label) };
             if ui.selectable_label(tab == n_sets, txt).clicked() {
                 tab = n_sets;
             }
             if self.job.is_some() {
                 ui.spinner();
-                ui.label("läuft …");
             }
         });
         if tab != self.res_tab {
             self.grid.reset();
         }
         self.res_tab = tab;
-        ui.add_space(2.0);
         if let Some(n) = &self.note {
-            ui.label(RichText::new(n).small().color(pal.null_text));
+            ui.label(RichText::new(n).small().color(pal.text_weak));
         }
         if tab < n_sets {
             let (_, _, set) = sets[tab];
@@ -330,35 +365,25 @@ impl SqlTab {
             ui.horizontal(|ui| {
                 let mut info = format!("{} Zeile(n)", set.rows.len());
                 if set.truncated {
-                    info.push_str(&format!(" (nur die ersten {} angezeigt)", db::MAX_ROWS));
+                    info.push_str(&format!(" (die ersten {})", db::MAX_ROWS));
                 }
                 ui.label(RichText::new(info).color(pal.ok_text));
-                if ui.small_button("In Zwischenablage kopieren").clicked() {
-                    ui.ctx().copy_text(grid::to_tsv(&set.columns, &set.rows));
-                }
-                if ui.small_button("Als CSV speichern...").clicked() {
-                    if let Some(p) = rfd::FileDialog::new().add_filter("CSV", &["csv"]).set_file_name("ergebnis.csv").save_file() {
-                        let _ = std::fs::write(&p, grid::to_csv(&set.columns, &set.rows));
-                    }
-                }
+                grid::export_menu(ui, "ergebnis", &set.columns, &set.rows);
             });
             grid::show(ui, ("sqlgrid", self.editor.id, tab), &set.columns, &set.rows, false, &mut self.grid);
         } else {
             let mut jump = None;
             egui::ScrollArea::vertical().id_salt(self.editor.id.with("msgs")).auto_shrink([false, false]).show(ui, |ui| {
-                if self.results.is_empty() && self.job.is_none() {
-                    ui.label(RichText::new("Noch nichts ausgeführt.  Strg+Alt+S = Datei/Auswahl, Strg+Enter = Anweisung am Cursor").color(pal.null_text));
-                }
                 for r in &self.results {
-                    let (icon, color, msg) = match &r.error {
-                        Some(e) => ("✖", pal.error_text, e.clone()),
-                        None if !r.sets.is_empty() => {
-                            ("✔", pal.ok_text, format!("{} Zeile(n) geliefert", r.sets.iter().map(|s| s.rows.len()).sum::<usize>()))
-                        }
-                        None => ("✔", pal.ok_text, format!("{} Zeile(n) betroffen", r.affected)),
+                    let (ok, msg) = match &r.error {
+                        Some(e) => (false, e.clone()),
+                        None if !r.sets.is_empty() => (true, format!("{} Zeile(n) geliefert", r.sets.iter().map(|s| s.rows.len()).sum::<usize>())),
+                        None => (true, format!("{} Zeile(n) betroffen", r.affected)),
                     };
+                    let color = if ok { pal.ok_text } else { pal.error_text };
                     ui.horizontal(|ui| {
-                        ui.label(RichText::new(icon).color(color));
+                        let (rect, _) = ui.allocate_exact_size(egui::vec2(10.0, 14.0), egui::Sense::hover());
+                        ui.painter().circle_filled(rect.center(), 3.5, color);
                         if ui.link(format!("Zeile {}", r.line + 1)).clicked() {
                             jump = Some(r.error_line.unwrap_or(r.line));
                         }
@@ -379,33 +404,35 @@ impl SqlTab {
         // Speichern unter (fuer unbenannte Abfragen)
         if let Some(name) = self.save_as.as_mut() {
             let mut ok = false;
-            let mut other = false;
+            let mut other = cx.project.is_none();
             let mut cancel = false;
-            egui::Window::new("Speichern unter")
-                .collapsible(false)
-                .resizable(false)
-                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-                .show(ctx, |ui| {
-                    ui.label(format!("Im Projekt \"{}\" speichern als:", cx.project.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()));
-                    let r = ui.add(egui::TextEdit::singleline(name).desired_width(260.0));
-                    r.request_focus();
-                    if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                        ok = true;
-                    }
-                    ui.horizontal(|ui| {
-                        if ui.button("Speichern").clicked() {
+            if let Some(project) = cx.project {
+                egui::Window::new("Speichern unter")
+                    .collapsible(false)
+                    .resizable(false)
+                    .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                    .show(ctx, |ui| {
+                        ui.label(format!("Im Projekt „{}“:", workspace::dir_name(project)));
+                        let r = ui.add(egui::TextEdit::singleline(name).desired_width(260.0));
+                        r.request_focus();
+                        if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                             ok = true;
                         }
-                        if ui.button("Anderer Ort...").clicked() {
-                            other = true;
-                        }
-                        if ui.button("Abbrechen").clicked() {
-                            cancel = true;
-                        }
+                        ui.horizontal(|ui| {
+                            if ui.button("Speichern").clicked() {
+                                ok = true;
+                            }
+                            if ui.button("Anderer Ort …").clicked() {
+                                other = true;
+                            }
+                            if ui.button("Abbrechen").clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                                cancel = true;
+                            }
+                        });
                     });
-                });
+            }
             let target = if ok {
-                match workspace::create_file(cx.project, name, &self.text) {
+                match workspace::create_file(cx.project.unwrap_or(Path::new(".")), name, &self.text) {
                     Ok(p) => Some(p),
                     Err(e) => {
                         cx.error(e);
@@ -413,15 +440,19 @@ impl SqlTab {
                     }
                 }
             } else if other {
-                rfd::FileDialog::new().add_filter("SQL-Datei", &["sql"]).set_file_name(format!("{name}.sql")).save_file()
+                let p = rfd::FileDialog::new().add_filter("SQL-Datei", &["sql"]).set_file_name(format!("{name}.sql")).save_file();
+                if p.is_none() {
+                    cancel = true;
+                }
+                p
             } else {
                 None
             };
             if let Some(p) = target {
                 let old = workspace::scratch_path(self.scratch_id);
                 self.file = Some(p.clone());
-                self.project = project_of(&p);
-                self.editor.id = egui::Id::new(("sql-file", p.to_string_lossy().to_lowercase()));
+                self.project = cx.project.filter(|pr| p.starts_with(pr)).map(|pr| pr.to_path_buf());
+                self.editor.id = egui::Id::new(("sql-file", file_key(&p)));
                 self.saved_text.clear();
                 self.save();
                 let _ = std::fs::remove_file(old);
@@ -435,7 +466,7 @@ impl SqlTab {
                 self.save_as = None;
             }
         }
-        // Verlauf (fruehere Fassungen)
+        // Fruehere Fassungen
         if let Some(list) = self.history.clone() {
             let mut close = false;
             egui::Window::new("Frühere Fassungen")
@@ -444,7 +475,7 @@ impl SqlTab {
                 .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
                 .show(ctx, |ui| {
                     if list.is_empty() {
-                        ui.label("Noch keine früheren Fassungen gespeichert (alle 5 Minuten beim Bearbeiten).");
+                        ui.label("Keine.");
                     }
                     egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
                         for (time, path) in &list {
@@ -469,7 +500,7 @@ impl SqlTab {
                             });
                         }
                     });
-                    if ui.button("Schließen").clicked() {
+                    if ui.button("Schließen").clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
                         close = true;
                     }
                 });
@@ -497,6 +528,18 @@ impl TabView for SqlTab {
         self.run_selection_or_all(cx);
     }
 
+    fn command(&mut self, cmd: Cmd, cx: &mut Ctx) -> bool {
+        match cmd {
+            Cmd::RunAll => self.run_selection_or_all(cx),
+            Cmd::RunStatement => self.run_current(cx),
+            Cmd::Explain => self.explain(cx),
+            Cmd::Format => self.format(),
+            Cmd::Find | Cmd::Replace | Cmd::GotoLine => self.editor.pending = Some(cmd),
+            _ => return false,
+        }
+        true
+    }
+
     fn schema_changed(&mut self, db: &str, _cx: &mut Ctx) {
         if db == self.database {
             self.words_for = "\u{0}".into();
@@ -504,7 +547,7 @@ impl TabView for SqlTab {
     }
 
     fn key(&self) -> Option<String> {
-        self.file.as_ref().map(|f| format!("file:{}", f.to_string_lossy().to_lowercase()))
+        self.file.as_ref().map(|f| format!("file:{}", file_key(f)))
     }
 
     fn session(&self) -> Option<String> {
@@ -524,7 +567,11 @@ impl TabView for SqlTab {
                 let rel = f.strip_prefix(old).unwrap_or(Path::new(""));
                 let n = if rel.as_os_str().is_empty() { new.to_path_buf() } else { new.join(rel) };
                 self.file = Some(n.clone());
-                self.project = project_of(&n);
+                if let Some(p) = &self.project {
+                    if !n.starts_with(p) {
+                        self.project = None;
+                    }
+                }
             }
         }
     }
@@ -538,22 +585,30 @@ impl TabView for SqlTab {
         true
     }
 
-    fn save_now(&mut self) {
+    fn save_now_quiet(&mut self) {
         self.save();
     }
 
-    fn status(&self) -> Option<String> {
-        let (l, c) = self.editor.line_col;
-        Some(format!("Zeile {l}, Spalte {c}"))
+    fn goto_line(&mut self, line: usize) {
+        self.pending_line = Some(line);
+    }
+
+    fn save_now(&mut self) {
+        if self.file.is_none() && !self.text.trim().is_empty() && self.save_as.is_none() {
+            // Strg+S bei unbenannter Abfrage: Speichern unter
+            self.save_as = Some("Neue Abfrage".into());
+        }
+        self.save();
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, cx: &mut Ctx) {
         self.poll(cx);
         let pal = style::pal();
+        self.editor.minimap = cx.settings.minimap;
         if self.job.is_some() {
             ui.ctx().request_repaint_after(Duration::from_millis(50));
         }
-        // Autosave 1 s nach der letzten Aenderung
+        // Automatisch speichern 1 s nach der letzten Aenderung
         if self.dirty() {
             if self.last_edit.elapsed() > Duration::from_millis(1000) {
                 self.save();
@@ -588,20 +643,8 @@ impl TabView for SqlTab {
             }
         }
 
-        // Kopfzeile: Pfad, Datenbank, Aktionen
+        // Kopfzeile: Datenbank, Aktionen, Position
         ui.horizontal(|ui| {
-            let crumb = match (&self.file, &self.project) {
-                (Some(f), Some(p)) => {
-                    let proj = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-                    let rel = f.strip_prefix(p).unwrap_or(f).to_string_lossy().replace(['\\', '/'], " › ");
-                    format!("{proj} › {rel}")
-                }
-                (Some(f), None) => f.display().to_string(),
-                (None, _) => format!("Unbenannt-{} (nicht in einem Projekt)", self.scratch_id),
-            };
-            ui.label(RichText::new(crumb).small().color(pal.text_weak));
-            ui.separator();
-            ui.label(RichText::new("Datenbank:").small());
             let mut dbs = vec![String::new()];
             dbs.extend(cx.databases.iter().cloned());
             let mut d = self.database.clone();
@@ -609,33 +652,38 @@ impl TabView for SqlTab {
                 self.set_database(d);
                 self.words_for = "\u{0}".into();
             }
-            ui.separator();
-            if ui
-                .add_enabled(self.job.is_none(), egui::Button::new("▶ Ausführen"))
-                .on_hover_text("Ganze Datei oder markierten Teil ausführen (Strg+Alt+S oder F5)")
-                .clicked()
-            {
-                self.run_selection_or_all(cx);
+            ui.add_enabled_ui(self.job.is_none(), |ui| {
+                if icons::text_button(ui, Icon::Play, "Ausführen")
+                    .on_hover_text(format!("Datei oder Markierung ausführen ({})", crate::keymap::text(Cmd::RunAll)))
+                    .clicked()
+                {
+                    self.run_selection_or_all(cx);
+                }
+                if ui
+                    .button("Anweisung")
+                    .on_hover_text(format!("Anweisung am Cursor ausführen ({})", crate::keymap::text(Cmd::RunStatement)))
+                    .clicked()
+                {
+                    self.run_current(cx);
+                }
+                if ui.button("Plan").on_hover_text(format!("EXPLAIN der Anweisung am Cursor ({})", crate::keymap::text(Cmd::Explain))).clicked() {
+                    self.explain(cx);
+                }
+            });
+            if ui.button("Formatieren").on_hover_text(crate::keymap::text(Cmd::Format)).clicked() {
+                self.format();
             }
-            if ui
-                .add_enabled(self.job.is_none(), egui::Button::new("▶ Anweisung"))
-                .on_hover_text("Nur die Anweisung unter dem Cursor ausführen (Strg+Enter)")
-                .clicked()
-            {
-                self.run_current(cx);
-            }
-            if ui.button("Formatieren").on_hover_text("SQL schön formatieren (Strg+Alt+L)").clicked() {
-                self.text = sqledit::format_sql(&self.text);
-                self.last_edit = Instant::now();
-            }
-            ui.menu_button("⋯", |ui| {
-                if self.file.is_none() && ui.button("Speichern unter...").clicked() {
-                    self.save_as = Some(String::from("Neue Abfrage"));
+            let more = icons::button(ui, Icon::More, "Weitere");
+            egui::Popup::menu(&more).show(|ui| {
+                if ui.button("Speichern unter …").clicked() {
+                    self.save_as = Some(self.file.as_ref().and_then(|f| f.file_stem()).map(|s| s.to_string_lossy().into_owned()).unwrap_or("Neue Abfrage".into()));
                     ui.close();
                 }
-                if self.file.is_some() && ui.button("Frühere Fassungen...").clicked() {
-                    self.history = Some(workspace::history(self.file.as_ref().unwrap()));
-                    ui.close();
+                if let Some(f) = self.file.clone() {
+                    if ui.button("Frühere Fassungen …").clicked() {
+                        self.history = Some(workspace::history(&f));
+                        ui.close();
+                    }
                 }
                 if ui.button("In VS Code öffnen").clicked() {
                     self.save();
@@ -643,20 +691,26 @@ impl TabView for SqlTab {
                         Some(f) => crate::vscode::open_path(self.project.as_deref(), f, &self.database),
                         None => crate::vscode::open_sql(&format!("unbenannt-{}.sql", self.scratch_id), &self.text, &self.database),
                     };
-                    match res {
-                        Ok(_) => cx.status("In VS Code geöffnet."),
-                        Err(e) => cx.error(e),
+                    if let Err(e) = res {
+                        cx.error(e);
                     }
                     ui.close();
                 }
-                ui.checkbox(&mut self.editor.minimap, "Minimap anzeigen");
             });
             if let Some(e) = &self.save_error {
                 ui.label(RichText::new(e).color(pal.error_text));
             }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let (l, c) = self.editor.line_col;
+                ui.label(RichText::new(format!("Z. {l}, Sp. {c}")).small().color(pal.text_weak));
+            });
         });
 
-        let row_h = ui.ctx().fonts_mut(|f| f.row_height(&egui::FontId::monospace(13.0)));
+        let font_row = ui.ctx().fonts_mut(|f| f.row_height(&egui::FontId::monospace(sqledit::font_size())));
+        if let Some(l) = self.pending_line.take() {
+            let ctx = ui.ctx().clone();
+            self.editor.goto_line(&ctx, &self.text, l, font_row);
+        }
         // Ergebnisbereich unten (Hoehe verstellbar), Editor darueber
         egui::Panel::bottom(self.editor.id.with("results"))
             .resizable(true)
@@ -664,23 +718,16 @@ impl TabView for SqlTab {
             .min_size(80.0)
             .frame(egui::Frame::new().fill(pal.face).inner_margin(egui::Margin::symmetric(4, 4)))
             .show(ui, |ui| {
-                self.results_ui(ui, row_h);
+                self.results_ui(ui, font_row);
             });
-        let h = (ui.available_height() - 14.0).max(100.0);
+        let h = (ui.available_height() - 4.0).max(100.0);
         let out = self.editor.show(ui, &mut self.text, &self.words, h);
         self.selection = out.selection.clone();
         if out.changed {
             self.last_edit = Instant::now();
         }
         if out.format {
-            self.text = sqledit::format_sql(&self.text);
-            self.last_edit = Instant::now();
-        }
-        if out.run {
-            self.run_selection_or_all(cx);
-        }
-        if out.run_current {
-            self.run_current(cx);
+            self.format();
         }
         let ctx = ui.ctx().clone();
         self.dialogs(&ctx, cx);
