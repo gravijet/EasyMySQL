@@ -54,10 +54,13 @@ Name: "odbc"; Description: "MariaDB ODBC-Treiber installieren und Datenquelle ""
 ; Gemeinsamer Datenordner (kurzer Pfad ohne Umlaute), für alle Benutzer beschreibbar.
 Name: "{commonappdata}\EasyMySQL"; Permissions: users-modify; Flags: uninsneveruninstall
 
+[InstallDelete]
+; Anleitung frueherer Versionen (jetzt Hilfe -> Handbuch im Programm)
+Type: files; Name: "{app}\LIESMICH.md"
+
 [Files]
 Source: "..\target\release\easymysql.exe"; DestDir: "{app}"; DestName: "EasyMySQL.exe"; Flags: ignoreversion
 Source: "..\build\mariadb\*"; DestDir: "{app}\mariadb"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "..\README.md"; DestDir: "{app}"; DestName: "LIESMICH.md"; Flags: ignoreversion
 #if HaveVcRedist
 Source: "..\build\redist\vc_redist.x64.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall
 #endif

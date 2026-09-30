@@ -231,7 +231,7 @@ fn place_texts<T: Clone>(items: Vec<(Pos2, String, Align2, T)>) -> Vec<(Pos2, St
 }
 
 fn view_file() -> std::path::PathBuf {
-    crate::server::app_data_dir().join("layouts").join("ansicht.txt")
+    crate::workspace::internal_dir().join("layouts").join("ansicht.txt")
 }
 
 pub struct ErTab {
@@ -257,6 +257,10 @@ pub struct ErTab {
     link: Option<LinkDlg>,
     fit_pending: bool,
     error: Option<String>,
+    /// Ausgewaehlte Beziehung (fk_key), Entf loescht sie
+    selected: Option<String>,
+    /// Verbinden: Ziehen von einer beliebigen Spalte legt eine Beziehung an
+    connect_mode: bool,
 }
 
 fn layout_file(db: &str) -> std::path::PathBuf {
@@ -264,7 +268,7 @@ fn layout_file(db: &str) -> std::path::PathBuf {
         .chars()
         .map(|c| if c.is_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
         .collect();
-    crate::server::app_data_dir().join("layouts").join(format!("{safe}.txt"))
+    crate::workspace::internal_dir().join("layouts").join(format!("{safe}.txt"))
 }
 
 fn box_size(t: &TableInfo, show_types: bool) -> Vec2 {
@@ -409,6 +413,8 @@ impl ErTab {
             link: None,
             fit_pending: false,
             error: None,
+            selected: None,
+            connect_mode: false,
         }
     }
 
@@ -627,239 +633,13 @@ impl ErTab {
         let _ = std::fs::write(path, s);
     }
 
-    /// Automatische Anordnung: Ebenen nach Abhaengigkeit (referenzierte Tabellen links),
-    /// Reihenfolge per Schwerpunkt-Verfahren (wenig Kreuzungen), Fahrspuren fuer lange Linien.
+    /// Automatische Anordnung (siehe er_layout): wenig Kreuzungen, kompakt, etwa Bildschirmformat.
     fn auto_layout(&mut self) {
         let Some(schema) = self.schema.clone() else { return };
-        self.pos.clear();
+        let sizes: Vec<(String, Vec2)> = schema.tables.iter().map(|t| (t.name.clone(), box_size(t, self.show_types))).collect();
+        let edges: Vec<(String, String)> = schema.fks.iter().map(|f| (f.table.clone(), f.ref_table.clone())).collect();
+        self.pos = super::er_layout::layout(&sizes, &edges);
         self.routes.clear();
-        let show_types = self.show_types;
-        let size: HashMap<String, Vec2> = schema
-            .tables
-            .iter()
-            .map(|t| (t.name.clone(), box_size(t, show_types)))
-            .collect();
-
-        // Kanten (Kind -> Eltern), ohne Selbstbezuege
-        let edges: Vec<(String, String, String)> = schema
-            .fks
-            .iter()
-            .filter(|f| f.table != f.ref_table && size.contains_key(&f.table) && size.contains_key(&f.ref_table))
-            .map(|f| (f.table.clone(), f.ref_table.clone(), fk_key(f)))
-            .collect();
-        let connected: Vec<String> = schema
-            .tables
-            .iter()
-            .filter(|t| edges.iter().any(|e| e.0 == t.name || e.1 == t.name))
-            .map(|t| t.name.clone())
-            .collect();
-
-        // 1. Ebenen (laengster Pfad)
-        let mut level: HashMap<String, usize> = HashMap::new();
-        fn lvl(t: &str, edges: &[(String, String, String)], level: &mut HashMap<String, usize>, depth: usize) -> usize {
-            if let Some(l) = level.get(t) {
-                return *l;
-            }
-            if depth > 40 {
-                return 0;
-            }
-            let mut l = 0;
-            for e in edges.iter().filter(|e| e.0 == t) {
-                l = l.max(lvl(&e.1, edges, level, depth + 1) + 1);
-            }
-            level.insert(t.to_string(), l);
-            l
-        }
-        for n in &connected {
-            lvl(n, &edges, &mut level, 0);
-        }
-        let n_layers = level.values().copied().max().map(|m| m + 1).unwrap_or(0);
-
-        // 2. Knoten je Ebene inkl. Platzhaltern (Fahrspuren) fuer lange Kanten
-        #[derive(Clone)]
-        enum Node {
-            Table(String),
-            Lane(String, usize),
-        }
-        let mut layers: Vec<Vec<Node>> = vec![Vec::new(); n_layers];
-        let mut sorted = connected.clone();
-        sorted.sort();
-        for n in &sorted {
-            layers[level[n]].push(Node::Table(n.clone()));
-        }
-        // Nachbarschaft zwischen benachbarten Ebenen: (Ebene, Index-Schluessel) -> Nachbarn
-        let key = |n: &Node| match n {
-            Node::Table(t) => format!("T:{t}"),
-            Node::Lane(e, i) => format!("L:{e}:{i}"),
-        };
-        let mut links: Vec<(String, String)> = Vec::new(); // (linker Knoten, rechter Knoten)
-        for (child, parent, ek) in &edges {
-            let (lc, lp) = (level[child], level[parent]);
-            if lc <= lp {
-                continue; // Zyklus: ohne Fahrspuren
-            }
-            let mut prev = format!("T:{parent}");
-            for l in lp + 1..lc {
-                let node = Node::Lane(ek.clone(), l);
-                let k = key(&node);
-                layers[l].push(node);
-                links.push((prev, k.clone()));
-                prev = k;
-            }
-            links.push((prev, format!("T:{child}")));
-        }
-
-        // 3. Reihenfolge per Schwerpunkt (mehrere Durchlaeufe)
-        for _ in 0..12 {
-            for dir in [true, false] {
-                let order: Vec<usize> = if dir { (1..n_layers).collect() } else { (0..n_layers.saturating_sub(1)).rev().collect() };
-                for l in order {
-                    let other = if dir { l - 1 } else { l + 1 };
-                    let idx: HashMap<String, f32> = layers[other]
-                        .iter()
-                        .enumerate()
-                        .map(|(i, n)| (key(n), i as f32))
-                        .collect();
-                    let mut scored: Vec<(f32, Node)> = layers[l]
-                        .iter()
-                        .enumerate()
-                        .map(|(i, n)| {
-                            let k = key(n);
-                            let ns: Vec<f32> = links
-                                .iter()
-                                .filter_map(|(a, b)| {
-                                    if *b == k { idx.get(a).copied() } else if *a == k { idx.get(b).copied() } else { None }
-                                })
-                                .collect();
-                            let bc = if ns.is_empty() { i as f32 } else { ns.iter().sum::<f32>() / ns.len() as f32 };
-                            (bc, n.clone())
-                        })
-                        .collect();
-                    scored.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
-                    layers[l] = scored.into_iter().map(|(_, n)| n).collect();
-                }
-            }
-        }
-
-        // 4. Koordinaten
-        let node_h = |n: &Node| match n {
-            Node::Table(t) => size[t].y,
-            Node::Lane(..) => 14.0,
-        };
-        let gap_y = 34.0;
-        let mut layer_x = Vec::new();
-        let mut layer_w = Vec::new();
-        let mut x = 0.0;
-        for (l, nodes) in layers.iter().enumerate() {
-            let w = nodes
-                .iter()
-                .map(|n| match n {
-                    Node::Table(t) => size[t].x,
-                    Node::Lane(..) => 40.0,
-                })
-                .fold(40.0, f32::max);
-            layer_x.push(x);
-            layer_w.push(w);
-            // Abstand je nach Anzahl der Linien, die diese Luecke kreuzen
-            let crossing = links
-                .iter()
-                .filter(|(a, _)| layers[l].iter().any(|n| key(n) == *a))
-                .count() as f32;
-            x += w + (90.0 + crossing * 6.0).min(200.0);
-        }
-        let mut ys: HashMap<String, f32> = HashMap::new(); // Mitte y
-        for nodes in &layers {
-            let mut y = 0.0;
-            for n in nodes {
-                let h = node_h(n);
-                ys.insert(key(n), y + h / 2.0);
-                y += h + gap_y;
-            }
-        }
-        // Verfeinerung: Knoten Richtung Nachbarn schieben, Reihenfolge und Abstaende bleiben
-        for _ in 0..8 {
-            for nodes in &layers {
-                let desired: Vec<f32> = nodes
-                    .iter()
-                    .map(|n| {
-                        let k = key(n);
-                        let ns: Vec<f32> = links
-                            .iter()
-                            .filter_map(|(a, b)| if *b == k { ys.get(a) } else if *a == k { ys.get(b) } else { None })
-                            .copied()
-                            .collect();
-                        if ns.is_empty() { ys[&k] } else { ns.iter().sum::<f32>() / ns.len() as f32 }
-                    })
-                    .collect();
-                // vorwaerts: Mindestabstand einhalten
-                let mut placed: Vec<f32> = Vec::new();
-                let mut bottom = f32::NEG_INFINITY;
-                for (i, n) in nodes.iter().enumerate() {
-                    let h = node_h(n);
-                    let top = (desired[i] - h / 2.0).max(bottom + gap_y);
-                    placed.push(top + h / 2.0);
-                    bottom = top + h;
-                }
-                // rueckwaerts: nach oben ziehen, wo moeglich
-                let mut limit = f32::INFINITY;
-                for i in (0..nodes.len()).rev() {
-                    let h = node_h(&nodes[i]);
-                    let max_center = limit - gap_y - h / 2.0;
-                    let want = desired[i].min(max_center);
-                    placed[i] = placed[i].min(max_center).max(want.min(placed[i]));
-                    limit = placed[i] - h / 2.0;
-                }
-                for (i, n) in nodes.iter().enumerate() {
-                    ys.insert(key(n), placed[i]);
-                }
-            }
-        }
-        let min_y = layers
-            .iter()
-            .flat_map(|ns| ns.iter().map(|n| ys[&key(n)] - node_h(n) / 2.0))
-            .fold(f32::INFINITY, f32::min);
-        let min_y = if min_y.is_finite() { min_y } else { 0.0 };
-        let mut max_bottom: f32 = 0.0;
-        for (l, nodes) in layers.iter().enumerate() {
-            for n in nodes {
-                let cy = ys[&key(n)] - min_y;
-                match n {
-                    Node::Table(t) => {
-                        let s = size[t];
-                        // rechtsbuendig zur Ebene? Nein: linksbuendig, Linien kommen von rechts
-                        self.pos.insert(t.clone(), pos2(layer_x[l], cy - s.y / 2.0));
-                        max_bottom = max_bottom.max(cy + s.y / 2.0);
-                    }
-                    Node::Lane(ek, _) => {
-                        let r = self.routes.entry(ek.clone()).or_default();
-                        r.push(pos2(layer_x[l] + layer_w[l] + 10.0, cy));
-                        r.push(pos2(layer_x[l] - 10.0, cy));
-                    }
-                }
-            }
-        }
-        // Fahrspuren von rechts (Kind) nach links (Eltern) sortieren
-        for r in self.routes.values_mut() {
-            r.sort_by(|a, b| b.x.partial_cmp(&a.x).unwrap_or(std::cmp::Ordering::Equal));
-        }
-
-        // 5. Tabellen ohne Beziehungen im Raster darunter
-        let mut rest: Vec<&TableInfo> = schema.tables.iter().filter(|t| !connected.contains(&t.name)).collect();
-        rest.sort_by_key(|t| (t.is_view, t.name.clone()));
-        let start_y = if connected.is_empty() { 0.0 } else { max_bottom + 80.0 };
-        let total_w = x.max(900.0);
-        let (mut cx, mut cy, mut row_h) = (0.0f32, start_y, 0.0f32);
-        for t in rest {
-            let s = size[&t.name];
-            if cx > 0.0 && cx + s.x > total_w {
-                cx = 0.0;
-                cy += row_h + 40.0;
-                row_h = 0.0;
-            }
-            self.pos.insert(t.name.clone(), pos2(cx, cy));
-            cx += s.x + 50.0;
-            row_h = row_h.max(s.y);
-        }
     }
 
     fn bounds(&self) -> Option<Rect> {
@@ -1031,9 +811,11 @@ impl ErTab {
         let pointer = ui.input(|i| i.pointer.interact_pos());
         let hover = ui.input(|i| i.pointer.hover_pos()).filter(|p| rect.contains(*p));
 
-        // Zoom mit Mausrad
+        crate::app::block_autoscroll(rect);
+        // Zoom mit Mausrad (unabhaengig von der eingestellten Scrollgeschwindigkeit)
         if resp.hovered() {
-            let scroll = ui.input(|i| i.smooth_scroll_delta.y + i.zoom_delta().ln() * 200.0);
+            let speed = cx.settings.scroll_speed.max(0.25);
+            let scroll = ui.input(|i| i.smooth_scroll_delta.y / speed + i.zoom_delta().ln() * 200.0);
             if scroll.abs() > 0.1 {
                 let old = self.zoom;
                 self.zoom = (self.zoom * (1.0 + scroll * 0.0015)).clamp(0.2, 3.0);
@@ -1101,9 +883,16 @@ impl ErTab {
         // Maus: ziehen
         if resp.drag_started() {
             let origin_press = ui.input(|i| i.pointer.press_origin()).or(pointer);
+            let middle = ui.input(|i| i.pointer.middle_down());
             self.drag = match origin_press {
+                Some(_) if middle => Drag::Pan,
                 Some(p) => {
-                    if let Some((t, c)) = handle_at(self, p) {
+                    let column = if self.connect_mode {
+                        self.column_at(&schema, self.to_world(origin, p)).and_then(|(t, c)| Some((t, c?)))
+                    } else {
+                        None
+                    };
+                    if let Some((t, c)) = handle_at(self, p).or(column) {
                         Drag::Link(t, c)
                     } else if let Some(t) = hit_table(self, p) {
                         Drag::Table(t)
@@ -1145,6 +934,20 @@ impl ErTab {
                 }
                 _ => {}
             }
+        }
+        if resp.clicked() {
+            self.selected = pointer.filter(|p| hit_table(self, *p).is_none()).and_then(hit_fk).map(|i| fk_key(&schema.fks[i]));
+        }
+        // Entf: ausgewaehlte Beziehung loeschen
+        let editing_text = ui.ctx().egui_wants_keyboard_input();
+        if !editing_text && self.link.is_none() && ui.input(|i| i.key_pressed(egui::Key::Delete)) {
+            if let Some(fk) = self.selected.as_ref().and_then(|k| schema.fks.iter().find(|f| fk_key(f) == *k)) {
+                cx.actions.push(self.delete_action(fk));
+            }
+        }
+        if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            self.selected = None;
+            self.connect_mode = false;
         }
         if resp.double_clicked() {
             if let Some(t) = pointer.and_then(|p| hit_table(self, p)) {
@@ -1201,7 +1004,10 @@ impl ErTab {
             let Some(path) = &paths[i] else { continue };
             let related = focus_table.as_ref().map(|t| *t == fk.table || *t == fk.ref_table);
             let is_hover = hover_fk == Some(i) || matches!(self.menu, Some(Menu::Fk(j)) if j == i);
-            let (color, width) = if is_hover || related == Some(true) {
+            let is_sel = self.selected.as_deref() == Some(fk_key(fk).as_str());
+            let (color, width) = if is_sel {
+                (LINE_HI, 3.2)
+            } else if is_hover || related == Some(true) {
                 (LINE_HI, 2.2)
             } else if related == Some(false) {
                 (style::pal().er_line_dim, 1.2)
@@ -1290,7 +1096,7 @@ impl ErTab {
                     painter.text(pos2(r.right() - 16.0 * z, y), Align2::RIGHT_CENTER, &c.col_type, font.clone(), style::pal().er_type);
                 }
                 // Anfasser zum Verknuepfen (nur bei Maus ueber der Tabelle)
-                if focused && !t.is_view && matches!(self.drag, Drag::None) {
+                if (focused || self.connect_mode) && !t.is_view && matches!(self.drag, Drag::None) {
                     painter.circle(pos2(r.right() - 7.0 * z, y), 3.5 * z, style::pal().er_box, Stroke::new(1.2, LINE_HI));
                 }
             }
@@ -1344,7 +1150,7 @@ impl ErTab {
                     cx.actions.push(Action::OpenSql { db: Some(db.clone()), sql: format!("SELECT * FROM {} LIMIT 100;", q(t)), run: true });
                     ui.close();
                 }
-                if ui.button("Beziehung von hier anlegen...").clicked() {
+                if ui.button("Beziehung von hier anlegen …").clicked() {
                     let col = schema.table(t).and_then(|ti| ti.columns.iter().find(|c| !c.is_pk()).or(ti.columns.first())).map(|c| c.name.clone()).unwrap_or_default();
                     self.open_link(t.clone(), col, String::new());
                     ui.close();
@@ -1362,12 +1168,8 @@ impl ErTab {
                     cx.actions.push(Action::OpenStructure { db: db.clone(), table: j.clone() });
                     ui.close();
                 }
-                if ui.button("Beziehung löschen (Zwischentabelle löschen)...").clicked() {
-                    cx.actions.push(Action::Confirm {
-                        text: format!("n:m-Beziehung löschen? Dabei wird die Zwischentabelle \"{j}\" mit allen Zuordnungen gelöscht (vorher wird automatisch gesichert)."),
-                        db: Some(db.clone()),
-                        sql: format!("DROP TABLE {}", q(&j)),
-                    });
+                if ui.button("Beziehung löschen …").clicked() {
+                    cx.actions.push(self.delete_action(fk));
                     close_menu = true;
                     ui.close();
                 }
@@ -1375,12 +1177,8 @@ impl ErTab {
             Some(Menu::Fk(i)) => {
                 if let Some(fk) = schema.fks.get(*i) {
                     ui.label(RichText::new(format!("{}.{} → {}.{}", fk.table, fk.columns.join(","), fk.ref_table, fk.ref_columns.join(","))).strong());
-                    if ui.button("Beziehung löschen...").clicked() {
-                        cx.actions.push(Action::Confirm {
-                            text: format!("Beziehung \"{}\" löschen?", fk.name),
-                            db: Some(db.clone()),
-                            sql: format!("ALTER TABLE {} DROP FOREIGN KEY {}", q(&fk.table), q(&fk.name)),
-                        });
+                    if ui.button("Beziehung löschen …").clicked() {
+                        cx.actions.push(self.delete_action(fk));
                         close_menu = true;
                         ui.close();
                     }
@@ -1401,11 +1199,11 @@ impl ErTab {
                     self.fit_pending = true;
                     ui.close();
                 }
-                if ui.button("Neue Tabelle...").clicked() {
+                if ui.button("Neue Tabelle …").clicked() {
                     cx.actions.push(Action::NewTable(db.clone()));
                     ui.close();
                 }
-                if ui.button("Neue Beziehung...").clicked() {
+                if ui.button("Neue Beziehung …").clicked() {
                     self.open_link(String::new(), String::new(), String::new());
                     ui.close();
                 }
@@ -1413,6 +1211,22 @@ impl ErTab {
         });
         if close_menu {
             self.menu = None;
+        }
+    }
+
+    /// Rueckfrage zum Loeschen einer Beziehung (bei n:m die Zwischentabelle)
+    fn delete_action(&self, fk: &ForeignKey) -> Action {
+        match self.nm.get(&fk_key(fk)) {
+            Some(j) => Action::Confirm {
+                text: format!("n:m-Beziehung {} – {} löschen? Die Zwischentabelle „{j}“ wird mit allen Zuordnungen gelöscht.", fk.table, fk.ref_table),
+                db: Some(self.db.clone()),
+                sql: format!("DROP TABLE {}", q(j)),
+            },
+            None => Action::Confirm {
+                text: format!("Beziehung {}.{} → {}.{} löschen?", fk.table, fk.columns.join(","), fk.ref_table, fk.ref_columns.join(",")),
+                db: Some(self.db.clone()),
+                sql: format!("ALTER TABLE {} DROP FOREIGN KEY {}", q(&fk.table), q(&fk.name)),
+            },
         }
     }
 
@@ -1489,15 +1303,6 @@ impl ErTab {
                         ui.end_row();
                     }
                 });
-                let hint = match dlg.kind {
-                    LinkKind::OneToMany => "Beispiel: schueler.klasse_id verweist auf klasse.id",
-                    LinkKind::OneToOne => "Die Spalte wird zusätzlich eindeutig (UNIQUE) – so kann jeder Wert nur einmal vorkommen.",
-                    LinkKind::ManyToMany => {
-                        "Legt eine Zwischentabelle mit den Schlüsseln beider Tabellen an (zusammen Primärschlüssel). \
-                         Wird in A oder B etwas gelöscht, verschwinden die Zuordnungen automatisch."
-                    }
-                };
-                ui.label(RichText::new(hint).small().color(style::pal().null_text));
                 if dlg.kind != LinkKind::ManyToMany {
                     // Typen vergleichen
                     let ty = |t: &str, c: &str| {
@@ -1668,7 +1473,10 @@ impl TabView for ErTab {
     }
 
     fn schema_changed(&mut self, db: &str, cx: &mut Ctx) {
-        if db == self.db {
+        if db == self.db && (self.pos.is_empty() || self.raw.is_none()) {
+            // noch nie (erfolgreich) geladen
+            self.loaded_for.clear();
+        } else if db == self.db {
             let pos = self.pos.clone();
             let routes = self.routes.clone();
             cx.schemas.invalidate(&self.db);
@@ -1684,57 +1492,56 @@ impl TabView for ErTab {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, cx: &mut Ctx) {
-        if self.loaded_for != self.db {
+        if self.loaded_for != self.db && cx.db.is_some() {
             self.load(cx);
         }
         ui.horizontal_wrapped(|ui| {
-            ui.label("Datenbank:");
             let mut d = self.db.clone();
             if super::db_combo(ui, "erdb", cx.databases, &mut d) {
                 self.db = d;
             }
-            if ui.button("Neu einlesen").on_hover_text("Struktur erneut aus der Datenbank lesen (Reverse Engineering)").clicked() {
+            if crate::icons::button(ui, crate::icons::Icon::Refresh, "Neu einlesen").clicked() {
                 self.schema_changed(&self.db.clone(), cx);
             }
-            if ui
-                .button("Automatisch anordnen")
-                .on_hover_text("Tabellen übersichtlich anordnen, möglichst ohne Linienkreuzungen")
-                .clicked()
-            {
+            ui.separator();
+            if ui.button("Anordnen").on_hover_text("Automatisch anordnen: wenig Kreuzungen, kompakt").clicked() {
                 self.auto_layout();
                 self.fit_pending = true;
                 self.save_layout();
             }
-            if ui.button("Alles anzeigen").on_hover_text("Zoom so wählen, dass das ganze Diagramm sichtbar ist").clicked() {
-                self.fit_pending = true;
+            ui.separator();
+            let r = ui.add(egui::Button::new("Verbinden").selected(self.connect_mode));
+            if r.clicked() {
+                self.connect_mode = !self.connect_mode;
             }
-            if ui.button("+ Beziehung").on_hover_text("Fremdschlüssel zwischen zwei Tabellen anlegen").clicked() {
+            r
+                .on_hover_text("Von einer Spalte auf die Zielspalte ziehen legt eine Beziehung an (Esc beendet)");
+            if ui.button("+ Beziehung").clicked() {
                 self.open_link(String::new(), String::new(), String::new());
             }
-            ui.checkbox(&mut self.show_types, "Datentypen");
-            ui.separator();
-            ui.label("Notation:");
-            let before = (self.notation, self.collapse_nm, self.rel_labels);
-            egui::ComboBox::from_id_salt("er_notation")
-                .selected_text(self.notation.label())
-                .width(120.0)
-                .show_ui(ui, |ui| {
-                    for n in Notation::ALL {
-                        ui.selectable_value(&mut self.notation, n, n.label());
-                    }
-                })
-                .response
-                .on_hover_text(
-                    "Wie Beziehungen beschriftet werden:\n\
-                     Krähenfuß: Striche/Kreise/Krähenfuß an den Linienenden\n\
-                     Chen: 1, n, m an den Linienenden\n\
-                     (min,max): an wie vielen Beziehungen ein Datensatz mindestens/höchstens teilnimmt",
-                );
-            if self.notation == Notation::Crow {
-                ui.checkbox(&mut self.rel_labels, "1:n-Beschriftung").on_hover_text("Art der Beziehung (1:1, 1:n, n:m) in der Linienmitte anzeigen");
+            let sel = self.selected.clone().and_then(|k| self.schema.as_ref()?.fks.iter().find(|f| fk_key(f) == k).cloned());
+            if let Some(fk) = &sel {
+                if ui.button("Beziehung löschen").on_hover_text("Entf").clicked() {
+                    cx.actions.push(self.delete_action(fk));
+                }
             }
-            ui.checkbox(&mut self.collapse_nm, "n:m zusammenfassen")
-                .on_hover_text("Reine Zwischentabellen ausblenden und als direkte n:m-Linie zeichnen");
+            if ui.button("+ Tabelle").clicked() {
+                cx.actions.push(Action::NewTable(self.db.clone()));
+            }
+            ui.separator();
+            let before = (self.notation, self.collapse_nm, self.rel_labels);
+            ui.menu_button("Ansicht", |ui| {
+                ui.label(RichText::new("Notation").small().color(style::pal().text_weak));
+                for n in Notation::ALL {
+                    ui.radio_value(&mut self.notation, n, n.label());
+                }
+                ui.separator();
+                ui.checkbox(&mut self.show_types, "Datentypen");
+                if self.notation == Notation::Crow {
+                    ui.checkbox(&mut self.rel_labels, "1:n / 1:1 / n:m an den Linien");
+                }
+                ui.checkbox(&mut self.collapse_nm, "Zwischentabellen als n:m-Linie");
+            });
             if before != (self.notation, self.collapse_nm, self.rel_labels) {
                 if before.1 != self.collapse_nm {
                     self.rebuild_view();
@@ -1744,52 +1551,30 @@ impl TabView for ErTab {
                 }
                 self.save_view();
             }
-            ui.separator();
-            if ui.button("−").clicked() {
-                self.zoom = (self.zoom / 1.2).max(0.2);
-            }
-            ui.label(format!("{:.0}\u{a0}%", self.zoom * 100.0));
-            if ui.button("+").clicked() {
-                self.zoom = (self.zoom * 1.2).min(3.0);
-            }
-            ui.separator();
-            if ui.button("Als SVG speichern...").clicked() {
-                if let Some(p) = rfd::FileDialog::new()
-                    .add_filter("SVG-Grafik", &["svg"])
-                    .set_file_name(format!("{}-er-diagramm.svg", self.db))
-                    .save_file()
-                {
-                    match std::fs::write(&p, self.to_svg()) {
-                        Ok(_) => cx.status(format!("Diagramm gespeichert: {}", p.display())),
-                        Err(e) => cx.error(e.to_string()),
+            ui.menu_button("Export", |ui| {
+                if ui.button("Als SVG speichern …").clicked() {
+                    ui.close();
+                    if let Some(p) = rfd::FileDialog::new().add_filter("SVG-Grafik", &["svg"]).set_file_name(format!("{}-er-diagramm.svg", self.db)).save_file() {
+                        if let Err(e) = std::fs::write(&p, self.to_svg()) {
+                            cx.error(e.to_string());
+                        }
                     }
                 }
-            }
-            if ui.button("SQL-Skript erzeugen").on_hover_text("CREATE-Anweisungen aller Tabellen (DDL)").clicked() {
-                if let Some(dbc) = cx.db {
-                    match dbc.dump(&self.db, false) {
-                        Ok(sql) => cx.actions.push(Action::OpenSql { db: Some(self.db.clone()), sql, run: false }),
-                        Err(e) => cx.error(e),
+                if ui.button("SQL-Skript (CREATE TABLE)").clicked() {
+                    ui.close();
+                    if let Some(dbc) = cx.db {
+                        match dbc.dump(&self.db, false) {
+                            Ok(sql) => cx.actions.push(Action::OpenSql { db: Some(self.db.clone()), sql, run: false }),
+                            Err(e) => cx.error(e),
+                        }
                     }
                 }
-            }
-            if ui.button("Neue Tabelle").clicked() {
-                cx.actions.push(Action::NewTable(self.db.clone()));
+            });
+            ui.separator();
+            if ui.button(format!("{:.0}\u{a0}%", self.zoom * 100.0)).on_hover_text("Alles zeigen (Mausrad = Zoom)").clicked() {
+                self.fit_pending = true;
             }
         });
-        if let Some(s) = &self.schema {
-            let nm = if self.nm.is_empty() { String::new() } else { format!(" ({} n:m)", self.nm.len()) };
-            ui.label(
-                RichText::new(format!(
-                    "{} Tabellen, {} Beziehungen{nm}  –  Tabelle ziehen = verschieben · Hintergrund ziehen = Ansicht bewegen · Mausrad = Zoom · \
-                     am Punkt ● neben einer Spalte ziehen = Beziehung anlegen · Rechtsklick = Menü (auch auf Linien)",
-                    s.tables.len(),
-                    s.fks.len(),
-                ))
-                .small()
-                .color(style::pal().null_text),
-            );
-        }
         if let Some(e) = &self.error {
             ui.label(RichText::new(e).color(style::pal().error_text));
         }
@@ -1820,7 +1605,7 @@ mod tests {
     }
 
     #[test]
-    fn layout_no_overlap_and_lanes() {
+    fn layout_no_overlap_and_clear_lines() {
         let schema = Schema {
             name: "x".into(),
             tables: vec![
@@ -1844,17 +1629,16 @@ mod tests {
                 assert!(!rects[i].intersects(rects[j]), "{} / {}", schema.tables[i].name, schema.tables[j].name);
             }
         }
-        // Eltern links vom Kind
-        assert!(er.pos["klasse"].x < er.pos["schueler"].x);
-        assert!(er.pos["schueler"].x < er.pos["note"].x);
-        // note -> lehrer ueberspringt eine Ebene: Fahrspur vorhanden, Linie trifft keine Tabelle
-        let lane_fk = &schema.fks[2];
-        assert!(er.routes.contains_key(&fk_key(lane_fk)));
-        let path = er.edge_path(&schema, lane_fk).unwrap();
-        let schueler = er.table_rect_world(schema.table("schueler").unwrap());
-        for seg in &path {
-            for i in 0..=20 {
-                assert!(!schueler.contains(sample(seg, i as f32 / 20.0)));
+        // keine Linie laeuft durch eine fremde Tabelle
+        for f in &schema.fks {
+            let path = er.edge_path(&schema, f).unwrap();
+            for t in schema.tables.iter().filter(|t| t.name != f.table && t.name != f.ref_table) {
+                let r = er.table_rect_world(t);
+                for seg in &path {
+                    for i in 0..=20 {
+                        assert!(!r.contains(sample(seg, i as f32 / 20.0)), "{} -> {} durch {}", f.table, f.ref_table, t.name);
+                    }
+                }
             }
         }
         // Tabelle ohne Beziehung unterhalb

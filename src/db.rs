@@ -457,18 +457,6 @@ impl Db {
         Ok(out.sets.into_iter().next().unwrap_or_default())
     }
 
-    /// Abfrage in einer bestimmten Datenbank ausfuehren.
-    pub fn query_in(&self, db: &str, sql: &str) -> Result<ResultSet, String> {
-        let mut c = self.conn()?;
-        c.query_drop(format!("USE {}", q(db)))
-            .map_err(err_text)?;
-        let mut out = run_script(&mut c, sql);
-        if let Some(e) = out.error.take() {
-            return Err(e);
-        }
-        Ok(out.sets.into_iter().find(|s| s.has_table()).unwrap_or_default())
-    }
-
     pub fn exec(&self, sql: &str, params: impl Into<Params>) -> Result<u64, String> {
         let mut c = self.conn()?;
         c.exec_drop(sql, params).map_err(err_text)?;

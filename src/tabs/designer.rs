@@ -172,7 +172,7 @@ impl TabView for DesignerTab {
                                 if ui.small_button("▲").on_hover_text("nach oben").clicked() && i > 0 {
                                     move_up = Some(i);
                                 }
-                                if ui.small_button("✖").on_hover_text("Spalte entfernen").clicked() {
+                                if crate::icons::button_sized(ui, crate::icons::Icon::Close, "Spalte entfernen", 18.0).clicked() {
                                     remove = Some(i);
                                 }
                                 ui.end_row();

@@ -57,7 +57,7 @@ fn json_str(s: &str) -> String {
 
 /// Legt den Arbeitsordner samt .vscode-Einstellungen an.
 pub fn prepare_workspace(database: &str) -> Result<PathBuf, String> {
-    prepare_folder(&workspace_dir(), database)
+    prepare_folder(&crate::workspace::storage_root(), database)
 }
 
 /// .vscode-Einstellungen (SQLTools-Verbindung) in einem Ordner anlegen.
@@ -97,19 +97,6 @@ pub fn prepare_folder(dir: &Path, database: &str) -> Result<PathBuf, String> {
         format!("{{\n  \"recommendations\": [{}]\n}}\n", recs.join(", ")),
     )
     .map_err(|e| e.to_string())?;
-    let readme = dir.join("LIESMICH.txt");
-    if !readme.exists() {
-        let _ = std::fs::write(
-            &readme,
-            "In diesem Ordner speichert EasyMySQL Abfragen für Visual Studio Code.\r\n\r\n\
-             Beim ersten Öffnen fragt VS Code, ob Sie dem Ordner vertrauen: \"Ja\" / \"Trust\" wählen.\r\n\r\n\
-             In VS Code (Erweiterung SQLTools):\r\n\
-             - Links auf das Datenbank-Symbol klicken: Verbindung \"EasyMySQL\" (127.0.0.1, root)\r\n\
-             - In einer .sql-Datei: Strg+E Strg+E führt die aktuelle Abfrage aus\r\n\
-             - GitHub Copilot macht beim Tippen Vorschläge (Tab übernimmt)\r\n\r\n\
-             Der Datenbankserver läuft, solange EasyMySQL geöffnet ist.\r\n",
-        );
-    }
     Ok(dir)
 }
 
@@ -153,9 +140,8 @@ pub fn find_vscode() -> Option<(PathBuf, Option<PathBuf>)> {
     }
 }
 
-pub const NOT_FOUND: &str = "Visual Studio Code wurde nicht gefunden.\n\n\
-Bitte VS Code von https://code.visualstudio.com installieren und danach in EasyMySQL \
-\"Werkzeuge → VS Code einrichten\" wählen.";
+pub const NOT_FOUND: &str = "Visual Studio Code wurde nicht gefunden. Nach der Installation (code.visualstudio.com) \
+Server → VS Code einrichten wählen.";
 
 fn launch(exe: &Path, args: &[&Path]) -> Result<(), String> {
     let mut cmd = Command::new(exe);
@@ -232,7 +218,7 @@ pub fn install_extensions() -> Result<String, String> {
             .output()
             .map_err(|e| e.to_string())?;
         if out.status.success() {
-            report.push_str(&format!("✔ {name}\n"));
+            report.push_str(&format!("OK: {name}\n"));
         } else {
             let err = String::from_utf8_lossy(&out.stderr).to_string() + &String::from_utf8_lossy(&out.stdout);
             let line = err
@@ -241,11 +227,11 @@ pub fn install_extensions() -> Result<String, String> {
                 .find(|l| !l.trim().is_empty() && !l.contains("eprecat"))
                 .unwrap_or("Fehler")
                 .to_string();
-            report.push_str(&format!("✖ {name}: {line}\n"));
+            report.push_str(&format!("Fehler: {name}: {line}\n"));
         }
     }
     if builtin {
-        report.push_str("✔ GitHub Copilot (in VS Code bereits eingebaut)\n");
+        report.push_str("OK: GitHub Copilot (in VS Code eingebaut)\n");
     }
     Ok(report)
 }

@@ -186,8 +186,6 @@ impl DataTab {
             .pivot(egui::Align2::CENTER_CENTER)
             .default_pos(ui.ctx().content_rect().center())
             .show(ui.ctx(), |ui| {
-                ui.label("Werte eingeben. Mit \"Standard\" wird der Standardwert bzw. AUTO_INCREMENT verwendet.");
-                ui.add_space(4.0);
                 egui::ScrollArea::vertical().max_height(400.0).show(ui, |ui| {
                     egui::Grid::new("insertgrid").num_columns(3).spacing([8.0, 4.0]).show(ui, |ui| {
                         let info = self.info.as_ref();
@@ -286,7 +284,7 @@ impl TabView for DataTab {
             let r = ui.add(
                 egui::TextEdit::singleline(&mut self.filter)
                     .desired_width(220.0)
-                    .hint_text("z. B. preis > 10"),
+                    .hint_text("Bedingung"),
             );
             if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                 self.offset = 0;
@@ -325,20 +323,10 @@ impl TabView for DataTab {
                     table: self.table.clone(),
                 });
             }
-            if ui.button("Als CSV speichern...").clicked() {
-                if let Some(p) = rfd::FileDialog::new()
-                    .add_filter("CSV", &["csv"])
-                    .set_file_name(format!("{}.csv", self.table))
-                    .save_file()
-                {
-                    if let Err(e) = std::fs::write(&p, grid::to_csv(&self.columns, &self.rows)) {
-                        cx.error(e.to_string());
-                    }
-                }
-            }
+            grid::export_menu(ui, &self.table, &self.columns, &self.rows);
             ui.separator();
             let total = self.total.unwrap_or(self.rows.len() as u64);
-            if ui.add_enabled(self.offset > 0, egui::Button::new("◀")).clicked() {
+            if ui.add_enabled(self.offset > 0, egui::Button::new("<")).clicked() {
                 self.offset = self.offset.saturating_sub(self.limit);
                 self.reload(cx);
             }
@@ -350,25 +338,20 @@ impl TabView for DataTab {
                 total
             ));
             if ui
-                .add_enabled((to as u64) < total, egui::Button::new("▶"))
+                .add_enabled((to as u64) < total, egui::Button::new(">"))
                 .clicked()
             {
                 self.offset += self.limit;
                 self.reload(cx);
             }
             if !self.has_pk() && !is_view && self.info.is_some() {
-                ui.label(RichText::new("⚠ kein Primärschlüssel").color(style::pal().error_text))
+                ui.label(RichText::new("kein Primärschlüssel").color(style::pal().error_text))
                     .on_hover_text("Änderungen werden über alle Spaltenwerte zugeordnet.");
             }
         });
         if let Some(e) = &self.error {
             ui.label(RichText::new(format!("Fehler: {e}")).color(style::pal().error_text));
         }
-        ui.label(
-            RichText::new("Doppelklick auf eine Zelle zum Bearbeiten, Enter speichert, Esc bricht ab. Rechtsklick für mehr.")
-                .small()
-                .color(style::pal().null_text),
-        );
         let editable = !self.info.as_ref().map(|i| i.is_view).unwrap_or(false);
         let events = grid::show(ui, ("datagrid", &self.db, &self.table), &self.columns, &self.rows, editable, &mut self.grid);
         for ev in events {
