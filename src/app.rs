@@ -901,13 +901,6 @@ impl EasyApp {
         self.show_side(SideView::Explorer);
     }
 
-    fn execute_active(&mut self) {
-        let mut acts = Vec::new();
-        if let Some(t) = self.tabs.get_mut(self.active) {
-            t.execute(&mut cx!(self, &mut acts));
-        }
-        self.handle_actions(acts);
-    }
 }
 
 fn s_empty(p: &Path) -> bool {

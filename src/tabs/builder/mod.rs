@@ -192,7 +192,11 @@ fn convert(e: &Expr, k: Kind, env: &Env) -> Expr {
     match k {
         Kind::Column => env.first_column(),
         Kind::Value => Expr::Value(String::new()),
-        Kind::Func => Expr::func("COUNT", Some(cur)),
+        Kind::Func => match cur {
+            // aus einer Spalte wird COUNT(spalte), die Funktion laesst sich dann aendern
+            Expr::Column { .. } => Expr::Func { name: "COUNT".into(), args: vec![cur], distinct: false, over: None },
+            _ => Expr::func("COUNT", None),
+        },
         Kind::Op => Expr::Op { op: "+".into(), left: Box::new(cur), right: Box::new(Expr::Value("1".into())) },
         Kind::Case => Expr::Case {
             whens: vec![(Cond::Cmp { left: cur, op: CmpOp::Eq, right: vec![Expr::Value(String::new())], quant: Quant::None, sub: None }, Expr::Value(String::new()))],
