@@ -182,11 +182,146 @@ impl Paths {
     }
 }
 
+/// Herkunft einer Log-Zeile
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum LogKind {
+    /// Meldung von EasyMySQL
+    App,
+    /// Ausgabe von MariaDB
+    Server,
+    /// Mitgeschriebene Anweisung (general log)
+    Query,
+}
+
+#[derive(Clone, Debug)]
+pub struct LogLine {
+    /// "JJJJ-MM-TT hh:mm:ss"
+    pub time: String,
+    pub kind: LogKind,
+    pub text: String,
+    /// Aus einer frueheren Sitzung (aus der Datei geladen)
+    pub old: bool,
+}
+
+const LOG_MAX: usize = 5000;
+
 struct Shared {
     state: State,
     child: Option<Child>,
-    log: Vec<String>,
+    log: Vec<LogLine>,
+    /// Anzahl aller jemals angefuegten Zeilen (fuer "neue Zeilen seit ...")
+    log_total: usize,
     unclean: bool,
+}
+
+/// Datei, in die das Server-Log dauerhaft geschrieben wird
+pub fn log_file() -> PathBuf {
+    app_data_dir().join("server.log")
+}
+
+/// Datei fuer die Mitschrift aller Anweisungen (MariaDB general log)
+pub fn query_log_file() -> PathBuf {
+    app_data_dir().join("abfragen.log")
+}
+
+fn now_text() -> String {
+    timestamp().replacen('_', " ", 1).replace('-', ":").replacen(':', "-", 2)
+}
+
+/// Letzte Zeilen der Log-Datei (fruehere Sitzungen)
+fn load_old_log() -> Vec<LogLine> {
+    let path = log_file();
+    if std::fs::metadata(&path).is_ok_and(|m| m.len() > 2_000_000) {
+        let _ = std::fs::rename(&path, path.with_extension("log.1"));
+    }
+    let text = std::fs::read_to_string(&path).unwrap_or_default();
+    let lines: Vec<&str> = text.lines().collect();
+    lines[lines.len().saturating_sub(1000)..]
+        .iter()
+        .filter_map(|l| {
+            let (time, rest) = l.split_once('\t')?;
+            let (kind, text) = rest.split_once('\t')?;
+            let kind = match kind {
+                "S" => LogKind::Server,
+                "Q" => LogKind::Query,
+                _ => LogKind::App,
+            };
+            Some(LogLine { time: time.to_string(), kind, text: text.to_string(), old: true })
+        })
+        .collect()
+}
+
+/// Eine Zeile des general log lesbar machen: "241001 12:00:00\t    5 Query\tSELECT 1" -> "SELECT 1"
+fn parse_query_log(line: &str) -> Option<String> {
+    let t = line.trim_end();
+    if t.is_empty() || t.contains("Tcp port:") || t.starts_with("Time") || t.ends_with("started with:") {
+        return None;
+    }
+    let mut parts: Vec<&str> = t.split('\t').collect();
+    // Zeitstempel am Anfang entfernen
+    if parts.len() > 1 && parts[0].chars().next().is_some_and(|c| c.is_ascii_digit()) {
+        parts.remove(0);
+    }
+    while parts.len() > 1 && parts[0].trim().is_empty() {
+        parts.remove(0);
+    }
+    match parts.as_slice() {
+        [head, arg, ..] => {
+            let head = head.trim();
+            let (id, cmd) = head.split_once(' ').unwrap_or(("", head));
+            let cmd = cmd.trim();
+            if cmd == "Query" || cmd == "Execute" {
+                Some(format!("[{id}] {arg}"))
+            } else {
+                Some(format!("[{id}] {cmd} {arg}").trim_end().to_string())
+            }
+        }
+        [one] if !one.trim().is_empty() => Some(format!("    {}", one.trim())),
+        _ => None,
+    }
+}
+
+/// Liest neue Zeilen des general log mit (laeuft die ganze Zeit im Hintergrund).
+fn follow_query_log(shared: Arc<Mutex<Shared>>) {
+    let path = query_log_file();
+    let mut offset = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+    loop {
+        std::thread::sleep(Duration::from_millis(700));
+        let Ok(meta) = std::fs::metadata(&path) else {
+            offset = 0;
+            continue;
+        };
+        let len = meta.len();
+        if len < offset {
+            offset = 0;
+        }
+        if len == offset {
+            continue;
+        }
+        use std::io::{Read, Seek, SeekFrom};
+        let Ok(mut f) = std::fs::File::open(&path) else { continue };
+        if f.seek(SeekFrom::Start(offset)).is_err() {
+            continue;
+        }
+        let mut buf = Vec::new();
+        let _ = f.take(4_000_000).read_to_end(&mut buf);
+        // nur vollstaendige Zeilen
+        let Some(end) = buf.iter().rposition(|b| *b == b'\n') else { continue };
+        offset += end as u64 + 1;
+        let text = String::from_utf8_lossy(&buf[..end]);
+        let time = now_text();
+        let mut sh = shared.lock().unwrap();
+        for l in text.lines() {
+            if let Some(t) = parse_query_log(l) {
+                sh.log.push(LogLine { time: time.clone(), kind: LogKind::Query, text: t, old: false });
+                sh.log_total += 1;
+            }
+        }
+        let n = sh.log.len();
+        if n > LOG_MAX {
+            sh.log.drain(0..n - LOG_MAX);
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -321,16 +456,10 @@ impl Server {
         } else {
             State::NotFound
         };
-        Server {
-            shared: Arc::new(Mutex::new(Shared {
-                state,
-                child: None,
-                log: Vec::new(),
-                unclean: false,
-            })),
-            paths,
-            port,
-        }
+        let shared = Arc::new(Mutex::new(Shared { state, child: None, log: load_old_log(), log_total: 0, unclean: false }));
+        let sh = shared.clone();
+        std::thread::spawn(move || follow_query_log(sh));
+        Server { shared, paths, port }
     }
 
     pub fn state(&self) -> State {
@@ -347,12 +476,17 @@ impl Server {
         sh.state.clone()
     }
 
-    pub fn log_lines(&self) -> Vec<String> {
+    pub fn log_lines(&self) -> Vec<LogLine> {
         self.shared.lock().unwrap().log.clone()
     }
 
+    /// Anzahl aller bisher angefuegten Zeilen (aendert sich bei neuen Zeilen)
+    pub fn log_count(&self) -> usize {
+        self.shared.lock().unwrap().log_total
+    }
+
     pub fn log(&self, line: impl Into<String>) {
-        push_log(&self.shared, line.into());
+        push_log(&self.shared, LogKind::App, line.into());
     }
 
     fn set_state(&self, st: State) {
@@ -530,7 +664,7 @@ impl Server {
             let shared = self.shared.clone();
             std::thread::spawn(move || {
                 for line in BufReader::new(stream).lines().map_while(Result::ok) {
-                    push_log(&shared, line);
+                    push_log(&shared, LogKind::Server, line);
                 }
             });
         }
@@ -841,11 +975,50 @@ impl Server {
     }
 }
 
-fn push_log(shared: &Arc<Mutex<Shared>>, line: String) {
+/// Zeile anfuegen und in die Log-Datei schreiben (auch wenn das Log gerade nicht angezeigt wird).
+fn push_log(shared: &Arc<Mutex<Shared>>, kind: LogKind, text: String) {
+    use std::io::Write;
+    let time = now_text();
+    let tag = match kind {
+        LogKind::App => "A",
+        LogKind::Server => "S",
+        LogKind::Query => "Q",
+    };
+    let path = log_file();
+    if let Some(d) = path.parent() {
+        let _ = std::fs::create_dir_all(d);
+    }
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+        let _ = writeln!(f, "{time}\t{tag}\t{}", text.replace(['\n', '\r'], " "));
+    }
     let mut sh = shared.lock().unwrap();
-    sh.log.push(line);
+    sh.log.push(LogLine { time, kind, text, old: false });
+    sh.log_total += 1;
     let n = sh.log.len();
-    if n > 3000 {
-        sh.log.drain(0..n - 3000);
+    if n > LOG_MAX {
+        sh.log.drain(0..n - LOG_MAX);
+    }
+}
+
+#[cfg(test)]
+mod log_tests {
+    use super::*;
+
+    #[test]
+    fn general_log_lines() {
+        assert_eq!(parse_query_log("260930 12:00:01\t    12 Query\tSELECT 1").as_deref(), Some("[12] SELECT 1"));
+        assert_eq!(parse_query_log("\t\t    12 Query\tSELECT 2").as_deref(), Some("[12] SELECT 2"));
+        assert_eq!(parse_query_log("\t\t    7 Connect\troot@localhost on  using TCP/IP").as_deref(), Some("[7] Connect root@localhost on  using TCP/IP"));
+        assert_eq!(parse_query_log("FROM t").as_deref(), Some("    FROM t"));
+        assert!(parse_query_log("Time\t\t    Id Command\tArgument").is_none());
+    }
+
+    #[test]
+    fn time_text() {
+        let t = now_text();
+        assert_eq!(t.len(), 19, "{t}");
+        assert_eq!(&t[4..5], "-");
+        assert_eq!(&t[10..11], " ");
+        assert_eq!(&t[13..14], ":");
     }
 }
