@@ -515,9 +515,9 @@ fn split_clauses(nodes: &[Node]) -> Vec<(String, &[Node])> {
                 // SET nur bei UPDATE/INSERT, VALUES nur bei INSERT
                 if (is_update || is_insert) && w.as_deref() == Some("SET") && !matches!(nodes.get(i - 1).and_then(word_of).as_deref(), Some("CHARACTER")) {
                     hit = Some(("SET".into(), 1));
-                } else if is_insert && matches!(w.as_deref(), Some("VALUES" | "VALUE")) {
-                    hit = Some((w.clone().unwrap_or_default(), 1));
-                } else if first == "WITH" && matches!(nodes.get(i - 1), Some(Node::G(_))) && matches!(w.as_deref(), Some("UPDATE" | "DELETE" | "INSERT")) {
+                } else if (is_insert && matches!(w.as_deref(), Some("VALUES" | "VALUE")))
+                    || (first == "WITH" && matches!(nodes.get(i - 1), Some(Node::G(_))) && matches!(w.as_deref(), Some("UPDATE" | "DELETE" | "INSERT")))
+                {
                     hit = Some((w.clone().unwrap_or_default(), 1));
                 }
             }
