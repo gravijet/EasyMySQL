@@ -129,7 +129,7 @@ impl SafetyTab {
             if ui.button("Ordner öffnen").clicked() {
                 let d = self.cfg.dir();
                 let _ = std::fs::create_dir_all(&d);
-                crate::app::open_folder(&d);
+                crate::app::open_path(&d);
             }
             if ui.button("Aktualisieren").clicked() {
                 self.refresh(cx);

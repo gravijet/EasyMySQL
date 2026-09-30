@@ -248,3 +248,96 @@ pub fn to_csv(columns: &[String], rows: &[Row]) -> String {
     }
     s
 }
+
+/// JSON-Array mit einem Objekt je Zeile (Zahlen bleiben Text, NULL wird null)
+pub fn to_json(columns: &[String], rows: &[Row]) -> String {
+    let list: Vec<serde_json::Value> = rows
+        .iter()
+        .map(|r| {
+            let mut m = serde_json::Map::new();
+            for (c, v) in columns.iter().zip(r) {
+                m.insert(c.clone(), v.clone().map(serde_json::Value::String).unwrap_or(serde_json::Value::Null));
+            }
+            serde_json::Value::Object(m)
+        })
+        .collect();
+    serde_json::to_string_pretty(&list).unwrap_or_default() + "\n"
+}
+
+/// INSERT-Anweisungen (je 100 Zeilen eine)
+pub fn to_inserts(table: &str, columns: &[String], rows: &[Row]) -> String {
+    use crate::db::{q, smart_lit};
+    let cols: Vec<String> = columns.iter().map(|c| q(c)).collect();
+    let mut s = String::new();
+    for chunk in rows.chunks(100) {
+        s.push_str(&format!("INSERT INTO {} ({}) VALUES\n", q(table), cols.join(", ")));
+        let vals: Vec<String> = chunk
+            .iter()
+            .map(|r| format!("  ({})", r.iter().map(|v| v.as_deref().map(smart_lit).unwrap_or("NULL".into())).collect::<Vec<_>>().join(", ")))
+            .collect();
+        s.push_str(&vals.join(",\n"));
+        s.push_str(";\n");
+    }
+    s
+}
+
+/// Markdown-Tabelle
+pub fn to_markdown(columns: &[String], rows: &[Row]) -> String {
+    let esc = |v: &str| v.replace('|', "\\|").replace('\n', " ");
+    let mut s = format!("| {} |\n", columns.iter().map(|c| esc(c)).collect::<Vec<_>>().join(" | "));
+    s.push_str(&format!("|{}\n", " --- |".repeat(columns.len())));
+    for r in rows {
+        s.push_str(&format!("| {} |\n", r.iter().map(|v| v.as_deref().map(esc).unwrap_or("NULL".into())).collect::<Vec<_>>().join(" | ")));
+    }
+    s
+}
+
+/// Menue "Export" fuer eine Ergebnismenge. `name`: Vorschlag fuer Dateiname/Tabellenname.
+pub fn export_menu(ui: &mut egui::Ui, name: &str, columns: &[String], rows: &[Row]) {
+    let save = |ext: &str, filter: &str, content: String| {
+        if let Some(p) = rfd::FileDialog::new().add_filter(filter, &[ext]).set_file_name(format!("{name}.{ext}")).save_file() {
+            let _ = std::fs::write(p, content);
+        }
+    };
+    ui.menu_button("Export", |ui| {
+        if ui.button("Kopieren (für Excel)").clicked() {
+            ui.ctx().copy_text(to_tsv(columns, rows));
+            ui.close();
+        }
+        if ui.button("Als INSERT kopieren").clicked() {
+            ui.ctx().copy_text(to_inserts(name, columns, rows));
+            ui.close();
+        }
+        if ui.button("Als Markdown kopieren").clicked() {
+            ui.ctx().copy_text(to_markdown(columns, rows));
+            ui.close();
+        }
+        ui.separator();
+        if ui.button("CSV speichern …").clicked() {
+            ui.close();
+            save("csv", "CSV", to_csv(columns, rows));
+        }
+        if ui.button("JSON speichern …").clicked() {
+            ui.close();
+            save("json", "JSON", to_json(columns, rows));
+        }
+        if ui.button("SQL speichern …").clicked() {
+            ui.close();
+            save("sql", "SQL", to_inserts(name, columns, rows));
+        }
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn exports() {
+        let cols = vec!["id".to_string(), "name".to_string()];
+        let rows = vec![vec![Some("1".into()), Some("O'Neil".into())], vec![Some("2".into()), None]];
+        assert_eq!(to_inserts("t", &cols, &rows), "INSERT INTO `t` (`id`, `name`) VALUES\n  (1, 'O''Neil'),\n  (2, NULL);\n");
+        assert!(to_json(&cols, &rows).contains("\"name\": null"));
+        assert_eq!(to_markdown(&cols, &rows).lines().nth(1), Some("| --- | --- |"));
+    }
+}

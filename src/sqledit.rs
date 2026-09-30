@@ -1,31 +1,46 @@
 // SQL-Code-Editor: Syntax-Hervorhebung, Zeilennummern, Autovervollstaendigung, Formatierung.
 
 use eframe::egui::{
-    self, Color32, FontId, Key, KeyboardShortcut, Modifiers, RichText, TextFormat,
+    self, Color32, FontId, Key, Modifiers, RichText, TextFormat,
     text::{CCursor, CCursorRange, LayoutJob},
 };
 use std::sync::Arc;
 
 pub const KEYWORDS: &[&str] = &[
-    "ADD", "ALL", "ALTER", "AND", "AS", "ASC", "AUTO_INCREMENT", "BEGIN", "BETWEEN", "BIGINT", "BLOB",
-    "BOOLEAN", "BY", "CASCADE", "CASE", "CHANGE", "CHAR", "CHARACTER", "CHECK", "COLLATE", "COLUMN",
-    "COMMENT", "COMMIT", "CONSTRAINT", "CREATE", "CROSS", "DATABASE", "DATABASES", "DATE", "DATETIME",
-    "DECIMAL", "DEFAULT", "DELETE", "DESC", "DESCRIBE", "DISTINCT", "DOUBLE", "DROP", "ELSE", "END",
-    "ENGINE", "ENUM", "EXISTS", "EXPLAIN", "FALSE", "FLOAT", "FOREIGN", "FROM", "FULL", "GRANT",
-    "GROUP", "HAVING", "IF", "IGNORE", "IN", "INDEX", "INNER", "INSERT", "INT", "INTEGER", "INTO",
-    "IS", "JOIN", "JSON", "KEY", "LEFT", "LIKE", "LIMIT", "LONGTEXT", "MODIFY", "NOT", "NULL",
-    "OFFSET", "ON", "OR", "ORDER", "OUTER", "PRIMARY", "PROCEDURE", "REFERENCES", "RENAME",
-    "REPLACE", "RESTRICT", "RIGHT", "ROLLBACK", "SELECT", "SET", "SHOW", "SMALLINT", "START",
-    "TABLE", "TABLES", "TEXT", "THEN", "TIME", "TIMESTAMP", "TINYINT", "TO", "TRANSACTION",
-    "TRIGGER", "TRUE", "TRUNCATE", "UNION", "UNIQUE", "UNSIGNED", "UPDATE", "USE", "USER", "USING",
-    "VALUES", "VARCHAR", "VIEW", "WHEN", "WHERE", "WITH", "YEAR",
+    "ADD", "ALL", "ALTER", "AND", "ANY", "AS", "ASC", "AUTO_INCREMENT", "BEGIN", "BETWEEN",
+    "BIGINT", "BINARY", "BLOB", "BOOLEAN", "BY", "CALL", "CASCADE", "CASE", "CHANGE", "CHAR",
+    "CHARACTER", "CHECK", "COLLATE", "COLUMN", "COLUMNS", "COMMENT", "COMMIT", "CONSTRAINT",
+    "CREATE", "CROSS", "CURRENT_TIMESTAMP", "DATABASE", "DATABASES", "DATE", "DATETIME", "DECIMAL",
+    "DECLARE", "DEFAULT", "DELETE", "DELIMITER", "DESC", "DESCRIBE", "DISTINCT", "DIV", "DO",
+    "DOUBLE", "DROP", "DUPLICATE", "ELSE", "END", "ENGINE", "ENUM", "ESCAPE", "EXCEPT", "EXISTS",
+    "EXPLAIN", "FALSE", "FIRST", "FLOAT", "FOLLOWING", "FOREIGN", "FROM", "FULL", "FUNCTION",
+    "GRANT", "GROUP", "HAVING", "IF", "IGNORE", "IN", "INDEX", "INNER", "INSERT", "INT", "INTEGER",
+    "INTERSECT", "INTERVAL", "INTO", "IS", "JOIN", "JSON", "KEY", "LAST", "LEFT", "LIKE", "LIMIT",
+    "LOCK", "LONGTEXT", "LOOP", "MODIFY", "NATURAL", "NOT", "NULL", "NULLS", "OFFSET", "ON", "OR",
+    "ORDER", "OUTER", "OVER", "PARTITION", "PRECEDING", "PRIMARY", "PROCEDURE", "RANGE",
+    "RECURSIVE", "REFERENCES", "REGEXP", "RENAME", "REPLACE", "RESTRICT", "RETURNING", "RETURNS",
+    "RIGHT", "ROLLBACK", "ROLLUP", "ROW", "ROWS", "SCHEMA", "SELECT", "SET", "SHOW", "SMALLINT",
+    "SOME", "START", "STRAIGHT_JOIN", "TABLE", "TABLES", "TEMPORARY", "TEXT", "THEN", "TIME",
+    "TIMESTAMP", "TINYINT", "TO", "TRANSACTION", "TRIGGER", "TRUE", "TRUNCATE", "UNBOUNDED",
+    "UNION", "UNIQUE", "UNLOCK", "UNSIGNED", "UPDATE", "USE", "USER", "USING", "VALUE", "VALUES",
+    "VARCHAR", "VIEW", "WHEN", "WHERE", "WHILE", "WINDOW", "WITH", "XOR", "YEAR", "ZEROFILL",
 ];
 
 pub const FUNCTIONS: &[&str] = &[
-    "ABS", "AVG", "CEIL", "COALESCE", "CONCAT", "CONCAT_WS", "COUNT", "CURDATE", "CURRENT_DATE",
-    "CURRENT_TIMESTAMP", "DATE_ADD", "DATE_FORMAT", "DATE_SUB", "DATEDIFF", "DAY", "FLOOR",
-    "GROUP_CONCAT", "HOUR", "IFNULL", "LENGTH", "LOWER", "LTRIM", "MAX", "MIN", "MINUTE", "MONTH",
-    "NOW", "NULLIF", "RAND", "ROUND", "RTRIM", "SUBSTRING", "SUM", "TRIM", "UPPER", "YEAR",
+    "ABS", "ASCII", "AVG", "CAST", "CEIL", "CEILING", "CHAR", "CHAR_LENGTH", "COALESCE", "CONCAT",
+    "CONCAT_WS", "CONVERT", "COUNT", "CUME_DIST", "CURDATE", "CURRENT_DATE", "CURRENT_TIMESTAMP",
+    "CURTIME", "DATABASE", "DATE", "DATEDIFF", "DATE_ADD", "DATE_FORMAT", "DATE_SUB", "DAY",
+    "DAYNAME", "DAYOFWEEK", "DAYOFYEAR", "DENSE_RANK", "EXP", "EXTRACT", "FIELD", "FIND_IN_SET",
+    "FIRST_VALUE", "FLOOR", "FORMAT", "FROM_UNIXTIME", "GREATEST", "GROUP_CONCAT", "HEX", "HOUR",
+    "IF", "IFNULL", "INSTR", "JSON_ARRAY", "JSON_EXTRACT", "JSON_OBJECT", "JSON_VALUE", "LAG",
+    "LAST_DAY", "LAST_INSERT_ID", "LAST_VALUE", "LEAD", "LEAST", "LEFT", "LENGTH", "LN", "LOCATE",
+    "LOG", "LOWER", "LPAD", "LTRIM", "MAX", "MD5", "MIN", "MINUTE", "MOD", "MONTH", "MONTHNAME",
+    "NOW", "NTH_VALUE", "NTILE", "NULLIF", "PERCENT_RANK", "PI", "POSITION", "POW", "POWER",
+    "QUARTER", "RAND", "RANK", "REGEXP_REPLACE", "REPEAT", "REPLACE", "REVERSE", "RIGHT", "ROUND",
+    "ROW_NUMBER", "RPAD", "RTRIM", "SECOND", "SHA2", "SIGN", "SQRT", "STD", "STDDEV", "STR_TO_DATE",
+    "SUBSTRING", "SUBSTRING_INDEX", "SUM", "TIME", "TIMEDIFF", "TIMESTAMPDIFF", "TIME_FORMAT",
+    "TRIM", "TRUNCATE", "UNIX_TIMESTAMP", "UPPER", "USER", "UUID", "VARIANCE", "VERSION", "WEEK",
+    "WEEKDAY", "YEAR", "YEARWEEK",
 ];
 
 
@@ -143,23 +158,15 @@ pub fn highlight(text: &str, font: FontId) -> LayoutJob {
     job
 }
 
-/// SQL schoen formatieren (Schluesselwoerter gross, Einrueckung).
+/// SQL formatieren (siehe sqlfmt)
 pub fn format_sql(sql: &str) -> String {
-    use sqlformat::{FormatOptions, Indent, QueryParams};
-    let opts = FormatOptions {
-        indent: Indent::Spaces(2),
-        uppercase: Some(true),
-        lines_between_queries: 2,
-        max_inline_arguments: Some(60),
-        ..Default::default()
-    };
-    let mut out = sqlformat::format(sql, &QueryParams::None, &opts);
-    if sql.trim_end().ends_with(';') && !out.trim_end().ends_with(';') {
-        out.push(';');
-    }
-    out.push('\n');
-    out
+    crate::sqlfmt::format_sql(sql)
 }
+
+/// Vorschlaege beim Tippen (Einstellung)
+pub static AUTO_SUGGEST: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+/// Klammern automatisch schliessen (Einstellung)
+pub static AUTO_CLOSE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
 
 /// Id des SQL-Editors, der gerade den Fokus hat (0 = keiner). Wird vom Eingabefilter der App genutzt,
 /// damit Escape den Editor nicht verlaesst (egui wuerde sonst den Fokus entziehen).
@@ -221,14 +228,12 @@ pub struct SqlEditor {
     pub line_col: (usize, usize),
     /// Cursor (Zeichenindex)
     pub cursor: usize,
+    /// Suchen/Ersetzen/Gehe zu, von aussen angefordert (Menue, Befehle)
+    pub pending: Option<crate::keymap::Cmd>,
 }
 
 #[derive(Default)]
 pub struct EditorOutput {
-    /// Strg+Alt+S: Datei oder Auswahl ausfuehren
-    pub run: bool,
-    /// Strg+Enter: Anweisung unter dem Cursor ausfuehren
-    pub run_current: bool,
     pub format: bool,
     pub changed: bool,
     pub selection: Option<String>,
@@ -413,6 +418,22 @@ pub fn duplicate_lines(text: &str, first: usize, last: usize) -> String {
     out.join("\n")
 }
 
+/// Zeilen `first..=last` entfernen. Liefert (neuer Text, entfernter Text mit Zeilenumbruch,
+/// Cursor am Anfang der Zeile, die nachrueckt).
+pub fn remove_lines(text: &str, first: usize, last: usize) -> (String, String, usize) {
+    let lines: Vec<&str> = text.split('\n').collect();
+    let last = last.min(lines.len() - 1);
+    let removed = lines[first..=last].join("\n") + "\n";
+    let mut rest: Vec<&str> = lines[..first].to_vec();
+    rest.extend_from_slice(&lines[last + 1..]);
+    if rest.is_empty() {
+        return (String::new(), removed, 0);
+    }
+    let t = rest.join("\n");
+    let cur = line_start(&t, first.min(rest.len() - 1));
+    (t, removed, cur)
+}
+
 /// Alle Fundstellen (Zeichenindizes)
 fn find_all(text: &str, q: &str, case: bool) -> Vec<(usize, usize)> {
     if q.is_empty() {
@@ -450,6 +471,7 @@ impl SqlEditor {
             error_line: None,
             line_col: (1, 1),
             cursor: 0,
+            pending: None,
         }
     }
 
@@ -553,36 +575,38 @@ impl SqlEditor {
         Some(Popup { items, selected: 0, word_start: s, cursor })
     }
 
+    /// Oeffnet die Suchleiste (mit markiertem Text als Suchbegriff) bzw. Ersetzen / Gehe zu.
+    pub fn open_find(&mut self, ctx: &egui::Context, text: &str, replace: bool) {
+        let sel = self.selection(ctx).filter(|(a, b)| a != b).map(|(a, b)| text.chars().skip(a).take(b - a).collect::<String>());
+        let f = self.find.get_or_insert_with(Find::default);
+        if let Some(s) = sel.filter(|s| !s.contains('\n')) {
+            f.query = s;
+        }
+        if replace {
+            f.show_replace = true;
+        }
+        f.focus = true;
+    }
+
+    pub fn open_goto(&mut self) {
+        self.goto = Some((String::new(), true));
+    }
+
     /// Tastenkuerzel, die den Text veraendern (vor dem Zeichnen des Editors).
     fn handle_keys(&mut self, ui: &mut egui::Ui, text: &mut String, out: &mut EditorOutput) {
+        use crate::keymap::{Cmd, take};
         let ctx = ui.ctx().clone();
-        let cmd = Modifiers::COMMAND;
-        let pressed = |ui: &mut egui::Ui, m: Modifiers, k: Key| ui.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(m, k)));
-
-        if pressed(ui, cmd | Modifiers::ALT, Key::S) {
-            out.run = true;
+        if take(ui, Cmd::Find) {
+            self.open_find(&ctx, text, false);
         }
-        if pressed(ui, cmd | Modifiers::ALT, Key::L) || pressed(ui, Modifiers::SHIFT | Modifiers::ALT, Key::F) || pressed(ui, cmd | Modifiers::SHIFT, Key::F) {
+        if take(ui, Cmd::Replace) {
+            self.open_find(&ctx, text, true);
+        }
+        if take(ui, Cmd::GotoLine) {
+            self.open_goto();
+        }
+        if take(ui, Cmd::Format) {
             out.format = true;
-        }
-        if self.popup.is_none() && !ui.input(|i| i.modifiers.alt) && pressed(ui, cmd, Key::Enter) {
-            out.run_current = true;
-        }
-        if !ui.input(|i| i.modifiers.alt) && pressed(ui, cmd, Key::F) {
-            let sel = self.selection(&ctx).filter(|(a, b)| a != b).map(|(a, b)| text.chars().skip(a).take(b - a).collect::<String>());
-            let f = self.find.get_or_insert_with(Find::default);
-            if let Some(s) = sel.filter(|s| !s.contains('\n')) {
-                f.query = s;
-            }
-            f.focus = true;
-        }
-        if !ui.input(|i| i.modifiers.alt) && pressed(ui, cmd, Key::H) {
-            let f = self.find.get_or_insert_with(Find::default);
-            f.show_replace = true;
-            f.focus = true;
-        }
-        if !ui.input(|i| i.modifiers.alt) && pressed(ui, cmd, Key::G) {
-            self.goto = Some((String::new(), true));
         }
 
         let Some((a, b)) = self.selection(&ctx) else { return };
@@ -591,67 +615,73 @@ impl SqlEditor {
         if b > a && last_col == 0 && last > first {
             last -= 1; // Auswahl endet am Zeilenanfang
         }
+        let changed = |this: &mut Self, t: &str, out: &mut EditorOutput| {
+            out.changed = true;
+            this.prev_text = t.to_string();
+        };
 
-        // Strg+# (deutsche Tastatur) oder Strg+/
-        let comment = ui.input_mut(|i| {
-            let mut hit = false;
-            i.events.retain(|e| {
-                if let egui::Event::Key { key, physical_key, pressed: true, modifiers, .. } = e {
-                    if modifiers.command && !modifiers.alt && (*key == Key::Slash || *physical_key == Some(Key::Backslash)) {
-                        hit = true;
-                        return false;
-                    }
-                }
-                true
-            });
-            hit
-        });
-        if comment {
+        if take(ui, Cmd::ToggleComment) {
             *text = toggle_comment(text, first, last);
             self.set_selection(&ctx, line_start(text, first), line_start(text, last + 1).saturating_sub(if last + 1 < text.split('\n').count() { 1 } else { 0 }));
-            out.changed = true;
-            self.prev_text = text.clone();
+            changed(self, text, out);
         }
-
-        // Alt+Pfeil: Zeilen verschieben, Umschalt+Alt+Pfeil: duplizieren
-        for (key, dir) in [(Key::ArrowUp, -1i32), (Key::ArrowDown, 1)] {
-            if pressed(ui, Modifiers::ALT, key) {
+        // Strg+X ohne Markierung: ganze Zeile ausschneiden (mit Markierung normales Ausschneiden)
+        if a == b && take(ui, Cmd::CutLine) {
+            let (t, removed, cur) = remove_lines(text, first, last);
+            ctx.copy_text(removed);
+            *text = t;
+            self.set_cursor(&ctx, cur);
+            changed(self, text, out);
+        }
+        if take(ui, Cmd::DeleteLine) {
+            let (t, _, cur) = remove_lines(text, first, last);
+            *text = t;
+            self.set_cursor(&ctx, cur);
+            changed(self, text, out);
+        }
+        // Strg+D: Zeile(n) darunter duplizieren, Cursor und Markierung bleiben stehen
+        if take(ui, Cmd::DuplicateLine) {
+            *text = duplicate_lines(text, first, last);
+            self.set_selection(&ctx, a, b);
+            changed(self, text, out);
+        }
+        if take(ui, Cmd::SelectLine) {
+            let end = line_start(text, last + 1);
+            self.set_selection(&ctx, line_start(text, first), end);
+        }
+        for (up, mv, cp) in [(true, Cmd::MoveLineUp, Cmd::CopyLineUp), (false, Cmd::MoveLineDown, Cmd::CopyLineDown)] {
+            let dir = if up { -1 } else { 1 };
+            if take(ui, mv) {
                 if let Some((t, nf)) = move_lines(text, first, last, dir) {
                     *text = t;
                     let span = last - first;
                     self.set_selection(&ctx, line_start(text, nf), line_start(text, nf + span + 1).saturating_sub(1).max(line_start(text, nf)));
-                    out.changed = true;
-                    self.prev_text = text.clone();
+                    changed(self, text, out);
                 }
             }
-            if pressed(ui, Modifiers::ALT | Modifiers::SHIFT, key) {
+            if take(ui, cp) {
                 *text = duplicate_lines(text, first, last);
-                if dir > 0 {
+                if !up {
+                    let span = last - first;
                     let nf = last + 1;
-                    self.set_cursor(&ctx, line_start(text, nf));
+                    self.set_selection(&ctx, line_start(text, nf), line_start(text, nf + span + 1).saturating_sub(1).max(line_start(text, nf)));
                 }
-                out.changed = true;
-                self.prev_text = text.clone();
+                changed(self, text, out);
             }
         }
-
         // Tab / Umschalt+Tab bei mehrzeiliger Auswahl: Block einruecken
-        if self.popup.is_none() && last > first {
-            if pressed(ui, Modifiers::NONE, Key::Tab) {
-                *text = map_lines(text, first, last, |l| format!("  {l}"));
-                self.set_selection(&ctx, line_start(text, first), line_start(text, last + 1).saturating_sub(1));
-                out.changed = true;
-                self.prev_text = text.clone();
-            }
+        if self.popup.is_none() && last > first && take(ui, Cmd::Indent) {
+            *text = map_lines(text, first, last, |l| format!("  {l}"));
+            self.set_selection(&ctx, line_start(text, first), line_start(text, last + 1).saturating_sub(1));
+            changed(self, text, out);
         }
-        if pressed(ui, Modifiers::SHIFT, Key::Tab) {
+        if take(ui, Cmd::Outdent) {
             *text = map_lines(text, first, last, |l| {
                 let n = l.chars().take(2).take_while(|c| *c == ' ').count();
                 if l.starts_with('\t') { l[1..].to_string() } else { l[n..].to_string() }
             });
             self.set_selection(&ctx, line_start(text, first), line_start(text, last + 1).saturating_sub(1).max(line_start(text, first)));
-            out.changed = true;
-            self.prev_text = text.clone();
+            changed(self, text, out);
         }
     }
 
@@ -734,11 +764,11 @@ impl SqlEditor {
                     format!("{} von {}", (f.current % matches.len()) + 1, matches.len())
                 };
                 ui.label(RichText::new(info).small());
-                if ui.small_button("↑").on_hover_text("Vorheriger (Umschalt+Enter)").clicked() && !matches.is_empty() {
+                if crate::icons::button(ui, crate::icons::Icon::Up, "Vorheriger").clicked() && !matches.is_empty() {
                     f.current = (f.current + matches.len() - 1) % matches.len();
                     jump = Some(f.current);
                 }
-                if (ui.small_button("↓").on_hover_text("Nächster (Enter)").clicked() || enter) && !matches.is_empty() {
+                if (crate::icons::button(ui, crate::icons::Icon::Down, "Nächster (Enter)").clicked() || enter) && !matches.is_empty() {
                     if enter {
                         f.current = (f.current + 1) % matches.len();
                         r.request_focus();
@@ -748,7 +778,7 @@ impl SqlEditor {
                     jump = Some(f.current);
                 }
                 ui.toggle_value(&mut f.show_replace, "Ersetzen");
-                if ui.small_button("✖").on_hover_text("Schließen (Esc)").clicked() || ui.input(|i| i.key_pressed(Key::Escape)) {
+                if crate::icons::button(ui, crate::icons::Icon::Close, "Schließen (Esc)").clicked() || ui.input(|i| i.key_pressed(Key::Escape)) {
                     close = true;
                 }
             });
@@ -863,7 +893,13 @@ impl SqlEditor {
                 self.goto = None;
             }
         }
-        let force = focused && ui.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(Modifiers::COMMAND, Key::Space)));
+        let force = focused && crate::keymap::take(ui, crate::keymap::Cmd::Suggest);
+        match self.pending.take() {
+            Some(crate::keymap::Cmd::Find) => self.open_find(&ctx, text, false),
+            Some(crate::keymap::Cmd::Replace) => self.open_find(&ctx, text, true),
+            Some(crate::keymap::Cmd::GotoLine) => self.open_goto(),
+            _ => {}
+        }
         if focused {
             self.handle_keys(ui, text, &mut out);
         }
@@ -887,7 +923,7 @@ impl SqlEditor {
                     if r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
                         go = line.trim().parse::<usize>().ok();
                     }
-                    if ui.input(|i| i.key_pressed(Key::Escape)) || ui.small_button("✖").clicked() {
+                    if ui.input(|i| i.key_pressed(Key::Escape)) || crate::icons::button(ui, crate::icons::Icon::Close, "").clicked() {
                         close = true;
                     }
                 });
@@ -948,7 +984,6 @@ impl SqlEditor {
                             .desired_width(f32::INFINITY)
                             .desired_rows(((height - 8.0) / row_h).max(3.0) as usize)
                             .lock_focus(true)
-                            .hint_text("SQL hier eingeben …   Strg+Leertaste = Vorschläge, Strg+Alt+S = ausführen")
                             .layouter(&mut layouter);
                         let o = te.show(ui);
                         let gp = o.galley_pos;
@@ -1091,7 +1126,9 @@ impl SqlEditor {
         if o.response.response.changed() {
             out.changed = true;
             if let Some(c) = cursor {
-                self.auto_close(&ctx, text, c);
+                if AUTO_CLOSE.load(std::sync::atomic::Ordering::Relaxed) {
+                    self.auto_close(&ctx, text, c);
+                }
             }
             self.error_line = None;
         }
@@ -1100,7 +1137,8 @@ impl SqlEditor {
         }
 
         // Vorschlaege aktualisieren
-        if o.response.response.changed() || force {
+        let auto = AUTO_SUGGEST.load(std::sync::atomic::Ordering::Relaxed);
+        if (o.response.response.changed() && auto) || force {
             self.popup = cursor.and_then(|c| Self::suggestions(text, c, words, force));
         } else if let (Some(p), Some(c)) = (&self.popup, cursor) {
             if p.cursor != c {
@@ -1186,8 +1224,7 @@ mod tests {
 
     #[test]
     fn format_basic() {
-        let f = format_sql("select a,b from t where x=1;");
-        assert!(f.starts_with("SELECT\n  a, b\nFROM\n  t\nWHERE\n  x = 1;"), "{f}");
+        assert_eq!(format_sql("select a,b from t where x=1;"), "SELECT a, b\nFROM t\nWHERE x = 1;\n");
     }
 
     #[test]
@@ -1229,6 +1266,16 @@ mod edit_tests {
         assert_eq!(move_lines(t, 1, 1, 1).unwrap().0, "a\nc\nb");
         assert!(move_lines(t, 0, 0, -1).is_none());
         assert_eq!(duplicate_lines(t, 1, 1), "a\nb\nb\nc");
+        assert_eq!(duplicate_lines(t, 0, 1), "a\nb\na\nb\nc");
+    }
+
+    #[test]
+    fn remove() {
+        let t = "a\nb\nc";
+        assert_eq!(remove_lines(t, 1, 1), ("a\nc".to_string(), "b\n".to_string(), 2));
+        assert_eq!(remove_lines(t, 2, 2), ("a\nb".to_string(), "c\n".to_string(), 2));
+        assert_eq!(remove_lines(t, 0, 2), (String::new(), "a\nb\nc\n".to_string(), 0));
+        assert_eq!(remove_lines("x", 0, 0).0, "");
     }
 
     #[test]

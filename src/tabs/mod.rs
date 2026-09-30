@@ -4,11 +4,16 @@ pub mod builder;
 pub mod data;
 pub mod designer;
 pub mod er;
+mod er_layout;
+pub mod help;
+pub mod log;
 pub mod safety;
+pub mod settings;
 pub mod sql;
 pub mod structure;
 
 use crate::db::{Db, Schema};
+use crate::keymap::Cmd;
 use eframe::egui;
 use std::collections::HashMap;
 
@@ -35,6 +40,24 @@ pub enum Action {
     OpenSafety,
     /// Dateien im Projekt haben sich geaendert (Explorer neu einlesen)
     FilesChanged,
+    /// Datei oeffnen und zu einer Zeile (0-basiert) springen
+    OpenFileAt { path: std::path::PathBuf, line: usize },
+    /// Hilfe oeffnen, optional bei einem Abschnitt
+    OpenHelp(Option<String>),
+    /// Einstellungen oeffnen, optional bei einem Abschnitt
+    OpenSettings(Option<String>),
+    OpenLog,
+    /// Befehl ausfuehren (wie per Tastenkuerzel)
+    Run(Cmd),
+    /// Ausgefuehrte Anweisungen fuer den Verlauf
+    History(Vec<crate::qhistory::Entry>),
+    /// Einstellungen wurden geaendert (neu anwenden und speichern)
+    SettingsChanged,
+    /// Verbindungsdaten wurden geaendert: neu verbinden
+    Connect,
+    SetupVsCode,
+    /// Speicherordner wurde verschoben (offene Dateien und Projekte anpassen)
+    FilesMoved { from: std::path::PathBuf, to: std::path::PathBuf },
 }
 
 #[derive(Default)]
@@ -75,8 +98,9 @@ pub struct Ctx<'a> {
     pub schemas: &'a mut SchemaCache,
     pub databases: &'a [String],
     pub server: &'a crate::server::Server,
-    /// Aktuelles Projekt (Ordner)
-    pub project: &'a std::path::Path,
+    /// Geoeffneter Projektordner
+    pub project: Option<&'a std::path::Path>,
+    pub settings: &'a mut crate::settings::Settings,
     pub actions: &'a mut Vec<Action>,
 }
 
@@ -97,6 +121,14 @@ pub trait TabView {
     fn ui(&mut self, ui: &mut egui::Ui, cx: &mut Ctx);
     /// F5 / Ausfuehren
     fn execute(&mut self, _cx: &mut Ctx) {}
+    /// Befehl fuer diese Registerkarte (Formatieren, Suchen, ...). true = erledigt
+    fn command(&mut self, cmd: Cmd, cx: &mut Ctx) -> bool {
+        if cmd == Cmd::RunAll {
+            self.execute(cx);
+            return true;
+        }
+        false
+    }
     /// Wird aufgerufen, wenn sich die Struktur einer Datenbank geaendert hat.
     fn schema_changed(&mut self, _db: &str, _cx: &mut Ctx) {}
     /// Gleiche Registerkarte schon offen? (fuer Wiederverwendung)
@@ -121,6 +153,14 @@ pub trait TabView {
         true
     }
     fn save_now(&mut self) {}
+    /// Speichern ohne Rueckfrage (beim Beenden, Projektwechsel)
+    fn save_now_quiet(&mut self) {
+        self.save_now();
+    }
+    /// Zu einer Zeile springen (Suchergebnisse)
+    fn goto_line(&mut self, _line: usize) {}
+    /// Abschnitt zeigen (Hilfe, Einstellungen)
+    fn show_section(&mut self, _id: &str) {}
     /// Text fuer die Statusleiste
     fn status(&self) -> Option<String> {
         None
@@ -148,11 +188,11 @@ pub fn db_combo(ui: &mut egui::Ui, id: &str, dbs: &[String], value: &mut String)
 pub fn str_combo(ui: &mut egui::Ui, id: impl std::hash::Hash + std::fmt::Debug, items: &[String], value: &mut String, width: f32) -> bool {
     let mut changed = false;
     egui::ComboBox::from_id_salt(id)
-        .selected_text(value.as_str())
+        .selected_text(if value.is_empty() { "–" } else { value.as_str() })
         .width(width)
         .show_ui(ui, |ui| {
             for it in items {
-                if ui.selectable_label(value == it, it).clicked() {
+                if ui.selectable_label(value == it, if it.is_empty() { "–" } else { it.as_str() }).clicked() {
                     *value = it.clone();
                     changed = true;
                 }
