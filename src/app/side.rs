@@ -47,8 +47,7 @@ pub struct SearchState {
     pub case: bool,
     pub focus: bool,
     searched: Option<(String, bool)>,
-    /// (Datei, [(Zeile, Text)])
-    results: Vec<(PathBuf, Vec<(usize, String)>)>,
+    results: Hits,
     truncated: bool,
 }
 
@@ -66,7 +65,10 @@ pub fn text_files(n: &Node, out: &mut Vec<PathBuf>) {
     }
 }
 
-fn search_files(files: &[PathBuf], query: &str, case: bool) -> (Vec<(PathBuf, Vec<(usize, String)>)>, bool) {
+/// Treffer je Datei: (Datei, [(Zeile, Text)])
+type Hits = Vec<(PathBuf, Vec<(usize, String)>)>;
+
+fn search_files(files: &[PathBuf], query: &str, case: bool) -> (Hits, bool) {
     let q = if case { query.to_string() } else { query.to_lowercase() };
     let mut out = Vec::new();
     let mut total = 0;
@@ -274,8 +276,9 @@ impl EasyApp {
         };
         let mut run = false;
         egui::Frame::new().inner_margin(egui::Margin::symmetric(8, 4)).show(ui, |ui| {
+            let w = ui.available_width();
             ui.horizontal(|ui| {
-                let r = ui.add(egui::TextEdit::singleline(&mut self.search.query).hint_text("Suchen").desired_width(ui.available_width() - 34.0));
+                let r = ui.add(egui::TextEdit::singleline(&mut self.search.query).hint_text("Suchen").desired_width((w - 52.0).max(60.0)));
                 if self.search.focus {
                     r.request_focus();
                     self.search.focus = false;

@@ -86,7 +86,7 @@ impl TabView for LogTab {
             self.cache_count = Some(count);
         }
         ui.ctx().request_repaint_after(std::time::Duration::from_millis(700));
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             ui.selectable_value(&mut self.filter, Filter::All, "Alles");
             ui.selectable_value(&mut self.filter, Filter::Server, "Server");
             ui.selectable_value(&mut self.filter, Filter::Queries, "Anweisungen");
@@ -107,7 +107,7 @@ impl TabView for LogTab {
             }
             ui.checkbox(&mut self.hide_internal, "Interne ausblenden")
                 .on_hover_text("Anweisungen ausblenden, die EasyMySQL selbst sendet (Struktur lesen, Verbindungen)");
-            ui.checkbox(&mut self.show_old, "Frühere Sitzungen");
+            ui.checkbox(&mut self.show_old, "Frühere Sitzungen").on_hover_text("Meldungen vor dem letzten Start (aus server.log)");
             ui.separator();
             if ui.button("Kopieren").clicked() {
                 let text: Vec<String> = self.cache.iter().filter(|l| self.visible(l)).map(|l| format!("{}  {}", l.time, l.text)).collect();
@@ -139,8 +139,9 @@ impl TabView for LogTab {
         }
         let start = self.cleared_at.unwrap_or(0).min(self.cache.len());
         let lines: Vec<&LogLine> = self.cache[start..].iter().filter(|l| self.visible(l)).collect();
-        let row_h = ui.text_style_height(&egui::TextStyle::Monospace) + 2.0;
+        let row_h = ui.text_style_height(&egui::TextStyle::Monospace);
         style::sunken_frame().show(ui, |ui| {
+            ui.spacing_mut().item_spacing.y = 0.0;
             egui::ScrollArea::both().stick_to_bottom(true).auto_shrink([false, false]).show_rows(ui, row_h, lines.len(), |ui, range| {
                 for l in &lines[range] {
                     let low = l.text.to_lowercase();

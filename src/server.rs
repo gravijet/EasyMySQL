@@ -276,7 +276,16 @@ fn parse_query_log(line: &str) -> Option<String> {
                 Some(format!("[{id}] {cmd} {arg}").trim_end().to_string())
             }
         }
-        [one] if !one.trim().is_empty() => Some(format!("    {}", one.trim())),
+        [one] if !one.trim().is_empty() => {
+            // "    11 Quit" (Befehl ohne Argument) oder Fortsetzung einer mehrzeiligen Anweisung
+            let t = one.trim();
+            match t.split_once(' ') {
+                Some((id, cmd)) if id.chars().all(|c| c.is_ascii_digit()) && !cmd.contains(' ') && one.starts_with(['\t', ' ']) => {
+                    Some(format!("[{id}] {cmd}"))
+                }
+                _ => Some(format!("    {t}")),
+            }
+        }
         _ => None,
     }
 }
@@ -1010,6 +1019,7 @@ mod log_tests {
         assert_eq!(parse_query_log("\t\t    12 Query\tSELECT 2").as_deref(), Some("[12] SELECT 2"));
         assert_eq!(parse_query_log("\t\t    7 Connect\troot@localhost on  using TCP/IP").as_deref(), Some("[7] Connect root@localhost on  using TCP/IP"));
         assert_eq!(parse_query_log("FROM t").as_deref(), Some("    FROM t"));
+        assert_eq!(parse_query_log("\t\t    11 Quit").as_deref(), Some("[11] Quit"));
         assert!(parse_query_log("Time\t\t    Id Command\tArgument").is_none());
     }
 

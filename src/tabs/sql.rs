@@ -269,7 +269,7 @@ impl SqlTab {
                 None => return,
             },
         };
-        let first = sql.trim_start().split_whitespace().next().unwrap_or("").to_uppercase();
+        let first = sql.split_whitespace().next().unwrap_or("").to_uppercase();
         if first == "EXPLAIN" || first == "ANALYZE" {
             self.run(cx, sql, 0);
         } else {

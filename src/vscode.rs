@@ -57,7 +57,7 @@ fn json_str(s: &str) -> String {
 
 /// Legt den Arbeitsordner samt .vscode-Einstellungen an.
 pub fn prepare_workspace(database: &str) -> Result<PathBuf, String> {
-    prepare_folder(&workspace_dir(), database)
+    prepare_folder(&crate::workspace::storage_root(), database)
 }
 
 /// .vscode-Einstellungen (SQLTools-Verbindung) in einem Ordner anlegen.

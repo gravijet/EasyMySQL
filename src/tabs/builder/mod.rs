@@ -95,7 +95,7 @@ impl Env<'_> {
     fn inside(&self, s: &Select) -> Env<'_> {
         let mut env = self.clone();
         let mut own: Vec<(String, Vec<String>)> = s.sources.iter().map(|src| (src.reference(), self.source_cols(src))).collect();
-        own.extend(env.scope.drain(..));
+        own.append(&mut env.scope);
         env.scope = own;
         env.depth += 1;
         env
@@ -504,9 +504,13 @@ fn cond_item_ui(ui: &mut egui::Ui, c: &mut Cond, env: &Env, id: egui::Id) {
                     }
                 }
                 if op.allows_sub() {
-                    let mut use_sub = sub.is_some();
-                    if ui.toggle_value(&mut use_sub, RichText::new("Unterabfrage").small()).changed() {
-                        *sub = use_sub.then(|| Box::new(new_query(env)));
+                    let use_sub = sub.is_some();
+                    if ui
+                        .add(egui::Button::new(RichText::new("Unterabfrage").small()).selected(use_sub))
+                        .on_hover_text("Werte aus einer Unterabfrage statt fester Werte")
+                        .clicked()
+                    {
+                        *sub = (!use_sub).then(|| Box::new(new_query(env)));
                     }
                 }
                 match (op.arity(), sub.is_some()) {

@@ -64,28 +64,40 @@ pub fn block_autoscroll(r: Rect) {
 
 impl Autoscroll {
     fn hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
-        for e in &raw.events {
-            match e {
-                egui::Event::PointerMoved(p) => self.pos = *p,
-                egui::Event::PointerButton { pos, button: egui::PointerButton::Middle, pressed, .. } => {
-                    if *pressed {
-                        let blocked = NO_AUTOSCROLL.lock().unwrap().iter().any(|r| r.contains(*pos));
-                        if !blocked {
-                            self.anchor = Some(*pos);
-                            self.pos = *pos;
-                            self.active = false;
-                        }
-                    } else {
-                        self.anchor = None;
-                        self.active = false;
-                    }
-                }
-                egui::Event::PointerGone | egui::Event::WindowFocused(false) => {
-                    self.anchor = None;
-                    self.active = false;
-                }
-                _ => {}
+        let mut consumed = false;
+        let blocked_rects = NO_AUTOSCROLL.lock().unwrap().clone();
+        raw.events.retain(|e| match e {
+            egui::Event::PointerMoved(p) => {
+                self.pos = *p;
+                true
             }
+            egui::Event::PointerButton { pos, button: egui::PointerButton::Middle, pressed, .. } => {
+                if *pressed {
+                    if blocked_rects.iter().any(|r| r.contains(*pos)) {
+                        return true;
+                    }
+                    self.anchor = Some(*pos);
+                    self.pos = *pos;
+                    self.active = false;
+                    consumed = true;
+                    false
+                } else if self.anchor.take().is_some() {
+                    self.active = false;
+                    consumed = true;
+                    false
+                } else {
+                    true
+                }
+            }
+            egui::Event::PointerGone | egui::Event::WindowFocused(false) => {
+                self.anchor = None;
+                self.active = false;
+                true
+            }
+            _ => true,
+        });
+        if consumed {
+            ctx.request_repaint();
         }
         let now = Instant::now();
         let dt = self.last.map(|l| now.duration_since(l).as_secs_f32()).unwrap_or(0.0).min(0.05);
