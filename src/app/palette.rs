@@ -66,6 +66,9 @@ enum Pick {
 
 impl EasyApp {
     pub(super) fn palette_ui(&mut self, ctx: &egui::Context) {
+        if self.palette.as_ref().is_some_and(|p| !p.query.starts_with('>')) {
+            self.rescan_tree();
+        }
         let Some(p) = self.palette.as_mut() else { return };
         // ">" am Anfang = Befehle (wie in VS Code)
         p.commands = p.query.starts_with('>');

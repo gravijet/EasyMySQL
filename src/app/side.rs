@@ -121,7 +121,7 @@ impl EasyApp {
         }
     }
 
-    fn rescan_tree(&mut self) {
+    pub(super) fn rescan_tree(&mut self) {
         let Some(p) = &self.project else {
             self.tree = None;
             return;
