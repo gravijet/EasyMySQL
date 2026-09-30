@@ -939,7 +939,7 @@ impl ErTab {
             self.selected = pointer.filter(|p| hit_table(self, *p).is_none()).and_then(hit_fk).map(|i| fk_key(&schema.fks[i]));
         }
         // Entf: ausgewaehlte Beziehung loeschen
-        let editing_text = ui.ctx().memory(|m| m.focused().is_some());
+        let editing_text = ui.ctx().egui_wants_keyboard_input();
         if !editing_text && self.link.is_none() && ui.input(|i| i.key_pressed(egui::Key::Delete)) {
             if let Some(fk) = self.selected.as_ref().and_then(|k| schema.fks.iter().find(|f| fk_key(f) == *k)) {
                 cx.actions.push(self.delete_action(fk));
@@ -1303,15 +1303,6 @@ impl ErTab {
                         ui.end_row();
                     }
                 });
-                let hint = match dlg.kind {
-                    LinkKind::OneToMany => "Beispiel: schueler.klasse_id verweist auf klasse.id",
-                    LinkKind::OneToOne => "Die Spalte wird zusätzlich eindeutig (UNIQUE) – so kann jeder Wert nur einmal vorkommen.",
-                    LinkKind::ManyToMany => {
-                        "Legt eine Zwischentabelle mit den Schlüsseln beider Tabellen an (zusammen Primärschlüssel). \
-                         Wird in A oder B etwas gelöscht, verschwinden die Zuordnungen automatisch."
-                    }
-                };
-                ui.label(RichText::new(hint).small().color(style::pal().null_text));
                 if dlg.kind != LinkKind::ManyToMany {
                     // Typen vergleichen
                     let ty = |t: &str, c: &str| {

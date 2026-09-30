@@ -1050,6 +1050,12 @@ fn saved_path(id: &str) -> std::path::PathBuf {
 
 type Job = Receiver<Result<ResultSet, String>>;
 
+/// Laufende Ausfuehrung: Start, SQL (fuer den Verlauf)
+struct Running {
+    start: std::time::Instant,
+    sql: String,
+}
+
 pub struct BuilderTab {
     id: String,
     pub db: String,
@@ -1064,11 +1070,14 @@ pub struct BuilderTab {
     last_save: std::time::Instant,
     view_name: Option<String>,
     initialized: bool,
+    running: Option<Running>,
 }
 
 impl BuilderTab {
     pub fn new(db: Option<String>) -> Self {
-        let id = crate::server::timestamp() + &format!("-{}", std::process::id() % 1000);
+        static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(1);
+        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let id = format!("{}-{}-{n}", crate::server::timestamp(), std::process::id() % 1000);
         Self {
             id,
             db: db.unwrap_or_default(),
@@ -1083,6 +1092,7 @@ impl BuilderTab {
             last_save: std::time::Instant::now(),
             view_name: None,
             initialized: false,
+            running: None,
         }
     }
 
@@ -1140,15 +1150,24 @@ impl BuilderTab {
             let _ = tx.send(res);
         });
         self.job = Some(rx);
-        let entry = crate::qhistory::Entry { time: crate::server::timestamp(), db: self.db.clone(), millis: 0, error: false, sql: self.query.pretty() };
-        cx.actions.push(Action::History(vec![entry]));
+        self.running = Some(Running { start: std::time::Instant::now(), sql: self.query.pretty() });
     }
 
-    fn poll(&mut self) {
+    fn poll(&mut self, cx: &mut Ctx) {
         let Some(rx) = &self.job else { return };
         let Ok(r) = rx.try_recv() else { return };
         self.job = None;
         self.grid.reset();
+        if let Some(run) = self.running.take() {
+            let entry = crate::qhistory::Entry {
+                time: crate::server::timestamp(),
+                db: self.db.clone(),
+                millis: run.start.elapsed().as_millis() as u64,
+                error: r.is_err(),
+                sql: run.sql,
+            };
+            cx.actions.push(Action::History(vec![entry]));
+        }
         match r {
             Ok(rs) => {
                 self.result = Some(rs);
@@ -1195,7 +1214,7 @@ impl TabView for BuilderTab {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, cx: &mut Ctx) {
-        self.poll();
+        self.poll(cx);
         if self.job.is_some() {
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(50));
         }
