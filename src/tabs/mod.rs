@@ -6,6 +6,7 @@ pub mod designer;
 pub mod er;
 mod er_layout;
 pub mod help;
+mod help_content;
 pub mod log;
 pub mod safety;
 pub mod settings;
@@ -161,10 +162,6 @@ pub trait TabView {
     fn goto_line(&mut self, _line: usize) {}
     /// Abschnitt zeigen (Hilfe, Einstellungen)
     fn show_section(&mut self, _id: &str) {}
-    /// Text fuer die Statusleiste
-    fn status(&self) -> Option<String> {
-        None
-    }
 }
 
 /// Auswahlfeld fuer eine Datenbank. Liefert true bei Aenderung.

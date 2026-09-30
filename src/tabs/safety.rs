@@ -147,7 +147,7 @@ impl SafetyTab {
         ui.horizontal(|ui| {
             ui.label("Ordner:");
             ui.label(RichText::new(self.cfg.dir().display().to_string()).monospace().small());
-            if ui.small_button("Ändern...").clicked() {
+            if ui.small_button("Ändern …").clicked() {
                 if let Some(p) = rfd::FileDialog::new().pick_folder() {
                     self.cfg.dir = p.display().to_string();
                 }
@@ -162,17 +162,12 @@ impl SafetyTab {
                 self.refresh(cx);
             }
         }
-        ui.label(
-            RichText::new("Zusätzlich wird automatisch gesichert, bevor Datenbanken/Tabellen gelöscht oder geleert werden.")
-                .small()
-                .color(style::pal().null_text),
-        );
         ui.add_space(4.0);
         style::sunken_frame().show(ui, |ui| {
             ui.set_min_width(ui.available_width());
             egui::ScrollArea::vertical().id_salt("backuplist").max_height(220.0).show(ui, |ui| {
                 if self.list.is_empty() {
-                    ui.label(RichText::new("Noch keine Sicherungen vorhanden.").color(style::pal().null_text));
+                    ui.label(RichText::new("Keine Sicherungen").color(style::pal().null_text));
                 }
                 egui::Grid::new("backups").striped(true).num_columns(5).spacing([16.0, 4.0]).show(ui, |ui| {
                     for h in ["Zeitpunkt", "Anlass", "Datenbanken", "Größe", ""] {
@@ -186,7 +181,7 @@ impl SafetyTab {
                         ui.label(if names.is_empty() { "–".to_string() } else { names.join(", ") });
                         ui.label(backup::human_size(b.total()));
                         ui.horizontal(|ui| {
-                            if ui.add_enabled(!busy && connected && !b.dbs.is_empty(), egui::Button::new("Wiederherstellen...").small()).clicked() {
+                            if ui.add_enabled(!busy && connected && !b.dbs.is_empty(), egui::Button::new("Wiederherstellen …").small()).clicked() {
                                 let db = b.dbs[0].0.clone();
                                 self.restore = Some(RestoreDlg { target: db.clone(), db, backup: b.clone() });
                             }
@@ -269,22 +264,13 @@ impl SafetyTab {
                 }
             }
             if ui
-                .add_enabled(!busy && !st.is_busy() && cx.server.paths.is_some(), egui::Button::new("Server retten..."))
+                .add_enabled(!busy && !st.is_busy() && cx.server.paths.is_some(), egui::Button::new("Server retten …"))
                 .on_hover_text("Wenn der Server nicht mehr startet oder die Daten stark beschädigt sind")
                 .clicked()
             {
                 self.confirm_rescue = true;
             }
         });
-        ui.label(
-            RichText::new(
-                "Prüfen/Reparieren: bei einzelnen beschädigten Tabellen.  Server retten: wenn MariaDB nicht mehr startet – \
-                 die Daten werden aus dem alten Datenordner gerettet (notfalls aus der neuesten Sicherung) und in einen \
-                 neuen Datenordner eingespielt. Der alte Ordner bleibt immer erhalten.",
-            )
-            .small()
-            .color(style::pal().null_text),
-        );
     }
 
     fn dialogs(&mut self, ctx: &egui::Context, cx: &mut Ctx) {

@@ -285,7 +285,7 @@ impl EasyApp {
                 if resp.on_hover_text(tip).clicked() {
                     cmd = Some(Cmd::ServerLog);
                 }
-                for (icon, c) in [(Icon::Log, Cmd::ServerLog), (Icon::Backup, Cmd::Backups), (Icon::Wizard, Cmd::QueryBuilder), (Icon::Diagram, Cmd::ErDiagram)] {
+                for (icon, c) in [(Icon::Help, Cmd::Help), (Icon::Log, Cmd::ServerLog), (Icon::Backup, Cmd::Backups), (Icon::Wizard, Cmd::QueryBuilder), (Icon::Diagram, Cmd::ErDiagram)] {
                     let tip = match keymap::text(c) {
                         k if k.is_empty() => c.label().to_string(),
                         k => format!("{} ({k})", c.label()),
