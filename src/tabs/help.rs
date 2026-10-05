@@ -12,11 +12,14 @@ pub struct HelpTab {
     search: String,
     /// Zu diesem Abschnitt scrollen
     goto: Option<String>,
+    active_section: String,
+    scroll_offset: Option<f32>,
+    pinned_section: bool,
 }
 
 impl HelpTab {
     pub fn new() -> Self {
-        Self { chapter: 0, search: String::new(), goto: None }
+        Self { chapter: 0, search: String::new(), goto: None, active_section: CHAPTERS[0].sections[0].id.into(), scroll_offset: None, pinned_section: false }
     }
 }
 
@@ -76,7 +79,7 @@ fn section_ui(ui: &mut egui::Ui, s: &Section, cx: &mut Ctx, goto: &mut Option<St
     let pal = style::pal();
     let r = ui.label(RichText::new(s.title).size(18.0).strong());
     if goto.as_deref() == Some(s.id) {
-        r.scroll_to_me(Some(egui::Align::TOP));
+        r.scroll_to_me_animation(Some(egui::Align::TOP), egui::style::ScrollAnimation::none());
         *goto = None;
     }
     ui.add_space(2.0);
@@ -188,6 +191,8 @@ impl TabView for HelpTab {
             self.chapter = i;
             self.search.clear();
             self.goto = Some(id.to_string());
+            self.active_section = id.to_string();
+            self.pinned_section = true;
         }
     }
 
@@ -222,54 +227,75 @@ impl TabView for HelpTab {
                     if ui.selectable_label(sel, if sel { title.color(pal.accent) } else { title }).clicked() {
                         self.chapter = ci;
                         self.search.clear();
-                        self.goto = None;
+                        self.goto = Some(c.sections[0].id.into());
+                        self.active_section = c.sections[0].id.into();
+                        self.pinned_section = true;
                     }
                     if sel {
                         for s in c.sections {
-                            ui.horizontal(|ui| {
-                                ui.add_space(12.0);
-                                if ui.add(egui::Button::new(RichText::new(s.title).color(pal.text_weak)).frame(false)).clicked() {
-                                    self.goto = Some(s.id.to_string());
-                                }
-                            });
+                            if style::nav_item(ui, s.title, self.active_section == s.id, 16.0).clicked() {
+                                self.goto = Some(s.id.to_string());
+                                self.active_section = s.id.to_string();
+                                self.pinned_section = true;
+                            }
                         }
                     }
                 }
             });
         });
 
-        egui::ScrollArea::vertical().id_salt(("help-body", self.chapter, query.is_empty())).auto_shrink([false, false]).show(ui, |ui| {
-            ui.set_max_width(820.0);
-            ui.add_space(6.0);
-            if !query.is_empty() {
-                ui.label(RichText::new(format!("{} Abschnitt(e) gefunden", hits.len())).color(pal.text_weak));
-                ui.add_space(8.0);
-                for (ci, s) in &hits {
-                    ui.label(RichText::new(CHAPTERS[*ci].title).small().color(pal.text_weak));
+        let jumping = self.goto.is_some();
+        let mut offset = 0.0;
+        let mut headings = Vec::new();
+        let body = egui::ScrollArea::vertical().id_salt(("help-body", self.chapter, query.is_empty())).auto_shrink([false, false]).show_viewport(ui, |ui, viewport| {
+            offset = viewport.min.y;
+            egui::Frame::new().inner_margin(egui::Margin::symmetric(28, 12)).show(ui, |ui| {
+                ui.set_max_width(ui.available_width().min(820.0));
+                ui.add_space(6.0);
+                if !query.is_empty() {
+                    ui.label(RichText::new(format!("{} Abschnitt(e) gefunden", hits.len())).color(pal.text_weak));
+                    ui.add_space(8.0);
+                    for (ci, s) in &hits {
+                        ui.label(RichText::new(CHAPTERS[*ci].title).small().color(pal.text_weak));
+                        section_ui(ui, s, cx, &mut self.goto);
+                    }
+                    return;
+                }
+                let c = &CHAPTERS[self.chapter.min(CHAPTERS.len() - 1)];
+                ui.label(RichText::new(c.title).size(24.0));
+                ui.add_space(10.0);
+                for s in c.sections {
+                    headings.push((s.id, ui.cursor().top()));
                     section_ui(ui, s, cx, &mut self.goto);
                 }
-                return;
-            }
-            let c = &CHAPTERS[self.chapter.min(CHAPTERS.len() - 1)];
-            ui.label(RichText::new(c.title).size(24.0));
-            ui.add_space(10.0);
-            for s in c.sections {
-                section_ui(ui, s, cx, &mut self.goto);
-            }
-            ui.separator();
-            ui.horizontal(|ui| {
-                if self.chapter > 0 && ui.button(format!("← {}", CHAPTERS[self.chapter - 1].title)).clicked() {
-                    self.chapter -= 1;
-                    self.goto = CHAPTERS[self.chapter].sections.first().map(|s| s.id.to_string());
-                }
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if self.chapter + 1 < CHAPTERS.len() && ui.button(format!("{} →", CHAPTERS[self.chapter + 1].title)).clicked() {
-                        self.chapter += 1;
+                ui.separator();
+                ui.horizontal(|ui| {
+                    if self.chapter > 0 && ui.button(format!("← {}", CHAPTERS[self.chapter - 1].title)).clicked() {
+                        self.chapter -= 1;
                         self.goto = CHAPTERS[self.chapter].sections.first().map(|s| s.id.to_string());
                     }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if self.chapter + 1 < CHAPTERS.len() && ui.button(format!("{} →", CHAPTERS[self.chapter + 1].title)).clicked() {
+                            self.chapter += 1;
+                            self.goto = CHAPTERS[self.chapter].sections.first().map(|s| s.id.to_string());
+                        }
+                    });
                 });
             });
         });
+        // Nach einem Sprung die angeklickte Kategorie behalten, auch wenn der
+        // letzte Abschnitt wegen der Fensterhoehe nicht bis nach oben scrollt.
+        if ui.input(|i| i.pointer.hover_pos().is_some_and(|p| egui::Rect::from_min_max(body.inner_rect.min, body.inner_rect.max + egui::vec2(16.0, 0.0)).contains(p))
+            && (i.smooth_scroll_delta != egui::Vec2::ZERO || i.pointer.any_down())) {
+            self.pinned_section = false;
+        }
+        if !jumping && !self.pinned_section && query.is_empty() && self.scroll_offset != Some(offset) {
+            if let Some((id, _)) = headings.iter().rev().find(|(_, y)| *y <= body.inner_rect.top() + 36.0).or(headings.first()) {
+                self.active_section = (*id).into();
+            }
+        }
+        self.scroll_offset = Some(offset);
+        self.pinned_section |= jumping;
     }
 }
 

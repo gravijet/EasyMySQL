@@ -8,7 +8,8 @@ pub struct Settings {
     pub conn: ConnInfo,
     pub save_password: bool,
     pub show_system_dbs: bool,
-    pub dark: bool,
+    /// Beim Start und alle sechs Stunden GitHub Releases pruefen.
+    pub auto_update: bool,
     /// Schriftgroesse im SQL-Editor (Pixel)
     pub editor_font: u32,
     pub minimap: bool,
@@ -38,7 +39,7 @@ impl Default for Settings {
             conn: ConnInfo::default(),
             save_password: false,
             show_system_dbs: false,
-            dark: true,
+            auto_update: true,
             editor_font: 13,
             minimap: true,
             auto_suggest: true,
@@ -67,7 +68,7 @@ impl Settings {
                 "password" => s.conn.password = v,
                 "save_password" => s.save_password = on,
                 "show_system_dbs" => s.show_system_dbs = on,
-                "dark" => s.dark = on,
+                "auto_update" => s.auto_update = on,
                 "editor_font" => s.editor_font = v.parse().unwrap_or(13),
                 "minimap" => s.minimap = on,
                 "auto_suggest" => s.auto_suggest = on,
@@ -86,14 +87,14 @@ impl Settings {
     pub fn save(&self) {
         let b = |x: bool| if x { "1" } else { "0" };
         let mut text = format!(
-            "host={}\nport={}\nuser={}\nsave_password={}\nshow_system_dbs={}\ndark={}\neditor_font={}\n\
+            "host={}\nport={}\nuser={}\nsave_password={}\nshow_system_dbs={}\nauto_update={}\neditor_font={}\n\
              minimap={}\nauto_suggest={}\nauto_close={}\nscroll_speed={}\nautoscroll={}\nstorage_dir={}\nquery_log={}\n",
             self.conn.host,
             self.conn.port,
             self.conn.user,
             b(self.save_password),
             b(self.show_system_dbs),
-            b(self.dark),
+            b(self.auto_update),
             self.editor_font,
             b(self.minimap),
             b(self.auto_suggest),

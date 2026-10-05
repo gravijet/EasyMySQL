@@ -125,6 +125,7 @@ impl EasyApp {
                     item(ui, "Speichern", Cmd::Save, &mut cmd);
                     item(ui, "Alle speichern", Cmd::SaveAll, &mut cmd);
                     item(ui, "Registerkarte schließen", Cmd::CloseTab, &mut cmd);
+                    item(ui, "Alle Registerkarten schließen", Cmd::CloseAllTabs, &mut cmd);
                     ui.separator();
                     item(ui, "Einstellungen", Cmd::Settings, &mut cmd);
                     ui.separator();
@@ -157,13 +158,6 @@ impl EasyApp {
                     item(ui, "Datenbanken", Cmd::ShowDatabases, &mut cmd);
                     item(ui, "Verlauf", Cmd::ShowHistory, &mut cmd);
                     item(ui, "Seitenleiste ein/aus", Cmd::ToggleSidebar, &mut cmd);
-                    ui.separator();
-                    let mut dark = self.settings.dark;
-                    if ui.checkbox(&mut dark, "Dunkles Design").clicked() {
-                        self.settings.dark = dark;
-                        actions.push(Action::SettingsChanged);
-                        ui.close();
-                    }
                 });
                 ui.menu_button("Ausführen", |ui| {
                     item(ui, "Datei oder Markierung ausführen", Cmd::RunAll, &mut cmd);
@@ -250,6 +244,7 @@ impl EasyApp {
                 });
                 ui.menu_button("Hilfe", |ui| {
                     item(ui, "Handbuch", Cmd::Help, &mut cmd);
+                    item(ui, "Nach Updates suchen", Cmd::CheckUpdates, &mut cmd);
                     if ui.button("Tastenkürzel").clicked() {
                         actions.push(Action::OpenSettings(Some("tastenkuerzel".into())));
                         ui.close();
@@ -343,6 +338,7 @@ impl EasyApp {
         let mut close = None;
         let mut close_others = None;
         let mut close_right = None;
+        let mut close_all = false;
         let mut activate = None;
         let (bar, _) = ui.allocate_exact_size(vec2(ui.available_width(), 32.0), Sense::hover());
         block_autoscroll(bar);
@@ -406,6 +402,10 @@ impl EasyApp {
                         close_right = Some(i);
                         ui.close();
                     }
+                    if ui.button("Alle Registerkarten schließen").clicked() {
+                        close_all = true;
+                        ui.close();
+                    }
                     if let Some(f) = t.file() {
                         ui.separator();
                         if ui.button("Im Datei-Explorer zeigen").clicked() {
@@ -422,6 +422,10 @@ impl EasyApp {
                 });
             }
         });
+        if close_all {
+            self.run_cmd(&ui.ctx().clone(), Cmd::CloseAllTabs);
+            return;
+        }
         if let Some(i) = activate {
             self.active = i;
         }

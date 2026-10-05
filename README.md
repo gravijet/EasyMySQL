@@ -77,6 +77,14 @@ rechts neben dem Menü. Das komplette **Handbuch** mit Suche steht unter *Hilfe 
   Projekte, unbenannte Abfragen, frühere Fassungen, Verlauf, Diagramm-Anordnungen und den Inhalt des
   Abfrage-Assistenten. Beim Wechsel kann der Inhalt mitgenommen werden. Der Sicherungsordner ist
   ebenfalls frei wählbar.
+- **Helles Standarddesign** mit hervorgehobenen Menükategorien und eingerückten Unterpunkten.
+- **Updates**: beim Start und alle sechs Stunden wird das neueste stabile GitHub Release geprüft
+  (abschaltbar unter *Einstellungen → Updates*). *Hilfe → Nach Updates suchen* prüft jederzeit manuell.
+  Bei einer neuen Version lässt sich das Windows-Setup direkt herunterladen und installieren.
+  Der Download wird anhand der GitHub-SHA-256-Prüfsumme geprüft; vor dem Setup werden Dateien
+  gespeichert und der Datenbankserver sauber beendet.
+- **Alle Registerkarten schließen**: im Dateimenü, im Tab-Kontextmenü oder mit `Strg+Umschalt+W`.
+  Dateien werden wie beim einzelnen Schließen gespeichert; geschlossene Tabs lassen sich wieder öffnen.
 - **Automatisch speichern**, frühere Fassungen je Datei, alle Registerkarten beim nächsten Start
   wieder da. Nach dem Schließen der letzten Registerkarte bleibt die Fläche einfach leer.
 - **SQL-Editor**: Hervorhebung, Vorschläge (auch nach `alias.`), Suchen/Ersetzen, Zeile
@@ -125,6 +133,7 @@ rechts neben dem Menü. Das komplette **Handbuch** mit Suche steht unter *Hilfe 
 | `Strg+Leertaste` | Vorschläge |
 | `Strg+Umschalt+P` / `Strg+P` | Befehle / Datei öffnen |
 | `Strg+N` / `Strg+W` / `Strg+Umschalt+T` | neue Abfrage / Registerkarte schließen / wieder öffnen |
+| `Strg+Umschalt+W` | Alle Registerkarten schließen |
 | `Strg+B` | Seitenleiste ein/aus |
 | `Strg+,` / `F1` | Einstellungen / Handbuch |
 
@@ -169,7 +178,8 @@ Zum Entwickeln unter Linux sucht EasyMySQL `mariadbd` in `/usr/sbin`. Mit der Um
 | `src/sqledit.rs`, `src/sqlfmt.rs` | Code-Editor; SQL-Formatierer |
 | `src/qhistory.rs` | Verlauf der ausgeführten Anweisungen |
 | `src/tabs/` | SQL-Editor, Daten, Struktur, Tabellen-Designer, ER-Diagramm (+ Anordnung), Abfrage-Assistent (Modell + Oberfläche), Sicherungen, Server-Log, Einstellungen, Handbuch |
-| `src/icons.rs`, `src/style.rs` | selbst gezeichnete Symbole, Farbschemata |
+| `src/icons.rs`, `src/style.rs` | selbst gezeichnete Symbole, helles Design und Menünavigation |
+| `src/updates.rs` | GitHub-Release-Prüfung, Download mit Prüfsumme und Windows-Setup |
 | `src/vscode.rs`, `src/platform.rs` | Visual Studio Code; Windows-Infobereich und Herunterfahren |
 | `installer/EasyMySQL.iss` | Inno-Setup-Skript |
 

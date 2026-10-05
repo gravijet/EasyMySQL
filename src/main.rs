@@ -16,6 +16,7 @@ mod settings;
 mod sqledit;
 mod sqlfmt;
 mod style;
+mod updates;
 mod tabs;
 mod vscode;
 mod workspace;

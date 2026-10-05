@@ -139,6 +139,7 @@ impl Autoscroll {
 
 pub struct EasyApp {
     settings: Settings,
+    updater: crate::updates::Updater,
     server: Server,
     db: Option<Db>,
     auto_connect: bool,
@@ -196,7 +197,7 @@ impl EasyApp {
             }
         }
         keymap::install(keymap::Keymap::load());
-        style::apply(&cc.egui_ctx, settings.dark);
+        style::apply(&cc.egui_ctx);
         apply_editor_prefs(&settings);
         let server = Server::new(3306);
         let hwnd = platform::window_handle(cc);
@@ -225,6 +226,7 @@ impl EasyApp {
         let history = crate::qhistory::load();
         let mut app = EasyApp {
             settings,
+            updater: crate::updates::Updater::default(),
             server,
             db: None,
             auto_connect: true,
@@ -624,12 +626,6 @@ impl EasyApp {
 
     /// Geaenderte Einstellungen anwenden und speichern
     fn apply_settings(&mut self) {
-        let ctx = CTX.lock().unwrap().clone();
-        if let Some(ctx) = ctx {
-            if style::pal().dark != self.settings.dark {
-                style::set_theme(&ctx, self.settings.dark);
-            }
-        }
         apply_editor_prefs(&self.settings);
         let root_before = crate::workspace::storage_root();
         crate::workspace::set_storage_root(&self.settings.storage_dir);
@@ -671,6 +667,10 @@ impl EasyApp {
                 let a = self.active;
                 self.close_tab(a);
             }
+            Cmd::CloseAllTabs => {
+                self.close_tabs_where(|_| false);
+                self.save_session();
+            }
             Cmd::ReopenTab => {
                 if let Some(s) = self.closed.pop() {
                     if let Some(t) = self.tab_from_session(&s) {
@@ -692,6 +692,7 @@ impl EasyApp {
             Cmd::ShowHistory => self.show_side(SideView::History),
             Cmd::Settings => self.handle_actions(vec![Action::OpenSettings(None)]),
             Cmd::Help => self.handle_actions(vec![Action::OpenHelp(None)]),
+            Cmd::CheckUpdates => self.updater.check_now(ctx, true),
             Cmd::ServerLog => self.handle_actions(vec![Action::OpenLog]),
             Cmd::ErDiagram => {
                 if let Some(d) = self.need_db() {
@@ -730,6 +731,7 @@ impl EasyApp {
             Cmd::Save,
             Cmd::SaveAll,
             Cmd::CloseTab,
+            Cmd::CloseAllTabs,
             Cmd::ReopenTab,
             Cmd::NextTab,
             Cmd::PrevTab,
@@ -742,6 +744,7 @@ impl EasyApp {
             Cmd::ShowHistory,
             Cmd::Settings,
             Cmd::Help,
+            Cmd::CheckUpdates,
             Cmd::ServerLog,
             Cmd::ErDiagram,
             Cmd::QueryBuilder,
@@ -971,6 +974,7 @@ impl eframe::App for EasyApp {
         }
         self.check_server(ctx);
         self.poll_vscode();
+        self.updater.poll(ctx, self.settings.auto_update);
         self.background_tasks(ctx);
 
         // Fenster schliessen = im Hintergrund weiterlaufen
@@ -1039,6 +1043,18 @@ impl eframe::App for EasyApp {
         self.handle_actions(actions);
         self.palette_ui(&ctx);
         self.dialogs_ui(&ctx);
+        if self.updater.ui(&ctx) {
+            self.save_all();
+            self.db = None;
+            self.server.stop_blocking(&self.settings.conn);
+            match self.updater.launch() {
+                Ok(()) => self.quit(),
+                Err(e) => {
+                    self.error(e);
+                    self.restart_server(&ctx);
+                }
+            }
+        }
         self.toasts_ui(&ctx);
         self.autoscroll.paint(&ctx);
     }

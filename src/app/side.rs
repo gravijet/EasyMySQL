@@ -694,7 +694,7 @@ fn draw_node(ui: &mut egui::Ui, n: &Node, depth: usize, active: Option<&Path>, o
     } else {
         let sel = active.is_some_and(|a| a == n.path);
         if sel {
-            ui.painter().rect_filled(r, 0.0, if pal.dark { Color32::from_rgb(0x37, 0x37, 0x3D) } else { Color32::from_rgb(0xE4, 0xE6, 0xF1) });
+            ui.painter().rect_filled(r, 0.0, Color32::from_rgb(0xE4, 0xE6, 0xF1));
         } else if resp.hovered() {
             ui.painter().rect_filled(r, 0.0, pal.hover);
         }

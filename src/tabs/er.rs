@@ -979,7 +979,7 @@ impl ErTab {
         // Hintergrundraster (dezent)
         let grid = 40.0 * z;
         if grid > 12.0 {
-            let dot = if style::pal().dark { Color32::from_gray(0x33) } else { Color32::from_gray(0xE4) };
+            let dot = Color32::from_gray(0xE4);
             let start = origin + vec2(self.offset.x.rem_euclid(grid), self.offset.y.rem_euclid(grid));
             let mut x = start.x;
             while x < rect.right() {

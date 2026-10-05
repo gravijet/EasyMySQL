@@ -83,11 +83,11 @@ pub const CHAPTERS: &[Chapter] = &[
                 blocks: &[
                     List(&[
                         "Klick wählt aus, mittlere Maustaste oder das Kreuz schließt.",
-                        "Rechtsklick: Schließen, Andere schließen, Rechts davon schließen, bei Dateien auch Pfad kopieren und Im Datei-Explorer zeigen.",
+                        "Rechtsklick: Schließen, Andere schließen, Rechts davon schließen, Alle Registerkarten schließen, bei Dateien auch Pfad kopieren und Im Datei-Explorer zeigen.",
                         "Eine laufende Abfrage erkennt man am drehenden Kreis statt des Kreuzes.",
-                        "Beim nächsten Start sind alle Registerkarten wieder da – auch unbenannte Abfragen und der Abfrage-Assistent mit seinem Inhalt.",
+                        "Datei → Alle Registerkarten schließen schließt alle Tabs; mit dem Befehl zum Wiederöffnen kommen sie einzeln zurück. Beim nächsten Start sind die noch offenen Registerkarten wieder da – auch unbenannte Abfragen und der Abfrage-Assistent mit seinem Inhalt.",
                     ]),
-                    Keys(&[Cmd::CloseTab, Cmd::ReopenTab, Cmd::NextTab, Cmd::PrevTab]),
+                    Keys(&[Cmd::CloseTab, Cmd::CloseAllTabs, Cmd::ReopenTab, Cmd::NextTab, Cmd::PrevTab]),
                 ],
             },
             Section {
@@ -97,7 +97,7 @@ pub const CHAPTERS: &[Chapter] = &[
                     P("Die Befehlsliste enthält fast alles, was EasyMySQL kann. Ein paar Buchstaben tippen genügt, die Reihenfolge muss nur ungefähr stimmen \
                        („nab“ findet „Neue Abfrage“). Pfeiltasten wählen, Enter führt aus, Esc schließt."),
                     P("Schnellöffnen sucht dasselbe für Dateien im geöffneten Projekt. Beginnt die Eingabe mit „>“, zeigt die Liste wieder Befehle."),
-                    Keys(&[Cmd::CommandPalette, Cmd::QuickOpen]),
+                    Keys(&[Cmd::CommandPalette, Cmd::QuickOpen, Cmd::CheckUpdates]),
                     Open("Befehle öffnen", Cmd(Cmd::CommandPalette)),
                 ],
             },
@@ -650,9 +650,10 @@ pub const CHAPTERS: &[Chapter] = &[
                 id: "einstellungen",
                 title: "Alle Einstellungen",
                 blocks: &[
-                    P("Datei → Einstellungen öffnet eine Registerkarte; links springt man zu den Abschnitten. Änderungen gelten sofort und werden gespeichert."),
+                    P("Datei → Einstellungen öffnet eine Registerkarte; links springt man zu den Abschnitten. Die aktive Kategorie wird beim Scrollen hervorgehoben. Änderungen gelten sofort und werden gespeichert."),
                     Table(&[
-                        ("Design", "dunkel (wie VS Code) oder hell"),
+                        ("Darstellung", "helles Standarddesign; die aktive Kategorie ist hervorgehoben"),
+                        ("Updates", "beim Start und alle sechs Stunden GitHub Releases prüfen; Download und Installation selbst starten"),
                         ("Systemdatenbanken zeigen", "information_schema, mysql, performance_schema, sys in der Seitenleiste"),
                         ("Schriftgröße", "Schrift im SQL-Editor, 10 bis 28 Pixel"),
                         ("Minimap", "Übersicht rechts im Editor"),
@@ -712,6 +713,7 @@ pub const CHAPTERS: &[Chapter] = &[
                         Cmd::Save,
                         Cmd::SaveAll,
                         Cmd::CloseTab,
+                        Cmd::CloseAllTabs,
                         Cmd::ReopenTab,
                         Cmd::NextTab,
                         Cmd::PrevTab,
