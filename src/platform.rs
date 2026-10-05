@@ -90,7 +90,7 @@ mod imp {
         unsafe {
             match msg {
                 WM_QUERYENDSESSION => {
-                    let reason = wide("EasyMySQL beendet die Datenbank sicher ...");
+                    let reason = wide(crate::i18n::text("EasyMySQL beendet die Datenbank sicher ..."));
                     ShutdownBlockReasonCreate(hwnd, reason.as_ptr());
                     1
                 }
@@ -118,9 +118,9 @@ mod imp {
     pub fn create_tray(ctx: egui::Context, hwnd: isize) -> Option<(Tray, Receiver<TrayCmd>)> {
         let (tx, rx) = channel();
         let menu = Menu::new();
-        let open = MenuItem::new("EasyMySQL öffnen", true, None);
-        let restart = MenuItem::new("Server neu starten", true, None);
-        let quit = MenuItem::new("Beenden (Server stoppen)", true, None);
+        let open = MenuItem::new(crate::i18n::text("EasyMySQL öffnen"), true, None);
+        let restart = MenuItem::new(crate::i18n::text("Server neu starten"), true, None);
+        let quit = MenuItem::new(crate::i18n::text("Beenden (Server stoppen)"), true, None);
         menu.append(&open).ok()?;
         menu.append(&PredefinedMenuItem::separator()).ok()?;
         menu.append(&restart).ok()?;
@@ -129,7 +129,7 @@ mod imp {
 
         let icon = Icon::from_rgba(crate::icon::icon_rgba(32), 32, 32).ok()?;
         let tray = TrayIconBuilder::new()
-            .with_tooltip("EasyMySQL – MariaDB läuft")
+            .with_tooltip(crate::i18n::text("EasyMySQL – MariaDB läuft"))
             .with_icon(icon)
             .with_menu(Box::new(menu))
             .with_menu_on_left_click(false)

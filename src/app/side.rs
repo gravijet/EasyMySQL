@@ -49,6 +49,18 @@ pub struct SearchState {
     searched: Option<(String, bool)>,
     results: Hits,
     truncated: bool,
+    changed_at: Option<Instant>,
+    job: Option<SearchJob>,
+}
+
+struct SearchJob {
+    receiver: Receiver<(Hits, bool)>,
+    cancelled: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+impl Drop for SearchJob {
+    fn drop(&mut self) {
+        self.cancelled.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
 }
 
 /// Dateien, die durchsucht bzw. schnell geoeffnet werden koennen
@@ -68,16 +80,23 @@ pub fn text_files(n: &Node, out: &mut Vec<PathBuf>) {
 /// Treffer je Datei: (Datei, [(Zeile, Text)])
 type Hits = Vec<(PathBuf, Vec<(usize, String)>)>;
 
+#[cfg(test)]
 fn search_files(files: &[PathBuf], query: &str, case: bool) -> (Hits, bool) {
+    search_files_cancellable(files, query, case, &std::sync::atomic::AtomicBool::new(false))
+}
+
+fn search_files_cancellable(files: &[PathBuf], query: &str, case: bool, cancelled: &std::sync::atomic::AtomicBool) -> (Hits, bool) {
     let q = if case { query.to_string() } else { query.to_lowercase() };
     let mut out = Vec::new();
     let mut total = 0;
     for f in files {
+        if cancelled.load(std::sync::atomic::Ordering::Relaxed) { return (Vec::new(), false); }
         let Ok(text) = std::fs::read_to_string(f) else { continue };
         let mut hits = Vec::new();
         for (i, line) in text.lines().enumerate() {
-            let l = if case { line.to_string() } else { line.to_lowercase() };
-            if l.contains(&q) {
+            if i % 256 == 0 && cancelled.load(std::sync::atomic::Ordering::Relaxed) { return (Vec::new(), false); }
+            let matches = if case { line.contains(&q) } else { line.to_lowercase().contains(&q) };
+            if matches {
                 hits.push((i, line.trim().chars().take(160).collect()));
                 total += 1;
                 if total >= 2000 {
@@ -107,7 +126,7 @@ fn section_header(ui: &mut egui::Ui, title: &str, add_buttons: impl FnOnce(&mut 
 
 /// Freier Vorschlag fuer einen neuen Dateinamen
 pub fn new_name(dir: &Path) -> String {
-    workspace::unique_file(dir, "Neue Abfrage", "sql").file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default()
+    workspace::unique_file(dir, crate::i18n::text("Neue Abfrage"), "sql").file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default()
 }
 
 impl EasyApp {
@@ -126,8 +145,22 @@ impl EasyApp {
             self.tree = None;
             return;
         };
-        if self.tree_scan.is_none_or(|t| t.elapsed().as_secs() >= 2) {
-            self.tree = Some(workspace::scan(p));
+        if let Some((project, tree)) = self.tree_job.as_ref().and_then(|job| job.try_recv().ok()) {
+            if self.project.as_ref() == Some(&project) {
+                self.tree = Some(std::sync::Arc::new(tree));
+            }
+            self.tree_job = None;
+        }
+        if self.tree_job.is_none() && self.tree_scan.is_none_or(|t| t.elapsed().as_secs() >= 2) {
+            let project = p.clone();
+            let (tx, rx) = std::sync::mpsc::channel();
+            let ctx = CTX.lock().unwrap().clone();
+            std::thread::spawn(move || {
+                let tree = workspace::scan(&project);
+                let _ = tx.send((project, tree));
+                if let Some(ctx) = ctx { ctx.request_repaint(); }
+            });
+            self.tree_job = Some(rx);
             self.tree_scan = Some(Instant::now());
         }
     }
@@ -142,15 +175,15 @@ impl EasyApp {
             egui::Frame::new().inner_margin(egui::Margin::symmetric(12, 8)).show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = 6.0;
                 let w = ui.available_width();
-                if ui.add_sized([w, 26.0], egui::Button::new("Ordner öffnen")).clicked() {
+                if ui.add_sized([w, 26.0], egui::Button::new(crate::i18n::text("Ordner öffnen"))).clicked() {
                     self.pick_project();
                 }
-                if ui.add_sized([w, 26.0], egui::Button::new("Neues Projekt")).clicked() {
+                if ui.add_sized([w, 26.0], egui::Button::new(crate::i18n::text("Neues Projekt"))).clicked() {
                     self.explorer_dlg = Some(ExplorerDlg::NewProject { name: String::new() });
                 }
                 if !self.settings.recent.is_empty() {
                     ui.add_space(8.0);
-                    ui.label(RichText::new("Zuletzt geöffnet").small().color(style::pal().text_weak));
+                    ui.label(RichText::new(crate::i18n::text("Zuletzt geöffnet")).small().color(style::pal().text_weak));
                     for p in self.settings.recent.clone() {
                         if !p.is_dir() {
                             continue;
@@ -169,31 +202,31 @@ impl EasyApp {
         let mut collapse = false;
         let mut menu_resp = None;
         section_header(ui, &workspace::dir_name(&project).to_uppercase(), |ui| {
-            menu_resp = Some(icons::button(ui, Icon::More, "Projekt"));
-            if icons::button(ui, Icon::Collapse, "Alle Ordner zuklappen").clicked() {
+            menu_resp = Some(icons::button(ui, Icon::More, crate::i18n::text("Projekt")));
+            if icons::button(ui, Icon::Collapse, crate::i18n::text("Alle Ordner zuklappen")).clicked() {
                 collapse = true;
             }
-            if icons::button(ui, Icon::Refresh, "Aktualisieren").clicked() {
+            if icons::button(ui, Icon::Refresh, crate::i18n::text("Aktualisieren")).clicked() {
                 refresh = true;
             }
-            if icons::button(ui, Icon::NewFolder, "Neuer Ordner").clicked() {
+            if icons::button(ui, Icon::NewFolder, crate::i18n::text("Neuer Ordner")).clicked() {
                 new_folder = true;
             }
-            if icons::button(ui, Icon::NewFile, "Neue Datei").clicked() {
+            if icons::button(ui, Icon::NewFile, crate::i18n::text("Neue Datei")).clicked() {
                 new_file = true;
             }
         });
         if let Some(r) = &menu_resp {
             egui::Popup::menu(r).show(|ui| {
-                if ui.button("Ordner öffnen …").clicked() {
+                if ui.button(crate::i18n::text("Ordner öffnen …")).clicked() {
                     ui.close();
                     self.pick_project();
                 }
-                if ui.button("Neues Projekt …").clicked() {
+                if ui.button(crate::i18n::text("Neues Projekt …")).clicked() {
                     self.explorer_dlg = Some(ExplorerDlg::NewProject { name: String::new() });
                     ui.close();
                 }
-                ui.menu_button("Zuletzt geöffnet", |ui| {
+                ui.menu_button(crate::i18n::text("Zuletzt geöffnet"), |ui| {
                     for p in self.settings.recent.clone() {
                         if p != project && ui.button(workspace::dir_name(&p)).on_hover_text(p.display().to_string()).clicked() {
                             self.switch_project(Some(p));
@@ -202,11 +235,11 @@ impl EasyApp {
                     }
                 });
                 ui.separator();
-                if ui.button("Im Datei-Explorer zeigen").clicked() {
+                if ui.button(crate::i18n::text("Im Datei-Explorer zeigen")).clicked() {
                     open_path(&project);
                     ui.close();
                 }
-                if ui.button("Ordner schließen").clicked() {
+                if ui.button(crate::i18n::text("Ordner schließen")).clicked() {
                     self.switch_project(None);
                     ui.close();
                 }
@@ -239,15 +272,15 @@ impl EasyApp {
                 dlg = Some(ExplorerDlg::NewFile { dir: tree.path.clone(), name: new_name(&tree.path) });
             }
             rest.context_menu(|ui| {
-                if ui.button("Neue Datei …").clicked() {
+                if ui.button(crate::i18n::text("Neue Datei …")).clicked() {
                     dlg = Some(ExplorerDlg::NewFile { dir: tree.path.clone(), name: new_name(&tree.path) });
                     ui.close();
                 }
-                if ui.button("Neuer Ordner …").clicked() {
+                if ui.button(crate::i18n::text("Neuer Ordner …")).clicked() {
                     dlg = Some(ExplorerDlg::NewFolder { dir: tree.path.clone(), name: String::new() });
                     ui.close();
                 }
-                if ui.button("Im Datei-Explorer zeigen").clicked() {
+                if ui.button(crate::i18n::text("Im Datei-Explorer zeigen")).clicked() {
                     open_path(&tree.path);
                     ui.close();
                 }
@@ -265,10 +298,10 @@ impl EasyApp {
     // Suchen in Dateien
 
     fn search_side(&mut self, ui: &mut egui::Ui, actions: &mut Vec<Action>) {
-        section_header(ui, "SUCHEN", |_| {});
+        section_header(ui, crate::i18n::text("SUCHEN"), |_| {});
         let Some(tree) = (self.rescan_tree(), self.tree.clone()).1 else {
             egui::Frame::new().inner_margin(egui::Margin::symmetric(12, 6)).show(ui, |ui| {
-                if ui.button("Ordner öffnen").clicked() {
+                if ui.button(crate::i18n::text("Ordner öffnen")).clicked() {
                     self.pick_project();
                 }
             });
@@ -278,7 +311,7 @@ impl EasyApp {
         egui::Frame::new().inner_margin(egui::Margin::symmetric(8, 4)).show(ui, |ui| {
             let w = ui.available_width();
             ui.horizontal(|ui| {
-                let r = ui.add(egui::TextEdit::singleline(&mut self.search.query).hint_text("Suchen").desired_width((w - 52.0).max(60.0)));
+                let r = ui.add(egui::TextEdit::singleline(&mut self.search.query).hint_text(crate::i18n::text("Suchen")).desired_width((w - 52.0).max(60.0)));
                 if self.search.focus {
                     r.request_focus();
                     self.search.focus = false;
@@ -286,31 +319,58 @@ impl EasyApp {
                 if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                     run = true;
                 }
-                if ui.toggle_value(&mut self.search.case, "Aa").on_hover_text("Groß-/Kleinschreibung beachten").changed() {
+                if ui.toggle_value(&mut self.search.case, "Aa").on_hover_text(crate::i18n::text("Groß-/Kleinschreibung beachten")).changed() {
                     run = true;
                 }
             });
         });
-        // Suche beim Tippen (kurze Texte erst ab 2 Zeichen)
+        // Debounce typing and cancel stale searches. File reads never run on the UI thread.
         let key = (self.search.query.clone(), self.search.case);
-        if run || (self.search.searched.as_ref() != Some(&key) && self.search.query.chars().count() >= 2) {
-            let mut files = Vec::new();
-            text_files(&tree, &mut files);
-            let (res, trunc) = search_files(&files, &self.search.query, self.search.case);
-            self.search.results = res;
-            self.search.truncated = trunc;
-            self.search.searched = Some(key);
+        if self.search.searched.as_ref() != Some(&key) || run {
+            self.search.job = None;
+            self.search.results.clear();
+            self.search.truncated = false;
+            self.search.searched = Some(key.clone());
+            self.search.changed_at = Some(Instant::now());
         }
         if self.search.query.is_empty() {
             self.search.results.clear();
-            self.search.searched = None;
+            self.search.changed_at = None;
             return;
         }
+        if let Some(changed) = self.search.changed_at {
+            let delay = Duration::from_millis(250);
+            if run || (changed.elapsed() >= delay && self.search.query.chars().count() >= 2) {
+                let mut files = Vec::new();
+                text_files(&tree, &mut files);
+                let (tx, receiver) = std::sync::mpsc::channel();
+                let cancelled = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+                let worker_cancelled = std::sync::Arc::clone(&cancelled);
+                let ctx = ui.ctx().clone();
+                std::thread::spawn(move || {
+                    let result = search_files_cancellable(&files, &key.0, key.1, &worker_cancelled);
+                    if !worker_cancelled.load(std::sync::atomic::Ordering::Relaxed) {
+                        let _ = tx.send(result);
+                        ctx.request_repaint();
+                    }
+                });
+                self.search.job = Some(SearchJob { receiver, cancelled });
+                self.search.changed_at = None;
+            } else if self.search.query.chars().count() >= 2 {
+                ui.ctx().request_repaint_after(delay.saturating_sub(changed.elapsed()));
+            }
+        }
+        if let Some(result) = self.search.job.as_ref().and_then(|job| job.receiver.try_recv().ok()) {
+            self.search.results = result.0;
+            self.search.truncated = result.1;
+            self.search.job = None;
+        }
+        if self.search.job.is_some() { ui.spinner(); }
         let pal = style::pal();
         let n: usize = self.search.results.iter().map(|(_, h)| h.len()).sum();
         ui.horizontal(|ui| {
             ui.add_space(10.0);
-            let t = if self.search.truncated { format!("{n}+ Treffer") } else { format!("{n} Treffer in {} Dateien", self.search.results.len()) };
+            let t = if self.search.truncated { crate::tr_format!("{n}+ Treffer", "{n}+ matches") } else { crate::tr_format!("{n} Treffer in {} Dateien", "{n} matches in {} files", self.search.results.len()) };
             ui.label(RichText::new(t).small().color(pal.text_weak));
         });
         let project = self.project.clone().unwrap_or_default();
@@ -337,8 +397,8 @@ impl EasyApp {
 
     fn history_side(&mut self, ui: &mut egui::Ui, actions: &mut Vec<Action>) {
         let mut clear = false;
-        section_header(ui, "VERLAUF", |ui| {
-            if icons::button(ui, Icon::Trash, "Verlauf leeren").clicked() {
+        section_header(ui, crate::i18n::text("VERLAUF"), |ui| {
+            if icons::button(ui, Icon::Trash, crate::i18n::text("Verlauf leeren")).clicked() {
                 clear = true;
             }
         });
@@ -347,7 +407,7 @@ impl EasyApp {
             self.history.clear();
         }
         egui::Frame::new().inner_margin(egui::Margin::symmetric(8, 4)).show(ui, |ui| {
-            ui.add(egui::TextEdit::singleline(&mut self.history_filter).hint_text("Filtern").desired_width(f32::INFINITY));
+            ui.add(egui::TextEdit::singleline(&mut self.history_filter).hint_text(crate::i18n::text("Filtern")).desired_width(f32::INFINITY));
         });
         let pal = style::pal();
         let f = self.history_filter.to_lowercase();
@@ -374,15 +434,15 @@ impl EasyApp {
                     actions.push(Action::OpenSql { db: Some(e.db.clone()), sql: e.sql.clone() + ";\n", run: false });
                 }
                 resp.context_menu(|ui| {
-                    if ui.button("In neuer Abfrage öffnen").clicked() {
+                    if ui.button(crate::i18n::text("In neuer Abfrage öffnen")).clicked() {
                         actions.push(Action::OpenSql { db: Some(e.db.clone()), sql: e.sql.clone() + ";\n", run: false });
                         ui.close();
                     }
-                    if ui.button("Erneut ausführen").clicked() {
+                    if ui.button(crate::i18n::text("Erneut ausführen")).clicked() {
                         actions.push(Action::OpenSql { db: Some(e.db.clone()), sql: e.sql.clone() + ";\n", run: true });
                         ui.close();
                     }
-                    if ui.button("Kopieren").clicked() {
+                    if ui.button(crate::i18n::text("Kopieren")).clicked() {
                         ui.ctx().copy_text(e.sql.clone());
                         ui.close();
                     }
@@ -397,11 +457,11 @@ impl EasyApp {
     fn databases_side(&mut self, ui: &mut egui::Ui, actions: &mut Vec<Action>) {
         let mut new_db = false;
         let mut refresh = false;
-        section_header(ui, "DATENBANKEN", |ui| {
-            if icons::button(ui, Icon::Refresh, "Aktualisieren").clicked() {
+        section_header(ui, crate::i18n::text("DATENBANKEN"), |ui| {
+            if icons::button(ui, Icon::Refresh, crate::i18n::text("Aktualisieren")).clicked() {
                 refresh = true;
             }
-            if icons::button(ui, Icon::Plus, "Neue Datenbank").clicked() {
+            if icons::button(ui, Icon::Plus, crate::i18n::text("Neue Datenbank")).clicked() {
                 new_db = true;
             }
         });
@@ -418,8 +478,8 @@ impl EasyApp {
 
     fn db_tree(&mut self, ui: &mut egui::Ui, actions: &mut Vec<Action>) {
         let Some(dbc) = &self.db else {
-            ui.label(RichText::new("Nicht verbunden").color(style::pal().text_weak));
-            if ui.button("Verbindung …").clicked() {
+            ui.label(RichText::new(crate::i18n::text("Nicht verbunden")).color(style::pal().text_weak));
+            if ui.button(crate::i18n::text("Verbindung …")).clicked() {
                 actions.push(Action::OpenSettings(Some("verbindung".into())));
             }
             return;
@@ -462,11 +522,11 @@ impl EasyApp {
                                 actions.push(Action::OpenData { db: d.clone(), table: t.name.clone() });
                             }
                             hr.context_menu(|ui| {
-                                if ui.button("Daten").clicked() {
+                                if ui.button(crate::i18n::text("Daten")).clicked() {
                                     actions.push(Action::OpenData { db: d.clone(), table: t.name.clone() });
                                     ui.close();
                                 }
-                                if ui.button("Struktur").clicked() {
+                                if ui.button(crate::i18n::text("Struktur")).clicked() {
                                     actions.push(Action::OpenStructure { db: d.clone(), table: t.name.clone() });
                                     ui.close();
                                 }
@@ -474,22 +534,22 @@ impl EasyApp {
                                     actions.push(Action::OpenSql { db: Some(d.clone()), sql: format!("SELECT * FROM {} LIMIT 100;", q(&t.name)), run: true });
                                     ui.close();
                                 }
-                                if ui.button("Name kopieren").clicked() {
+                                if ui.button(crate::i18n::text("Name kopieren")).clicked() {
                                     ui.ctx().copy_text(t.name.clone());
                                     ui.close();
                                 }
                                 ui.separator();
-                                if !t.is_view && ui.button("Leeren …").clicked() {
+                                if !t.is_view && ui.button(crate::i18n::text("Leeren …")).clicked() {
                                     actions.push(Action::Confirm {
-                                        text: format!("Alle Zeilen der Tabelle „{}“ löschen?", t.name),
+                                        text: crate::tr_format!("Alle Zeilen der Tabelle „{}“ löschen?", "Delete all rows in table “{}”?", t.name),
                                         db: Some(d.clone()),
                                         sql: format!("DELETE FROM {}", q(&t.name)),
                                     });
                                     ui.close();
                                 }
-                                if ui.button("Löschen …").clicked() {
+                                if ui.button(crate::i18n::text("Löschen …")).clicked() {
                                     actions.push(Action::Confirm {
-                                        text: format!("„{}“ mit allen Daten löschen?", t.name),
+                                        text: crate::tr_format!("„{}“ mit allen Daten löschen?", "Delete “{}” and all its data?", t.name),
                                         db: Some(d.clone()),
                                         sql: format!("DROP {} {}", if t.is_view { "VIEW" } else { "TABLE" }, q(&t.name)),
                                     });
@@ -499,7 +559,7 @@ impl EasyApp {
                         }
                     }
                     None => {
-                        ui.label(RichText::new("kein Zugriff").color(pal.error_text));
+                        ui.label(RichText::new(crate::i18n::text("kein Zugriff")).color(pal.error_text));
                     }
                 });
                 let hr = resp.header_response;
@@ -507,30 +567,30 @@ impl EasyApp {
                     self.current_db = d.clone();
                 }
                 hr.context_menu(|ui| {
-                    if ui.button("Neue Abfrage").clicked() {
+                    if ui.button(crate::i18n::text("Neue Abfrage")).clicked() {
                         actions.push(Action::OpenSql { db: Some(d.clone()), sql: String::new(), run: false });
                         ui.close();
                     }
-                    if ui.button("Neue Tabelle …").clicked() {
+                    if ui.button(crate::i18n::text("Neue Tabelle …")).clicked() {
                         actions.push(Action::NewTable(d.clone()));
                         ui.close();
                     }
-                    if ui.button("ER-Diagramm").clicked() {
+                    if ui.button(crate::i18n::text("ER-Diagramm")).clicked() {
                         actions.push(Action::OpenEr(d.clone()));
                         ui.close();
                     }
-                    if ui.button("Abfrage-Assistent").clicked() {
+                    if ui.button(crate::i18n::text("Abfrage-Assistent")).clicked() {
                         actions.push(Action::OpenBuilder(Some(d.clone())));
                         ui.close();
                     }
                     ui.separator();
-                    if ui.button("Exportieren …").clicked() {
+                    if ui.button(crate::i18n::text("Exportieren …")).clicked() {
                         dialogs.push(Dialog::Export { db: d.clone(), with_data: true });
                         ui.close();
                     }
-                    if !sys && ui.button("Löschen …").clicked() {
+                    if !sys && ui.button(crate::i18n::text("Löschen …")).clicked() {
                         actions.push(Action::Confirm {
-                            text: format!("Datenbank „{d}“ mit allen Tabellen und Daten löschen?"),
+                            text: crate::tr_format!("Datenbank „{d}“ mit allen Tabellen und Daten löschen?", "Delete database “{d}” and all its tables and data?"),
                             db: None,
                             sql: format!("DROP DATABASE {}", q(d)),
                         });
@@ -550,11 +610,11 @@ impl EasyApp {
         let mut ok = false;
         let mut cancel = false;
         let title = match dlg {
-            ExplorerDlg::NewFile { .. } => "Neue Datei",
-            ExplorerDlg::NewFolder { .. } => "Neuer Ordner",
-            ExplorerDlg::Rename { .. } => "Umbenennen",
-            ExplorerDlg::Delete { .. } => "Löschen",
-            ExplorerDlg::NewProject { .. } => "Neues Projekt",
+            ExplorerDlg::NewFile { .. } => crate::i18n::text("Neue Datei"),
+            ExplorerDlg::NewFolder { .. } => crate::i18n::text("Neuer Ordner"),
+            ExplorerDlg::Rename { .. } => crate::i18n::text("Umbenennen"),
+            ExplorerDlg::Delete { .. } => crate::i18n::text("Löschen"),
+            ExplorerDlg::NewProject { .. } => crate::i18n::text("Neues Projekt"),
         };
         let frame = egui::Frame::window(&ctx.global_style()).inner_margin(egui::Margin::same(14));
         egui::Modal::new(egui::Id::new("explorer-dlg")).frame(frame).show(ctx, |ui| {
@@ -573,7 +633,7 @@ impl EasyApp {
                     }
                 }
                 ExplorerDlg::Delete { path } => {
-                    ui.label(format!("„{}“ in den Papierkorb des Projekts verschieben?", workspace::dir_name(path)));
+                    ui.label(crate::tr_format!("„{}“ in den Papierkorb des Projekts verschieben?", "Move “{}” to the project's recycle bin?", workspace::dir_name(path)));
                 }
             }
             ui.add_space(6.0);
@@ -581,7 +641,7 @@ impl EasyApp {
                 if ui.button("OK").clicked() {
                     ok = true;
                 }
-                if ui.button("Abbrechen").clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                if ui.button(crate::i18n::text("Abbrechen")).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
                     cancel = true;
                 }
             });
@@ -600,7 +660,7 @@ impl EasyApp {
             ExplorerDlg::NewProject { name } => {
                 let root = workspace::storage_root();
                 if root.join(name.trim()).exists() {
-                    Err(format!("„{}“ gibt es schon.", name.trim()))
+                    Err(crate::tr_format!("„{}“ gibt es schon.", "“{}” already exists.", name.trim()))
                 } else {
                     workspace::create_folder(&root, &name).map(|p| {
                         self.switch_project(Some(p));
@@ -627,7 +687,7 @@ impl EasyApp {
                 self.active = self.active.min(self.tabs.len().saturating_sub(1));
                 match &self.project {
                     Some(p) => workspace::trash(p, &path).map(|_| None),
-                    None => Err("Kein Projekt geöffnet.".into()),
+                    None => Err(crate::i18n::text("Kein Projekt geöffnet.").into()),
                 }
             }
         };
@@ -694,7 +754,7 @@ fn draw_node(ui: &mut egui::Ui, n: &Node, depth: usize, active: Option<&Path>, o
     } else {
         let sel = active.is_some_and(|a| a == n.path);
         if sel {
-            ui.painter().rect_filled(r, 0.0, Color32::from_rgb(0xE4, 0xE6, 0xF1));
+            ui.painter().rect_filled(r, 0.0, if pal.dark { Color32::from_rgb(0x37, 0x37, 0x3D) } else { Color32::from_rgb(0xE4, 0xE6, 0xF1) });
         } else if resp.hovered() {
             ui.painter().rect_filled(r, 0.0, pal.hover);
         }
@@ -704,24 +764,24 @@ fn draw_node(ui: &mut egui::Ui, n: &Node, depth: usize, active: Option<&Path>, o
             *open = Some(n.path.clone());
         }
         resp.context_menu(|ui| {
-            if ui.button("Öffnen").clicked() {
+            if ui.button(crate::i18n::text("Öffnen")).clicked() {
                 *open = Some(n.path.clone());
                 ui.close();
             }
-            if ui.button("Umbenennen …").clicked() {
+            if ui.button(crate::i18n::text("Umbenennen …")).clicked() {
                 *dlg = Some(ExplorerDlg::Rename { path: n.path.clone(), name: n.name.clone() });
                 ui.close();
             }
-            if ui.button("Löschen").clicked() {
+            if ui.button(crate::i18n::text("Löschen")).clicked() {
                 *dlg = Some(ExplorerDlg::Delete { path: n.path.clone() });
                 ui.close();
             }
             ui.separator();
-            if ui.button("Pfad kopieren").clicked() {
+            if ui.button(crate::i18n::text("Pfad kopieren")).clicked() {
                 ui.ctx().copy_text(n.path.display().to_string());
                 ui.close();
             }
-            if ui.button("Im Datei-Explorer zeigen").clicked() {
+            if ui.button(crate::i18n::text("Im Datei-Explorer zeigen")).clicked() {
                 if let Some(d) = n.path.parent() {
                     open_path(d);
                 }
@@ -733,24 +793,24 @@ fn draw_node(ui: &mut egui::Ui, n: &Node, depth: usize, active: Option<&Path>, o
 
 fn dir_menu(resp: &egui::Response, n: &Node, dlg: &mut Option<ExplorerDlg>) {
     resp.context_menu(|ui| {
-        if ui.button("Neue Datei …").clicked() {
+        if ui.button(crate::i18n::text("Neue Datei …")).clicked() {
             *dlg = Some(ExplorerDlg::NewFile { dir: n.path.clone(), name: new_name(&n.path) });
             ui.close();
         }
-        if ui.button("Neuer Ordner …").clicked() {
+        if ui.button(crate::i18n::text("Neuer Ordner …")).clicked() {
             *dlg = Some(ExplorerDlg::NewFolder { dir: n.path.clone(), name: String::new() });
             ui.close();
         }
         ui.separator();
-        if ui.button("Umbenennen …").clicked() {
+        if ui.button(crate::i18n::text("Umbenennen …")).clicked() {
             *dlg = Some(ExplorerDlg::Rename { path: n.path.clone(), name: n.name.clone() });
             ui.close();
         }
-        if ui.button("Löschen").clicked() {
+        if ui.button(crate::i18n::text("Löschen")).clicked() {
             *dlg = Some(ExplorerDlg::Delete { path: n.path.clone() });
             ui.close();
         }
-        if ui.button("Im Datei-Explorer zeigen").clicked() {
+        if ui.button(crate::i18n::text("Im Datei-Explorer zeigen")).clicked() {
             open_path(&n.path);
             ui.close();
         }
@@ -760,6 +820,18 @@ fn dir_menu(resp: &egui::Response, n: &Node, dlg: &mut Option<ExplorerDlg>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cancelled_search_discards_results_and_stops_before_file_reads() {
+        let cancelled = std::sync::atomic::AtomicBool::new(true);
+        let files = vec![PathBuf::from("/missing/file.sql")];
+        assert_eq!(search_files_cancellable(&files, "SELECT", false, &cancelled), (vec![], false));
+        let token = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let (_, receiver) = std::sync::mpsc::channel();
+        let job = SearchJob { receiver, cancelled: token.clone() };
+        drop(job);
+        assert!(token.load(std::sync::atomic::Ordering::Relaxed));
+    }
 
     #[test]
     fn file_search() {

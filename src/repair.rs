@@ -49,7 +49,7 @@ pub fn check_all(conn: &ConnInfo, repair: bool, log: &dyn Fn(String)) -> Result<
             continue;
         }
         if ttype.contains("VIEW") {
-            res.failed.push((name, "Sicht verweist auf fehlende Tabellen/Spalten – bitte Sicht neu anlegen".into()));
+            res.failed.push((name, crate::i18n::text("Sicht verweist auf fehlende Tabellen/Spalten – bitte Sicht neu anlegen").into()));
             continue;
         }
         let engine = engine.unwrap_or_default().to_uppercase();
@@ -59,22 +59,22 @@ pub fn check_all(conn: &ConnInfo, repair: bool, log: &dyn Fn(String)) -> Result<
         } else {
             format!("REPAIR TABLE {full} EXTENDED")
         };
-        log(format!("Repariere {name} ..."));
+        log(crate::tr_format!("Repariere {name} ...", "Repairing {name} ..."));
         let ok = match c.query::<mysql::Row, _>(&sql) {
             Ok(rows) => !rows.iter().any(|r| {
                 let typ: String = r.get::<Option<String>, _>(2).flatten().unwrap_or_default().to_lowercase();
                 typ == "error"
             }),
             Err(e) => {
-                log(format!("  Fehler: {e}"));
+                log(crate::tr_format!("  Fehler: {e}", "  Error: {e}"));
                 false
             }
         };
         if ok {
-            log(format!("  {name} repariert."));
+            log(crate::tr_format!("  {name} repariert.", "  {name} repaired."));
             res.repaired.push(name);
         } else {
-            res.failed.push((name, "konnte nicht repariert werden – bitte aus einer Sicherung wiederherstellen".into()));
+            res.failed.push((name, crate::i18n::text("konnte nicht repariert werden – bitte aus einer Sicherung wiederherstellen").into()));
         }
     }
     Ok(res)
@@ -94,10 +94,10 @@ pub fn convert_to_innodb(conn: &ConnInfo, tables: &[(String, String)], log: &dyn
     let mut c = mysql::Conn::new(conn.opts()).map_err(|e| e.to_string())?;
     let mut n = 0;
     for (db, t) in tables {
-        log(format!("Wandle {db}.{t} in InnoDB um ..."));
+        log(crate::tr_format!("Wandle {db}.{t} in InnoDB um ...", "Converting {db}.{t} to InnoDB ..."));
         match c.query_drop(format!("ALTER TABLE {}.{} ENGINE=InnoDB", q(db), q(t))) {
             Ok(_) => n += 1,
-            Err(e) => log(format!("  Fehler: {e}")),
+            Err(e) => log(crate::tr_format!("  Fehler: {e}", "  Error: {e}")),
         }
     }
     Ok(n)

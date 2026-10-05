@@ -72,7 +72,7 @@ impl StructureTab {
         let Some(dbc) = cx.db else { return false };
         match dbc.exec(&sql, ()) {
             Ok(_) => {
-                cx.status("Struktur geändert.");
+                cx.status(crate::i18n::text("Struktur geändert."));
                 cx.actions.push(Action::SchemaChanged(self.db.clone()));
                 true
             }
@@ -88,11 +88,11 @@ impl StructureTab {
         let mut ok = false;
         let mut close = false;
         let title = match dlg {
-            Dlg::Column { orig: None, .. } => "Spalte hinzufügen".to_string(),
-            Dlg::Column { orig: Some(o), .. } => format!("Spalte {o} ändern"),
-            Dlg::Index { .. } => "Index hinzufügen".into(),
-            Dlg::Fk { .. } => "Fremdschlüssel (Beziehung) hinzufügen".into(),
-            Dlg::Rename(_) => "Tabelle umbenennen".into(),
+            Dlg::Column { orig: None, .. } => crate::i18n::text("Spalte hinzufügen").to_string(),
+            Dlg::Column { orig: Some(o), .. } => crate::tr_format!("Spalte {o} ändern", "Edit column {o}"),
+            Dlg::Index { .. } => crate::i18n::text("Index hinzufügen").into(),
+            Dlg::Fk { .. } => crate::i18n::text("Fremdschlüssel (Beziehung) hinzufügen").into(),
+            Dlg::Rename(_) => crate::i18n::text("Tabelle umbenennen").into(),
         };
         let cols: Vec<String> = self
             .info
@@ -111,36 +111,36 @@ impl StructureTab {
                         ui.label("Name:");
                         ui.text_edit_singleline(&mut def.name);
                         ui.end_row();
-                        ui.label("Datentyp:");
+                        ui.label(crate::i18n::text("Datentyp:"));
                         type_field(ui, "coltype", &mut def.col_type);
                         ui.end_row();
                         ui.label("");
-                        ui.checkbox(&mut def.not_null, "Nicht NULL");
+                        ui.checkbox(&mut def.not_null, crate::i18n::text("Nicht NULL"));
                         ui.end_row();
                         ui.label("");
                         ui.checkbox(&mut def.auto_inc, "AUTO_INCREMENT");
                         ui.end_row();
                         if orig.is_none() {
                             ui.label("");
-                            ui.checkbox(&mut def.primary, "Primärschlüssel");
+                            ui.checkbox(&mut def.primary, crate::i18n::text("Primärschlüssel"));
                             ui.end_row();
                         }
                         ui.label("");
-                        ui.checkbox(&mut def.unique, "Eindeutig (UNIQUE)");
+                        ui.checkbox(&mut def.unique, crate::i18n::text("Eindeutig (UNIQUE)"));
                         ui.end_row();
-                        ui.label("Standardwert:");
+                        ui.label(crate::i18n::text("Standardwert:"));
                         ui.text_edit_singleline(&mut def.default);
                         ui.end_row();
-                        ui.label("Kommentar:");
+                        ui.label(crate::i18n::text("Kommentar:"));
                         ui.text_edit_singleline(&mut def.comment);
                         ui.end_row();
                         if orig.is_none() {
                             ui.label("Position:");
-                            let mut items = vec!["(am Ende)".to_string(), "(am Anfang)".to_string()];
-                            items.extend(cols.iter().map(|c| format!("nach {c}")));
+                            let mut items = vec![crate::i18n::text("(am Ende)").to_string(), crate::i18n::text("(am Anfang)").to_string()];
+                            items.extend(cols.iter().map(|c| crate::tr_format!("nach {c}", "after {c}")));
                             super::str_combo(ui, "colpos", &items, after, 160.0);
                             ui.end_row();
-                            ui.label("Verweist auf:");
+                            ui.label(crate::i18n::text("Verweist auf:"));
                             ref_field(ui, "colref", &targets, &mut def.references);
                             ui.end_row();
                         }
@@ -149,8 +149,8 @@ impl StructureTab {
                         ui.label("Name:");
                         ui.text_edit_singleline(name);
                         ui.end_row();
-                        ui.label("Spalten:");
-                        ui.add(egui::TextEdit::singleline(c).hint_text("spalte1, spalte2"));
+                        ui.label(crate::i18n::text("Spalten:"));
+                        ui.add(egui::TextEdit::singleline(c).hint_text(crate::i18n::text("spalte1, spalte2")));
                         ui.end_row();
                         ui.label("");
                         ui.horizontal_wrapped(|ui| {
@@ -165,26 +165,26 @@ impl StructureTab {
                         });
                         ui.end_row();
                         ui.label("");
-                        ui.checkbox(unique, "Eindeutig (UNIQUE)");
+                        ui.checkbox(unique, crate::i18n::text("Eindeutig (UNIQUE)"));
                         ui.end_row();
                     }
                     Dlg::Fk { col, target, on_delete, on_update } => {
-                        ui.label("Spalte:");
+                        ui.label(crate::i18n::text("Spalte:"));
                         super::str_combo(ui, "fkcol", &cols, col, 160.0);
                         ui.end_row();
-                        ui.label("Verweist auf:");
+                        ui.label(crate::i18n::text("Verweist auf:"));
                         ref_field(ui, "fkref", &targets, target);
                         ui.end_row();
                         let rules: Vec<String> = RULES.iter().map(|s| s.to_string()).collect();
-                        ui.label("Beim Löschen:");
+                        ui.label(crate::i18n::text("Beim Löschen:"));
                         super::str_combo(ui, "fkdel", &rules, on_delete, 120.0);
                         ui.end_row();
-                        ui.label("Beim Ändern:");
+                        ui.label(crate::i18n::text("Beim Ändern:"));
                         super::str_combo(ui, "fkupd", &rules, on_update, 120.0);
                         ui.end_row();
                     }
                     Dlg::Rename(n) => {
-                        ui.label("Neuer Name:");
+                        ui.label(crate::i18n::text("Neuer Name:"));
                         ui.text_edit_singleline(n);
                         ui.end_row();
                     }
@@ -194,7 +194,7 @@ impl StructureTab {
                     if ui.button("OK").clicked() {
                         ok = true;
                     }
-                    if ui.button("Abbrechen").clicked() {
+                    if ui.button(crate::i18n::text("Abbrechen")).clicked() {
                         close = true;
                     }
                 });
@@ -203,9 +203,9 @@ impl StructureTab {
             let full = self.full();
             let sql = match self.dlg.as_ref().unwrap() {
                 Dlg::Column { orig: None, def, after } => {
-                    let pos = if after == "(am Anfang)" {
+                    let pos = if after == crate::i18n::text("(am Anfang)") {
                         " FIRST".to_string()
-                    } else if let Some(c) = after.strip_prefix("nach ") {
+                    } else if let Some(c) = after.strip_prefix(crate::i18n::text("nach ")) {
                         format!(" AFTER {}", q(c))
                     } else {
                         String::new()
@@ -293,7 +293,7 @@ fn header_cell(ui: &mut egui::Ui, t: &str) {
 
 impl TabView for StructureTab {
     fn title(&self) -> String {
-        format!("{} (Struktur)", self.table)
+        crate::tr_format!("{} (Struktur)", "{} (Structure)", self.table)
     }
 
     fn key(&self) -> Option<String> {
@@ -319,35 +319,35 @@ impl TabView for StructureTab {
             self.reload(cx);
         }
         let Some(info) = self.info.clone() else {
-            ui.label(RichText::new(format!("Tabelle {}.{} nicht gefunden.", self.db, self.table)).color(style::pal().error_text));
-            if ui.button("Aktualisieren").clicked() {
+            ui.label(RichText::new(crate::tr_format!("Tabelle {}.{} nicht gefunden.", "Table {}.{} was not found.", self.db, self.table)).color(style::pal().error_text));
+            if ui.button(crate::i18n::text("Aktualisieren")).clicked() {
                 self.reload(cx);
             }
             return;
         };
         ui.horizontal(|ui| {
             ui.label(RichText::new(format!("{}.{}", self.db, self.table)).strong());
-            let mut desc = format!("– {}", if info.is_view { "Sicht" } else { "Tabelle" });
+            let mut desc = format!("– {}", if info.is_view { crate::i18n::text("Sicht") } else { crate::i18n::text("Tabelle") });
             if !info.comment.is_empty() {
                 desc.push_str(&format!(" \"{}\"", info.comment));
             }
             if !info.engine.is_empty() {
                 desc.push_str(&format!(", Engine {}", info.engine));
             }
-            desc.push_str(&format!(", ca. {} Zeilen", info.rows.unwrap_or(0)));
+            desc.push_str(&crate::tr_format!(", ca. {} Zeilen", ", approx. {} rows", info.rows.unwrap_or(0)));
             ui.label(desc);
         });
         ui.horizontal_wrapped(|ui| {
             let view = info.is_view;
-            if ui.add_enabled(!view, egui::Button::new("+ Spalte")).clicked() {
+            if ui.add_enabled(!view, egui::Button::new(crate::i18n::text("+ Spalte"))).clicked() {
                 self.dlg = Some(Dlg::Column {
                     orig: None,
                     def: ColDef::new("", "VARCHAR(255)"),
-                    after: "(am Ende)".into(),
+                    after: crate::i18n::text("(am Ende)").into(),
                 });
             }
             let sel = self.selected.and_then(|i| info.columns.get(i)).cloned();
-            if ui.add_enabled(sel.is_some() && !view, egui::Button::new("Spalte ändern")).clicked() {
+            if ui.add_enabled(sel.is_some() && !view, egui::Button::new(crate::i18n::text("Spalte ändern"))).clicked() {
                 let c = sel.clone().unwrap();
                 self.dlg = Some(Dlg::Column {
                     orig: Some(c.name.clone()),
@@ -355,10 +355,10 @@ impl TabView for StructureTab {
                     after: String::new(),
                 });
             }
-            if ui.add_enabled(sel.is_some() && !view, egui::Button::new("Spalte löschen")).clicked() {
+            if ui.add_enabled(sel.is_some() && !view, egui::Button::new(crate::i18n::text("Spalte löschen"))).clicked() {
                 let c = sel.unwrap();
                 cx.actions.push(Action::Confirm {
-                    text: format!("Spalte \"{}\" wirklich löschen? Alle Werte darin gehen verloren.", c.name),
+                    text: crate::tr_format!("Spalte \"{}\" wirklich löschen? Alle Werte darin gehen verloren.", "Really delete column \"{}\"? All its values will be lost.", c.name),
                     db: None,
                     sql: format!("ALTER TABLE {} DROP COLUMN {}", self.full(), q(&c.name)),
                 });
@@ -371,7 +371,7 @@ impl TabView for StructureTab {
                     unique: false,
                 });
             }
-            if ui.add_enabled(!view, egui::Button::new("+ Fremdschlüssel")).clicked() {
+            if ui.add_enabled(!view, egui::Button::new(crate::i18n::text("+ Fremdschlüssel"))).clicked() {
                 self.dlg = Some(Dlg::Fk {
                     col: info.columns.first().map(|c| c.name.clone()).unwrap_or_default(),
                     target: String::new(),
@@ -380,24 +380,24 @@ impl TabView for StructureTab {
                 });
             }
             ui.separator();
-            if ui.button("Umbenennen").clicked() {
+            if ui.button(crate::i18n::text("Umbenennen")).clicked() {
                 self.dlg = Some(Dlg::Rename(self.table.clone()));
             }
-            if ui.button("Daten anzeigen").clicked() {
+            if ui.button(crate::i18n::text("Daten anzeigen")).clicked() {
                 cx.actions.push(Action::OpenData { db: self.db.clone(), table: self.table.clone() });
             }
-            if ui.button("Aktualisieren").clicked() {
+            if ui.button(crate::i18n::text("Aktualisieren")).clicked() {
                 self.reload(cx);
             }
         });
         ui.add_space(4.0);
 
         egui::ScrollArea::vertical().id_salt(("structscroll", &self.table)).show(ui, |ui| {
-            ui.label(RichText::new("Spalten").strong());
+            ui.label(RichText::new(crate::i18n::text("Spalten")).strong());
             style::sunken_frame().show(ui, |ui| {
                 ui.set_min_width(ui.available_width());
                 egui::Grid::new(("cols", &self.table)).striped(true).num_columns(8).spacing([14.0, 3.0]).show(ui, |ui| {
-                    for h in ["#", "Name", "Datentyp", "NULL", "Schlüssel", "Standard", "Extra", "Kommentar"] {
+                    for h in ["#", "Name", crate::i18n::text("Datentyp"), "NULL", crate::i18n::text("Schlüssel"), crate::i18n::text("Standard"), "Extra", crate::i18n::text("Kommentar")] {
                         header_cell(ui, h);
                     }
                     ui.end_row();
@@ -418,10 +418,10 @@ impl TabView for StructureTab {
                             self.dlg = Some(Dlg::Column { orig: Some(c.name.clone()), def: ColDef::from_info(c), after: String::new() });
                         }
                         ui.label(&c.col_type);
-                        ui.label(if c.nullable { "ja" } else { "nein" });
+                        ui.label(if c.nullable { "ja" } else { crate::i18n::text("nein") });
                         let key = match c.key.as_str() {
-                            "PRI" => "Primärschlüssel",
-                            "UNI" => "Eindeutig",
+                            "PRI" => crate::i18n::text("Primärschlüssel"),
+                            "UNI" => crate::i18n::text("Eindeutig"),
                             "MUL" => "Index",
                             _ => "",
                         };
@@ -442,19 +442,19 @@ impl TabView for StructureTab {
             });
 
             ui.add_space(8.0);
-            ui.label(RichText::new("Indizes").strong());
+            ui.label(RichText::new(crate::i18n::text("Indizes")).strong());
             style::sunken_frame().show(ui, |ui| {
                 ui.set_min_width(ui.available_width());
                 if self.indexes.is_empty() {
-                    ui.label(RichText::new("keine").color(style::pal().null_text));
+                    ui.label(RichText::new(crate::i18n::text("keine")).color(style::pal().null_text));
                 }
                 let mut drop = None;
                 egui::Grid::new(("idx", &self.table)).striped(true).spacing([14.0, 3.0]).show(ui, |ui| {
                     for ix in &self.indexes {
                         ui.label(&ix.name);
-                        ui.label(if ix.name == "PRIMARY" { "Primärschlüssel" } else if ix.unique { "Eindeutig" } else { "Index" });
+                        ui.label(if ix.name == "PRIMARY" { crate::i18n::text("Primärschlüssel") } else if ix.unique { crate::i18n::text("Eindeutig") } else { "Index" });
                         ui.label(ix.columns.join(", "));
-                        if !info.is_view && ui.small_button("löschen").clicked() {
+                        if !info.is_view && ui.small_button(crate::i18n::text("löschen")).clicked() {
                             drop = Some(ix.name.clone());
                         }
                         ui.end_row();
@@ -466,16 +466,16 @@ impl TabView for StructureTab {
                     } else {
                         format!("ALTER TABLE {} DROP INDEX {}", self.full(), q(&n))
                     };
-                    cx.actions.push(Action::Confirm { text: format!("Index \"{n}\" löschen?"), db: None, sql });
+                    cx.actions.push(Action::Confirm { text: crate::tr_format!("Index \"{n}\" löschen?", "Delete index \"{n}\"?"), db: None, sql });
                 }
             });
 
             ui.add_space(8.0);
-            ui.label(RichText::new("Beziehungen (Fremdschlüssel)").strong());
+            ui.label(RichText::new(crate::i18n::text("Beziehungen (Fremdschlüssel)")).strong());
             style::sunken_frame().show(ui, |ui| {
                 ui.set_min_width(ui.available_width());
                 if self.fks_out.is_empty() && self.fks_in.is_empty() {
-                    ui.label(RichText::new("keine").color(style::pal().null_text));
+                    ui.label(RichText::new(crate::i18n::text("keine")).color(style::pal().null_text));
                 }
                 let mut drop = None;
                 egui::Grid::new(("fks", &self.table)).striped(true).spacing([14.0, 3.0]).show(ui, |ui| {
@@ -483,7 +483,7 @@ impl TabView for StructureTab {
                         ui.label(&f.name);
                         ui.label(format!("{}.({}) → {}.({})", f.table, f.columns.join(","), f.ref_table, f.ref_columns.join(",")));
                         ui.label(format!("ON DELETE {} / ON UPDATE {}", f.on_delete, f.on_update));
-                        if ui.small_button("löschen").clicked() {
+                        if ui.small_button(crate::i18n::text("löschen")).clicked() {
                             drop = Some(f.name.clone());
                         }
                         ui.end_row();
@@ -494,14 +494,14 @@ impl TabView for StructureTab {
                         if r.clicked() {
                             cx.actions.push(Action::OpenStructure { db: self.db.clone(), table: f.table.clone() });
                         }
-                        ui.label("(eingehend)");
+                        ui.label(crate::i18n::text("(eingehend)"));
                         ui.label("");
                         ui.end_row();
                     }
                 });
                 if let Some(n) = drop {
                     cx.actions.push(Action::Confirm {
-                        text: format!("Fremdschlüssel \"{n}\" löschen?"),
+                        text: crate::tr_format!("Fremdschlüssel \"{n}\" löschen?", "Delete foreign key \"{n}\"?"),
                         db: None,
                         sql: format!("ALTER TABLE {} DROP FOREIGN KEY {}", self.full(), q(&n)),
                     });
@@ -510,8 +510,8 @@ impl TabView for StructureTab {
 
             ui.add_space(8.0);
             ui.horizontal(|ui| {
-                ui.label(RichText::new("CREATE-Anweisung").strong());
-                if ui.small_button("kopieren").clicked() {
+                ui.label(RichText::new(crate::i18n::text("CREATE-Anweisung")).strong());
+                if ui.small_button(crate::i18n::text("Kopieren")).clicked() {
                     ui.ctx().copy_text(self.create.clone());
                 }
             });

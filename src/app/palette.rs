@@ -124,7 +124,7 @@ impl EasyApp {
             .show(ctx, |ui| {
                 egui::Frame::popup(&ctx.global_style()).inner_margin(egui::Margin::same(6)).show(ui, |ui| {
                     ui.set_width(width);
-                    let hint = if p.commands { "Befehl" } else { "Datei im Projekt (> für Befehle)" };
+                    let hint = if p.commands { crate::i18n::text("Befehl") } else { crate::i18n::text("Datei im Projekt (> für Befehle)") };
                     let r = ui.add(egui::TextEdit::singleline(&mut p.query).hint_text(hint).desired_width(f32::INFINITY));
                     if p.focus {
                         r.request_focus();
@@ -134,7 +134,7 @@ impl EasyApp {
                         p.selected = 0;
                     }
                     if items.is_empty() {
-                        let t = if !p.commands && self.project.is_none() { "Kein Ordner geöffnet" } else { "Nichts gefunden" };
+                        let t = if !p.commands && self.project.is_none() { crate::i18n::text("Kein Ordner geöffnet") } else { crate::i18n::text("Nichts gefunden") };
                         ui.label(RichText::new(t).color(pal.text_weak));
                     }
                     egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {

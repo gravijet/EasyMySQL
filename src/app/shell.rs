@@ -74,7 +74,10 @@ impl EasyApp {
             side_view: self.side_view.name().into(),
             sidebar: self.sidebar,
         };
-        s.save();
+        if self.saved_session.as_ref() != Some(&s) {
+            s.save();
+            self.saved_session = Some(s);
+        }
     }
 
     /// Alle offenen Dateien speichern und Sitzung sichern.
@@ -99,17 +102,17 @@ impl EasyApp {
         };
         ui.horizontal(|ui| {
             egui::MenuBar::new().ui(ui, |ui| {
-                ui.menu_button("Datei", |ui| {
-                    item(ui, "Neue Abfrage", Cmd::NewQuery, &mut cmd);
-                    ui.add_enabled_ui(self.project.is_some(), |ui| item(ui, "Neue Datei im Projekt …", Cmd::NewFile, &mut cmd));
-                    item(ui, "Datei öffnen …", Cmd::OpenFile, &mut cmd);
+                ui.menu_button(crate::i18n::text("Datei"), |ui| {
+                    item(ui, crate::i18n::text("Neue Abfrage"), Cmd::NewQuery, &mut cmd);
+                    ui.add_enabled_ui(self.project.is_some(), |ui| item(ui, crate::i18n::text("Neue Datei im Projekt …"), Cmd::NewFile, &mut cmd));
+                    item(ui, crate::i18n::text("Datei öffnen …"), Cmd::OpenFile, &mut cmd);
                     ui.separator();
-                    item(ui, "Ordner öffnen …", Cmd::OpenFolder, &mut cmd);
-                    if ui.button("Neues Projekt …").clicked() {
+                    item(ui, crate::i18n::text("Ordner öffnen …"), Cmd::OpenFolder, &mut cmd);
+                    if ui.button(crate::i18n::text("Neues Projekt …")).clicked() {
                         self.explorer_dlg = Some(ExplorerDlg::NewProject { name: String::new() });
                         ui.close();
                     }
-                    ui.menu_button("Zuletzt geöffnet", |ui| {
+                    ui.menu_button(crate::i18n::text("Zuletzt geöffnet"), |ui| {
                         for p in self.settings.recent.clone() {
                             if ui.button(workspace::dir_name(&p)).on_hover_text(p.display().to_string()).clicked() {
                                 self.switch_project(Some(p));
@@ -117,65 +120,65 @@ impl EasyApp {
                             }
                         }
                     });
-                    if self.project.is_some() && ui.button("Ordner schließen").clicked() {
+                    if self.project.is_some() && ui.button(crate::i18n::text("Ordner schließen")).clicked() {
                         self.switch_project(None);
                         ui.close();
                     }
                     ui.separator();
-                    item(ui, "Speichern", Cmd::Save, &mut cmd);
-                    item(ui, "Alle speichern", Cmd::SaveAll, &mut cmd);
-                    item(ui, "Registerkarte schließen", Cmd::CloseTab, &mut cmd);
-                    item(ui, "Alle Registerkarten schließen", Cmd::CloseAllTabs, &mut cmd);
+                    item(ui, crate::i18n::text("Speichern"), Cmd::Save, &mut cmd);
+                    item(ui, crate::i18n::text("Alle speichern"), Cmd::SaveAll, &mut cmd);
+                    item(ui, crate::i18n::text("Registerkarte schließen"), Cmd::CloseTab, &mut cmd);
+                    item(ui, crate::i18n::text("Alle Registerkarten schließen"), Cmd::CloseAllTabs, &mut cmd);
                     ui.separator();
-                    item(ui, "Einstellungen", Cmd::Settings, &mut cmd);
+                    item(ui, crate::i18n::text("Einstellungen"), Cmd::Settings, &mut cmd);
                     ui.separator();
-                    if self.tray.is_some() && ui.button("Fenster ausblenden").clicked() {
+                    if self.tray.is_some() && ui.button(crate::i18n::text("Fenster ausblenden")).clicked() {
                         ui.close();
                         if let Some(h) = self.hwnd {
                             platform::hide_window(h);
                         }
                     }
-                    if ui.button("Beenden").clicked() {
+                    if ui.button(crate::i18n::text("Beenden")).clicked() {
                         ui.close();
                         self.quit();
                     }
                 });
-                ui.menu_button("Bearbeiten", |ui| {
-                    item(ui, "Suchen", Cmd::Find, &mut cmd);
-                    item(ui, "Ersetzen", Cmd::Replace, &mut cmd);
-                    item(ui, "Gehe zu Zeile", Cmd::GotoLine, &mut cmd);
+                ui.menu_button(crate::i18n::text("Bearbeiten"), |ui| {
+                    item(ui, crate::i18n::text("Suchen"), Cmd::Find, &mut cmd);
+                    item(ui, crate::i18n::text("Ersetzen"), Cmd::Replace, &mut cmd);
+                    item(ui, crate::i18n::text("Gehe zu Zeile"), Cmd::GotoLine, &mut cmd);
                     ui.separator();
-                    item(ui, "SQL formatieren", Cmd::Format, &mut cmd);
+                    item(ui, crate::i18n::text("SQL formatieren"), Cmd::Format, &mut cmd);
                     ui.separator();
-                    item(ui, "Suchen in Dateien", Cmd::ShowSearch, &mut cmd);
+                    item(ui, crate::i18n::text("Suchen in Dateien"), Cmd::ShowSearch, &mut cmd);
                 });
-                ui.menu_button("Ansicht", |ui| {
-                    item(ui, "Befehle …", Cmd::CommandPalette, &mut cmd);
-                    item(ui, "Datei im Projekt öffnen …", Cmd::QuickOpen, &mut cmd);
+                ui.menu_button(crate::i18n::text("Ansicht"), |ui| {
+                    item(ui, crate::i18n::text("Befehle …"), Cmd::CommandPalette, &mut cmd);
+                    item(ui, crate::i18n::text("Datei im Projekt öffnen …"), Cmd::QuickOpen, &mut cmd);
                     ui.separator();
                     item(ui, "Explorer", Cmd::ShowExplorer, &mut cmd);
-                    item(ui, "Suchen", Cmd::ShowSearch, &mut cmd);
-                    item(ui, "Datenbanken", Cmd::ShowDatabases, &mut cmd);
-                    item(ui, "Verlauf", Cmd::ShowHistory, &mut cmd);
-                    item(ui, "Seitenleiste ein/aus", Cmd::ToggleSidebar, &mut cmd);
+                    item(ui, crate::i18n::text("Suchen"), Cmd::ShowSearch, &mut cmd);
+                    item(ui, crate::i18n::text("Datenbanken"), Cmd::ShowDatabases, &mut cmd);
+                    item(ui, crate::i18n::text("Verlauf"), Cmd::ShowHistory, &mut cmd);
+                    item(ui, crate::i18n::text("Seitenleiste ein/aus"), Cmd::ToggleSidebar, &mut cmd);
                 });
-                ui.menu_button("Ausführen", |ui| {
-                    item(ui, "Datei oder Markierung ausführen", Cmd::RunAll, &mut cmd);
-                    item(ui, "Anweisung am Cursor ausführen", Cmd::RunStatement, &mut cmd);
-                    item(ui, "Ausführungsplan (EXPLAIN)", Cmd::Explain, &mut cmd);
+                ui.menu_button(crate::i18n::text("Ausführen"), |ui| {
+                    item(ui, crate::i18n::text("Datei oder Markierung ausführen"), Cmd::RunAll, &mut cmd);
+                    item(ui, crate::i18n::text("Anweisung am Cursor ausführen"), Cmd::RunStatement, &mut cmd);
+                    item(ui, crate::i18n::text("Ausführungsplan (EXPLAIN)"), Cmd::Explain, &mut cmd);
                     ui.separator();
-                    if ui.add_enabled(self.db.is_some(), egui::Button::new("SQL-Datei ausführen …")).clicked() {
+                    if ui.add_enabled(self.db.is_some(), egui::Button::new(crate::i18n::text("SQL-Datei ausführen …"))).clicked() {
                         ui.close();
                         self.open_sql_file(true);
                     }
                 });
-                ui.menu_button("Datenbank", |ui| {
+                ui.menu_button(crate::i18n::text("Datenbank"), |ui| {
                     let connected = self.db.is_some();
-                    if ui.add_enabled(connected, egui::Button::new("Neue Datenbank …")).clicked() {
+                    if ui.add_enabled(connected, egui::Button::new(crate::i18n::text("Neue Datenbank …"))).clicked() {
                         self.dialogs.push(Dialog::NewDatabase { name: String::new(), collation: COLLATIONS[0].into() });
                         ui.close();
                     }
-                    if ui.add_enabled(connected, egui::Button::new("Neue Tabelle …")).clicked() {
+                    if ui.add_enabled(connected, egui::Button::new(crate::i18n::text("Neue Tabelle …"))).clicked() {
                         if let Some(d) = self.need_db() {
                             actions.push(Action::NewTable(d));
                         }
@@ -183,74 +186,74 @@ impl EasyApp {
                     }
                     ui.separator();
                     ui.add_enabled_ui(connected, |ui| {
-                        item(ui, "ER-Diagramm", Cmd::ErDiagram, &mut cmd);
-                        item(ui, "Abfrage-Assistent", Cmd::QueryBuilder, &mut cmd);
+                        item(ui, crate::i18n::text("ER-Diagramm"), Cmd::ErDiagram, &mut cmd);
+                        item(ui, crate::i18n::text("Abfrage-Assistent"), Cmd::QueryBuilder, &mut cmd);
                     });
                     ui.separator();
-                    if ui.add_enabled(connected, egui::Button::new("Exportieren …")).clicked() {
+                    if ui.add_enabled(connected, egui::Button::new(crate::i18n::text("Exportieren …"))).clicked() {
                         if let Some(d) = self.need_db() {
                             self.dialogs.push(Dialog::Export { db: d, with_data: true });
                         }
                         ui.close();
                     }
-                    if ui.add_enabled(connected, egui::Button::new("SQL-Datei importieren …")).clicked() {
+                    if ui.add_enabled(connected, egui::Button::new(crate::i18n::text("SQL-Datei importieren …"))).clicked() {
                         ui.close();
                         self.open_sql_file(true);
                     }
                     ui.separator();
-                    if ui.add_enabled(connected, egui::Button::new("Aktualisieren")).clicked() {
+                    if ui.add_enabled(connected, egui::Button::new(crate::i18n::text("Aktualisieren"))).clicked() {
                         actions.push(Action::RefreshAll);
                         ui.close();
                     }
                 });
                 ui.menu_button("Server", |ui| {
                     let st = self.server.state();
-                    if ui.add_enabled(!st.is_running() && !st.is_busy(), egui::Button::new("Starten")).clicked() {
+                    if ui.add_enabled(!st.is_running() && !st.is_busy(), egui::Button::new(crate::i18n::text("Starten"))).clicked() {
                         self.start_server(&ctx);
                         ui.close();
                     }
-                    if ui.add_enabled(st == State::Running { own: true }, egui::Button::new("Stoppen")).clicked() {
+                    if ui.add_enabled(st == State::Running { own: true }, egui::Button::new(crate::i18n::text("Stoppen"))).clicked() {
                         self.stop_server(&ctx);
                         ui.close();
                     }
-                    if ui.add_enabled(!st.is_busy(), egui::Button::new("Neu starten")).clicked() {
+                    if ui.add_enabled(!st.is_busy(), egui::Button::new(crate::i18n::text("Neu starten"))).clicked() {
                         self.restart_server(&ctx);
                         ui.close();
                     }
                     ui.separator();
-                    item(ui, "Server-Log", Cmd::ServerLog, &mut cmd);
-                    item(ui, "Sicherungen & Reparatur", Cmd::Backups, &mut cmd);
+                    item(ui, crate::i18n::text("Server-Log"), Cmd::ServerLog, &mut cmd);
+                    item(ui, crate::i18n::text("Sicherungen & Reparatur"), Cmd::Backups, &mut cmd);
                     if let Some(p) = &self.server.paths {
-                        if ui.button("Datenordner öffnen").clicked() {
+                        if ui.button(crate::i18n::text("Datenordner öffnen")).clicked() {
                             open_path(&p.base);
                             ui.close();
                         }
                     }
                     ui.separator();
-                    if ui.button("Verbindung …").clicked() {
+                    if ui.button(crate::i18n::text("Verbindung …")).clicked() {
                         actions.push(Action::OpenSettings(Some("verbindung".into())));
                         ui.close();
                     }
-                    if ui.button("In VS Code öffnen").clicked() {
+                    if ui.button(crate::i18n::text("In VS Code öffnen")).clicked() {
                         ui.close();
                         if let Err(e) = crate::vscode::open_workspace(&self.current_db) {
                             self.error(e);
                         }
                     }
-                    if ui.add_enabled(self.vscode_job.is_none(), egui::Button::new("VS Code einrichten")).clicked() {
+                    if ui.add_enabled(self.vscode_job.is_none(), egui::Button::new(crate::i18n::text("VS Code einrichten"))).clicked() {
                         ui.close();
                         self.setup_vscode(&ctx);
                     }
                 });
-                ui.menu_button("Hilfe", |ui| {
-                    item(ui, "Handbuch", Cmd::Help, &mut cmd);
-                    item(ui, "Nach Updates suchen", Cmd::CheckUpdates, &mut cmd);
-                    if ui.button("Tastenkürzel").clicked() {
+                ui.menu_button(crate::i18n::text("Hilfe"), |ui| {
+                    item(ui, crate::i18n::text("Handbuch"), Cmd::Help, &mut cmd);
+                    item(ui, crate::i18n::text("Nach Updates suchen"), Cmd::CheckUpdates, &mut cmd);
+                    if ui.button(crate::i18n::text("Tastenkürzel")).clicked() {
                         actions.push(Action::OpenSettings(Some("tastenkuerzel".into())));
                         ui.close();
                     }
                     ui.separator();
-                    if ui.button("Über EasyMySQL").clicked() {
+                    if ui.button(crate::i18n::text("Über EasyMySQL")).clicked() {
                         self.dialogs.push(Dialog::About);
                         ui.close();
                     }
@@ -390,31 +393,31 @@ impl EasyApp {
                     close = Some(i);
                 }
                 resp.context_menu(|ui| {
-                    if ui.button("Schließen").clicked() {
+                    if ui.button(crate::i18n::text("Schließen")).clicked() {
                         close = Some(i);
                         ui.close();
                     }
-                    if ui.button("Andere schließen").clicked() {
+                    if ui.button(crate::i18n::text("Andere schließen")).clicked() {
                         close_others = Some(i);
                         ui.close();
                     }
-                    if ui.button("Rechts davon schließen").clicked() {
+                    if ui.button(crate::i18n::text("Rechts davon schließen")).clicked() {
                         close_right = Some(i);
                         ui.close();
                     }
-                    if ui.button("Alle Registerkarten schließen").clicked() {
+                    if ui.button(crate::i18n::text("Alle Registerkarten schließen")).clicked() {
                         close_all = true;
                         ui.close();
                     }
                     if let Some(f) = t.file() {
                         ui.separator();
-                        if ui.button("Im Datei-Explorer zeigen").clicked() {
+                        if ui.button(crate::i18n::text("Im Datei-Explorer zeigen")).clicked() {
                             if let Some(d) = f.parent() {
                                 open_path(d);
                             }
                             ui.close();
                         }
-                        if ui.button("Pfad kopieren").clicked() {
+                        if ui.button(crate::i18n::text("Pfad kopieren")).clicked() {
                             ui.ctx().copy_text(f.display().to_string());
                             ui.close();
                         }

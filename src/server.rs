@@ -25,15 +25,15 @@ pub enum State {
 impl State {
     pub fn text(&self) -> String {
         match self {
-            State::NotFound => "MariaDB nicht gefunden".into(),
-            State::Stopped => "gestoppt".into(),
-            State::Initializing => "wird eingerichtet ...".into(),
-            State::Starting => "startet ...".into(),
-            State::Running { own: true } => "läuft".into(),
-            State::Running { own: false } => "läuft (externer Server)".into(),
-            State::Stopping => "wird beendet ...".into(),
-            State::Repairing => "wird repariert ...".into(),
-            State::Failed(e) => format!("Fehler: {e}"),
+            State::NotFound => crate::i18n::text("MariaDB nicht gefunden").into(),
+            State::Stopped => crate::i18n::text("gestoppt").into(),
+            State::Initializing => crate::i18n::text("wird eingerichtet ...").into(),
+            State::Starting => crate::i18n::text("startet ...").into(),
+            State::Running { own: true } => crate::i18n::text("läuft").into(),
+            State::Running { own: false } => crate::i18n::text("läuft (externer Server)").into(),
+            State::Stopping => crate::i18n::text("wird beendet ...").into(),
+            State::Repairing => crate::i18n::text("wird repariert ...").into(),
+            State::Failed(e) => crate::tr_format!("Fehler: {e}", "Error: {e}"),
         }
     }
 
@@ -478,7 +478,7 @@ impl Server {
             if let Some(child) = sh.child.as_mut() {
                 if let Ok(Some(status)) = child.try_wait() {
                     sh.child = None;
-                    sh.state = State::Failed(format!("Server unerwartet beendet ({status})"));
+                    sh.state = State::Failed(crate::tr_format!("Server unerwartet beendet ({status})", "Server stopped unexpectedly ({status})"));
                 }
             }
         }
@@ -512,7 +512,7 @@ impl Server {
         std::thread::spawn(move || {
             let result = this.start_blocking(&on_change);
             if let Err(e) = result {
-                this.log(format!("FEHLER: {e}"));
+                this.log(crate::tr_format!("FEHLER: {e}", "ERROR: {e}"));
                 this.set_state(State::Failed(e));
             }
             on_change();
@@ -523,14 +523,12 @@ impl Server {
         if port_open(self.port) {
             if self.paths.as_ref().map(|p| p.has_pid_file()).unwrap_or(false) {
                 // Eigener Server aus einer frueheren (abgebrochenen) Sitzung
-                self.log(format!(
-                    "Der EasyMySQL-Server läuft noch aus einer früheren Sitzung (Port {}) – wird übernommen.",
+                self.log(crate::tr_format!("Der EasyMySQL-Server läuft noch aus einer früheren Sitzung (Port {}) – wird übernommen.", "The EasyMySQL server is still running from a previous session (port {}) — reconnecting.",
                     self.port
                 ));
                 self.set_state(State::Running { own: true });
             } else {
-                self.log(format!(
-                    "Auf Port {} läuft bereits ein anderer Datenbankserver – dieser wird verwendet.",
+                self.log(crate::tr_format!("Auf Port {} läuft bereits ein anderer Datenbankserver – dieser wird verwendet.", "Another database server is already running on port {} — using it.",
                     self.port
                 ));
                 self.set_state(State::Running { own: false });
@@ -539,10 +537,10 @@ impl Server {
         }
         let Some(paths) = self.paths.clone() else {
             self.set_state(State::NotFound);
-            return Err("MariaDB wurde nicht gefunden. Bitte EasyMySQL neu installieren.".into());
+            return Err(crate::i18n::text("MariaDB wurde nicht gefunden. Bitte EasyMySQL neu installieren.").into());
         };
         std::fs::create_dir_all(&paths.base)
-            .map_err(|e| format!("Ordner {} kann nicht angelegt werden: {e}", paths.base.display()))?;
+            .map_err(|e| crate::tr_format!("Ordner {} kann nicht angelegt werden: {e}", "Could not create folder {}: {e}", paths.base.display()))?;
 
         // 1. Datenverzeichnis einrichten (nur beim allerersten Start)
         if !paths.data.join("mysql").exists() {
@@ -560,7 +558,7 @@ impl Server {
 
         // Lief der Server beim letzten Mal noch, als EasyMySQL/der PC beendet wurde?
         if paths.session_flag().exists() {
-            self.log("Hinweis: Der Server wurde beim letzten Mal nicht sauber beendet (Absturz, Stromausfall oder hartes Beenden). MariaDB stellt die Daten jetzt automatisch wieder her, danach werden alle Tabellen geprüft.");
+            self.log(crate::i18n::text("Hinweis: Der Server wurde beim letzten Mal nicht sauber beendet (Absturz, Stromausfall oder hartes Beenden). MariaDB stellt die Daten jetzt automatisch wieder her, danach werden alle Tabellen geprüft."));
             self.shared.lock().unwrap().unclean = true;
         }
 
@@ -572,7 +570,7 @@ impl Server {
 
         // 4. Warten, bis der Port erreichbar ist
         self.wait_ready(self.port, Duration::from_secs(600))?;
-        self.log(format!("Server bereit auf Port {}.", self.port));
+        self.log(crate::tr_format!("Server bereit auf Port {}.", "Server ready on port {}.", self.port));
         let _ = std::fs::write(paths.session_flag(), timestamp());
         self.upgrade_if_needed(&paths);
         self.set_state(State::Running { own: true });
@@ -581,7 +579,7 @@ impl Server {
 
     /// Leeres Datenverzeichnis anlegen (mariadb-install-db).
     pub fn init_datadir(&self, paths: &Paths, data: &Path, port: u16) -> Result<(), String> {
-        self.log(format!("Richte Datenverzeichnis ein: {}", data.display()));
+        self.log(crate::tr_format!("Richte Datenverzeichnis ein: {}", "Initializing data directory: {}", data.display()));
         let tool = find_tool(&paths.bin, "mariadb-install-db");
         let mut cmd = Command::new(&tool);
         cmd.arg(format!("--datadir={}", data.display()));
@@ -601,7 +599,7 @@ impl Server {
         let out = hidden(&mut cmd)
             .stdin(Stdio::null())
             .output()
-            .map_err(|e| format!("{} konnte nicht gestartet werden: {e}", tool.display()))?;
+            .map_err(|e| crate::tr_format!("{} konnte nicht gestartet werden: {e}", "Could not start {}: {e}", tool.display()))?;
         for l in String::from_utf8_lossy(&out.stdout)
             .lines()
             .chain(String::from_utf8_lossy(&out.stderr).lines())
@@ -609,7 +607,7 @@ impl Server {
             self.log(l.to_string());
         }
         if !out.status.success() || !data.join("mysql").exists() {
-            return Err("Einrichtung des Datenverzeichnisses fehlgeschlagen (siehe Server-Log).".into());
+            return Err(crate::i18n::text("Einrichtung des Datenverzeichnisses fehlgeschlagen (siehe Server-Log).").into());
         }
         Ok(())
     }
@@ -647,7 +645,7 @@ impl Server {
     /// mariadbd starten; Ausgaben landen im Server-Log.
     pub fn spawn_mariadbd(&self, paths: &Paths, ini: &Path, args: &[String]) -> Result<Child, String> {
         let server = find_tool(&paths.bin, "mariadbd");
-        self.log(format!("Starte {}", server.display()));
+        self.log(crate::tr_format!("Starte {}", "Starting {}", server.display()));
         let mut cmd = Command::new(&server);
         cmd.arg(format!("--defaults-file={}", ini.display()));
         #[cfg(windows)]
@@ -662,7 +660,7 @@ impl Server {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .map_err(|e| format!("Server konnte nicht gestartet werden: {e}"))?;
+            .map_err(|e| crate::tr_format!("Server konnte nicht gestartet werden: {e}", "Could not start server: {e}"))?;
         for stream in [
             child.stdout.take().map(|s| Box::new(s) as Box<dyn std::io::Read + Send>),
             child.stderr.take().map(|s| Box::new(s) as Box<dyn std::io::Read + Send>),
@@ -690,9 +688,8 @@ impl Server {
                     if let Ok(Some(status)) = c.try_wait() {
                         sh.child = None;
                         drop(sh);
-                        return Err(format!(
-                            "Server hat sich sofort beendet ({status}). Siehe Server-Log. \
-                             Falls die Datenbank beschädigt ist: Server → Reparieren."
+                        return Err(crate::tr_format!("Server hat sich sofort beendet ({status}). Siehe Server-Log. \
+                             Falls die Datenbank beschädigt ist: Server → Reparieren.", "Server exited immediately ({status}). See the server log. If the database is damaged, open Server → Repair."
                         ));
                     }
                 }
@@ -701,7 +698,7 @@ impl Server {
                 return Ok(());
             }
             if start.elapsed() > timeout {
-                return Err("Server antwortet nicht (Zeitüberschreitung).".into());
+                return Err(crate::i18n::text("Server antwortet nicht (Zeitüberschreitung).").into());
             }
             std::thread::sleep(Duration::from_millis(200));
         }
@@ -712,14 +709,14 @@ impl Server {
         let start = Instant::now();
         loop {
             if let Ok(Some(status)) = child.try_wait() {
-                return Err(format!("Server beendet ({status})"));
+                return Err(crate::tr_format!("Server beendet ({status})", "Server stopped ({status})"));
             }
             if port_open(port) {
                 return Ok(());
             }
             if start.elapsed() > timeout {
                 let _ = child.kill();
-                return Err("Zeitüberschreitung".into());
+                return Err(crate::i18n::text("Zeitüberschreitung").into());
             }
             std::thread::sleep(Duration::from_millis(200));
         }
@@ -728,17 +725,17 @@ impl Server {
     /// Server-Rettung, wenn MariaDB nicht mehr startet oder die Daten stark beschaedigt sind.
     /// Der beschaedigte Datenordner bleibt immer erhalten (data-defekt-<Zeit>).
     pub fn rescue(&self, conn: &ConnInfo, backup_dir: &Path, on_change: &dyn Fn()) -> Result<String, String> {
-        let paths = self.paths.clone().ok_or("MariaDB wurde nicht gefunden.")?;
+        let paths = self.paths.clone().ok_or(crate::i18n::text("MariaDB wurde nicht gefunden."))?;
         let log = |m: String| self.log(m);
         let mut report = Vec::new();
 
         // 0. Laufenden Server beenden
         if self.state().is_running() {
-            log("Beende laufenden Server ...".into());
+            log(crate::i18n::text("Beende laufenden Server ...").into());
             self.stop_blocking(conn);
         }
         if port_open(self.port) {
-            return Err(format!("Port {} ist noch belegt – bitte EasyMySQL neu starten und erneut versuchen.", self.port));
+            return Err(crate::tr_format!("Port {} ist noch belegt – bitte EasyMySQL neu starten und erneut versuchen.", "Port {} is still in use — please restart EasyMySQL and try again.", self.port));
         }
         self.set_state(State::Repairing);
         on_change();
@@ -749,21 +746,21 @@ impl Server {
         let have_old = paths.data.exists();
         if have_old {
             std::fs::rename(&paths.data, &broken)
-                .map_err(|e| format!("Datenordner kann nicht umbenannt werden (noch in Benutzung?): {e}"))?;
-            log(format!("Alter Datenordner gesichert als {}", broken.display()));
-            report.push(format!("Der alte Datenordner bleibt erhalten: {}", broken.display()));
+                .map_err(|e| crate::tr_format!("Datenordner kann nicht umbenannt werden (noch in Benutzung?): {e}", "Could not rename the data folder (still in use?): {e}"))?;
+            log(crate::tr_format!("Alter Datenordner gesichert als {}", "Old data folder saved as {}", broken.display()));
+            report.push(crate::tr_format!("Der alte Datenordner bleibt erhalten: {}", "The old data folder is preserved: {}", broken.display()));
         }
 
         // 2. Rettungsversuch auf einer Kopie
         let mut rescued: Option<PathBuf> = None;
         if have_old {
             let work = paths.base.join(format!("rettung-{ts}"));
-            log("Kopiere Daten für den Rettungsversuch ...".into());
-            copy_dir(&broken, &work).map_err(|e| format!("Kopieren fehlgeschlagen: {e}"))?;
+            log(crate::i18n::text("Kopiere Daten für den Rettungsversuch ...").into());
+            copy_dir(&broken, &work).map_err(|e| crate::tr_format!("Kopieren fehlgeschlagen: {e}", "Copy failed: {e}"))?;
             let rport: u16 = 3399;
             let ini = paths.base.join("rettung.ini");
             for level in 0..=6u8 {
-                log(format!("Rettungsversuch mit innodb_force_recovery={level} ..."));
+                log(crate::tr_format!("Rettungsversuch mit innodb_force_recovery={level} ...", "Attempting recovery with innodb_force_recovery={level} ..."));
                 let mut extra = vec!["skip-grant-tables".to_string()];
                 if level > 0 {
                     extra.push(format!("innodb_force_recovery={level}"));
@@ -795,12 +792,12 @@ impl Server {
                 let _ = child.wait();
                 match res {
                     Ok(dir) => {
-                        log(format!("Daten gerettet nach {}", dir.display()));
-                        report.push(format!("Daten gerettet (Stufe {level})."));
+                        log(crate::tr_format!("Daten gerettet nach {}", "Data recovered to {}", dir.display()));
+                        report.push(crate::tr_format!("Daten gerettet (Stufe {level}).", "Data recovered (level {level})."));
                         rescued = Some(dir);
                         break;
                     }
-                    Err(e) => log(format!("Sichern fehlgeschlagen: {e}")),
+                    Err(e) => log(crate::tr_format!("Sichern fehlgeschlagen: {e}", "Backup failed: {e}")),
                 }
             }
             let _ = std::fs::remove_dir_all(&work);
@@ -843,7 +840,7 @@ impl Server {
                     .iter()
                     .filter(|b| b.reason != "rettung")
                     .find(|b| b.dbs.iter().any(|(d, _)| *d == db))
-                    .map(|b| (b.path.join(format!("{db}.sql.gz")), format!("Sicherung vom {}", b.time))),
+                    .map(|b| (b.path.join(format!("{db}.sql.gz")), crate::tr_format!("Sicherung vom {}", "Backup from {}", b.time))),
             };
             let Some((file, what)) = source else { continue };
             match crate::backup::restore(&env, &file, &db, &log) {
@@ -852,12 +849,12 @@ impl Server {
             }
         }
         if restored.is_empty() {
-            report.push("Es waren keine Datenbanken zum Wiederherstellen vorhanden.".into());
+            report.push(crate::i18n::text("Es waren keine Datenbanken zum Wiederherstellen vorhanden.").into());
         } else {
-            report.push(format!("Wiederhergestellt: {}", restored.join(", ")));
+            report.push(crate::tr_format!("Wiederhergestellt: {}", "Restored: {}", restored.join(", ")));
         }
-        report.push("Benutzerkonten wurden zurückgesetzt: root ohne Passwort.".into());
-        log("Server-Rettung abgeschlossen.".into());
+        report.push(crate::i18n::text("Benutzerkonten wurden zurückgesetzt: root ohne Passwort.").into());
+        log(crate::i18n::text("Server-Rettung abgeschlossen.").into());
         Ok(report.join("\n"))
     }
 
@@ -886,15 +883,15 @@ impl Server {
                 let text = String::from_utf8_lossy(&out.stdout).to_string()
                     + &String::from_utf8_lossy(&out.stderr);
                 if out.status.success() {
-                    self.log("Datenbank-Systemtabellen sind aktuell.");
+                    self.log(crate::i18n::text("Datenbank-Systemtabellen sind aktuell."));
                 } else {
-                    self.log("Hinweis: mariadb-upgrade konnte nicht ausgeführt werden (evtl. root-Passwort gesetzt).");
+                    self.log(crate::i18n::text("Hinweis: mariadb-upgrade konnte nicht ausgeführt werden (evtl. root-Passwort gesetzt)."));
                 }
                 for l in text.lines().filter(|l| !l.trim().is_empty()).take(20) {
                     self.log(l.to_string());
                 }
             }
-            Err(e) => self.log(format!("Hinweis: mariadb-upgrade: {e}")),
+            Err(e) => self.log(crate::tr_format!("Hinweis: mariadb-upgrade: {e}", "Hint: mariadb-upgrade: {e}")),
         }
     }
 
@@ -913,7 +910,7 @@ impl Server {
             return;
         }
         self.set_state(State::Stopping);
-        self.log("Server wird beendet ...");
+        self.log(crate::i18n::text("Server wird beendet ..."));
         // Sauber herunterfahren
         let mut info = conn.clone();
         info.host = "127.0.0.1".into();
@@ -925,7 +922,7 @@ impl Server {
             // Ohne Anmeldung: Signal an den Serverprozess (ebenfalls sauberes Herunterfahren)
             let pid = self.shared.lock().unwrap().child.as_ref().map(|c| c.id()).or_else(|| self.paths.as_ref().and_then(|p| p.read_pid()));
             if let Some(pid) = pid {
-                self.log(format!("Sende Beenden-Signal an Prozess {pid} ..."));
+                self.log(crate::tr_format!("Sende Beenden-Signal an Prozess {pid} ...", "Sending shutdown signal to process {pid} ..."));
                 signal_shutdown(pid);
             }
         }
@@ -949,13 +946,13 @@ impl Server {
                 sh.child = None;
                 drop(sh);
                 killed = true;
-                self.log("Server musste hart beendet werden (Daten werden beim nächsten Start automatisch wiederhergestellt).");
+                self.log(crate::i18n::text("Server musste hart beendet werden (Daten werden beim nächsten Start automatisch wiederhergestellt)."));
                 break;
             }
             drop(sh);
             std::thread::sleep(Duration::from_millis(100));
         }
-        self.log("Server beendet.");
+        self.log(crate::i18n::text("Server beendet."));
         if let (Some(p), false) = (&self.paths, killed) {
             let _ = std::fs::remove_file(p.session_flag());
         }
@@ -968,7 +965,7 @@ impl Server {
             this.stop_blocking(&conn);
             on_change();
             if let Err(e) = this.start_blocking(&on_change) {
-                this.log(format!("FEHLER: {e}"));
+                this.log(crate::tr_format!("FEHLER: {e}", "ERROR: {e}"));
                 this.set_state(State::Failed(e));
             }
             on_change();

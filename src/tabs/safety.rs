@@ -100,8 +100,8 @@ impl SafetyTab {
             let title = job.title.clone();
             self.job = None;
             match &r {
-                Ok(m) => cx.status(format!("{title}: {}", m.lines().next().unwrap_or("fertig"))),
-                Err(e) => cx.status(format!("{title}: Fehler – {}", e.lines().next().unwrap_or(""))),
+                Ok(m) => cx.status(format!("{title}: {}", m.lines().next().unwrap_or(crate::i18n::text("fertig")))),
+                Err(e) => cx.status(crate::tr_format!("{title}: Fehler – {}", "{title}: Error — {}", e.lines().next().unwrap_or(""))),
             }
             self.result = Some(r);
             if reconnect {
@@ -116,43 +116,43 @@ impl SafetyTab {
         let busy = self.job.is_some();
         let connected = cx.db.is_some();
         ui.horizontal_wrapped(|ui| {
-            if ui.add_enabled(!busy && connected, egui::Button::new("Jetzt sichern")).clicked() {
+            if ui.add_enabled(!busy && connected, egui::Button::new(crate::i18n::text("Jetzt sichern"))).clicked() {
                 if let Some(env) = self.env(cx) {
                     let cfg = self.cfg.clone();
-                    self.start(ui.ctx(), "Sicherung", false, move |log| {
-                        let dir = backup::create(&env, None, "manuell", log)?;
+                    self.start(ui.ctx(), crate::i18n::text("Sicherung"), false, move |log| {
+                        let dir = backup::create(&env, None, crate::i18n::text("manuell"), log)?;
                         backup::rotate(&cfg.dir(), cfg.keep_count, cfg.keep_days);
-                        Ok(format!("Sicherung erstellt: {}", dir.display()))
+                        Ok(crate::tr_format!("Sicherung erstellt: {}", "Backup created: {}", dir.display()))
                     });
                 }
             }
-            if ui.button("Ordner öffnen").clicked() {
+            if ui.button(crate::i18n::text("Ordner öffnen")).clicked() {
                 let d = self.cfg.dir();
                 let _ = std::fs::create_dir_all(&d);
                 crate::app::open_path(&d);
             }
-            if ui.button("Aktualisieren").clicked() {
+            if ui.button(crate::i18n::text("Aktualisieren")).clicked() {
                 self.refresh(cx);
             }
         });
         let old = self.cfg.clone();
         ui.horizontal_wrapped(|ui| {
-            ui.checkbox(&mut self.cfg.auto, "Automatisch sichern, alle");
+            ui.checkbox(&mut self.cfg.auto, crate::i18n::text("Automatisch sichern, alle"));
             ui.add(egui::DragValue::new(&mut self.cfg.interval_hours).range(1..=168).suffix(" h"));
-            ui.label("· behalten: die letzten");
+            ui.label(crate::i18n::text("· behalten: die letzten"));
             ui.add(egui::DragValue::new(&mut self.cfg.keep_count).range(1..=200));
-            ui.label("+ eine pro Tag für");
-            ui.add(egui::DragValue::new(&mut self.cfg.keep_days).range(0..=365).suffix(" Tage"));
+            ui.label(crate::i18n::text("+ eine pro Tag für"));
+            ui.add(egui::DragValue::new(&mut self.cfg.keep_days).range(0..=365).suffix(crate::i18n::text(" Tage")));
         });
         ui.horizontal(|ui| {
-            ui.label("Ordner:");
+            ui.label(crate::i18n::text("Ordner:"));
             ui.label(RichText::new(self.cfg.dir().display().to_string()).monospace().small());
-            if ui.small_button("Ändern …").clicked() {
+            if ui.small_button(crate::i18n::text("Ändern …")).clicked() {
                 if let Some(p) = rfd::FileDialog::new().pick_folder() {
                     self.cfg.dir = p.display().to_string();
                 }
             }
-            if !self.cfg.dir.is_empty() && ui.small_button("Standard").clicked() {
+            if !self.cfg.dir.is_empty() && ui.small_button(crate::i18n::text("Standard")).clicked() {
                 self.cfg.dir.clear();
             }
         });
@@ -167,10 +167,10 @@ impl SafetyTab {
             ui.set_min_width(ui.available_width());
             egui::ScrollArea::vertical().id_salt("backuplist").max_height(220.0).show(ui, |ui| {
                 if self.list.is_empty() {
-                    ui.label(RichText::new("Keine Sicherungen").color(style::pal().null_text));
+                    ui.label(RichText::new(crate::i18n::text("Keine Sicherungen")).color(style::pal().null_text));
                 }
                 egui::Grid::new("backups").striped(true).num_columns(5).spacing([16.0, 4.0]).show(ui, |ui| {
-                    for h in ["Zeitpunkt", "Anlass", "Datenbanken", "Größe", ""] {
+                    for h in [crate::i18n::text("Zeitpunkt"), crate::i18n::text("Anlass"), crate::i18n::text("Datenbanken"), crate::i18n::text("Größe"), ""] {
                         ui.label(RichText::new(h).strong());
                     }
                     ui.end_row();
@@ -181,11 +181,11 @@ impl SafetyTab {
                         ui.label(if names.is_empty() { "–".to_string() } else { names.join(", ") });
                         ui.label(backup::human_size(b.total()));
                         ui.horizontal(|ui| {
-                            if ui.add_enabled(!busy && connected && !b.dbs.is_empty(), egui::Button::new("Wiederherstellen …").small()).clicked() {
+                            if ui.add_enabled(!busy && connected && !b.dbs.is_empty(), egui::Button::new(crate::i18n::text("Wiederherstellen …")).small()).clicked() {
                                 let db = b.dbs[0].0.clone();
                                 self.restore = Some(RestoreDlg { target: db.clone(), db, backup: b.clone() });
                             }
-                            if ui.add_enabled(!busy, egui::Button::new("Löschen").small()).clicked() {
+                            if ui.add_enabled(!busy, egui::Button::new(crate::i18n::text("Löschen")).small()).clicked() {
                                 self.confirm_delete = Some(b.clone());
                             }
                         });
@@ -203,43 +203,42 @@ impl SafetyTab {
         ui.horizontal_wrapped(|ui| {
             let connected = cx.db.is_some();
             if ui
-                .add_enabled(!busy && connected, egui::Button::new("Alle Tabellen prüfen"))
-                .on_hover_text("CHECK TABLE für alle Tabellen – ändert nichts")
+                .add_enabled(!busy && connected, egui::Button::new(crate::i18n::text("Alle Tabellen prüfen")))
+                .on_hover_text(crate::i18n::text("CHECK TABLE für alle Tabellen – ändert nichts"))
                 .clicked()
             {
                 let conn = Self::conn(cx);
-                self.start(ui.ctx(), "Prüfung", false, move |log| {
+                self.start(ui.ctx(), crate::i18n::text("Prüfung"), false, move |log| {
                     let r = crate::repair::check_all(&conn, false, log)?;
                     Ok(if r.problems.is_empty() {
-                        format!("{} Tabellen geprüft – alles in Ordnung.", r.checked)
+                        crate::tr_format!("{} Tabellen geprüft – alles in Ordnung.", "{} tables checked — everything is OK.", r.checked)
                     } else {
-                        format!("{} Tabellen geprüft, {} mit Problemen. Bitte \"Prüfen und reparieren\" wählen.", r.checked, r.problems.len())
+                        crate::tr_format!("{} Tabellen geprüft, {} mit Problemen. Bitte \"Prüfen und reparieren\" wählen.", "{} tables checked, {} with problems. Please select \"Check and repair\".", r.checked, r.problems.len())
                     })
                 });
             }
             if ui
-                .add_enabled(!busy && connected, egui::Button::new("Prüfen und reparieren"))
-                .on_hover_text("Prüft alle Tabellen und repariert beschädigte (vorher wird gesichert)")
+                .add_enabled(!busy && connected, egui::Button::new(crate::i18n::text("Prüfen und reparieren")))
+                .on_hover_text(crate::i18n::text("Prüft alle Tabellen und repariert beschädigte (vorher wird gesichert)"))
                 .clicked()
             {
                 let conn = Self::conn(cx);
                 let env = self.env(cx);
-                self.start(ui.ctx(), "Reparatur", false, move |log| {
+                self.start(ui.ctx(), crate::i18n::text("Reparatur"), false, move |log| {
                     if let Some(env) = &env {
-                        log("Sichere vorher alle Datenbanken ...".into());
+                        log(crate::i18n::text("Sichere vorher alle Datenbanken ...").into());
                         if let Err(e) = backup::create(env, None, "vor-reparatur", log) {
-                            log(format!("Hinweis: Sicherung nicht vollständig: {e}"));
+                            log(crate::tr_format!("Hinweis: Sicherung nicht vollständig: {e}", "Hint: Backup incomplete: {e}"));
                         }
                     }
                     let r = crate::repair::check_all(&conn, true, log)?;
-                    let mut msg = format!("{} Tabellen geprüft", r.checked);
+                    let mut msg = crate::tr_format!("{} Tabellen geprüft", "{} tables checked", r.checked);
                     if r.problems.is_empty() {
-                        msg.push_str(" – alles in Ordnung.");
+                        msg.push_str(crate::i18n::text(" – alles in Ordnung."));
                     } else {
-                        msg.push_str(&format!(", {} repariert", r.repaired.len()));
+                        msg.push_str(&crate::tr_format!(", {} repariert", ", {} repaired", r.repaired.len()));
                         if !r.failed.is_empty() {
-                            msg.push_str(&format!(
-                                ", {} nicht reparierbar:\n{}",
+                            msg.push_str(&crate::tr_format!(", {} nicht reparierbar:\n{}", ", {} cannot be repaired:\n{}",
                                 r.failed.len(),
                                 r.failed.iter().map(|(t, m)| format!("  {t}: {m}")).collect::<Vec<_>>().join("\n")
                             ));
@@ -252,20 +251,20 @@ impl SafetyTab {
             }
             if let Some(list) = self.myisam.clone().filter(|l| !l.is_empty()) {
                 if ui
-                    .add_enabled(!busy, egui::Button::new(format!("{} MyISAM-Tabellen → InnoDB", list.len())))
-                    .on_hover_text("MyISAM ist nicht absturzsicher. InnoDB verliert bei Absturz/Stromausfall keine bestätigten Daten.")
+                    .add_enabled(!busy, egui::Button::new(crate::tr_format!("{} MyISAM-Tabellen → InnoDB", "{} MyISAM tables → InnoDB", list.len())))
+                    .on_hover_text(crate::i18n::text("MyISAM ist nicht absturzsicher. InnoDB verliert bei Absturz/Stromausfall keine bestätigten Daten."))
                     .clicked()
                 {
                     let conn = Self::conn(cx);
-                    self.start(ui.ctx(), "Umwandlung", false, move |log| {
+                    self.start(ui.ctx(), crate::i18n::text("Umwandlung"), false, move |log| {
                         let n = crate::repair::convert_to_innodb(&conn, &list, log)?;
-                        Ok(format!("{n} Tabellen in InnoDB umgewandelt."))
+                        Ok(crate::tr_format!("{n} Tabellen in InnoDB umgewandelt.", "{n} tables converted to InnoDB."))
                     });
                 }
             }
             if ui
-                .add_enabled(!busy && !st.is_busy() && cx.server.paths.is_some(), egui::Button::new("Server retten …"))
-                .on_hover_text("Wenn der Server nicht mehr startet oder die Daten stark beschädigt sind")
+                .add_enabled(!busy && !st.is_busy() && cx.server.paths.is_some(), egui::Button::new(crate::i18n::text("Server retten …")))
+                .on_hover_text(crate::i18n::text("Wenn der Server nicht mehr startet oder die Daten stark beschädigt sind"))
                 .clicked()
             {
                 self.confirm_rescue = true;
@@ -277,14 +276,14 @@ impl SafetyTab {
         if let Some(dlg) = self.restore.as_mut() {
             let mut go = false;
             let mut cancel = false;
-            egui::Window::new("Aus Sicherung wiederherstellen")
+            egui::Window::new(crate::i18n::text("Aus Sicherung wiederherstellen"))
                 .collapsible(false)
                 .resizable(false)
                 .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
                 .show(ctx, |ui| {
-                    ui.label(format!("Sicherung vom {} ({})", dlg.backup.time, backup::reason_text(&dlg.backup.reason)));
+                    ui.label(crate::tr_format!("Sicherung vom {} ({})", "Backup from {} ({})", dlg.backup.time, backup::reason_text(&dlg.backup.reason)));
                     egui::Grid::new("restgrid").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
-                        ui.label("Datenbank:");
+                        ui.label(crate::i18n::text("Datenbank:"));
                         let dbs: Vec<String> = dlg.backup.dbs.iter().map(|d| d.0.clone()).collect();
                         let old = dlg.db.clone();
                         super::str_combo(ui, "restdb", &dbs, &mut dlg.db, 180.0);
@@ -292,27 +291,26 @@ impl SafetyTab {
                             dlg.target = dlg.db.clone();
                         }
                         ui.end_row();
-                        ui.label("Einspielen als:");
+                        ui.label(crate::i18n::text("Einspielen als:"));
                         ui.text_edit_singleline(&mut dlg.target);
                         ui.end_row();
                     });
                     if cx.databases.contains(&dlg.target) {
                         ui.label(
-                            RichText::new(format!(
-                                "Die vorhandene Datenbank \"{}\" wird ersetzt (vorher wird sie automatisch gesichert).",
+                            RichText::new(crate::tr_format!("Die vorhandene Datenbank \"{}\" wird ersetzt (vorher wird sie automatisch gesichert).", "The existing database \"{}\" will be replaced (an automatic backup will be created first).",
                                 dlg.target
                             ))
                             .color(style::pal().error_text),
                         );
                     } else {
-                        ui.label(RichText::new("Wird als neue Datenbank angelegt.").color(style::pal().ok_text));
+                        ui.label(RichText::new(crate::i18n::text("Wird als neue Datenbank angelegt.")).color(style::pal().ok_text));
                     }
                     ui.separator();
                     ui.horizontal(|ui| {
-                        if ui.add_enabled(!dlg.target.trim().is_empty(), egui::Button::new("Wiederherstellen")).clicked() {
+                        if ui.add_enabled(!dlg.target.trim().is_empty(), egui::Button::new(crate::i18n::text("Wiederherstellen"))).clicked() {
                             go = true;
                         }
-                        if ui.button("Abbrechen").clicked() {
+                        if ui.button(crate::i18n::text("Abbrechen")).clicked() {
                             cancel = true;
                         }
                     });
@@ -322,9 +320,9 @@ impl SafetyTab {
                 if let Some(env) = self.env(cx) {
                     let file = d.backup.path.join(format!("{}.sql.gz", d.db));
                     let target = d.target.trim().to_string();
-                    self.start(ctx, "Wiederherstellung", false, move |log| {
+                    self.start(ctx, crate::i18n::text("Wiederherstellung"), false, move |log| {
                         backup::restore(&env, &file, &target, log)?;
-                        Ok(format!("Datenbank {target} wiederhergestellt."))
+                        Ok(crate::tr_format!("Datenbank {target} wiederhergestellt.", "Database {target} restored."))
                     });
                 }
             } else if cancel {
@@ -334,23 +332,23 @@ impl SafetyTab {
 
         if self.confirm_rescue {
             let mut go = false;
-            egui::Window::new("Server retten")
+            egui::Window::new(crate::i18n::text("Server retten"))
                 .collapsible(false)
                 .resizable(false)
                 .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
                 .show(ctx, |ui| {
                     ui.label(
-                        "Der Server wird beendet, der aktuelle Datenordner wird umbenannt und bleibt erhalten.\n\
+                        crate::i18n::text("Der Server wird beendet, der aktuelle Datenordner wird umbenannt und bleibt erhalten.\n\
                          Danach werden die Daten gerettet, ein neuer Datenordner angelegt und alles wieder eingespielt.\n\
                          Benutzerkonten werden zurückgesetzt (root ohne Passwort).\n\n\
-                         Das kann einige Minuten dauern. Fortfahren?",
+                         Das kann einige Minuten dauern. Fortfahren?"),
                     );
                     ui.separator();
                     ui.horizontal(|ui| {
-                        if ui.button("Ja, Server retten").clicked() {
+                        if ui.button(crate::i18n::text("Ja, Server retten")).clicked() {
                             go = true;
                         }
-                        if ui.button("Abbrechen").clicked() {
+                        if ui.button(crate::i18n::text("Abbrechen")).clicked() {
                             self.confirm_rescue = false;
                         }
                     });
@@ -362,10 +360,10 @@ impl SafetyTab {
                 let dir = self.cfg.dir();
                 let ctx2 = ctx.clone();
                 cx.actions.push(Action::Disconnect);
-                self.start(ctx, "Server-Rettung", true, move |_log| {
+                self.start(ctx, crate::i18n::text("Server-Rettung"), true, move |_log| {
                     let r = server.rescue(&conn, &dir, &|| ctx2.request_repaint());
                     if let Err(e) = &r {
-                        server.log(format!("Rettung fehlgeschlagen: {e}"));
+                        server.log(crate::tr_format!("Rettung fehlgeschlagen: {e}", "Recovery failed: {e}"));
                     }
                     r
                 });
@@ -373,19 +371,19 @@ impl SafetyTab {
         }
 
         if let Some(b) = self.confirm_delete.clone() {
-            egui::Window::new("Sicherung löschen")
+            egui::Window::new(crate::i18n::text("Sicherung löschen"))
                 .collapsible(false)
                 .resizable(false)
                 .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
                 .show(ctx, |ui| {
-                    ui.label(format!("Sicherung vom {} endgültig löschen?", b.time));
+                    ui.label(crate::tr_format!("Sicherung vom {} endgültig löschen?", "Permanently delete the backup from {}?", b.time));
                     ui.horizontal(|ui| {
-                        if ui.button("Löschen").clicked() {
+                        if ui.button(crate::i18n::text("Löschen")).clicked() {
                             let _ = std::fs::remove_dir_all(&b.path);
                             self.confirm_delete = None;
                             self.refresh(cx);
                         }
-                        if ui.button("Abbrechen").clicked() {
+                        if ui.button(crate::i18n::text("Abbrechen")).clicked() {
                             self.confirm_delete = None;
                         }
                     });
@@ -396,7 +394,7 @@ impl SafetyTab {
 
 impl TabView for SafetyTab {
     fn title(&self) -> String {
-        "Sicherungen & Reparatur".into()
+        crate::i18n::text("Sicherungen & Reparatur").into()
     }
 
     fn key(&self) -> Option<String> {
@@ -424,13 +422,13 @@ impl TabView for SafetyTab {
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(200));
         }
         egui::ScrollArea::vertical().id_salt("safetyscroll").show(ui, |ui| {
-            ui.heading("Sicherungen");
+            ui.heading(crate::i18n::text("Sicherungen"));
             style::group_frame().show(ui, |ui| {
                 ui.set_min_width(ui.available_width());
                 self.backups_ui(ui, cx);
             });
             ui.add_space(10.0);
-            ui.heading("Prüfen & Reparieren");
+            ui.heading(crate::i18n::text("Prüfen & Reparieren"));
             style::group_frame().show(ui, |ui| {
                 ui.set_min_width(ui.available_width());
                 self.repair_ui(ui, cx);
@@ -439,13 +437,13 @@ impl TabView for SafetyTab {
             if let Some(job) = &self.job {
                 ui.horizontal(|ui| {
                     ui.spinner();
-                    ui.label(RichText::new(format!("{} läuft ...", job.title)).strong());
+                    ui.label(RichText::new(crate::tr_format!("{} läuft ...", "{} is running ...", job.title)).strong());
                 });
             }
             if let Some(r) = &self.result {
                 match r {
                     Ok(m) => ui.label(RichText::new(m).color(style::pal().ok_text)),
-                    Err(e) => ui.label(RichText::new(format!("Fehler: {e}")).color(style::pal().error_text)),
+                    Err(e) => ui.label(RichText::new(crate::tr_format!("Fehler: {e}", "Error: {e}")).color(style::pal().error_text)),
                 };
             }
             if !self.log.is_empty() {

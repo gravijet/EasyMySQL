@@ -1,8 +1,8 @@
 [package]
 name = "easymysql"
-version = "3.0.1"
+version = "3.1.0"
 edition = "2024"
-description = "EasyMySQL - MariaDB fuer Windows, ganz einfach"
+description = "EasyMySQL - MariaDB server and graphical database manager for Windows"
 build = "build.rs"
 
 [dependencies]
@@ -19,7 +19,7 @@ ureq = { version = "3.4", features = ["json"] }
 sha2 = "0.10"
 
 [target."cfg(windows)".dependencies]
-# Unter Windows DirectX 12 (mit Software-Fallback WARP) statt nur OpenGL
+# Use DirectX 12 with WARP software fallback on Windows.
 eframe = { version = "0.35.0", default-features = false, features = ["wgpu"] }
 tray-icon = "0.25.1"
 windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_System_Threading", "Win32_Security", "Win32_System_SystemInformation", "Win32_UI_Shell", "Win32_System_Shutdown"] }

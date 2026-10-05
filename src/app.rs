@@ -139,6 +139,7 @@ impl Autoscroll {
 
 pub struct EasyApp {
     settings: Settings,
+    applied_language: crate::i18n::Language,
     updater: crate::updates::Updater,
     server: Server,
     db: Option<Db>,
@@ -163,8 +164,10 @@ pub struct EasyApp {
     myisam_hint_done: bool,
     /// Geoeffneter Projektordner (None = keiner)
     project: Option<PathBuf>,
-    tree: Option<crate::workspace::Node>,
+    tree: Option<std::sync::Arc<crate::workspace::Node>>,
+    saved_session: Option<crate::workspace::Session>,
     tree_scan: Option<Instant>,
+    tree_job: Option<Receiver<(PathBuf, crate::workspace::Node)>>,
     side_view: SideView,
     sidebar: bool,
     explorer_dlg: Option<ExplorerDlg>,
@@ -197,7 +200,8 @@ impl EasyApp {
             }
         }
         keymap::install(keymap::Keymap::load());
-        style::apply(&cc.egui_ctx);
+        crate::i18n::install(settings.language);
+        style::apply(&cc.egui_ctx, settings.dark);
         apply_editor_prefs(&settings);
         let server = Server::new(3306);
         let hwnd = platform::window_handle(cc);
@@ -225,6 +229,7 @@ impl EasyApp {
             .filter(|p| !s_empty(p) && p.is_dir());
         let history = crate::qhistory::load();
         let mut app = EasyApp {
+            applied_language: settings.language,
             settings,
             updater: crate::updates::Updater::default(),
             server,
@@ -249,7 +254,9 @@ impl EasyApp {
             myisam_hint_done: false,
             project,
             tree: None,
+            saved_session: None,
             tree_scan: None,
+            tree_job: None,
             side_view: SideView::Explorer,
             sidebar: true,
             explorer_dlg: None,
@@ -290,7 +297,7 @@ impl EasyApp {
     }
 
     fn error(&mut self, e: impl Into<String>) {
-        self.dialogs.push(Dialog::Message { title: "Fehler".into(), text: e.into(), error: true });
+        self.dialogs.push(Dialog::Message { title: crate::i18n::text("Fehler").into(), text: e.into(), error: true });
     }
 
     // ------------------------------------------------------------------
@@ -312,7 +319,7 @@ impl EasyApp {
                         let _ = tx.send(crate::repair::check_all(&conn, false, &|_| {}));
                     });
                     self.check_job = Some(rx);
-                    self.toast("Letztes Mal nicht sauber beendet – alle Tabellen werden geprüft …");
+                    self.toast(crate::i18n::text("Letztes Mal nicht sauber beendet – alle Tabellen werden geprüft …"));
                 }
                 if !self.myisam_hint_done {
                     self.myisam_hint_done = true;
@@ -328,7 +335,7 @@ impl EasyApp {
                 if show_dialog_on_error {
                     self.dialogs.push(Dialog::ConnectFailed(e));
                 } else {
-                    self.toast_error(format!("Verbindung fehlgeschlagen: {e}"));
+                    self.toast_error(crate::tr_format!("Verbindung fehlgeschlagen: {e}", "Connection failed: {e}"));
                 }
             }
         }
@@ -364,10 +371,10 @@ impl EasyApp {
         let res = dbc.query(&sql);
         self.query_log_applied = Some(want);
         match res {
-            Ok(_) if want => self.server.log("Mitschrift aller Anweisungen eingeschaltet."),
-            Ok(_) if !first => self.server.log("Mitschrift aller Anweisungen ausgeschaltet."),
+            Ok(_) if want => self.server.log(crate::i18n::text("Mitschrift aller Anweisungen eingeschaltet.")),
+            Ok(_) if !first => self.server.log(crate::i18n::text("Mitschrift aller Anweisungen ausgeschaltet.")),
             Ok(_) => {}
-            Err(e) => self.toast_error(format!("Mitschrift: {e}")),
+            Err(e) => self.toast_error(crate::tr_format!("Mitschrift: {e}", "Query logging: {e}")),
         }
     }
 
@@ -378,7 +385,7 @@ impl EasyApp {
                 self.backup_job = None;
                 match r {
                     Ok(m) => self.server.log(m),
-                    Err(e) => self.toast_error(format!("Automatische Sicherung fehlgeschlagen: {e}")),
+                    Err(e) => self.toast_error(crate::tr_format!("Automatische Sicherung fehlgeschlagen: {e}", "Automatic backup failed: {e}")),
                 }
             }
         }
@@ -387,18 +394,18 @@ impl EasyApp {
                 self.check_job = None;
                 match r {
                     Ok(res) if res.problems.is_empty() => {
-                        self.toast(format!("{} Tabellen geprüft – alles in Ordnung.", res.checked));
+                        self.toast(crate::tr_format!("{} Tabellen geprüft – alles in Ordnung.", "{} tables checked — everything is OK.", res.checked));
                     }
                     Ok(res) => {
                         let list: Vec<String> = res.problems.iter().map(|(t, m)| format!("• {t}: {m}")).collect();
                         self.dialogs.push(Dialog::Message {
-                            title: "Beschädigte Tabellen gefunden".into(),
-                            text: format!("{}\n\nUnter „Sicherungen & Reparatur“ auf „Prüfen und reparieren“ klicken.", list.join("\n")),
+                            title: crate::i18n::text("Beschädigte Tabellen gefunden").into(),
+                            text: crate::tr_format!("{}\n\nUnter „Sicherungen & Reparatur“ auf „Prüfen und reparieren“ klicken.", "{}\n\nOpen “Backups & repair” and click “Check and repair”.", list.join("\n")),
                             error: true,
                         });
                         self.open_tab(Box::new(SafetyTab::new()));
                     }
-                    Err(e) => self.toast_error(format!("Prüfung fehlgeschlagen: {e}")),
+                    Err(e) => self.toast_error(crate::tr_format!("Prüfung fehlgeschlagen: {e}", "Check failed: {e}")),
                 }
             }
         }
@@ -417,7 +424,7 @@ impl EasyApp {
                     std::thread::spawn(move || {
                         let r = crate::backup::create(&env, None, "auto", &|_| {}).map(|d| {
                             crate::backup::rotate(&cfg.dir(), cfg.keep_count, cfg.keep_days);
-                            format!("Automatische Sicherung erstellt ({})", d.file_name().unwrap_or_default().to_string_lossy())
+                            crate::tr_format!("Automatische Sicherung erstellt ({})", "Automatic backup created ({})", d.file_name().unwrap_or_default().to_string_lossy())
                         });
                         let _ = tx.send(r);
                         ctx.request_repaint();
@@ -499,7 +506,7 @@ impl EasyApp {
 
     fn need_db(&mut self) -> Option<String> {
         if self.db.is_none() {
-            self.error("Keine Verbindung zum Datenbankserver.");
+            self.error(crate::i18n::text("Keine Verbindung zum Datenbankserver."));
             return None;
         }
         if self.current_db.is_empty() {
@@ -626,6 +633,16 @@ impl EasyApp {
 
     /// Geaenderte Einstellungen anwenden und speichern
     fn apply_settings(&mut self) {
+        crate::i18n::install(self.settings.language);
+        if let Some(ctx) = CTX.lock().unwrap().as_ref() {
+            style::set_theme(ctx, self.settings.dark);
+        }
+        if self.applied_language != self.settings.language {
+            if let Some(ctx) = CTX.lock().unwrap().as_ref() {
+                self.tray = platform::create_tray(ctx, self.hwnd);
+            }
+            self.applied_language = self.settings.language;
+        }
         apply_editor_prefs(&self.settings);
         let root_before = crate::workspace::storage_root();
         crate::workspace::set_storage_root(&self.settings.storage_dir);
@@ -661,7 +678,7 @@ impl EasyApp {
             }
             Cmd::SaveAll => {
                 self.save_all();
-                self.toast("Alles gespeichert.");
+                self.toast(crate::i18n::text("Alles gespeichert."));
             }
             Cmd::CloseTab => {
                 let a = self.active;
@@ -831,7 +848,7 @@ impl EasyApp {
 
     fn setup_vscode(&mut self, ctx: &egui::Context) {
         if crate::vscode::find_vscode().is_none() {
-            self.dialogs.push(Dialog::Message { title: "Visual Studio Code".into(), text: crate::vscode::NOT_FOUND.into(), error: false });
+            self.dialogs.push(Dialog::Message { title: "Visual Studio Code".into(), text: crate::i18n::text(crate::vscode::NOT_FOUND).into(), error: false });
             let _ = open_url("https://code.visualstudio.com/download");
             return;
         }
@@ -843,7 +860,7 @@ impl EasyApp {
             ctx.request_repaint();
         });
         self.vscode_job = Some(rx);
-        self.toast("VS-Code-Erweiterungen werden installiert …");
+        self.toast(crate::i18n::text("VS-Code-Erweiterungen werden installiert …"));
     }
 
     fn poll_vscode(&mut self) {
@@ -852,7 +869,7 @@ impl EasyApp {
         self.vscode_job = None;
         match res {
             Ok(report) => {
-                self.dialogs.push(Dialog::Message { title: "VS Code eingerichtet".into(), text: report, error: false });
+                self.dialogs.push(Dialog::Message { title: crate::i18n::text("VS Code eingerichtet").into(), text: report, error: false });
                 let _ = crate::vscode::open_workspace(&self.current_db);
             }
             Err(e) => self.error(e),
@@ -860,7 +877,7 @@ impl EasyApp {
     }
 
     fn open_sql_file(&mut self, run: bool) {
-        let mut dlg = rfd::FileDialog::new().add_filter("SQL-Dateien", &["sql", "txt"]);
+        let mut dlg = rfd::FileDialog::new().add_filter(crate::i18n::text("SQL-Dateien"), &["sql", "txt"]);
         if let Some(p) = &self.project {
             dlg = dlg.set_directory(p);
         }
@@ -912,6 +929,7 @@ impl EasyApp {
         self.project = dir;
         self.tree = None;
         self.tree_scan = None;
+        self.tree_job = None;
         self.search = SearchState::default();
         self.show_side(SideView::Explorer);
     }

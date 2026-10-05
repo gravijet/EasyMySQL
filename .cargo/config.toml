@@ -1,3 +1,3 @@
-# Visual-C++-Laufzeit statisch einbinden, damit EasyMySQL.exe ohne Zusatz-DLLs laeuft
+# Link the Visual C++ runtime statically to run without additional DLLs.
 [target.x86_64-pc-windows-msvc]
 rustflags = ["-C", "target-feature=+crt-static"]

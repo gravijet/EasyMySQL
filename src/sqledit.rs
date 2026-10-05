@@ -213,8 +213,41 @@ struct Find {
     current: usize,
 }
 
+/// Reuse tokenization and glyph layout until text, font, theme or display scale changes.
+#[derive(Default)]
+pub struct SqlLayoutCache {
+    entry: Option<SqlLayout>,
+    #[cfg(test)]
+    builds: usize,
+}
+struct SqlLayout {
+    text: String,
+    font: FontId,
+    dark: bool,
+    scale: f32,
+    galley: Arc<egui::Galley>,
+}
+impl SqlLayoutCache {
+    pub fn layout(&mut self, ui: &egui::Ui, text: &str, font: &FontId) -> Arc<egui::Galley> {
+        let dark = crate::style::pal().dark;
+        let scale = ui.ctx().pixels_per_point();
+        if let Some(entry) = &self.entry {
+            if entry.text == text && entry.font == *font && entry.dark == dark && entry.scale == scale {
+                return Arc::clone(&entry.galley);
+            }
+        }
+        let mut job = highlight(text, font.clone());
+        job.wrap.max_width = f32::INFINITY;
+        let galley = ui.fonts_mut(|fonts| fonts.layout_job(job));
+        self.entry = Some(SqlLayout { text: text.to_owned(), font: font.clone(), dark, scale, galley: Arc::clone(&galley) });
+        #[cfg(test)] { self.builds += 1; }
+        galley
+    }
+}
+
 pub struct SqlEditor {
     pub id: egui::Id,
+    layout_cache: SqlLayoutCache,
     popup: Option<Popup>,
     popup_rect: Option<egui::Rect>,
     prev_text: String,
@@ -461,6 +494,7 @@ impl SqlEditor {
     pub fn new(id: egui::Id) -> Self {
         Self {
             id,
+            layout_cache: SqlLayoutCache::default(),
             popup: None,
             popup_rect: None,
             prev_text: String::new(),
@@ -549,19 +583,19 @@ impl SqlEditor {
                 let known = words.tables.iter().any(|x| x.eq_ignore_ascii_case(t));
                 for (tab, c) in &words.columns {
                     if !known || tab.eq_ignore_ascii_case(t) {
-                        add(c, "Spalte", &mut items);
+                        add(c, crate::i18n::text("Spalte"), &mut items);
                     }
                 }
             }
             None => {
                 for t in &words.tables {
-                    add(t, "Tabelle", &mut items);
+                    add(t, crate::i18n::text("Tabelle"), &mut items);
                 }
                 for (_, c) in &words.columns {
-                    add(c, "Spalte", &mut items);
+                    add(c, crate::i18n::text("Spalte"), &mut items);
                 }
                 for f in FUNCTIONS {
-                    add(f, "Funktion", &mut items);
+                    add(f, crate::i18n::text("Funktion"), &mut items);
                 }
                 for k in KEYWORDS {
                     add(k, "SQL", &mut items);
@@ -743,7 +777,7 @@ impl SqlEditor {
         let mut replace_all = false;
         egui::Frame::new().fill(crate::style::pal().face_light).inner_margin(egui::Margin::symmetric(6, 3)).show(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.label("Suchen:");
+                ui.label(crate::i18n::text("Suchen:"));
                 let find_id = self.id.with("find");
                 let r = ui.add(egui::TextEdit::singleline(&mut f.query).desired_width(200.0).id(find_id));
                 if f.focus {
@@ -755,20 +789,20 @@ impl SqlEditor {
                     f.focus = false;
                 }
                 let enter = r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
-                ui.toggle_value(&mut f.case, "Aa").on_hover_text("Groß-/Kleinschreibung beachten");
+                ui.toggle_value(&mut f.case, "Aa").on_hover_text(crate::i18n::text("Groß-/Kleinschreibung beachten"));
                 let info = if f.query.is_empty() {
                     String::new()
                 } else if matches.is_empty() {
-                    "keine Treffer".into()
+                    crate::i18n::text("keine Treffer").into()
                 } else {
-                    format!("{} von {}", (f.current % matches.len()) + 1, matches.len())
+                    crate::tr_format!("{} von {}", "{} of {}", (f.current % matches.len()) + 1, matches.len())
                 };
                 ui.label(RichText::new(info).small());
-                if crate::icons::button(ui, crate::icons::Icon::Up, "Vorheriger").clicked() && !matches.is_empty() {
+                if crate::icons::button(ui, crate::icons::Icon::Up, crate::i18n::text("Vorheriger")).clicked() && !matches.is_empty() {
                     f.current = (f.current + matches.len() - 1) % matches.len();
                     jump = Some(f.current);
                 }
-                if (crate::icons::button(ui, crate::icons::Icon::Down, "Nächster (Enter)").clicked() || enter) && !matches.is_empty() {
+                if (crate::icons::button(ui, crate::icons::Icon::Down, crate::i18n::text("Nächster (Enter)")).clicked() || enter) && !matches.is_empty() {
                     if enter {
                         f.current = (f.current + 1) % matches.len();
                         r.request_focus();
@@ -777,19 +811,19 @@ impl SqlEditor {
                     }
                     jump = Some(f.current);
                 }
-                ui.toggle_value(&mut f.show_replace, "Ersetzen");
-                if crate::icons::button(ui, crate::icons::Icon::Close, "Schließen (Esc)").clicked() || ui.input(|i| i.key_pressed(Key::Escape)) {
+                ui.toggle_value(&mut f.show_replace, crate::i18n::text("Ersetzen"));
+                if crate::icons::button(ui, crate::icons::Icon::Close, crate::i18n::text("Schließen (Esc)")).clicked() || ui.input(|i| i.key_pressed(Key::Escape)) {
                     close = true;
                 }
             });
             if f.show_replace {
                 ui.horizontal(|ui| {
-                    ui.label("Ersetzen:");
+                    ui.label(crate::i18n::text("Ersetzen:"));
                     ui.add(egui::TextEdit::singleline(&mut f.replace).desired_width(200.0));
-                    if ui.small_button("Ersetzen").clicked() {
+                    if ui.small_button(crate::i18n::text("Ersetzen")).clicked() {
                         replace_one = true;
                     }
-                    if ui.small_button("Alle ersetzen").clicked() {
+                    if ui.small_button(crate::i18n::text("Alle ersetzen")).clicked() {
                         replace_all = true;
                     }
                 });
@@ -914,7 +948,7 @@ impl SqlEditor {
             let mut close = false;
             egui::Frame::new().fill(pal.face_light).inner_margin(egui::Margin::symmetric(6, 3)).show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    ui.label(format!("Gehe zu Zeile (1–{}):", text.split('\n').count()));
+                    ui.label(crate::tr_format!("Gehe zu Zeile (1–{}):", "Go to line (1–{}):", text.split('\n').count()));
                     let r = ui.add(egui::TextEdit::singleline(line).desired_width(80.0));
                     if *first {
                         r.request_focus();
@@ -942,10 +976,9 @@ impl SqlEditor {
         let digits = lines.to_string().len().max(2);
         let gutter_w = digits as f32 * 8.0 + 18.0;
 
+        let mut layout_cache = std::mem::take(&mut self.layout_cache);
         let mut layouter = |ui: &egui::Ui, buf: &dyn egui::TextBuffer, _wrap: f32| -> Arc<egui::Galley> {
-            let mut job = highlight(buf.as_str(), font.clone());
-            job.wrap.max_width = f32::INFINITY;
-            ui.fonts_mut(|f| f.layout_job(job))
+            layout_cache.layout(ui, buf.as_str(), &font)
         };
 
         let minimap_w = if self.minimap { 70.0 } else { 0.0 };
@@ -1042,10 +1075,14 @@ impl SqlEditor {
                         let p = ui.painter();
                         p.rect_filled(gutter, 0.0, pal.bg);
                         let cur_line = cur.map(|c| line_col(text, c).0);
-                        let mut n = 1;
-                        let mut new_line = true;
-                        for row in &o.galley.rows {
-                            if new_line {
+                        // Text never wraps: each galley row is one source line.
+                        // Only emit line-number shapes inside the visible viewport.
+                        let clip = ui.clip_rect().expand(row_h);
+                        let first = o.galley.rows.partition_point(|row| gp.y + row.pos.y + row_h < clip.top());
+                        let last = o.galley.rows.partition_point(|row| gp.y + row.pos.y <= clip.bottom());
+                        for (index, row) in o.galley.rows[first..last].iter().enumerate() {
+                            let n = first + index + 1;
+                            {
                                 let active = cur_line == Some(n - 1);
                                 let err = self.error_line == Some(n - 1);
                                 p.text(
@@ -1055,9 +1092,7 @@ impl SqlEditor {
                                     font.clone(),
                                     if err { pal.error_text } else if active { pal.text } else { pal.syn_gutter },
                                 );
-                                n += 1;
                             }
-                            new_line = row.ends_with_newline;
                         }
                         result = Some(o);
                     });
@@ -1100,6 +1135,7 @@ impl SqlEditor {
                 }
             });
         });
+        self.layout_cache = layout_cache;
         let Some(o) = result else { return out };
         {
             use std::sync::atomic::Ordering;
@@ -1287,5 +1323,54 @@ mod edit_tests {
         assert_eq!(matching_bracket(&c, 5), Some(7));
         assert_eq!(matching_bracket(&c, 7), Some(5));
         assert_eq!(find_all("Select SELECT sel", "select", false).len(), 2);
+    }
+}
+
+#[cfg(test)]
+mod performance_tests {
+    use super::*;
+    #[test]
+    fn layout_cache_reuses_and_invalidates_after_edit_font_and_zoom() {
+        let ctx = egui::Context::default();
+        let mut cache = SqlLayoutCache::default();
+        let mut text = "SELECT 'café', 1;".to_string();
+        let mut font = FontId::monospace(13.0);
+        let mut previous = None;
+        for stage in 0..5 {
+            if stage == 2 { text.push_str("\nSELECT 2;"); }
+            if stage == 3 { font.size = 18.0; }
+            if stage == 4 { ctx.set_pixels_per_point(1.5); }
+            let _ = ctx.run_ui(egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(760.0, 480.0))),
+                ..Default::default()
+            }, |ui| {
+                let galley = cache.layout(ui, &text, &font);
+                assert_eq!(galley.job.text, text);
+                if let Some(old) = &previous {
+                    assert_eq!(Arc::ptr_eq(old, &galley), stage == 1);
+                }
+                previous = Some(galley);
+            });
+        }
+        assert_eq!(cache.builds, 4);
+    }
+
+    #[test]
+    #[ignore = "manual render benchmark"]
+    fn performance_render_large_editor() {
+        let ctx = egui::Context::default();
+        let mut editor = SqlEditor::new(egui::Id::new("performance-editor"));
+        let mut text = "SELECT id, name FROM customers WHERE id > 100;\n".repeat(5000);
+        let words = Words::default();
+        let mut render = || {
+            let _ = ctx.run_ui(egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 760.0))),
+                ..Default::default()
+            }, |ui| { editor.show(ui, &mut text, &words, 700.0); });
+        };
+        for _ in 0..3 { render(); }
+        let start = std::time::Instant::now();
+        for _ in 0..10 { render(); }
+        println!("5,000 SQL lines: {:.3} ms/frame", start.elapsed().as_secs_f64() * 1000.0 / 10.0);
     }
 }

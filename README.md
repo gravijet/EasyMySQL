@@ -1,186 +1,137 @@
 # EasyMySQL
 
-MariaDB-Datenbankserver und grafische Datenbankverwaltung für Windows in **einem** Programm.
-Einmal installieren, starten, und `mysql -u root` funktioniert in der Eingabeaufforderung.
+A MariaDB database server and graphical database manager for Windows in **one application**.
+Install it once, launch it, and use `mysql -u root` in Command Prompt.
 
-![ER-Diagramm](docs/er-diagramm.png)
+The interface starts in **English with dark mode**. Choose German or a light theme under **Settings → Appearance**. Menus show the active category and give subitems room to breathe.
+
+![Settings in English with dark mode](docs/settings.png)
 
 ## Installation
 
-1. Unter [Releases](https://github.com/gravijet/EasyMySQL/releases) die Datei `EasyMySQL-Setup-x.y.z.exe` herunterladen und ausführen
-   (enthält bereits alles, funktioniert auch ohne Internet).
-   (Windows SmartScreen: *Weitere Informationen → Trotzdem ausführen*.)
-2. EasyMySQL starten. Beim ersten Start wird der Datenbankserver automatisch eingerichtet.
-3. In der Eingabeaufforderung (cmd):
+1. Download `EasyMySQL-Setup-x.y.z.exe` from [Releases](https://github.com/gravijet/EasyMySQL/releases) and run it. MariaDB is included, so installation works offline. If Windows SmartScreen reports an unknown publisher, choose *More info → Run anyway*.
+2. Launch EasyMySQL. Its database server is initialized automatically on first launch.
+3. Open Command Prompt (cmd):
 
-   ```
+   ```console
    mysql -u root
    ```
 
-Das Setup installiert bzw. setzt:
-
-| Was | Wo |
+| Component | Location |
 |---|---|
 | EasyMySQL | `C:\Program Files\EasyMySQL\EasyMySQL.exe` |
-| MariaDB 11.8 LTS (Server und alle Kommandozeilenprogramme: `mysql`, `mariadb`, `mysqldump`, `mysqladmin`, ...) | `C:\Program Files\EasyMySQL\mariadb` |
-| Umgebungsvariable `PATH` (damit `mysql` überall funktioniert) | `...\EasyMySQL\mariadb\bin` |
-| Umgebungsvariablen `EASYMYSQL_HOME`, `MARIADB_HOME` | Installationsordner |
-| MariaDB ODBC-Treiber 3.2 und ODBC-Datenquelle **EasyMySQL** (optional, z. B. für Excel/Access) | Systemweit |
-| Microsoft Visual C++ Laufzeit | Systemweit |
-| Datenbanken (Datenordner) | `C:\ProgramData\EasyMySQL\data` |
+| MariaDB 11.8 LTS server and command-line tools (`mysql`, `mariadb`, `mysqldump`, `mysqladmin`, …) | `C:\Program Files\EasyMySQL\mariadb` |
+| `PATH` entry for the command-line tools | `...\EasyMySQL\mariadb\bin` |
+| `EASYMYSQL_HOME`, `MARIADB_HOME` | Installation folders |
+| MariaDB ODBC driver 3.2 and **EasyMySQL** data source (optional, for Excel/Access and other applications) | System-wide |
+| Microsoft Visual C++ runtime | System-wide |
+| Database data directory | `C:\ProgramData\EasyMySQL\data` |
 
-Zugang: Server `127.0.0.1`, Port `3306`, Benutzer `root`, **kein Passwort**.
-Der Server ist nur vom eigenen PC aus erreichbar (`bind-address=127.0.0.1`).
+Default connection: `127.0.0.1`, port `3306`, user `root`, **no password**. The bundled server is accessible only from the same PC (`bind-address=127.0.0.1`).
 
-## Datensicherheit, Sicherungen und Reparatur
+A portable ZIP is also available. Extract it and launch `EasyMySQL.exe`; the portable version does not modify `PATH`.
 
-- **Absturzsicher**: MariaDB läuft mit InnoDB und sofortigem Schreiben jeder bestätigten Änderung
-  (`innodb_flush_log_at_trx_commit=1`, Doublewrite). Auch wenn EasyMySQL oder der PC hart beendet
-  wird (Task-Manager, Stromausfall), gehen bestätigte Daten nicht verloren. Getestet mit
-  `kill -9` mitten in zehntausenden Schreibvorgängen: keine einzige bestätigte Zeile fehlte.
-- **Windows herunterfahren/abmelden**: EasyMySQL fährt die Datenbank vorher sauber herunter.
-- **Nach einem Absturz** erkennt EasyMySQL das beim nächsten Start, MariaDB stellt die Daten
-  automatisch wieder her und EasyMySQL prüft danach alle Tabellen.
-- **Automatische Sicherungen** (*Server → Sicherungen & Reparatur*): beim Start und alle 2 Stunden,
-  außerdem automatisch **vor jedem Löschen/Leeren** von Datenbanken und Tabellen (auch im
-  SQL-Editor: `DROP`, `TRUNCATE`, `DELETE`/`UPDATE` ohne `WHERE`). Aufbewahrt werden die letzten 10
-  und eine pro Tag für 14 Tage (einstellbar, Ordner frei wählbar, z. B. USB-Stick).
-  Wiederherstellen per Klick, auch unter neuem Namen.
-- **Reparieren per Knopfdruck**:
-  - *Prüfen und reparieren*: prüft alle Tabellen (`CHECK TABLE`) und repariert beschädigte.
-  - *MyISAM → InnoDB*: wandelt nicht absturzsichere Tabellen um (EasyMySQL weist darauf hin).
-  - *Server retten*: wenn MariaDB gar nicht mehr startet. Der alte Datenordner bleibt erhalten,
-    die Daten werden gerettet (notfalls aus der neuesten Sicherung) und in einen neuen
-    Datenordner eingespielt.
+## Data safety, backups and recovery
 
-## Verhalten
+- **Crash safety:** MariaDB uses InnoDB with `innodb_flush_log_at_trx_commit=1` and doublewrite enabled, so committed changes are flushed to disk. Windows shutdown and sign-out stop the server cleanly. After an interrupted session, MariaDB recovers its data and EasyMySQL checks the tables.
+- **Automatic backups:** run at startup and every two hours by default, and before deleting or emptying databases and tables. The SQL editor also backs up before `DROP`, `TRUNCATE`, and `DELETE`/`UPDATE` without `WHERE`. Destructive statements are not executed if that backup fails.
+- **Configurable retention:** keep the latest ten backups plus one per day for fourteen days by default. Choose a backup folder, including a USB drive or network share. Restore into an existing database or under a new name.
+- **Check and repair:** checks all tables with `CHECK TABLE` and attempts to repair damaged ones after backing up.
+- **MyISAM → InnoDB:** converts tables without crash protection; EasyMySQL warns about them when connecting.
+- **Recover server:** preserves the old data folder, attempts recovery on a copy, and restores recovered data into a new directory, using the latest backup when needed. User accounts are reset to `root` without a password.
 
-- Der Datenbankserver läuft **nur, solange EasyMySQL geöffnet ist**.
-- Schließen mit **X** beendet das Programm nicht. Es läuft im Infobereich (neben der Uhr) weiter,
-  damit `mysql -u root` weiter funktioniert.
-- Richtig beenden: Rechtsklick auf das Symbol im Infobereich → **Beenden** (oder *Datei → Beenden*).
-  Dabei wird der Server sauber heruntergefahren.
-- **Kein Autostart** mit Windows.
-- Es läuft immer nur eine EasyMySQL-Instanz. Ein zweiter Start holt das vorhandene Fenster nach vorne.
+Open **Server → Backups & repair** to manage these tools.
 
-## Funktionen
+## Application behavior
 
-Die Oberfläche ist wie Visual Studio Code aufgebaut: links die Aktivitätsleiste mit den Seitenleisten
-**Explorer, Suchen, Datenbanken, Verlauf**, in der Mitte Registerkarten. Werkzeuge, die eine
-Registerkarte öffnen (ER-Diagramm, Abfrage-Assistent, Sicherungen, Server-Log, Handbuch), liegen oben
-rechts neben dem Menü. Das komplette **Handbuch** mit Suche steht unter *Hilfe → Handbuch* (F1).
+The database server runs while EasyMySQL is running. Closing the window hides it in the system tray beside the clock, so command-line connections continue to work. Click the tray icon to restore the window. Choose **File → Quit**, or **Quit** from the tray menu, to stop the server and exit. EasyMySQL does not start automatically with Windows. Starting a second instance brings the existing window to the front.
 
-- **Projektordner**: beliebige Ordner öffnen (*Datei → Ordner öffnen*), neue Projekte im
-  Speicherordner anlegen, zuletzt geöffnete Projekte. Dateien und Ordner anlegen, umbenennen,
-  löschen (in den Projekt-Papierkorb), Suche über alle Dateien.
-- **Speicherorte frei wählbar**: der Speicherordner (Standard `Dokumente\EasyMySQL`) enthält neue
-  Projekte, unbenannte Abfragen, frühere Fassungen, Verlauf, Diagramm-Anordnungen und den Inhalt des
-  Abfrage-Assistenten. Beim Wechsel kann der Inhalt mitgenommen werden. Der Sicherungsordner ist
-  ebenfalls frei wählbar.
-- **Helles Standarddesign** mit hervorgehobenen Menükategorien und eingerückten Unterpunkten.
-- **Updates**: beim Start und alle sechs Stunden wird das neueste stabile GitHub Release geprüft
-  (abschaltbar unter *Einstellungen → Updates*). *Hilfe → Nach Updates suchen* prüft jederzeit manuell.
-  Bei einer neuen Version lässt sich das Windows-Setup direkt herunterladen und installieren.
-  Der Download wird anhand der GitHub-SHA-256-Prüfsumme geprüft; vor dem Setup werden Dateien
-  gespeichert und der Datenbankserver sauber beendet.
-- **Alle Registerkarten schließen**: im Dateimenü, im Tab-Kontextmenü oder mit `Strg+Umschalt+W`.
-  Dateien werden wie beim einzelnen Schließen gespeichert; geschlossene Tabs lassen sich wieder öffnen.
-- **Automatisch speichern**, frühere Fassungen je Datei, alle Registerkarten beim nächsten Start
-  wieder da. Nach dem Schließen der letzten Registerkarte bleibt die Fläche einfach leer.
-- **SQL-Editor**: Hervorhebung, Vorschläge (auch nach `alias.`), Suchen/Ersetzen, Zeile
-  ausschneiden (`Strg+X` ohne Markierung), duplizieren (`Strg+D`), verschieben, kopieren,
-  kommentieren, Minimap. Mehrere Anweisungen je Datei, `DELIMITER`, eigenes Ergebnis je Anweisung,
-  EXPLAIN, Fehler auf Deutsch erklärt. Export von Ergebnissen als CSV, JSON, SQL, Markdown.
-- **Formatieren**: SQL-Wörter groß, jede Klausel auf eigener Zeile, Listen und Bedingungen werden erst
-  umbrochen, wenn die Zeile zu lang wird. Kommentare, Prozeduren und `DELIMITER` bleiben unverändert.
-- **Abfrage-Assistent**: beliebige SELECT-Abfragen grafisch – alle JOIN-Arten, Aliase (`AS`),
-  Ausdrücke, über 60 Funktionen, CASE, CAST, Fensterfunktionen (`OVER`), Unterabfragen überall (als
-  Tabelle, Wert, `IN`, `ANY`/`ALL`, `EXISTS`), verschachtelte UND/ODER-Gruppen, `GROUP BY` mit
-  `ROLLUP`, `HAVING`, `ORDER BY`, `LIMIT`/`OFFSET`, `UNION`/`EXCEPT`/`INTERSECT` (jeweils auch `ALL`),
-  `WITH` und `WITH RECURSIVE`. Ergebnis sofort sichtbar, als Sicht speichern oder in den Editor übernehmen.
-- **ER-Diagramm**: liest die Struktur einer Datenbank aus, 1:1, 1:n und n:m, Notation Krähenfuß, Chen
-  oder (min,max). **Automatisch anordnen**: verbundene Tabellen nebeneinander, möglichst keine
-  Kreuzungen, keine Linie durch fremde Tabellen, ungefähr Bildschirmformat. **Beziehungen hinzufügen**
-  (ziehen oder Modus „Verbinden“) und **entfernen** (Linie anklicken, Entf). Export als SVG und SQL.
-- **Datenbanken**: Baum mit Tabellen und Spalten, Daten ansehen und bearbeiten, Struktur ändern,
-  Tabellen-Designer, Export/Import als SQL.
-- **Verlauf** aller ausgeführten Anweisungen, erneut öffnen oder ausführen.
-- **Server-Log**: wird immer mitgeschrieben (auch in die Datei `server.log`), mit Zeitstempel und
-  Filter. Auf Wunsch wird jede Anweisung an den Server protokolliert – auch aus `mysql` in der
-  Eingabeaufforderung.
-- **Befehle** (`Strg+Umschalt+P`) und **Datei schnell öffnen** (`Strg+P`).
-- **Tastenkürzel frei belegbar** (*Einstellungen → Tastenkürzel*), mehrere Kürzel je Befehl,
-  Konflikte werden angezeigt.
-- **Maus**: Scrollgeschwindigkeit einstellbar; mittlere Maustaste gedrückt halten und ziehen scrollt
-  schnell in jede Richtung.
-- **Visual Studio Code + GitHub Copilot**: *Server → VS Code einrichten* installiert SQLTools mit
-  MariaDB-Treiber und legt die Verbindung „EasyMySQL“ an.
+## Features
 
-![Abfrage-Assistent](docs/abfrage-assistent.png)
+The interface follows an editor layout: an activity bar for **Explorer, Search, Databases and History**, a resizable sidebar, and tabs in the center. Toolbar shortcuts open the ER diagram, query builder, backups and server log. **Help → Manual** (`F1`) provides a searchable handbook in the selected language.
 
-### Wichtige Tastenkürzel (Standard)
+- **Projects and files:** open any folder, create projects, reopen recent folders, create/rename/delete files and folders, and search across project files. Deletion moves files into the project's recycle folder.
+- **Flexible storage:** choose where to keep projects, untitled queries, previous versions, history, diagram layouts and builder content. The default is `Documents\EasyMySQL`. Changing folders can move existing content and update open files and recent projects. Backup storage is configurable separately.
+- **English and German:** switch languages in Settings. Menus, commands, tooltips, dialogs, error hints, keyboard shortcut names and the handbook follow the chosen language. English is the default for installations without a saved language preference.
+- **Dark and light themes:** dark mode is the default; either theme is selectable in Settings. Highlighted categories follow navigation and scrolling, with indented subitems.
+- **GitHub updates:** check the latest stable release at startup and every six hours, or manually through **Help → Check for updates**. Automatic checks can be disabled. Download and start the Windows installer from the app; SHA-256 checksums are verified before installation. Files are saved and the server is stopped cleanly first.
+- **Close all tabs:** available from the File menu, tab context menu or `Ctrl+Shift+W`. Files are saved and closed tabs can be reopened individually.
+- **Autosave and restoration:** edits save after a short pause; previous versions are kept per file. Open tabs and untitled queries return after restarting. The center stays empty when the last tab closes.
+- **SQL editor:** syntax highlighting, completion including after `alias.`, find/replace, line editing, comments and a minimap. Execute multiple statements with separate results, use `DELIMITER`, inspect `EXPLAIN`, and read localized error hints. Export CSV, JSON, SQL or Markdown.
+- **SQL formatting:** capitalize keywords and lay out clauses, lists and conditions. Comments, procedures, quoted text and `DELIMITER` blocks remain intact.
+- **Query builder:** all JOIN types, aliases, expressions, over sixty functions, CASE, CAST, window functions, subqueries, AND/OR groups, `GROUP BY` with `ROLLUP`, `HAVING`, sorting, pagination, `UNION`/`EXCEPT`/`INTERSECT` including `ALL`, and `WITH RECURSIVE`. Execute queries, save a view or open the generated SQL in the editor.
+- **ER diagrams:** display 1:1, 1:n and n:m relationships with Crow's foot, Chen or (min,max) notation. Arrange tables automatically, pan/zoom, create relationships by dragging, delete selected relationships, and export SVG or CREATE TABLE SQL.
+- **Database tools:** browse tables and columns, edit rows, alter structure, design tables and import/export SQL.
+- **Query history:** reopen or rerun statements with timestamps, databases and durations.
+- **Server log:** always records server messages to `server.log`. Optional query logging includes statements from Command Prompt and other programs.
+- **Custom shortcuts:** assign multiple combinations per command and see conflicts. Menus and the handbook show the current bindings.
+- **Mouse controls:** adjustable wheel speed and middle-button drag scrolling; the middle button pans diagrams and closes tabs.
+- **VS Code integration:** **Server → Set up VS Code** installs SQLTools and its MariaDB driver and creates the EasyMySQL connection. Changes saved in VS Code appear in EasyMySQL.
 
-| Taste | Funktion |
+![English manual](docs/manual.png)
+
+### Default keyboard shortcuts
+
+| Shortcut | Action |
 |---|---|
-| `Strg+Alt+S` oder `F5` | Datei bzw. Markierung ausführen |
-| `Strg+Enter` | Anweisung am Cursor ausführen |
-| `Strg+E` | Ausführungsplan (EXPLAIN) |
-| `Strg+Alt+L` | SQL formatieren |
-| `Strg+X` / `Strg+D` / `Strg+Umschalt+K` | Zeile ausschneiden / duplizieren / löschen |
-| `Alt+↑/↓`, `Alt+Umschalt+↑/↓` | Zeile verschieben / kopieren |
-| `Strg+#` | Kommentar ein/aus |
-| `Strg+F` / `Strg+H` / `Strg+G` | Suchen / Ersetzen / Gehe zu Zeile |
-| `Strg+Leertaste` | Vorschläge |
-| `Strg+Umschalt+P` / `Strg+P` | Befehle / Datei öffnen |
-| `Strg+N` / `Strg+W` / `Strg+Umschalt+T` | neue Abfrage / Registerkarte schließen / wieder öffnen |
-| `Strg+Umschalt+W` | Alle Registerkarten schließen |
-| `Strg+B` | Seitenleiste ein/aus |
-| `Strg+,` / `F1` | Einstellungen / Handbuch |
+| `Ctrl+Alt+S` or `F5` | Run file or selection |
+| `Ctrl+Enter` | Run statement at cursor |
+| `Ctrl+E` | Execution plan (EXPLAIN) |
+| `Ctrl+Alt+L` | Format SQL |
+| `Ctrl+X` / `Ctrl+D` / `Ctrl+Shift+K` | Cut / duplicate / delete line |
+| `Alt+↑/↓` / `Alt+Shift+↑/↓` | Move / copy line |
+| `Ctrl+/` | Toggle comment |
+| `Ctrl+F` / `Ctrl+H` / `Ctrl+G` | Find / replace / go to line |
+| `Ctrl+Space` | Suggestions |
+| `Ctrl+Shift+P` / `Ctrl+P` | Commands / quick open |
+| `Ctrl+N` / `Ctrl+W` / `Ctrl+Shift+T` | New query / close tab / reopen tab |
+| `Ctrl+Shift+W` | Close all tabs |
+| `Ctrl+B` | Toggle sidebar |
+| `Ctrl+,` / `F1` | Settings / manual |
 
-Alle Kürzel lassen sich unter *Einstellungen → Tastenkürzel* ändern.
+Customize shortcuts under **Settings → Keyboard shortcuts**.
 
-![SQL-Abfrage](docs/sql-abfrage.png)
+## Performance
 
-## Selbst bauen
+The editor reuses syntax highlighting and glyph layout until text, font, theme or display scale changes, and renders only visible line numbers. SQL results are displayed without copying the whole result set per frame. Project trees and diagram schemas are shared, diagram routes are cached across panning and zooming, and file searches and project scans run in the background. Log filtering and formatted builder SQL are cached; unchanged sessions avoid repeated disk writes.
 
-Voraussetzung: [Rust](https://rustup.rs) (stable).
+The manual rendering benchmarks use a 5,000-line SQL file and a 50,000-row result with twelve columns. Run them with:
 
-```
-cargo build --release
+```console
+cargo test --locked performance_render -- --ignored --nocapture --test-threads=1
 ```
 
-Für das komplette Setup (MariaDB, Treiber, Inno Setup) siehe `.github/workflows/release.yml`.
-Der Build holt automatisch die neueste MariaDB-Version der LTS-Reihe 11.8 (mit Prüfsumme); ist die
-MariaDB-Schnittstelle nicht erreichbar, wird die fest hinterlegte Version 11.8.9 aus dem MariaDB-Archiv verwendet.
-Das fertige Setup enthält MariaDB bereits vollständig und installiert komplett offline.
-Nach einem Update auf eine neuere MariaDB-Version passt EasyMySQL die Systemtabellen beim Start automatisch an (`mariadb-upgrade`).
-Jeder Push auf `main` baut das Setup automatisch auf GitHub und veröffentlicht es als
-Release `vX.Y.Z` (Version aus `Cargo.toml`).
+## Building and testing
 
-Tests: `cargo test`. Die mit `#[ignore]` markierten Tests brauchen einen laufenden Server auf
-Port 3306 mit passender Datenbank (`cargo test -- --ignored`).
+Install [Rust](https://rustup.rs) stable, then run:
 
-Zum Entwickeln unter Linux sucht EasyMySQL `mariadbd` in `/usr/sbin`. Mit der Umgebungsvariable
-`EASYMYSQL_MARIADB_BIN` kann ein anderer MariaDB-`bin`-Ordner angegeben werden.
+```console
+cargo build --release --locked
+cargo test --locked
+```
 
-## Aufbau
+The complete Windows installer is built by [the release workflow](.github/workflows/release.yml). It downloads the latest MariaDB release in the 11.8 LTS series and verifies its checksum. If the download API is unavailable, it uses the pinned MariaDB 11.8.9 archive. The installer bundles MariaDB for offline installation. System tables are upgraded with `mariadb-upgrade` when needed.
 
-| Datei | Inhalt |
+Pushing code to `main` builds and publishes `vX.Y.Z`, using the version in `Cargo.toml`. Documentation-only pushes do not trigger a release. The workflow can also be run manually.
+
+Some ignored tests require a running database server and matching sample databases; the rendering benchmarks are ignored because they are manual measurements. Under Linux, development builds look for `mariadbd` in `/usr/sbin`; override this with `EASYMYSQL_MARIADB_BIN`.
+
+## Source layout
+
+| Files | Purpose |
 |---|---|
-| `src/main.rs` | Programmstart, Fenster, nur eine Instanz |
-| `src/app.rs` | Hauptfenster: Befehle, Aktionen, Server, Mausrad und Scrollen mit der mittleren Maustaste |
-| `src/app/shell.rs`, `side.rs`, `dialogs.rs`, `palette.rs` | Menü, Registerkarten, Seitenleisten, Dialoge, Befehlsliste |
-| `src/keymap.rs` | alle Befehle mit Standard-Tastenkürzeln, eigene Belegung |
-| `src/settings.rs`, `src/workspace.rs` | Einstellungen; Speicherordner, Projekte, sicheres Speichern, frühere Fassungen, Sitzung |
-| `src/server.rs` | MariaDB einrichten, starten, stoppen, Server-Log, Absturzerkennung, Rettung |
-| `src/backup.rs`, `src/repair.rs` | Sicherungen, Prüfen und Reparieren |
-| `src/db.rs` | Verbindung, Abfragen, Anweisungen trennen, Metadaten, Beziehungsarten, SQL-Export |
-| `src/sqledit.rs`, `src/sqlfmt.rs` | Code-Editor; SQL-Formatierer |
-| `src/qhistory.rs` | Verlauf der ausgeführten Anweisungen |
-| `src/tabs/` | SQL-Editor, Daten, Struktur, Tabellen-Designer, ER-Diagramm (+ Anordnung), Abfrage-Assistent (Modell + Oberfläche), Sicherungen, Server-Log, Einstellungen, Handbuch |
-| `src/icons.rs`, `src/style.rs` | selbst gezeichnete Symbole, helles Design und Menünavigation |
-| `src/updates.rs` | GitHub-Release-Prüfung, Download mit Prüfsumme und Windows-Setup |
-| `src/vscode.rs`, `src/platform.rs` | Visual Studio Code; Windows-Infobereich und Herunterfahren |
-| `installer/EasyMySQL.iss` | Inno-Setup-Skript |
+| `src/main.rs`, `src/app.rs` | Startup, main window, commands, server lifecycle and scrolling |
+| `src/app/` | Menus, tabs, sidebars, dialogs and command palette |
+| `src/i18n.rs` | English/German translations and language selection |
+| `src/keymap.rs` | Commands, default bindings and custom shortcuts |
+| `src/settings.rs`, `src/workspace.rs` | Preferences, storage, projects, atomic saves, previous versions and sessions |
+| `src/server.rs`, `src/backup.rs`, `src/repair.rs` | Server setup, lifecycle, logs, backups and recovery |
+| `src/db.rs` | Connections, queries, metadata, relationships and SQL export |
+| `src/sqledit.rs`, `src/sqlfmt.rs` | SQL editor, cached syntax layout and formatter |
+| `src/qhistory.rs`, `src/tabs/` | History and the individual tool tabs |
+| `src/icons.rs`, `src/style.rs` | Vector icons, dark/light palettes and navigation |
+| `src/updates.rs` | GitHub release checks, verified downloads and Windows installer launch |
+| `src/vscode.rs`, `src/platform.rs` | VS Code integration and Windows tray/shutdown support |
+| `installer/EasyMySQL.iss` | English/German Inno Setup installer |
 
-Lizenz: EasyMySQL unter MIT. MariaDB steht unter der GPL v2.
+EasyMySQL is licensed under MIT. MariaDB is licensed under GPL v2.

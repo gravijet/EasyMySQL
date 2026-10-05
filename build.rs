@@ -65,7 +65,7 @@ fn main() {
         res.set("ProductName", "EasyMySQL");
         res.set("FileDescription", "EasyMySQL");
         res.set("CompanyName", "EasyMySQL");
-        res.set("LegalCopyright", "MIT-Lizenz");
+        res.set("LegalCopyright", "MIT License");
         res.compile().unwrap();
     }
 }

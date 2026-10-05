@@ -63,7 +63,7 @@ impl DataTab {
         self.error = None;
         self.grid.reset();
         let Some(dbc) = cx.db else {
-            self.error = Some("Keine Verbindung.".into());
+            self.error = Some(crate::i18n::text("Keine Verbindung.").into());
             return;
         };
         self.info = cx
@@ -128,9 +128,9 @@ impl DataTab {
         match dbc.exec(&sql, Params::Positional(params)) {
             Ok(n) => {
                 if n == 0 {
-                    cx.status("Keine Zeile geändert.");
+                    cx.status(crate::i18n::text("Keine Zeile geändert."));
                 } else {
-                    cx.status(format!("{}.{}: 1 Wert geändert.", self.table, self.columns[c]));
+                    cx.status(crate::tr_format!("{}.{}: 1 Wert geändert.", "{}.{}: 1 value changed.", self.table, self.columns[c]));
                 }
                 self.rows[r][c] = v;
                 if !self.has_pk() {
@@ -147,7 +147,7 @@ impl DataTab {
         let sql = format!("DELETE FROM {} WHERE {} LIMIT 1", self.full_name(), cond);
         match dbc.exec(&sql, Params::Positional(params)) {
             Ok(_) => {
-                cx.status("Zeile gelöscht.");
+                cx.status(crate::i18n::text("Zeile gelöscht."));
                 self.reload(cx);
             }
             Err(e) => cx.error(e),
@@ -177,7 +177,7 @@ impl DataTab {
         let mut open = true;
         let mut save = false;
         let mut cancel = false;
-        egui::Window::new(format!("Neue Zeile in {}", self.table))
+        egui::Window::new(crate::tr_format!("Neue Zeile in {}", "New row in {}", self.table))
             .id(egui::Id::new(("insert", &self.db, &self.table)))
             .open(&mut open)
             .collapsible(false)
@@ -196,17 +196,17 @@ impl DataTab {
                                 .unwrap_or_default();
                             ui.label(name.as_str()).on_hover_text(&ty);
                             ui.add_enabled_ui(!*def, |ui| ui.add_sized([240.0, 20.0], egui::TextEdit::singleline(val).hint_text(ty)));
-                            ui.checkbox(def, "Standard");
+                            ui.checkbox(def, crate::i18n::text("Standard"));
                             ui.end_row();
                         }
                     });
                 });
                 ui.separator();
                 ui.horizontal(|ui| {
-                    if ui.button("Einfügen").clicked() {
+                    if ui.button(crate::i18n::text("Einfügen")).clicked() {
                         save = true;
                     }
-                    if ui.button("Abbrechen").clicked() {
+                    if ui.button(crate::i18n::text("Abbrechen")).clicked() {
                         cancel = true;
                     }
                 });
@@ -237,7 +237,7 @@ impl DataTab {
             if let Some(dbc) = cx.db {
                 match dbc.exec(&sql, if params.is_empty() { Params::Empty } else { Params::Positional(params) }) {
                     Ok(_) => {
-                        cx.status(format!("Zeile in {} eingefügt.", self.table));
+                        cx.status(crate::tr_format!("Zeile in {} eingefügt.", "Row inserted into {}.", self.table));
                         self.insert = None;
                         self.reload(cx);
                     }
@@ -252,7 +252,7 @@ impl DataTab {
 
 impl TabView for DataTab {
     fn title(&self) -> String {
-        format!("{} (Daten)", self.table)
+        crate::tr_format!("{} (Daten)", "{} (Data)", self.table)
     }
 
     fn key(&self) -> Option<String> {
@@ -284,40 +284,40 @@ impl TabView for DataTab {
             let r = ui.add(
                 egui::TextEdit::singleline(&mut self.filter)
                     .desired_width(220.0)
-                    .hint_text("Bedingung"),
+                    .hint_text(crate::i18n::text("Bedingung")),
             );
             if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                 self.offset = 0;
                 self.reload(cx);
             }
-            ui.label("Sortieren:");
+            ui.label(crate::i18n::text("Sortieren:"));
             let mut cols = vec![String::new()];
             cols.extend(self.columns.iter().cloned());
             if super::str_combo(ui, ("order", &self.table), &cols, &mut self.order, 120.0) {
                 self.reload(cx);
             }
-            if ui.checkbox(&mut self.desc, "absteigend").changed() {
+            if ui.checkbox(&mut self.desc, crate::i18n::text("absteigend")).changed() {
                 self.reload(cx);
             }
-            if ui.button("Aktualisieren").clicked() {
+            if ui.button(crate::i18n::text("Aktualisieren")).clicked() {
                 self.reload(cx);
             }
         });
         ui.horizontal(|ui| {
             let is_view = self.info.as_ref().map(|i| i.is_view).unwrap_or(false);
-            if ui.add_enabled(!is_view, egui::Button::new("+ Neue Zeile")).clicked() {
+            if ui.add_enabled(!is_view, egui::Button::new(crate::i18n::text("+ Neue Zeile"))).clicked() {
                 self.open_insert();
             }
             let sel = self.grid.selected;
             if ui
-                .add_enabled(sel.is_some() && !is_view, egui::Button::new("Zeile löschen"))
+                .add_enabled(sel.is_some() && !is_view, egui::Button::new(crate::i18n::text("Zeile löschen")))
                 .clicked()
             {
                 if let Some(r) = sel {
                     self.delete_row(cx, r);
                 }
             }
-            if ui.button("Struktur").clicked() {
+            if ui.button(crate::i18n::text("Struktur")).clicked() {
                 cx.actions.push(Action::OpenStructure {
                     db: self.db.clone(),
                     table: self.table.clone(),
@@ -331,8 +331,7 @@ impl TabView for DataTab {
                 self.reload(cx);
             }
             let to = self.offset + self.rows.len();
-            ui.label(format!(
-                "Zeilen {}–{} von {}",
+            ui.label(crate::tr_format!("Zeilen {}–{} von {}", "Rows {}–{} of {}",
                 if self.rows.is_empty() { 0 } else { self.offset + 1 },
                 to,
                 total
@@ -345,12 +344,12 @@ impl TabView for DataTab {
                 self.reload(cx);
             }
             if !self.has_pk() && !is_view && self.info.is_some() {
-                ui.label(RichText::new("kein Primärschlüssel").color(style::pal().error_text))
-                    .on_hover_text("Änderungen werden über alle Spaltenwerte zugeordnet.");
+                ui.label(RichText::new(crate::i18n::text("kein Primärschlüssel")).color(style::pal().error_text))
+                    .on_hover_text(crate::i18n::text("Änderungen werden über alle Spaltenwerte zugeordnet."));
             }
         });
         if let Some(e) = &self.error {
-            ui.label(RichText::new(format!("Fehler: {e}")).color(style::pal().error_text));
+            ui.label(RichText::new(crate::tr_format!("Fehler: {e}", "Error: {e}")).color(style::pal().error_text));
         }
         let editable = !self.info.as_ref().map(|i| i.is_view).unwrap_or(false);
         let events = grid::show(ui, ("datagrid", &self.db, &self.table), &self.columns, &self.rows, editable, &mut self.grid);

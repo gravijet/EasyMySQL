@@ -113,7 +113,7 @@ impl Cmd {
             Format => "formatieren",
             Suggest => "vorschlaege",
             Find => "suchen",
-            Replace => "ersetzen",
+            Replace => crate::i18n::text("ersetzen"),
             GotoLine => "gehe_zu_zeile",
             ToggleComment => "kommentar",
             CutLine => "zeile_ausschneiden",
@@ -131,50 +131,50 @@ impl Cmd {
 
     pub fn label(self) -> &'static str {
         match self {
-            RunAll => "Datei oder Markierung ausführen",
-            RunStatement => "Anweisung am Cursor ausführen",
-            Explain => "Ausführungsplan (EXPLAIN)",
-            NewQuery => "Neue Abfrage",
-            NewFile => "Neue Datei im Projekt",
-            OpenFile => "Datei öffnen",
-            OpenFolder => "Ordner öffnen",
-            Save => "Speichern",
-            SaveAll => "Alle speichern",
-            CloseTab => "Registerkarte schließen",
-            CloseAllTabs => "Alle Registerkarten schließen",
-            ReopenTab => "Geschlossene Registerkarte wieder öffnen",
-            NextTab => "Nächste Registerkarte",
-            PrevTab => "Vorherige Registerkarte",
-            CommandPalette => "Befehle",
-            QuickOpen => "Datei im Projekt öffnen",
-            ToggleSidebar => "Seitenleiste ein/aus",
+            RunAll => crate::i18n::text("Datei oder Markierung ausführen"),
+            RunStatement => crate::i18n::text("Anweisung am Cursor ausführen"),
+            Explain => crate::i18n::text("Ausführungsplan (EXPLAIN)"),
+            NewQuery => crate::i18n::text("Neue Abfrage"),
+            NewFile => crate::i18n::text("Neue Datei im Projekt"),
+            OpenFile => crate::i18n::text("Datei öffnen"),
+            OpenFolder => crate::i18n::text("Ordner öffnen"),
+            Save => crate::i18n::text("Speichern"),
+            SaveAll => crate::i18n::text("Alle speichern"),
+            CloseTab => crate::i18n::text("Registerkarte schließen"),
+            CloseAllTabs => crate::i18n::text("Alle Registerkarten schließen"),
+            ReopenTab => crate::i18n::text("Geschlossene Registerkarte wieder öffnen"),
+            NextTab => crate::i18n::text("Nächste Registerkarte"),
+            PrevTab => crate::i18n::text("Vorherige Registerkarte"),
+            CommandPalette => crate::i18n::text("Befehle"),
+            QuickOpen => crate::i18n::text("Datei im Projekt öffnen"),
+            ToggleSidebar => crate::i18n::text("Seitenleiste ein/aus"),
             ShowExplorer => "Explorer",
-            ShowSearch => "Suchen in Dateien",
-            ShowDatabases => "Datenbanken",
-            ShowHistory => "Verlauf",
-            Settings => "Einstellungen",
-            Help => "Hilfe",
-            CheckUpdates => "Nach Updates suchen",
-            ServerLog => "Server-Log",
-            ErDiagram => "ER-Diagramm",
-            QueryBuilder => "Abfrage-Assistent",
-            Backups => "Sicherungen & Reparatur",
-            Format => "SQL formatieren",
-            Suggest => "Vorschläge",
-            Find => "Suchen",
-            Replace => "Ersetzen",
-            GotoLine => "Gehe zu Zeile",
-            ToggleComment => "Kommentar ein/aus",
-            CutLine => "Zeile ausschneiden (ohne Markierung)",
-            DuplicateLine => "Zeile duplizieren",
-            DeleteLine => "Zeile löschen",
-            SelectLine => "Zeile markieren",
-            MoveLineUp => "Zeile nach oben verschieben",
-            MoveLineDown => "Zeile nach unten verschieben",
-            CopyLineUp => "Zeile nach oben kopieren",
-            CopyLineDown => "Zeile nach unten kopieren",
-            Indent => "Einrücken (mehrere Zeilen)",
-            Outdent => "Ausrücken",
+            ShowSearch => crate::i18n::text("Suchen in Dateien"),
+            ShowDatabases => crate::i18n::text("Datenbanken"),
+            ShowHistory => crate::i18n::text("Verlauf"),
+            Settings => crate::i18n::text("Einstellungen"),
+            Help => crate::i18n::text("Hilfe"),
+            CheckUpdates => crate::i18n::text("Nach Updates suchen"),
+            ServerLog => crate::i18n::text("Server-Log"),
+            ErDiagram => crate::i18n::text("ER-Diagramm"),
+            QueryBuilder => crate::i18n::text("Abfrage-Assistent"),
+            Backups => crate::i18n::text("Sicherungen & Reparatur"),
+            Format => crate::i18n::text("SQL formatieren"),
+            Suggest => crate::i18n::text("Vorschläge"),
+            Find => crate::i18n::text("Suchen"),
+            Replace => crate::i18n::text("Ersetzen"),
+            GotoLine => crate::i18n::text("Gehe zu Zeile"),
+            ToggleComment => crate::i18n::text("Kommentar ein/aus"),
+            CutLine => crate::i18n::text("Zeile ausschneiden (ohne Markierung)"),
+            DuplicateLine => crate::i18n::text("Zeile duplizieren"),
+            DeleteLine => crate::i18n::text("Zeile löschen"),
+            SelectLine => crate::i18n::text("Zeile markieren"),
+            MoveLineUp => crate::i18n::text("Zeile nach oben verschieben"),
+            MoveLineDown => crate::i18n::text("Zeile nach unten verschieben"),
+            CopyLineUp => crate::i18n::text("Zeile nach oben kopieren"),
+            CopyLineDown => crate::i18n::text("Zeile nach unten kopieren"),
+            Indent => crate::i18n::text("Einrücken (mehrere Zeilen)"),
+            Outdent => crate::i18n::text("Ausrücken"),
         }
     }
 
@@ -264,18 +264,18 @@ impl Binding {
             Key::ArrowDown => "↓".into(),
             Key::ArrowLeft => "←".into(),
             Key::ArrowRight => "→".into(),
-            Key::Space => "Leertaste".into(),
+            Key::Space => crate::i18n::text("Leertaste").into(),
             Key::Enter => "Enter".into(),
             Key::Escape => "Esc".into(),
-            Key::Delete => "Entf".into(),
-            Key::Backspace => "Rück".into(),
-            Key::PageUp => "Bild↑".into(),
-            Key::PageDown => "Bild↓".into(),
-            Key::Home => "Pos1".into(),
-            Key::End => "Ende".into(),
-            Key::Insert => "Einfg".into(),
+            Key::Delete => crate::i18n::text("Entf").into(),
+            Key::Backspace => crate::i18n::text("Rück").into(),
+            Key::PageUp => crate::i18n::text("Bild↑").into(),
+            Key::PageDown => crate::i18n::text("Bild↓").into(),
+            Key::Home => crate::i18n::text("Pos1").into(),
+            Key::End => crate::i18n::text("Ende").into(),
+            Key::Insert => crate::i18n::text("Einfg").into(),
             // Auf deutschen Tastaturen liegt dort die #-Taste
-            Key::Backslash => "#".into(),
+            Key::Backslash => if crate::i18n::is_english() { "\\" } else { "#" }.into(),
             Key::Comma => ",".into(),
             Key::Period => ".".into(),
             Key::Minus => "-".into(),
@@ -289,13 +289,13 @@ impl Binding {
     pub fn text(&self) -> String {
         let mut s = String::new();
         if self.ctrl {
-            s.push_str("Strg+");
+            s.push_str(crate::i18n::text("Strg+"));
         }
         if self.alt {
             s.push_str("Alt+");
         }
         if self.shift {
-            s.push_str("Umschalt+");
+            s.push_str(crate::i18n::text("Umschalt+"));
         }
         s.push_str(&Self::key_name(self.key));
         s
@@ -495,7 +495,7 @@ mod tests {
                 assert_eq!(Binding::from_file(&b.to_file()), Some(b), "{c:?}");
             }
         }
-        assert_eq!(Binding::new(true, true, false, Key::P).text(), "Strg+Umschalt+P");
+        assert_eq!(Binding::new(true, true, false, Key::P).text(), "Ctrl+Shift+P");
         assert_eq!(Binding::from_file("ctrl++"), Some(Binding::new(true, false, false, Key::Plus)));
     }
 

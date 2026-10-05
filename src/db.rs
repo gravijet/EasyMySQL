@@ -118,27 +118,27 @@ pub fn err_text(e: impl ToString) -> String {
         .and_then(|x| x.split_whitespace().next())
         .and_then(|c| c.parse().ok());
     let hint = match code {
-        Some(1064) => Some("Syntaxfehler – Schreibweise prüfen (fehlendes Komma, Klammer oder Anführungszeichen?)."),
-        Some(1146) => Some("Diese Tabelle gibt es (in der gewählten Datenbank) nicht."),
-        Some(1054) => Some("Diese Spalte gibt es nicht – Schreibweise oder Tabelle prüfen."),
-        Some(1049) => Some("Diese Datenbank gibt es nicht."),
-        Some(1046) => Some("Keine Datenbank ausgewählt – oben eine Datenbank wählen oder USE datenbank; ausführen."),
-        Some(1050) => Some("Die Tabelle existiert bereits (tipp: CREATE TABLE IF NOT EXISTS)."),
-        Some(1007) => Some("Die Datenbank existiert bereits (tipp: CREATE DATABASE IF NOT EXISTS)."),
-        Some(1062) => Some("Doppelter Wert in einer eindeutigen Spalte (z. B. Primärschlüssel)."),
-        Some(1048) => Some("Diese Spalte darf nicht leer (NULL) sein."),
-        Some(1364) => Some("Für eine Pflichtspalte ohne Standardwert wurde kein Wert angegeben."),
-        Some(1451) => Some("Der Datensatz wird noch von einer anderen Tabelle referenziert (Fremdschlüssel) – erst die abhängigen Datensätze löschen."),
-        Some(1452) => Some("Der Fremdschlüssel verweist auf einen Datensatz, den es nicht gibt."),
-        Some(1045) => Some("Anmeldung fehlgeschlagen – Benutzer oder Passwort falsch."),
-        Some(1136) => Some("Anzahl der Werte passt nicht zur Anzahl der Spalten."),
-        Some(1265) | Some(1366) => Some("Der Wert passt nicht zum Datentyp der Spalte."),
-        Some(1406) => Some("Der Text ist zu lang für diese Spalte."),
-        Some(1215) | Some(1005) => Some("Fremdschlüssel nicht möglich – gleicher Datentyp und ein Index/Primärschlüssel in der Zieltabelle nötig."),
+        Some(1064) => Some(crate::i18n::text("Syntaxfehler – Schreibweise prüfen (fehlendes Komma, Klammer oder Anführungszeichen?).")),
+        Some(1146) => Some(crate::i18n::text("Diese Tabelle gibt es (in der gewählten Datenbank) nicht.")),
+        Some(1054) => Some(crate::i18n::text("Diese Spalte gibt es nicht – Schreibweise oder Tabelle prüfen.")),
+        Some(1049) => Some(crate::i18n::text("Diese Datenbank gibt es nicht.")),
+        Some(1046) => Some(crate::i18n::text("Keine Datenbank ausgewählt – oben eine Datenbank wählen oder USE datenbank; ausführen.")),
+        Some(1050) => Some(crate::i18n::text("Die Tabelle existiert bereits (tipp: CREATE TABLE IF NOT EXISTS).")),
+        Some(1007) => Some(crate::i18n::text("Die Datenbank existiert bereits (tipp: CREATE DATABASE IF NOT EXISTS).")),
+        Some(1062) => Some(crate::i18n::text("Doppelter Wert in einer eindeutigen Spalte (z. B. Primärschlüssel).")),
+        Some(1048) => Some(crate::i18n::text("Diese Spalte darf nicht leer (NULL) sein.")),
+        Some(1364) => Some(crate::i18n::text("Für eine Pflichtspalte ohne Standardwert wurde kein Wert angegeben.")),
+        Some(1451) => Some(crate::i18n::text("Der Datensatz wird noch von einer anderen Tabelle referenziert (Fremdschlüssel) – erst die abhängigen Datensätze löschen.")),
+        Some(1452) => Some(crate::i18n::text("Der Fremdschlüssel verweist auf einen Datensatz, den es nicht gibt.")),
+        Some(1045) => Some(crate::i18n::text("Anmeldung fehlgeschlagen – Benutzer oder Passwort falsch.")),
+        Some(1136) => Some(crate::i18n::text("Anzahl der Werte passt nicht zur Anzahl der Spalten.")),
+        Some(1265) | Some(1366) => Some(crate::i18n::text("Der Wert passt nicht zum Datentyp der Spalte.")),
+        Some(1406) => Some(crate::i18n::text("Der Text ist zu lang für diese Spalte.")),
+        Some(1215) | Some(1005) => Some(crate::i18n::text("Fremdschlüssel nicht möglich – gleicher Datentyp und ein Index/Primärschlüssel in der Zieltabelle nötig.")),
         _ => None,
     };
     match hint {
-        Some(h) => format!("{t}\nHinweis: {h}"),
+        Some(h) => crate::tr_format!("{t}\nHinweis: {h}", "{t}\nHint: {h}"),
         None => t,
     }
 }
@@ -622,7 +622,7 @@ impl Db {
         for t in schema.ordered_tables() {
             let info = schema.table(&t).unwrap();
             let create = self.create_statement(db, &t)?;
-            out.push_str(&format!("-- {}: {}\n", if info.is_view { "Sicht" } else { "Tabelle" }, t));
+            out.push_str(&format!("-- {}: {}\n", if info.is_view { crate::i18n::text("Sicht") } else { crate::i18n::text("Tabelle") }, t));
             // Nur bei einer vollstaendigen Sicherung vorhandene Tabellen ersetzen
             if with_data {
                 if info.is_view {
@@ -818,7 +818,7 @@ mod tests {
     #[test]
     fn error_text() {
         let e = err_text("MySqlError { ERROR 1146 (42S02): Table 'a.b' doesn't exist }");
-        assert!(e.starts_with("ERROR 1146 (42S02): Table 'a.b' doesn't exist\nHinweis: "), "{e}");
+        assert!(e.starts_with("ERROR 1146 (42S02): Table 'a.b' doesn't exist\nHint: "), "{e}");
         assert_eq!(err_text("anderer Fehler"), "anderer Fehler");
     }
 

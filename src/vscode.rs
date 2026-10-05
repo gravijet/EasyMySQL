@@ -148,13 +148,13 @@ fn launch(exe: &Path, args: &[&Path]) -> Result<(), String> {
     for a in args {
         cmd.arg(a);
     }
-    cmd.spawn().map(|_| ()).map_err(|e| format!("VS Code konnte nicht gestartet werden: {e}"))
+    cmd.spawn().map(|_| ()).map_err(|e| crate::tr_format!("VS Code konnte nicht gestartet werden: {e}", "Could not start VS Code: {e}"))
 }
 
 /// Oeffnet den Arbeitsordner in VS Code.
 pub fn open_workspace(database: &str) -> Result<PathBuf, String> {
     let dir = prepare_workspace(database)?;
-    let (exe, _) = find_vscode().ok_or_else(|| NOT_FOUND.to_string())?;
+    let (exe, _) = find_vscode().ok_or_else(|| crate::i18n::text(NOT_FOUND).to_string())?;
     launch(&exe, &[&dir])?;
     Ok(dir)
 }
@@ -165,7 +165,7 @@ pub fn open_path(project: Option<&Path>, file: &Path, database: &str) -> Result<
         Some(p) => prepare_folder(p, database)?,
         None => prepare_workspace(database)?,
     };
-    let (exe, _) = find_vscode().ok_or_else(|| NOT_FOUND.to_string())?;
+    let (exe, _) = find_vscode().ok_or_else(|| crate::i18n::text(NOT_FOUND).to_string())?;
     launch(&exe, &[&dir, file])?;
     Ok(file.to_path_buf())
 }
@@ -173,7 +173,7 @@ pub fn open_path(project: Option<&Path>, file: &Path, database: &str) -> Result<
 /// Speichert eine Abfrage im Arbeitsordner und oeffnet sie in VS Code.
 pub fn open_sql(file_name: &str, sql: &str, database: &str) -> Result<PathBuf, String> {
     let dir = prepare_workspace(database)?;
-    let (exe, _) = find_vscode().ok_or_else(|| NOT_FOUND.to_string())?;
+    let (exe, _) = find_vscode().ok_or_else(|| crate::i18n::text(NOT_FOUND).to_string())?;
     let mut name: String = file_name
         .chars()
         .map(|c| if c.is_alphanumeric() || "-_. ".contains(c) { c } else { '_' })
@@ -194,8 +194,8 @@ pub fn open_sql(file_name: &str, sql: &str, database: &str) -> Result<PathBuf, S
 
 /// Installiert die Erweiterungen (blockierend, im Hintergrund-Thread aufrufen).
 pub fn install_extensions() -> Result<String, String> {
-    let (exe, cli) = find_vscode().ok_or_else(|| NOT_FOUND.to_string())?;
-    let cli = cli.ok_or("Das VS-Code-Kommandozeilenprogramm (code) wurde nicht gefunden.")?;
+    let (exe, cli) = find_vscode().ok_or_else(|| crate::i18n::text(NOT_FOUND).to_string())?;
+    let cli = cli.ok_or(crate::i18n::text("Das VS-Code-Kommandozeilenprogramm (code) wurde nicht gefunden."))?;
     let builtin = copilot_builtin(&exe);
     let mut list: Vec<(&str, &str)> = EXTENSIONS.to_vec();
     if !builtin {
@@ -203,6 +203,7 @@ pub fn install_extensions() -> Result<String, String> {
     }
     let mut report = String::new();
     for (id, name) in list {
+        let name = crate::i18n::text(name);
         #[cfg(windows)]
         let mut cmd = {
             let mut c = Command::new("cmd");
@@ -225,13 +226,13 @@ pub fn install_extensions() -> Result<String, String> {
                 .lines()
                 .rev()
                 .find(|l| !l.trim().is_empty() && !l.contains("eprecat"))
-                .unwrap_or("Fehler")
+                .unwrap_or(crate::i18n::text("Fehler"))
                 .to_string();
-            report.push_str(&format!("Fehler: {name}: {line}\n"));
+            report.push_str(&crate::tr_format!("Fehler: {name}: {line}\n", "Error: {name}: {line}\n"));
         }
     }
     if builtin {
-        report.push_str("OK: GitHub Copilot (in VS Code eingebaut)\n");
+        report.push_str(crate::i18n::text("OK: GitHub Copilot (in VS Code eingebaut)\n"));
     }
     Ok(report)
 }

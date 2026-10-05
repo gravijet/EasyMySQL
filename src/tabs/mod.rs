@@ -168,7 +168,7 @@ pub trait TabView {
 pub fn db_combo(ui: &mut egui::Ui, id: &str, dbs: &[String], value: &mut String) -> bool {
     let mut changed = false;
     egui::ComboBox::from_id_salt(id)
-        .selected_text(if value.is_empty() { "(keine)" } else { value.as_str() })
+        .selected_text(if value.is_empty() { crate::i18n::text("(keine)") } else { value.as_str() })
         .width(170.0)
         .show_ui(ui, |ui| {
             for d in dbs {

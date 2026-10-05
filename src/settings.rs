@@ -6,6 +6,8 @@ use std::path::PathBuf;
 #[derive(Clone, Debug, PartialEq)]
 pub struct Settings {
     pub conn: ConnInfo,
+    pub language: crate::i18n::Language,
+    pub dark: bool,
     pub save_password: bool,
     pub show_system_dbs: bool,
     /// Beim Start und alle sechs Stunden GitHub Releases pruefen.
@@ -37,6 +39,8 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             conn: ConnInfo::default(),
+            language: crate::i18n::Language::English,
+            dark: true,
             save_password: false,
             show_system_dbs: false,
             auto_update: true,
@@ -55,13 +59,18 @@ impl Default for Settings {
 
 impl Settings {
     pub fn load() -> Self {
-        let mut s = Settings::default();
-        let Ok(text) = std::fs::read_to_string(path()) else { return s };
+        std::fs::read_to_string(path()).map(|text| Self::from_text(&text)).unwrap_or_default()
+    }
+
+    fn from_text(text: &str) -> Self {
+        let mut s = Self::default();
         for line in text.lines() {
             let Some((k, v)) = line.split_once('=') else { continue };
             let v = v.trim().to_string();
             let on = v == "1";
             match k.trim() {
+                "language" => s.language = crate::i18n::Language::from_id(&v),
+                "dark" => s.dark = on,
                 "host" => s.conn.host = v,
                 "port" => s.conn.port = v.parse().unwrap_or(3306),
                 "user" => s.conn.user = v,
@@ -85,10 +94,16 @@ impl Settings {
     }
 
     pub fn save(&self) {
+        let _ = crate::workspace::atomic_write(&path(), &self.to_text());
+    }
+
+    fn to_text(&self) -> String {
         let b = |x: bool| if x { "1" } else { "0" };
         let mut text = format!(
-            "host={}\nport={}\nuser={}\nsave_password={}\nshow_system_dbs={}\nauto_update={}\neditor_font={}\n\
+            "language={}\ndark={}\nhost={}\nport={}\nuser={}\nsave_password={}\nshow_system_dbs={}\nauto_update={}\neditor_font={}\n\
              minimap={}\nauto_suggest={}\nauto_close={}\nscroll_speed={}\nautoscroll={}\nstorage_dir={}\nquery_log={}\n",
+            self.language.id(),
+            b(self.dark),
             self.conn.host,
             self.conn.port,
             self.conn.user,
@@ -110,7 +125,7 @@ impl Settings {
         if self.save_password {
             text.push_str(&format!("password={}\n", self.conn.password));
         }
-        let _ = crate::workspace::atomic_write(&path(), &text);
+        text
     }
 
     /// Projektordner an den Anfang der Liste "Zuletzt geoeffnet" setzen.
@@ -124,6 +139,19 @@ impl Settings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn defaults_legacy_settings_and_language_roundtrip() {
+        let defaults = Settings::from_text("host=localhost\nport=3307\n");
+        assert_eq!(defaults.language, crate::i18n::Language::English);
+        assert!(defaults.dark);
+        assert_eq!(defaults.conn.port, 3307);
+        let custom = Settings::from_text("language=de\ndark=0\neditor_font=18\nauto_update=0\n");
+        assert_eq!(custom.language, crate::i18n::Language::German);
+        assert!(!custom.dark);
+        assert_eq!(Settings::from_text(&custom.to_text()), custom);
+        assert_eq!(Settings::from_text("language=invalid").language, crate::i18n::Language::English);
+    }
 
     #[test]
     fn recent_list() {

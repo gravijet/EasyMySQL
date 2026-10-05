@@ -68,12 +68,12 @@ impl SetOp {
     }
     pub fn hint(self) -> &'static str {
         match self {
-            SetOp::Union => "Zeilen beider Teile, doppelte nur einmal",
-            SetOp::UnionAll => "Zeilen beider Teile, mit doppelten",
-            SetOp::Except => "Zeilen des ersten Teils, die im zweiten nicht vorkommen",
-            SetOp::ExceptAll => "wie EXCEPT, doppelte werden einzeln abgezogen",
-            SetOp::Intersect => "nur Zeilen, die in beiden Teilen vorkommen",
-            SetOp::IntersectAll => "wie INTERSECT, mit doppelten",
+            SetOp::Union => crate::i18n::text("Zeilen beider Teile, doppelte nur einmal"),
+            SetOp::UnionAll => crate::i18n::text("Zeilen beider Teile, mit doppelten"),
+            SetOp::Except => crate::i18n::text("Zeilen des ersten Teils, die im zweiten nicht vorkommen"),
+            SetOp::ExceptAll => crate::i18n::text("wie EXCEPT, doppelte werden einzeln abgezogen"),
+            SetOp::Intersect => crate::i18n::text("nur Zeilen, die in beiden Teilen vorkommen"),
+            SetOp::IntersectAll => crate::i18n::text("wie INTERSECT, mit doppelten"),
         }
     }
 }
@@ -166,13 +166,13 @@ impl JoinKind {
     }
     pub fn hint(self) -> &'static str {
         match self {
-            JoinKind::Inner => "nur Zeilen mit Partner in beiden Tabellen",
-            JoinKind::Left => "alle Zeilen links, rechts NULL ohne Partner",
-            JoinKind::Right => "alle Zeilen rechts, links NULL ohne Partner",
-            JoinKind::Cross => "jede Zeile mit jeder (kartesisches Produkt)",
-            JoinKind::Natural => "verknüpft über alle gleichnamigen Spalten",
-            JoinKind::NaturalLeft => "wie NATURAL JOIN, alle Zeilen links",
-            JoinKind::NaturalRight => "wie NATURAL JOIN, alle Zeilen rechts",
+            JoinKind::Inner => crate::i18n::text("nur Zeilen mit Partner in beiden Tabellen"),
+            JoinKind::Left => crate::i18n::text("alle Zeilen links, rechts NULL ohne Partner"),
+            JoinKind::Right => crate::i18n::text("alle Zeilen rechts, links NULL ohne Partner"),
+            JoinKind::Cross => crate::i18n::text("jede Zeile mit jeder (kartesisches Produkt)"),
+            JoinKind::Natural => crate::i18n::text("verknüpft über alle gleichnamigen Spalten"),
+            JoinKind::NaturalLeft => crate::i18n::text("wie NATURAL JOIN, alle Zeilen links"),
+            JoinKind::NaturalRight => crate::i18n::text("wie NATURAL JOIN, alle Zeilen rechts"),
         }
     }
     /// braucht ON/USING

@@ -209,7 +209,7 @@ pub const CHAPTERS: &[Chapter] = &[
                     List(&[
                         "Jede Anweisung mit Ergebnis bekommt einen eigenen Reiter („Ergebnis 2 · Z. 14 (37)“ = zweites Ergebnis, Anweisung ab Zeile 14, 37 Zeilen).",
                         "„Meldungen“ zeigt jede Anweisung mit Dauer und betroffenen Zeilen. „Zeile n“ springt an die Stelle im Text.",
-                        "Nach einem Fehler wird abgebrochen. Die Fehlerzeile ist rot unterstrichen, zu häufigen Fehlern steht ein Hinweis auf Deutsch dabei.",
+                        "Nach einem Fehler wird abgebrochen. Die Fehlerzeile ist rot unterstrichen, zu häufigen Fehlern steht ein Hinweis in der gewählten Sprache dabei.",
                         "Angezeigt werden höchstens 50 000 Zeilen je Ergebnis.",
                         "Die Trennlinie zwischen Editor und Ergebnis lässt sich verschieben.",
                         "Rechtsklick auf eine Zelle: Wert oder Zeile kopieren. Spaltenbreiten lassen sich ziehen.",
@@ -652,7 +652,8 @@ pub const CHAPTERS: &[Chapter] = &[
                 blocks: &[
                     P("Datei → Einstellungen öffnet eine Registerkarte; links springt man zu den Abschnitten. Die aktive Kategorie wird beim Scrollen hervorgehoben. Änderungen gelten sofort und werden gespeichert."),
                     Table(&[
-                        ("Darstellung", "helles Standarddesign; die aktive Kategorie ist hervorgehoben"),
+                        ("Sprache", "Englisch als Standard, Deutsch wählbar"),
+                        ("Darstellung", "dunkles Standarddesign, helles Design wählbar; die aktive Kategorie ist hervorgehoben"),
                         ("Updates", "beim Start und alle sechs Stunden GitHub Releases prüfen; Download und Installation selbst starten"),
                         ("Systemdatenbanken zeigen", "information_schema, mysql, performance_schema, sys in der Seitenleiste"),
                         ("Schriftgröße", "Schrift im SQL-Editor, 10 bis 28 Pixel"),

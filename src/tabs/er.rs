@@ -11,6 +11,7 @@ use eframe::egui::{
 };
 use std::collections::HashMap;
 use std::fmt::Write as _;
+use std::sync::Arc;
 
 const HEADER_H: f32 = 22.0;
 const ROW_H: f32 = 17.0;
@@ -76,7 +77,7 @@ impl Notation {
 
     fn label(self) -> &'static str {
         match self {
-            Notation::Crow => "Krähenfuß",
+            Notation::Crow => crate::i18n::text("Krähenfuß"),
             Notation::Chen => "Chen (1, n, m)",
             Notation::MinMax => "(min,max)",
         }
@@ -234,12 +235,24 @@ fn view_file() -> std::path::PathBuf {
     crate::workspace::internal_dir().join("layouts").join("ansicht.txt")
 }
 
+struct RouteGeometry {
+    paths: Vec<Option<Path>>,
+    polylines: Vec<Vec<Pos2>>,
+}
+struct RouteCache {
+    schema: Arc<Schema>,
+    positions: HashMap<String, Pos2>,
+    routes: HashMap<String, Vec<Pos2>>,
+    show_types: bool,
+    geometry: Arc<RouteGeometry>,
+}
+
 pub struct ErTab {
     pub db: String,
     /// Struktur wie in der Datenbank
-    raw: Option<Schema>,
+    raw: Option<Arc<Schema>>,
     /// Angezeigte Struktur (ggf. ohne Zwischentabellen, dafuer mit n:m-Linien)
-    schema: Option<Schema>,
+    schema: Option<Arc<Schema>>,
     /// n:m-Linien der Ansicht: Schluessel -> Zwischentabelle
     nm: HashMap<String, String>,
     notation: Notation,
@@ -261,6 +274,7 @@ pub struct ErTab {
     selected: Option<String>,
     /// Verbinden: Ziehen von einer beliebigen Spalte legt eine Beziehung an
     connect_mode: bool,
+    route_cache: Option<RouteCache>,
 }
 
 fn layout_file(db: &str) -> std::path::PathBuf {
@@ -325,7 +339,7 @@ fn link_sql(db: &str, schema: &Schema, d: &LinkDlg) -> Result<String, String> {
             let t = schema.table(name).ok_or_else(String::new)?;
             let pk = t.pk_columns();
             if pk.len() != 1 {
-                return Err(format!("„{name}“ braucht einen Primärschlüssel aus genau einer Spalte (z. B. id)."));
+                return Err(crate::tr_format!("„{name}“ braucht einen Primärschlüssel aus genau einer Spalte (z. B. id).", "“{name}” needs a primary key consisting of exactly one column, such as id."));
             }
             let ty = t.columns.iter().find(|c| c.name == pk[0]).map(|c| c.col_type.clone()).unwrap_or_else(|| "INT".into());
             Ok((pk[0].clone(), ty))
@@ -334,7 +348,7 @@ fn link_sql(db: &str, schema: &Schema, d: &LinkDlg) -> Result<String, String> {
         let (pb, tb) = key(&d.other)?;
         let junction = if d.junction.trim().is_empty() { format!("{}_{}", d.table, d.other) } else { d.junction.trim().to_string() };
         if schema.table(&junction).is_some() {
-            return Err(format!("Eine Tabelle „{junction}“ gibt es schon – bitte einen anderen Namen wählen."));
+            return Err(crate::tr_format!("Eine Tabelle „{junction}“ gibt es schon – bitte einen anderen Namen wählen.", "A table named “{junction}” already exists — please choose another name."));
         }
         let ca = format!("{}_{}", d.table, pa);
         let mut cb = format!("{}_{}", d.other, pb);
@@ -415,6 +429,7 @@ impl ErTab {
             error: None,
             selected: None,
             connect_mode: false,
+            route_cache: None,
         }
     }
 
@@ -433,7 +448,7 @@ impl ErTab {
     }
 
     fn set_schema(&mut self, s: Option<Schema>) {
-        self.raw = s;
+        self.raw = s.map(Arc::new);
         self.rebuild_view();
     }
 
@@ -445,7 +460,11 @@ impl ErTab {
             self.schema = None;
             return;
         };
-        let mut view = raw.clone();
+        if !self.collapse_nm {
+            self.schema = Some(Arc::clone(raw));
+            return;
+        }
+        let mut view = raw.as_ref().clone();
         if self.collapse_nm {
             let js = raw.junctions();
             let hidden: Vec<&str> = js.iter().map(|(j, _, _)| j.as_str()).collect();
@@ -465,7 +484,7 @@ impl ErTab {
                 view.fks.push(syn);
             }
         }
-        self.schema = Some(view);
+        self.schema = Some(Arc::new(view));
     }
 
     /// Art der (angezeigten) Beziehung
@@ -483,8 +502,8 @@ impl ErTab {
     /// Beschreibung fuer den Tooltip
     fn rel_text(&self, schema: &Schema, fk: &ForeignKey) -> String {
         if let Some(j) = self.nm.get(&fk_key(fk)) {
-            let mut s = format!("n:m-Beziehung über die Zwischentabelle „{j}“\n{}  ↔  {}", fk.table, fk.ref_table);
-            let raw = self.raw.as_ref().unwrap_or(schema);
+            let mut s = crate::tr_format!("n:m-Beziehung über die Zwischentabelle „{j}“\n{}  ↔  {}", "n:m relationship through junction table “{j}”\n{}  ↔  {}", fk.table, fk.ref_table);
+            let raw = self.raw.as_deref().unwrap_or(schema);
             if let Some(t) = raw.table(j) {
                 let extra: Vec<&str> = t
                     .columns
@@ -496,25 +515,23 @@ impl ErTab {
                     let _ = write!(s, "\nweitere Spalten: {}", extra.join(", "));
                 }
             }
-            s.push_str(&format!(
-                "\nJede Zeile in {} kann zu vielen in {} gehören und umgekehrt.\n(Rechtsklick für mehr)",
+            s.push_str(&crate::tr_format!("\nJede Zeile in {} kann zu vielen in {} gehören und umgekehrt.\n(Rechtsklick für mehr)", "\nEach row in {} can relate to many rows in {}, and vice versa.\n(Right-click for more)",
                 fk.table, fk.ref_table
             ));
             return s;
         }
         let rel = self.rel(schema, fk);
         let what = if rel.many {
-            format!("1:n – ein Datensatz in {} gehört zu vielen in {}", fk.ref_table, fk.table)
+            crate::tr_format!("1:n – ein Datensatz in {} gehört zu vielen in {}", "1:n — one record in {} relates to many in {}", fk.ref_table, fk.table)
         } else {
-            format!("1:1 – ein Datensatz in {} gehört zu höchstens einem in {}", fk.ref_table, fk.table)
+            crate::tr_format!("1:1 – ein Datensatz in {} gehört zu höchstens einem in {}", "1:1 — one record in {} relates to at most one in {}", fk.ref_table, fk.table)
         };
         let opt = if rel.optional {
-            format!("optional: {}.{} darf leer (NULL) sein", fk.table, fk.columns.join(","))
+            crate::tr_format!("optional: {}.{} darf leer (NULL) sein", "optional: {}.{} can be NULL", fk.table, fk.columns.join(","))
         } else {
-            format!("Pflicht: jede Zeile in {} braucht einen Eintrag in {}", fk.table, fk.ref_table)
+            crate::tr_format!("Pflicht: jede Zeile in {} braucht einen Eintrag in {}", "required: each row in {} needs a record in {}", fk.table, fk.ref_table)
         };
-        format!(
-            "{what}\n{opt}\n\n{}\n{}.{}  →  {}.{}\nON DELETE {} / ON UPDATE {}\n(Rechtsklick zum Löschen)",
+        crate::tr_format!("{what}\n{opt}\n\n{}\n{}.{}  →  {}.{}\nON DELETE {} / ON UPDATE {}\n(Rechtsklick zum Löschen)", "{what}\n{opt}\n\n{}\n{}.{}  →  {}.{}\nON DELETE {} / ON UPDATE {}\n(Right-click to delete)",
             fk.name,
             fk.table,
             fk.columns.join(","),
@@ -532,7 +549,7 @@ impl ErTab {
         let s = cx.schema(&self.db);
         self.set_schema(s);
         if self.schema.is_none() {
-            self.error = Some("Struktur konnte nicht gelesen werden.".into());
+            self.error = Some(crate::i18n::text("Struktur konnte nicht gelesen werden.").into());
             return;
         }
         self.pos.clear();
@@ -798,6 +815,25 @@ impl ErTab {
         });
     }
 
+    fn geometry(&mut self, schema: &Arc<Schema>) -> Arc<RouteGeometry> {
+        if let Some(cache) = &self.route_cache {
+            if Arc::ptr_eq(schema, &cache.schema) && cache.positions == self.pos
+                && cache.routes == self.routes && cache.show_types == self.show_types {
+                return Arc::clone(&cache.geometry);
+            }
+        }
+        let paths: Vec<Option<Path>> = schema.fks.iter().map(|fk| self.edge_path(schema, fk)).collect();
+        let polylines = paths.iter().map(|path| path.as_ref().map(|segments| {
+            segments.iter().flat_map(|segment| (0..=12).map(move |i| sample(segment, i as f32 / 12.0))).collect()
+        }).unwrap_or_default()).collect();
+        let geometry = Arc::new(RouteGeometry { paths, polylines });
+        self.route_cache = Some(RouteCache {
+            schema: Arc::clone(schema), positions: self.pos.clone(), routes: self.routes.clone(),
+            show_types: self.show_types, geometry: Arc::clone(&geometry),
+        });
+        geometry
+    }
+
     fn draw(&mut self, ui: &mut egui::Ui, cx: &mut Ctx) {
         let (resp, painter) = ui.allocate_painter(ui.available_size(), Sense::click_and_drag());
         let rect = resp.rect;
@@ -826,31 +862,19 @@ impl ErTab {
             }
         }
 
-        // Linienverlaeufe (Bildschirm) fuer Zeichnen und Trefferpruefung
-        let paths: Vec<Option<Path>> = schema.fks.iter().map(|fk| self.edge_path(&schema, fk)).collect();
+        // Cache routes and hit-test polylines in world coordinates. Panning and zooming reuse them.
+        let geometry = self.geometry(&schema);
+        let polylines = &geometry.polylines;
         let (off, zm) = (self.offset, self.zoom);
-        let screen = move |p: Pos2| origin + off + p.to_vec2() * zm;
-        let polylines: Vec<Vec<Pos2>> = paths
-            .iter()
-            .map(|p| {
-                p.as_ref()
-                    .map(|segs| {
-                        segs.iter()
-                            .flat_map(|s| (0..=12).map(move |i| sample(s, i as f32 / 12.0)))
-                            .map(screen)
-                            .collect()
-                    })
-                    .unwrap_or_default()
-            })
-            .collect();
 
         let hit_table = |this: &Self, p: Pos2| -> Option<String> {
             let w = this.to_world(origin, p);
             schema.tables.iter().rev().find(|t| this.table_rect_world(t).contains(w)).map(|t| t.name.clone())
         };
         let hit_fk = |p: Pos2| -> Option<usize> {
+            let p = ((p - origin - off) / zm).to_pos2();
             let mut best = None;
-            let mut best_d = 6.0;
+            let mut best_d = 6.0 / zm;
             for (i, pl) in polylines.iter().enumerate() {
                 for w in pl.windows(2) {
                     let d = dist_to_segment(p, w[0], w[1]);
@@ -974,12 +998,13 @@ impl ErTab {
         let z = self.zoom;
         let (off, zm) = (self.offset, self.zoom);
         let screen = move |p: Pos2| origin + off + p.to_vec2() * zm;
-        let paths: Vec<Option<Path>> = schema.fks.iter().map(|fk| self.edge_path(&schema, fk)).collect();
+        let geometry = self.geometry(&schema);
+        let paths = &geometry.paths;
 
         // Hintergrundraster (dezent)
         let grid = 40.0 * z;
         if grid > 12.0 {
-            let dot = Color32::from_gray(0xE4);
+            let dot = if style::pal().dark { Color32::from_gray(0x33) } else { Color32::from_gray(0xE4) };
             let start = origin + vec2(self.offset.x.rem_euclid(grid), self.offset.y.rem_euclid(grid));
             let mut x = start.x;
             while x < rect.right() {
@@ -1075,7 +1100,7 @@ impl ErTab {
             let head = Rect::from_min_size(r.min, vec2(r.width(), HEADER_H * z));
             painter.rect_filled(head, 0.0, if t.is_view { style::pal().er_view_header } else { style::pal().er_header });
             painter.line_segment([head.left_bottom(), head.right_bottom()], Stroke::new(1.0, style::pal().border));
-            let title = if t.is_view { format!("{} (Sicht)", t.name) } else { t.name.clone() };
+            let title = if t.is_view { crate::tr_format!("{} (Sicht)", "{} (View)", t.name) } else { t.name.clone() };
             painter.text(head.left_center() + vec2(6.0 * z, 0.0), Align2::LEFT_CENTER, title, bold.clone(), style::pal().text);
             for (i, c) in t.columns.iter().enumerate() {
                 let y = r.top() + (HEADER_H + 3.0 + ROW_H * i as f32 + ROW_H / 2.0) * z;
@@ -1114,8 +1139,8 @@ impl ErTab {
                 let w = self.to_world(origin, p);
                 let tip = match self.column_at(&schema, w) {
                     Some((rt, Some(rc))) => format!("{t}.{c}  →  {rt}.{rc}"),
-                    Some((rt, None)) => format!("{t}.{c}  →  {rt} (Primärschlüssel)"),
-                    None => "Auf die Zielspalte ziehen (meist id)".into(),
+                    Some((rt, None)) => crate::tr_format!("{t}.{c}  →  {rt} (Primärschlüssel)", "{t}.{c}  →  {rt} (primary key)"),
+                    None => crate::i18n::text("Auf die Zielspalte ziehen (meist id)").into(),
                 };
                 painter.text(p + vec2(12.0, 12.0), Align2::LEFT_TOP, tip, FontId::proportional(12.0), LINE_HI);
             }
@@ -1127,7 +1152,7 @@ impl ErTab {
         }
 
         if schema.tables.is_empty() {
-            painter.text(rect.center(), Align2::CENTER_CENTER, "Diese Datenbank enthält noch keine Tabellen.", FontId::proportional(14.0), style::pal().text_weak);
+            painter.text(rect.center(), Align2::CENTER_CENTER, crate::i18n::text("Diese Datenbank enthält noch keine Tabellen."), FontId::proportional(14.0), style::pal().text_weak);
         }
         painter.rect_stroke(rect, 0.0, Stroke::new(1.0, style::pal().border), StrokeKind::Inside);
 
@@ -1138,19 +1163,19 @@ impl ErTab {
         resp.context_menu(|ui| match &menu {
             Some(Menu::Table(t)) => {
                 ui.label(RichText::new(t).strong());
-                if ui.button("Daten anzeigen").clicked() {
+                if ui.button(crate::i18n::text("Daten anzeigen")).clicked() {
                     cx.actions.push(Action::OpenData { db: db.clone(), table: t.clone() });
                     ui.close();
                 }
-                if ui.button("Struktur bearbeiten").clicked() {
+                if ui.button(crate::i18n::text("Struktur bearbeiten")).clicked() {
                     cx.actions.push(Action::OpenStructure { db: db.clone(), table: t.clone() });
                     ui.close();
                 }
-                if ui.button("SELECT-Abfrage erzeugen").clicked() {
+                if ui.button(crate::i18n::text("SELECT-Abfrage erzeugen")).clicked() {
                     cx.actions.push(Action::OpenSql { db: Some(db.clone()), sql: format!("SELECT * FROM {} LIMIT 100;", q(t)), run: true });
                     ui.close();
                 }
-                if ui.button("Beziehung von hier anlegen …").clicked() {
+                if ui.button(crate::i18n::text("Beziehung von hier anlegen …")).clicked() {
                     let col = schema.table(t).and_then(|ti| ti.columns.iter().find(|c| !c.is_pk()).or(ti.columns.first())).map(|c| c.name.clone()).unwrap_or_default();
                     self.open_link(t.clone(), col, String::new());
                     ui.close();
@@ -1159,16 +1184,16 @@ impl ErTab {
             Some(Menu::Fk(i)) if schema.fks.get(*i).is_some_and(|fk| self.nm.contains_key(&fk_key(fk))) => {
                 let fk = &schema.fks[*i];
                 let j = self.nm[&fk_key(fk)].clone();
-                ui.label(RichText::new(format!("{} ↔ {}  (n:m über {j})", fk.table, fk.ref_table)).strong());
-                if ui.button("Daten der Zwischentabelle").clicked() {
+                ui.label(RichText::new(crate::tr_format!("{} ↔ {}  (n:m über {j})", "{} ↔ {}  (n:m through {j})", fk.table, fk.ref_table)).strong());
+                if ui.button(crate::i18n::text("Daten der Zwischentabelle")).clicked() {
                     cx.actions.push(Action::OpenData { db: db.clone(), table: j.clone() });
                     ui.close();
                 }
-                if ui.button("Struktur der Zwischentabelle").clicked() {
+                if ui.button(crate::i18n::text("Struktur der Zwischentabelle")).clicked() {
                     cx.actions.push(Action::OpenStructure { db: db.clone(), table: j.clone() });
                     ui.close();
                 }
-                if ui.button("Beziehung löschen …").clicked() {
+                if ui.button(crate::i18n::text("Beziehung löschen …")).clicked() {
                     cx.actions.push(self.delete_action(fk));
                     close_menu = true;
                     ui.close();
@@ -1177,33 +1202,33 @@ impl ErTab {
             Some(Menu::Fk(i)) => {
                 if let Some(fk) = schema.fks.get(*i) {
                     ui.label(RichText::new(format!("{}.{} → {}.{}", fk.table, fk.columns.join(","), fk.ref_table, fk.ref_columns.join(","))).strong());
-                    if ui.button("Beziehung löschen …").clicked() {
+                    if ui.button(crate::i18n::text("Beziehung löschen …")).clicked() {
                         cx.actions.push(self.delete_action(fk));
                         close_menu = true;
                         ui.close();
                     }
-                    if ui.button("Struktur von ".to_string() + &fk.table).clicked() {
+                    if ui.button(crate::i18n::text("Struktur von ").to_string() + &fk.table).clicked() {
                         cx.actions.push(Action::OpenStructure { db: db.clone(), table: fk.table.clone() });
                         ui.close();
                     }
                 }
             }
             _ => {
-                if ui.button("Automatisch anordnen").clicked() {
+                if ui.button(crate::i18n::text("Automatisch anordnen")).clicked() {
                     self.auto_layout();
                     self.fit_pending = true;
                     self.save_layout();
                     ui.close();
                 }
-                if ui.button("Alles anzeigen").clicked() {
+                if ui.button(crate::i18n::text("Alles anzeigen")).clicked() {
                     self.fit_pending = true;
                     ui.close();
                 }
-                if ui.button("Neue Tabelle …").clicked() {
+                if ui.button(crate::i18n::text("Neue Tabelle …")).clicked() {
                     cx.actions.push(Action::NewTable(db.clone()));
                     ui.close();
                 }
-                if ui.button("Neue Beziehung …").clicked() {
+                if ui.button(crate::i18n::text("Neue Beziehung …")).clicked() {
                     self.open_link(String::new(), String::new(), String::new());
                     ui.close();
                 }
@@ -1218,12 +1243,12 @@ impl ErTab {
     fn delete_action(&self, fk: &ForeignKey) -> Action {
         match self.nm.get(&fk_key(fk)) {
             Some(j) => Action::Confirm {
-                text: format!("n:m-Beziehung {} – {} löschen? Die Zwischentabelle „{j}“ wird mit allen Zuordnungen gelöscht.", fk.table, fk.ref_table),
+                text: crate::tr_format!("n:m-Beziehung {} – {} löschen? Die Zwischentabelle „{j}“ wird mit allen Zuordnungen gelöscht.", "Delete n:m relationship {} – {}? Junction table “{j}” and all its associations will be deleted.", fk.table, fk.ref_table),
                 db: Some(self.db.clone()),
                 sql: format!("DROP TABLE {}", q(j)),
             },
             None => Action::Confirm {
-                text: format!("Beziehung {}.{} → {}.{} löschen?", fk.table, fk.columns.join(","), fk.ref_table, fk.ref_columns.join(",")),
+                text: crate::tr_format!("Beziehung {}.{} → {}.{} löschen?", "Delete relationship {}.{} → {}.{}?", fk.table, fk.columns.join(","), fk.ref_table, fk.ref_columns.join(",")),
                 db: Some(self.db.clone()),
                 sql: format!("ALTER TABLE {} DROP FOREIGN KEY {}", q(&fk.table), q(&fk.name)),
             },
@@ -1247,21 +1272,21 @@ impl ErTab {
             .filter(|t| !t.is_view)
             .flat_map(|t| t.columns.iter().filter(|c| c.is_pk() || c.key == "UNI").map(move |c| format!("{}.{}", t.name, c.name)))
             .collect();
-        egui::Window::new("Beziehung anlegen")
+        egui::Window::new(crate::i18n::text("Beziehung anlegen"))
             .id(egui::Id::new(("erlink", &self.db)))
             .collapsible(false)
             .resizable(false)
             .anchor(Align2::CENTER_CENTER, [0.0, 0.0])
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
-                    ui.label("Art:");
+                    ui.label(crate::i18n::text("Art:"));
                     let before = dlg.kind;
                     ui.radio_value(&mut dlg.kind, LinkKind::OneToMany, "1:n")
-                        .on_hover_text("Ein Datensatz gehört zu vielen (z. B. eine Klasse – viele Schüler)");
+                        .on_hover_text(crate::i18n::text("Ein Datensatz gehört zu vielen (z. B. eine Klasse – viele Schüler)"));
                     ui.radio_value(&mut dlg.kind, LinkKind::OneToOne, "1:1")
-                        .on_hover_text("Ein Datensatz gehört zu höchstens einem (z. B. Schüler – Ausweis)");
+                        .on_hover_text(crate::i18n::text("Ein Datensatz gehört zu höchstens einem (z. B. Schüler – Ausweis)"));
                     ui.radio_value(&mut dlg.kind, LinkKind::ManyToMany, "n:m")
-                        .on_hover_text("Viele zu vielen über eine Zwischentabelle (z. B. Schüler – Kurse)");
+                        .on_hover_text(crate::i18n::text("Viele zu vielen über eine Zwischentabelle (z. B. Schüler – Kurse)"));
                     // Beim Wechsel zu n:m die Zieltabelle als zweite Tabelle uebernehmen
                     if dlg.kind == LinkKind::ManyToMany && before != LinkKind::ManyToMany && dlg.other.is_empty() {
                         if let Some((rt, _)) = dlg.target.split_once('.') {
@@ -1272,33 +1297,33 @@ impl ErTab {
                 ui.add_space(4.0);
                 egui::Grid::new("erlinkgrid").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
                     if dlg.kind == LinkKind::ManyToMany {
-                        ui.label("Tabelle A:");
+                        ui.label(crate::i18n::text("Tabelle A:"));
                         super::str_combo(ui, "erl_t", &tables, &mut dlg.table, 180.0);
                         ui.end_row();
-                        ui.label("Tabelle B:");
+                        ui.label(crate::i18n::text("Tabelle B:"));
                         super::str_combo(ui, "erl_o", &tables, &mut dlg.other, 180.0);
                         ui.end_row();
-                        ui.label("Zwischentabelle:");
+                        ui.label(crate::i18n::text("Zwischentabelle:"));
                         let auto = format!("{}_{}", dlg.table, dlg.other);
                         ui.add(egui::TextEdit::singleline(&mut dlg.junction).hint_text(auto).desired_width(180.0));
                         ui.end_row();
                     } else {
-                        ui.label(if dlg.kind == LinkKind::OneToOne { "Tabelle (abhängig):" } else { "Tabelle (viele):" });
+                        ui.label(if dlg.kind == LinkKind::OneToOne { crate::i18n::text("Tabelle (abhängig):") } else { crate::i18n::text("Tabelle (viele):") });
                         if super::str_combo(ui, "erl_t", &tables, &mut dlg.table, 180.0) {
                             dlg.column.clear();
                         }
                         ui.end_row();
-                        ui.label("Spalte:");
+                        ui.label(crate::i18n::text("Spalte:"));
                         super::str_combo(ui, "erl_c", &cols, &mut dlg.column, 180.0);
                         ui.end_row();
-                        ui.label("verweist auf (eins):");
+                        ui.label(crate::i18n::text("verweist auf (eins):"));
                         super::str_combo(ui, "erl_r", &targets, &mut dlg.target, 180.0);
                         ui.end_row();
                         let rules: Vec<String> = RULES.iter().map(|s| s.to_string()).collect();
-                        ui.label("Beim Löschen:");
+                        ui.label(crate::i18n::text("Beim Löschen:"));
                         super::str_combo(ui, "erl_d", &rules, &mut dlg.on_delete, 120.0);
                         ui.end_row();
-                        ui.label("Beim Ändern:");
+                        ui.label(crate::i18n::text("Beim Ändern:"));
                         super::str_combo(ui, "erl_u", &rules, &mut dlg.on_update, 120.0);
                         ui.end_row();
                     }
@@ -1311,7 +1336,7 @@ impl ErTab {
                     if let (Some(a), Some((rt, rc))) = (ty(&dlg.table, &dlg.column), dlg.target.split_once('.')) {
                         if let Some(b) = ty(rt, rc) {
                             if a != b {
-                                ui.label(RichText::new(format!("Hinweis: Datentypen unterscheiden sich ({a} / {b}).")).color(style::pal().error_text).small());
+                                ui.label(RichText::new(crate::tr_format!("Hinweis: Datentypen unterscheiden sich ({a} / {b}).", "Hint: Data types differ ({a} / {b}).")).color(style::pal().error_text).small());
                             }
                         }
                     }
@@ -1320,7 +1345,7 @@ impl ErTab {
                 ui.separator();
                 match &sql {
                     Ok(sql) => {
-                        egui::CollapsingHeader::new(RichText::new("SQL anzeigen").small()).id_salt("erlinksql").show(ui, |ui| {
+                        egui::CollapsingHeader::new(RichText::new(crate::i18n::text("SQL anzeigen")).small()).id_salt("erlinksql").show(ui, |ui| {
                             ui.label(RichText::new(sql).monospace().small());
                         });
                     }
@@ -1330,10 +1355,10 @@ impl ErTab {
                     Err(_) => {}
                 }
                 ui.horizontal(|ui| {
-                    if ui.add_enabled(sql.is_ok(), egui::Button::new("Anlegen")).clicked() {
+                    if ui.add_enabled(sql.is_ok(), egui::Button::new(crate::i18n::text("Anlegen"))).clicked() {
                         ok = true;
                     }
-                    if ui.button("Abbrechen").clicked() {
+                    if ui.button(crate::i18n::text("Abbrechen")).clicked() {
                         cancel = true;
                     }
                 });
@@ -1345,18 +1370,18 @@ impl ErTab {
                 match dbc.exec(&sql, ()) {
                     Ok(_) => {
                         let what = match d.kind {
-                            LinkKind::ManyToMany => format!("n:m-Beziehung {} ↔ {} angelegt.", d.table, d.other),
-                            LinkKind::OneToOne => format!("1:1-Beziehung {}.{} → {} angelegt.", d.table, d.column, d.target),
-                            LinkKind::OneToMany => format!("1:n-Beziehung {}.{} → {} angelegt.", d.table, d.column, d.target),
+                            LinkKind::ManyToMany => crate::tr_format!("n:m-Beziehung {} ↔ {} angelegt.", "n:m relationship {} ↔ {} created.", d.table, d.other),
+                            LinkKind::OneToOne => crate::tr_format!("1:1-Beziehung {}.{} → {} angelegt.", "1:1 relationship {}.{} → {} created.", d.table, d.column, d.target),
+                            LinkKind::OneToMany => crate::tr_format!("1:n-Beziehung {}.{} → {} angelegt.", "1:n relationship {}.{} → {} created.", d.table, d.column, d.target),
                         };
                         cx.status(what);
                         cx.actions.push(Action::SchemaChanged(self.db.clone()));
                     }
                     Err(e) => {
                         let tip = match d.kind {
-                            LinkKind::ManyToMany => "Tipp: Gibt es die Zwischentabelle schon? Dann einen anderen Namen wählen.",
-                            LinkKind::OneToOne => "Tipp: Für 1:1 darf jeder Wert in der Spalte nur einmal vorkommen. Beide Spalten brauchen den gleichen Datentyp.",
-                            LinkKind::OneToMany => "Tipp: Beide Spalten brauchen den gleichen Datentyp, und vorhandene Werte müssen in der Zieltabelle existieren.",
+                            LinkKind::ManyToMany => crate::i18n::text("Tipp: Gibt es die Zwischentabelle schon? Dann einen anderen Namen wählen."),
+                            LinkKind::OneToOne => crate::i18n::text("Tipp: Für 1:1 darf jeder Wert in der Spalte nur einmal vorkommen. Beide Spalten brauchen den gleichen Datentyp."),
+                            LinkKind::OneToMany => crate::i18n::text("Tipp: Beide Spalten brauchen den gleichen Datentyp, und vorhandene Werte müssen in der Zieltabelle existieren."),
                         };
                         cx.error(format!("{e}\n\n{tip}\n\nSQL: {sql}"));
                         self.link = Some(d);
@@ -1381,7 +1406,7 @@ impl ErTab {
             b.height() + 2.0 * pad
         );
         let _ = writeln!(o, r#"<rect width="100%" height="100%" fill="white"/><g transform="translate({},{})">"#, pad - b.min.x, pad - b.min.y);
-        let raw = self.raw.as_ref().unwrap_or(schema);
+        let raw = self.raw.as_deref().unwrap_or(schema);
         let mut tags: Vec<(Pos2, String)> = Vec::new();
         let mut texts: Vec<(Pos2, String, Align2, ())> = Vec::new();
         for fk in &schema.fks {
@@ -1457,7 +1482,7 @@ impl ErTab {
 
 impl TabView for ErTab {
     fn title(&self) -> String {
-        format!("ER-Diagramm: {}", self.db)
+        crate::tr_format!("ER-Diagramm: {}", "ER diagram: {}", self.db)
     }
 
     fn key(&self) -> Option<String> {
@@ -1500,47 +1525,47 @@ impl TabView for ErTab {
             if super::db_combo(ui, "erdb", cx.databases, &mut d) {
                 self.db = d;
             }
-            if crate::icons::button(ui, crate::icons::Icon::Refresh, "Neu einlesen").clicked() {
+            if crate::icons::button(ui, crate::icons::Icon::Refresh, crate::i18n::text("Neu einlesen")).clicked() {
                 self.schema_changed(&self.db.clone(), cx);
             }
             ui.separator();
-            if ui.button("Anordnen").on_hover_text("Automatisch anordnen: wenig Kreuzungen, kompakt").clicked() {
+            if ui.button(crate::i18n::text("Anordnen")).on_hover_text(crate::i18n::text("Automatisch anordnen: wenig Kreuzungen, kompakt")).clicked() {
                 self.auto_layout();
                 self.fit_pending = true;
                 self.save_layout();
             }
             ui.separator();
-            let r = ui.add(egui::Button::new("Verbinden").selected(self.connect_mode));
+            let r = ui.add(egui::Button::new(crate::i18n::text("Verbinden")).selected(self.connect_mode));
             if r.clicked() {
                 self.connect_mode = !self.connect_mode;
             }
             r
-                .on_hover_text("Von einer Spalte auf die Zielspalte ziehen legt eine Beziehung an (Esc beendet)");
-            if ui.button("+ Beziehung").clicked() {
+                .on_hover_text(crate::i18n::text("Von einer Spalte auf die Zielspalte ziehen legt eine Beziehung an (Esc beendet)"));
+            if ui.button(crate::i18n::text("+ Beziehung")).clicked() {
                 self.open_link(String::new(), String::new(), String::new());
             }
             let sel = self.selected.clone().and_then(|k| self.schema.as_ref()?.fks.iter().find(|f| fk_key(f) == k).cloned());
             if let Some(fk) = &sel {
-                if ui.button("Beziehung löschen").on_hover_text("Entf").clicked() {
+                if ui.button(crate::i18n::text("Beziehung löschen")).on_hover_text(crate::i18n::text("Entf")).clicked() {
                     cx.actions.push(self.delete_action(fk));
                 }
             }
-            if ui.button("+ Tabelle").clicked() {
+            if ui.button(crate::i18n::text("+ Tabelle")).clicked() {
                 cx.actions.push(Action::NewTable(self.db.clone()));
             }
             ui.separator();
             let before = (self.notation, self.collapse_nm, self.rel_labels);
-            ui.menu_button("Ansicht", |ui| {
+            ui.menu_button(crate::i18n::text("Ansicht"), |ui| {
                 ui.label(RichText::new("Notation").small().color(style::pal().text_weak));
                 for n in Notation::ALL {
                     ui.radio_value(&mut self.notation, n, n.label());
                 }
                 ui.separator();
-                ui.checkbox(&mut self.show_types, "Datentypen");
+                ui.checkbox(&mut self.show_types, crate::i18n::text("Datentypen"));
                 if self.notation == Notation::Crow {
-                    ui.checkbox(&mut self.rel_labels, "1:n / 1:1 / n:m an den Linien");
+                    ui.checkbox(&mut self.rel_labels, crate::i18n::text("1:n / 1:1 / n:m an den Linien"));
                 }
-                ui.checkbox(&mut self.collapse_nm, "Zwischentabellen als n:m-Linie");
+                ui.checkbox(&mut self.collapse_nm, crate::i18n::text("Zwischentabellen als n:m-Linie"));
             });
             if before != (self.notation, self.collapse_nm, self.rel_labels) {
                 if before.1 != self.collapse_nm {
@@ -1552,15 +1577,15 @@ impl TabView for ErTab {
                 self.save_view();
             }
             ui.menu_button("Export", |ui| {
-                if ui.button("Als SVG speichern …").clicked() {
+                if ui.button(crate::i18n::text("Als SVG speichern …")).clicked() {
                     ui.close();
-                    if let Some(p) = rfd::FileDialog::new().add_filter("SVG-Grafik", &["svg"]).set_file_name(format!("{}-er-diagramm.svg", self.db)).save_file() {
+                    if let Some(p) = rfd::FileDialog::new().add_filter(crate::i18n::text("SVG-Grafik"), &["svg"]).set_file_name(format!("{}-er-diagramm.svg", self.db)).save_file() {
                         if let Err(e) = std::fs::write(&p, self.to_svg()) {
                             cx.error(e.to_string());
                         }
                     }
                 }
-                if ui.button("SQL-Skript (CREATE TABLE)").clicked() {
+                if ui.button(crate::i18n::text("SQL-Skript (CREATE TABLE)")).clicked() {
                     ui.close();
                     if let Some(dbc) = cx.db {
                         match dbc.dump(&self.db, false) {
@@ -1571,7 +1596,7 @@ impl TabView for ErTab {
                 }
             });
             ui.separator();
-            if ui.button(format!("{:.0}\u{a0}%", self.zoom * 100.0)).on_hover_text("Alles zeigen (Mausrad = Zoom)").clicked() {
+            if ui.button(format!("{:.0}\u{a0}%", self.zoom * 100.0)).on_hover_text(crate::i18n::text("Alles zeigen (Mausrad = Zoom)")).clicked() {
                 self.fit_pending = true;
             }
         });
@@ -1602,6 +1627,25 @@ mod tests {
 
     fn fk(t: &str, c: &str, rt: &str) -> ForeignKey {
         ForeignKey { name: format!("fk_{t}_{c}"), table: t.into(), columns: vec![c.into()], ref_table: rt.into(), ref_columns: vec!["id".into()], ..Default::default() }
+    }
+
+    #[test]
+    fn routes_reuse_geometry_for_pan_zoom_and_update_after_drag() {
+        let mut diagram = ErTab::new("shop".into());
+        diagram.set_schema(Some(shop()));
+        diagram.auto_layout();
+        let schema = diagram.schema.clone().unwrap();
+        let original = diagram.geometry(&schema);
+        diagram.offset += vec2(40.0, 80.0);
+        diagram.zoom = 1.5;
+        assert!(Arc::ptr_eq(&original, &diagram.geometry(&schema)));
+        let table = schema.tables[0].name.clone();
+        *diagram.pos.get_mut(&table).unwrap() += vec2(120.0, 100.0);
+        let moved = diagram.geometry(&schema);
+        assert!(!Arc::ptr_eq(&original, &moved));
+        assert_ne!(original.paths, moved.paths);
+        diagram.show_types = !diagram.show_types;
+        assert!(!Arc::ptr_eq(&moved, &diagram.geometry(&schema)));
     }
 
     #[test]
@@ -1777,10 +1821,10 @@ mod tests {
         assert!(sql.contains("PRIMARY KEY (`kunde_id`, `artikel_id`)"));
         assert!(sql.contains("REFERENCES `shop`.`artikel` (`id`) ON DELETE CASCADE"));
         d.junction = "position".into();
-        assert!(link_sql("shop", &s, &d).unwrap_err().contains("gibt es schon"));
+        assert!(link_sql("shop", &s, &d).unwrap_err().contains("already exists"));
         d.junction.clear();
         d.table = "position".into();
-        assert!(link_sql("shop", &s, &d).unwrap_err().contains("genau einer Spalte"));
+        assert!(link_sql("shop", &s, &d).unwrap_err().contains("exactly one column"));
     }
 
     #[test]

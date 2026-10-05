@@ -7,6 +7,7 @@ mod repair;
 mod db;
 mod grid;
 mod icon;
+mod i18n;
 mod icons;
 mod keymap;
 mod platform;

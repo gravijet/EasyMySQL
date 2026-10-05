@@ -165,11 +165,11 @@ pub fn show(
                         }
                         resp.context_menu(|ui| {
                             state.selected = Some(r);
-                            if ui.button("Wert kopieren").clicked() {
+                            if ui.button(crate::i18n::text("Wert kopieren")).clicked() {
                                 ui.ctx().copy_text(val.clone().unwrap_or("NULL".into()));
                                 ui.close();
                             }
-                            if ui.button("Zeile kopieren (Tab-getrennt)").clicked() {
+                            if ui.button(crate::i18n::text("Zeile kopieren (Tab-getrennt)")).clicked() {
                                 let line = data
                                     .iter()
                                     .map(|v| v.clone().unwrap_or("NULL".into()))
@@ -180,16 +180,16 @@ pub fn show(
                             }
                             if editable {
                                 ui.separator();
-                                if ui.button("Bearbeiten").clicked() {
+                                if ui.button(crate::i18n::text("Bearbeiten")).clicked() {
                                     state.editing =
                                         Some((r, c, val.clone().unwrap_or_default(), false));
                                     ui.close();
                                 }
-                                if ui.button("Auf NULL setzen").clicked() {
+                                if ui.button(crate::i18n::text("Auf NULL setzen")).clicked() {
                                     events.push(GridEvent::Edit(r, c, None));
                                     ui.close();
                                 }
-                                if ui.button("Zeile löschen").clicked() {
+                                if ui.button(crate::i18n::text("Zeile löschen")).clicked() {
                                     events.push(GridEvent::DeleteRow(r));
                                     ui.close();
                                 }
@@ -300,28 +300,28 @@ pub fn export_menu(ui: &mut egui::Ui, name: &str, columns: &[String], rows: &[Ro
         }
     };
     ui.menu_button("Export", |ui| {
-        if ui.button("Kopieren (für Excel)").clicked() {
+        if ui.button(crate::i18n::text("Kopieren (für Excel)")).clicked() {
             ui.ctx().copy_text(to_tsv(columns, rows));
             ui.close();
         }
-        if ui.button("Als INSERT kopieren").clicked() {
+        if ui.button(crate::i18n::text("Als INSERT kopieren")).clicked() {
             ui.ctx().copy_text(to_inserts(name, columns, rows));
             ui.close();
         }
-        if ui.button("Als Markdown kopieren").clicked() {
+        if ui.button(crate::i18n::text("Als Markdown kopieren")).clicked() {
             ui.ctx().copy_text(to_markdown(columns, rows));
             ui.close();
         }
         ui.separator();
-        if ui.button("CSV speichern …").clicked() {
+        if ui.button(crate::i18n::text("CSV speichern …")).clicked() {
             ui.close();
             save("csv", "CSV", to_csv(columns, rows));
         }
-        if ui.button("JSON speichern …").clicked() {
+        if ui.button(crate::i18n::text("JSON speichern …")).clicked() {
             ui.close();
             save("json", "JSON", to_json(columns, rows));
         }
-        if ui.button("SQL speichern …").clicked() {
+        if ui.button(crate::i18n::text("SQL speichern …")).clicked() {
             ui.close();
             save("sql", "SQL", to_inserts(name, columns, rows));
         }

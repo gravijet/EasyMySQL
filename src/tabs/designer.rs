@@ -38,7 +38,7 @@ pub fn ref_field(ui: &mut egui::Ui, id: impl std::hash::Hash + std::fmt::Debug, 
         .selected_text(if value.is_empty() { "–" } else { value.as_str() })
         .width(150.0)
         .show_ui(ui, |ui| {
-            if ui.selectable_label(value.is_empty(), "– (kein Verweis)").clicked() {
+            if ui.selectable_label(value.is_empty(), crate::i18n::text("– (kein Verweis)")).clicked() {
                 value.clear();
             }
             for t in targets {
@@ -73,25 +73,25 @@ impl DesignerTab {
 impl TabView for DesignerTab {
     fn title(&self) -> String {
         if self.name.is_empty() {
-            "Neue Tabelle".into()
+            crate::i18n::text("Neue Tabelle").into()
         } else {
-            format!("Neue Tabelle: {}", self.name)
+            crate::tr_format!("Neue Tabelle: {}", "New table: {}", self.name)
         }
     }
 
     fn execute(&mut self, cx: &mut Ctx) {
         if self.name.trim().is_empty() {
-            cx.error("Bitte einen Tabellennamen eingeben.");
+            cx.error(crate::i18n::text("Bitte einen Tabellennamen eingeben."));
             return;
         }
         if !self.cols.iter().any(|c| !c.name.trim().is_empty()) {
-            cx.error("Die Tabelle braucht mindestens eine Spalte.");
+            cx.error(crate::i18n::text("Die Tabelle braucht mindestens eine Spalte."));
             return;
         }
         let Some(dbc) = cx.db else { return };
         match dbc.exec(&self.sql(), ()) {
             Ok(_) => {
-                cx.status(format!("Tabelle {} erstellt.", self.name));
+                cx.status(crate::tr_format!("Tabelle {} erstellt.", "Table {} created.", self.name));
                 cx.actions.push(Action::SchemaChanged(self.db.clone()));
                 cx.actions.push(Action::OpenStructure {
                     db: self.db.clone(),
@@ -122,13 +122,13 @@ impl TabView for DesignerTab {
             .unwrap_or_default();
 
         egui::Grid::new("designer-head").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
-            ui.label("Datenbank:");
+            ui.label(crate::i18n::text("Datenbank:"));
             super::db_combo(ui, "designer-db", cx.databases, &mut self.db);
             ui.end_row();
-            ui.label("Tabellenname:");
+            ui.label(crate::i18n::text("Tabellenname:"));
             ui.add(egui::TextEdit::singleline(&mut self.name).desired_width(250.0));
             ui.end_row();
-            ui.label("Speicher-Engine:");
+            ui.label(crate::i18n::text("Speicher-Engine:"));
             super::str_combo(
                 ui,
                 "designer-engine",
@@ -137,12 +137,12 @@ impl TabView for DesignerTab {
                 120.0,
             );
             ui.end_row();
-            ui.label("Kommentar:");
+            ui.label(crate::i18n::text("Kommentar:"));
             ui.add(egui::TextEdit::singleline(&mut self.comment).desired_width(250.0));
             ui.end_row();
         });
         ui.add_space(6.0);
-        ui.label(RichText::new("Spalten").strong());
+        ui.label(RichText::new(crate::i18n::text("Spalten")).strong());
         style::group_frame().show(ui, |ui| {
             egui::ScrollArea::both()
                 .id_salt("designer-cols")
@@ -155,7 +155,7 @@ impl TabView for DesignerTab {
                         .striped(true)
                         .spacing([6.0, 3.0])
                         .show(ui, |ui| {
-                            for h in ["Name", "Datentyp", "PK", "Nicht NULL", "Auto-Inkr.", "Eindeutig", "Standardwert", "Verweist auf (FK)", "Kommentar", "", ""] {
+                            for h in ["Name", crate::i18n::text("Datentyp"), "PK", crate::i18n::text("Nicht NULL"), crate::i18n::text("Auto-Inkr."), crate::i18n::text("Eindeutig"), crate::i18n::text("Standardwert"), crate::i18n::text("Verweist auf (FK)"), crate::i18n::text("Kommentar"), "", ""] {
                                 ui.label(RichText::new(h).strong());
                             }
                             ui.end_row();
@@ -169,10 +169,10 @@ impl TabView for DesignerTab {
                                 ui.add_sized([90.0, 20.0], egui::TextEdit::singleline(&mut c.default));
                                 ref_field(ui, ("dref", i), &targets, &mut c.references);
                                 ui.add_sized([120.0, 20.0], egui::TextEdit::singleline(&mut c.comment));
-                                if ui.small_button("▲").on_hover_text("nach oben").clicked() && i > 0 {
+                                if ui.small_button("▲").on_hover_text(crate::i18n::text("nach oben")).clicked() && i > 0 {
                                     move_up = Some(i);
                                 }
-                                if crate::icons::button_sized(ui, crate::icons::Icon::Close, "Spalte entfernen", 18.0).clicked() {
+                                if crate::icons::button_sized(ui, crate::icons::Icon::Close, crate::i18n::text("Spalte entfernen"), 18.0).clicked() {
                                     remove = Some(i);
                                 }
                                 ui.end_row();
@@ -186,18 +186,18 @@ impl TabView for DesignerTab {
                     }
                 });
             ui.horizontal(|ui| {
-                if ui.button("+ Spalte hinzufügen").clicked() {
+                if ui.button(crate::i18n::text("+ Spalte hinzufügen")).clicked() {
                     self.cols.push(ColDef::new("", "VARCHAR(255)"));
                 }
             });
         });
         ui.add_space(6.0);
         ui.horizontal(|ui| {
-            if ui.button("Tabelle erstellen").clicked() {
+            if ui.button(crate::i18n::text("Tabelle erstellen")).clicked() {
                 self.execute(cx);
             }
-            ui.checkbox(&mut self.show_sql, "SQL anzeigen");
-            if ui.button("Im SQL-Editor öffnen").clicked() {
+            ui.checkbox(&mut self.show_sql, crate::i18n::text("SQL anzeigen"));
+            if ui.button(crate::i18n::text("Im SQL-Editor öffnen")).clicked() {
                 cx.actions.push(Action::OpenSql {
                     db: Some(self.db.clone()),
                     sql: format!("{};\n", self.sql()),

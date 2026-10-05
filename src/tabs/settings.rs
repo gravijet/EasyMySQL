@@ -100,8 +100,8 @@ impl SettingsTab {
         }
         RECORDING.store(self.record.is_some(), Ordering::Relaxed);
         ui.horizontal(|ui| {
-            ui.add(egui::TextEdit::singleline(&mut self.key_filter).hint_text("Befehl oder Taste suchen").desired_width(240.0));
-            if ui.button("Alle auf Standard").clicked() {
+            ui.add(egui::TextEdit::singleline(&mut self.key_filter).hint_text(crate::i18n::text("Befehl oder Taste suchen")).desired_width(240.0));
+            if ui.button(crate::i18n::text("Alle auf Standard")).clicked() {
                 self.keymap = Keymap::default();
                 self.keymap.save();
                 keymap::install(self.keymap.clone());
@@ -118,7 +118,7 @@ impl SettingsTab {
                 continue;
             }
             ui.add_space(6.0);
-            ui.label(RichText::new(*group).strong().color(pal.text_weak));
+            ui.label(RichText::new(crate::i18n::text(group)).strong().color(pal.text_weak));
             egui::Grid::new(("keys", *group)).num_columns(3).striped(true).spacing([16.0, 4.0]).min_col_width(80.0).show(ui, |ui| {
                 for cmd in visible {
                     ui.allocate_ui_with_layout(egui::vec2(290.0, 20.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
@@ -129,7 +129,7 @@ impl SettingsTab {
                         let list = self.keymap.get(cmd).to_vec();
                         for (i, b) in list.iter().enumerate() {
                             let rec = self.record == Some((cmd, Some(i)));
-                            let text = if rec { "Taste drücken …".to_string() } else { b.text() };
+                            let text = if rec { crate::i18n::text("Taste drücken …").to_string() } else { b.text() };
                             let conflicts = self.keymap.conflicts(cmd, b);
                             let mut rt = RichText::new(text).monospace();
                             if !conflicts.is_empty() {
@@ -137,10 +137,10 @@ impl SettingsTab {
                             }
                             let r = ui.add(egui::Button::new(rt).selected(rec));
                             let r = if conflicts.is_empty() {
-                                r.on_hover_text("Klicken zum Ändern, Rechtsklick zum Entfernen")
+                                r.on_hover_text(crate::i18n::text("Klicken zum Ändern, Rechtsklick zum Entfernen"))
                             } else {
                                 let names: Vec<&str> = conflicts.iter().map(|c| c.label()).collect();
-                                r.on_hover_text(format!("Auch belegt: {}", names.join(", ")))
+                                r.on_hover_text(crate::tr_format!("Auch belegt: {}", "Also assigned: {}", names.join(", ")))
                             };
                             if r.clicked() {
                                 self.record = Some((cmd, Some(i)));
@@ -154,12 +154,12 @@ impl SettingsTab {
                             }
                         }
                         let rec_new = self.record == Some((cmd, None));
-                        if ui.add(egui::Button::new(if rec_new { "Taste drücken …" } else { "+" }).selected(rec_new)).on_hover_text("Weiteres Kürzel").clicked() {
+                        if ui.add(egui::Button::new(if rec_new { crate::i18n::text("Taste drücken …") } else { "+" }).selected(rec_new)).on_hover_text(crate::i18n::text("Weiteres Kürzel")).clicked() {
                             self.record = Some((cmd, None));
                         }
                     });
                     if self.keymap.get(cmd) != cmd.defaults().as_slice() {
-                        if ui.small_button("Standard").clicked() {
+                        if ui.small_button(crate::i18n::text("Standard")).clicked() {
                             self.keymap.set(cmd, cmd.defaults());
                             self.keymap.save();
                             keymap::install(self.keymap.clone());
@@ -176,7 +176,7 @@ impl SettingsTab {
 
 impl TabView for SettingsTab {
     fn title(&self) -> String {
-        "Einstellungen".into()
+        crate::i18n::text("Einstellungen").into()
     }
 
     fn key(&self) -> Option<String> {
@@ -205,7 +205,7 @@ impl TabView for SettingsTab {
         egui::Panel::left("settings-nav").resizable(false).exact_size(190.0).frame(egui::Frame::new().fill(pal.sidebar_bg).inner_margin(egui::Margin::symmetric(8, 12))).show(ui, |ui| {
             egui::ScrollArea::vertical().id_salt("settings-nav-scroll").show(ui, |ui| {
                 for (id, name) in SECTIONS {
-                    if style::nav_item(ui, name, self.active_section == *id, 0.0).clicked() {
+                    if style::nav_item(ui, crate::i18n::text(name), self.active_section == *id, 0.0).clicked() {
                         self.show_section(id);
                     }
                 }
@@ -222,84 +222,98 @@ impl TabView for SettingsTab {
                     egui::Grid::new(id).num_columns(2).striped(false).spacing([24.0, 10.0]).min_col_width(170.0).show(ui, |ui| add(ui));
                 };
 
-                self.heading(ui, "darstellung", "Darstellung");
+                self.heading(ui, "darstellung", crate::i18n::text("Darstellung"));
                 grid(ui, "g-look", &mut |ui| {
-                    ui.label("Systemdatenbanken zeigen");
+                    ui.label(crate::i18n::text("Sprache"));
+                    ui.horizontal(|ui| {
+                        ui.selectable_value(&mut s.language, crate::i18n::Language::English, "English");
+                        ui.selectable_value(&mut s.language, crate::i18n::Language::German, "Deutsch");
+                    });
+                    ui.end_row();
+                    ui.label(crate::i18n::text("Design"));
+                    ui.horizontal(|ui| {
+                        ui.selectable_value(&mut s.dark, true, crate::i18n::text("Dunkel"));
+                        ui.selectable_value(&mut s.dark, false, crate::i18n::text("Hell"));
+                    });
+                    ui.end_row();
+
+                    ui.label(crate::i18n::text("Systemdatenbanken zeigen"));
                     ui.checkbox(&mut s.show_system_dbs, "information_schema, mysql, …");
                     ui.end_row();
                 });
 
                 self.heading(ui, "updates", "Updates");
-                ui.label(format!("Installierte Version: {}", env!("CARGO_PKG_VERSION")));
-                ui.checkbox(&mut s.auto_update, "Beim Start und alle sechs Stunden nach Updates suchen");
-                ui.label("Neue Versionen werden über GitHub Releases gefunden. Die Installation starten Sie selbst.");
-                if ui.button("Jetzt nach Updates suchen").clicked() {
+                ui.label(crate::tr_format!("Installierte Version: {}", "Installed version: {}", env!("CARGO_PKG_VERSION")));
+                ui.checkbox(&mut s.auto_update, crate::i18n::text("Beim Start und alle sechs Stunden nach Updates suchen"));
+                ui.label(crate::i18n::text("Neue Versionen werden über GitHub Releases gefunden. Die Installation starten Sie selbst."));
+                if ui.button(crate::i18n::text("Jetzt nach Updates suchen")).clicked() {
                     cx.actions.push(Action::Run(Cmd::CheckUpdates));
                 }
 
                 self.heading(ui, "editor", "Editor");
                 grid(ui, "g-editor", &mut |ui| {
-                    ui.label("Schriftgröße");
+                    ui.label(crate::i18n::text("Schriftgröße"));
                     ui.add(egui::Slider::new(&mut s.editor_font, 10..=28).suffix(" px"));
                     ui.end_row();
                     ui.label("Minimap");
-                    ui.checkbox(&mut s.minimap, "Übersicht rechts neben dem Text");
+                    ui.checkbox(&mut s.minimap, crate::i18n::text("Übersicht rechts neben dem Text"));
                     ui.end_row();
-                    ui.label("Vorschläge beim Tippen");
-                    ui.checkbox(&mut s.auto_suggest, format!("sonst nur mit {}", keymap::text(Cmd::Suggest)));
+                    ui.label(crate::i18n::text("Vorschläge beim Tippen"));
+                    ui.checkbox(&mut s.auto_suggest, crate::i18n::text("Automatisch Vorschläge zeigen"))
+                        .on_hover_text(crate::tr_format!("sonst nur mit {}", "otherwise only with {}", keymap::text(Cmd::Suggest)));
                     ui.end_row();
-                    ui.label("Klammern schließen");
-                    ui.checkbox(&mut s.auto_close, "( [ { ' \" ` automatisch schließen");
+                    ui.label(crate::i18n::text("Klammern schließen"));
+                    ui.checkbox(&mut s.auto_close, crate::i18n::text("( [ { ' \" ` automatisch schließen"));
                     ui.end_row();
                 });
 
-                self.heading(ui, "maus", "Maus");
+                self.heading(ui, "maus", crate::i18n::text("Maus"));
                 grid(ui, "g-mouse", &mut |ui| {
-                    ui.label("Scrollgeschwindigkeit");
+                    ui.label(crate::i18n::text("Scrollgeschwindigkeit"));
                     ui.add(egui::Slider::new(&mut s.scroll_speed, 0.5..=5.0).step_by(0.25).suffix("×"));
                     ui.end_row();
-                    ui.label("Mittlere Maustaste");
-                    ui.checkbox(&mut s.autoscroll, "gedrückt halten und ziehen = schnell scrollen");
+                    ui.label(crate::i18n::text("Mittlere Maustaste"));
+                    ui.checkbox(&mut s.autoscroll, crate::i18n::text("gedrückt halten und ziehen = schnell scrollen"));
                     ui.end_row();
                 });
 
-                self.heading(ui, "speicherorte", "Speicherorte");
+                self.heading(ui, "speicherorte", crate::i18n::text("Speicherorte"));
                 let root = workspace::storage_root();
                 let mut pick_root = false;
                 let mut reset_root = false;
                 grid(ui, "g-paths", &mut |ui| {
-                    ui.label("Speicherordner").on_hover_text("Neue Projekte, unbenannte Abfragen, frühere Fassungen, Verlauf, Diagramm-Anordnungen und gespeicherte Abfragen des Assistenten");
+                    ui.label(crate::i18n::text("Speicherordner")).on_hover_text(crate::i18n::text("Neue Projekte, unbenannte Abfragen, frühere Fassungen, Verlauf, Diagramm-Anordnungen und gespeicherte Abfragen des Assistenten"));
                     ui.vertical(|ui| {
                         ui.label(RichText::new(root.display().to_string()).monospace());
                         ui.horizontal(|ui| {
-                            if ui.button("Ändern …").clicked() {
+                            if ui.button(crate::i18n::text("Ändern …")).clicked() {
                                 pick_root = true;
                             }
-                            if !s.storage_dir.is_empty() && ui.button("Standard").clicked() {
+                            if !s.storage_dir.is_empty() && ui.button(crate::i18n::text("Standard")).clicked() {
                                 reset_root = true;
                             }
-                            if ui.button("Öffnen").clicked() {
+                            if ui.button(crate::i18n::text("Öffnen")).clicked() {
                                 let _ = std::fs::create_dir_all(&root);
                                 crate::app::open_path(&root);
                             }
                         });
                     });
                     ui.end_row();
-                    ui.label("Sicherungen");
+                    ui.label(crate::i18n::text("Sicherungen"));
                     ui.vertical(|ui| {
                         ui.label(RichText::new(self.backup.dir().display().to_string()).monospace());
                         ui.horizontal(|ui| {
-                            if ui.button("Ändern …").clicked() {
+                            if ui.button(crate::i18n::text("Ändern …")).clicked() {
                                 if let Some(p) = rfd::FileDialog::new().pick_folder() {
                                     self.backup.dir = p.display().to_string();
                                     self.backup.save();
                                 }
                             }
-                            if !self.backup.dir.is_empty() && ui.button("Standard").clicked() {
+                            if !self.backup.dir.is_empty() && ui.button(crate::i18n::text("Standard")).clicked() {
                                 self.backup.dir.clear();
                                 self.backup.save();
                             }
-                            if ui.button("Öffnen").clicked() {
+                            if ui.button(crate::i18n::text("Öffnen")).clicked() {
                                 let d = self.backup.dir();
                                 let _ = std::fs::create_dir_all(&d);
                                 crate::app::open_path(&d);
@@ -308,20 +322,20 @@ impl TabView for SettingsTab {
                     });
                     ui.end_row();
                     if let Some(p) = &cx.server.paths {
-                        ui.label("Datenbanken (MariaDB)");
+                        ui.label(crate::i18n::text("Datenbanken (MariaDB)"));
                         ui.horizontal(|ui| {
                             ui.label(RichText::new(p.data.display().to_string()).monospace());
-                            if ui.button("Öffnen").clicked() {
+                            if ui.button(crate::i18n::text("Öffnen")).clicked() {
                                 crate::app::open_path(&p.data);
                             }
                         });
                         ui.end_row();
                     }
-                    ui.label("Einstellungen und Log");
+                    ui.label(crate::i18n::text("Einstellungen und Log"));
                     ui.horizontal(|ui| {
                         let d = crate::server::app_data_dir();
                         ui.label(RichText::new(d.display().to_string()).monospace());
-                        if ui.button("Öffnen").clicked() {
+                        if ui.button(crate::i18n::text("Öffnen")).clicked() {
                             crate::app::open_path(&d);
                         }
                     });
@@ -339,7 +353,7 @@ impl TabView for SettingsTab {
                 }
                 if let Some(new) = self.pending_root.clone() {
                     egui::Frame::group(ui.style()).show(ui, |ui| {
-                        ui.label(format!("Neuer Speicherordner: {}", new.display()));
+                        ui.label(crate::tr_format!("Neuer Speicherordner: {}", "New storage folder: {}", new.display()));
                         ui.horizontal(|ui| {
                             let apply = |move_files: bool, s: &mut crate::settings::Settings, actions: &mut Vec<Action>| -> Result<(), String> {
                                 if move_files {
@@ -350,13 +364,13 @@ impl TabView for SettingsTab {
                                 Ok(())
                             };
                             let mut res = None;
-                            if ui.button("Inhalt mitnehmen").on_hover_text("Alles aus dem bisherigen Ordner in den neuen verschieben").clicked() {
+                            if ui.button(crate::i18n::text("Inhalt mitnehmen")).on_hover_text(crate::i18n::text("Alles aus dem bisherigen Ordner in den neuen verschieben")).clicked() {
                                 res = Some(apply(true, s, cx.actions));
                             }
-                            if ui.button("Nur umstellen").clicked() {
+                            if ui.button(crate::i18n::text("Nur umstellen")).clicked() {
                                 res = Some(apply(false, s, cx.actions));
                             }
-                            if ui.button("Abbrechen").clicked() {
+                            if ui.button(crate::i18n::text("Abbrechen")).clicked() {
                                 self.pending_root = None;
                             }
                             match res {
@@ -368,7 +382,7 @@ impl TabView for SettingsTab {
                     });
                 }
 
-                self.heading(ui, "verbindung", "Verbindung");
+                self.heading(ui, "verbindung", crate::i18n::text("Verbindung"));
                 let (info, save_pw) = self.conn.get_or_insert_with(|| (s.conn.clone(), s.save_password));
                 grid(ui, "g-conn", &mut |ui| {
                     ui.label("Server");
@@ -377,59 +391,59 @@ impl TabView for SettingsTab {
                     ui.label("Port");
                     ui.add(egui::DragValue::new(&mut info.port).range(1..=65535));
                     ui.end_row();
-                    ui.label("Benutzer");
+                    ui.label(crate::i18n::text("Benutzer"));
                     ui.text_edit_singleline(&mut info.user);
                     ui.end_row();
-                    ui.label("Passwort");
+                    ui.label(crate::i18n::text("Passwort"));
                     ui.add(egui::TextEdit::singleline(&mut info.password).password(true));
                     ui.end_row();
                     ui.label("");
-                    ui.checkbox(save_pw, "Passwort speichern");
+                    ui.checkbox(save_pw, crate::i18n::text("Passwort speichern"));
                     ui.end_row();
                 });
                 ui.horizontal(|ui| {
-                    if ui.button("Verbinden").clicked() {
+                    if ui.button(crate::i18n::text("Verbinden")).clicked() {
                         s.conn = info.clone();
                         s.save_password = *save_pw;
                         cx.actions.push(Action::Connect);
                     }
-                    if ui.button("Standard").on_hover_text("127.0.0.1, Port 3306, root, ohne Passwort").clicked() {
+                    if ui.button(crate::i18n::text("Standard")).on_hover_text(crate::i18n::text("127.0.0.1, Port 3306, root, ohne Passwort")).clicked() {
                         *info = ConnInfo::default();
                     }
-                    let connected = cx.db.map(|d| d.info.label()).unwrap_or_else(|| "nicht verbunden".into());
+                    let connected = cx.db.map(|d| d.info.label()).unwrap_or_else(|| crate::i18n::text("nicht verbunden").into());
                     ui.label(RichText::new(connected).color(pal.text_weak));
                 });
 
                 self.heading(ui, "server", "Server");
                 grid(ui, "g-server", &mut |ui| {
-                    ui.label("Anweisungen mitschreiben");
-                    ui.checkbox(&mut s.query_log, "jede Anweisung im Server-Log (auch von mysql in der Eingabeaufforderung)");
+                    ui.label(crate::i18n::text("Anweisungen mitschreiben"));
+                    ui.checkbox(&mut s.query_log, crate::i18n::text("jede Anweisung im Server-Log (auch von mysql in der Eingabeaufforderung)"));
                     ui.end_row();
-                    ui.label("Server-Log");
-                    if ui.button("Öffnen").clicked() {
+                    ui.label(crate::i18n::text("Server-Log"));
+                    if ui.button(crate::i18n::text("Öffnen")).clicked() {
                         cx.actions.push(Action::OpenLog);
                     }
                     ui.end_row();
                 });
 
-                self.heading(ui, "sicherungen", "Sicherungen");
+                self.heading(ui, "sicherungen", crate::i18n::text("Sicherungen"));
                 let old = self.backup.clone();
                 grid(ui, "g-backup", &mut |ui| {
-                    ui.label("Automatisch sichern");
+                    ui.label(crate::i18n::text("Automatisch sichern"));
                     ui.horizontal(|ui| {
-                        ui.checkbox(&mut self.backup.auto, "alle");
+                        ui.checkbox(&mut self.backup.auto, crate::i18n::text("alle"));
                         ui.add(egui::DragValue::new(&mut self.backup.interval_hours).range(1..=168).suffix(" h"));
                     });
                     ui.end_row();
-                    ui.label("Aufbewahren");
+                    ui.label(crate::i18n::text("Aufbewahren"));
                     ui.horizontal(|ui| {
                         ui.add(egui::DragValue::new(&mut self.backup.keep_count).range(1..=200));
-                        ui.label("neueste, dazu eine je Tag für");
-                        ui.add(egui::DragValue::new(&mut self.backup.keep_days).range(0..=365).suffix(" Tage"));
+                        ui.label(crate::i18n::text("neueste, dazu eine je Tag für"));
+                        ui.add(egui::DragValue::new(&mut self.backup.keep_days).range(0..=365).suffix(crate::i18n::text(" Tage")));
                     });
                     ui.end_row();
                     ui.label("");
-                    if ui.button("Sicherungen & Reparatur").clicked() {
+                    if ui.button(crate::i18n::text("Sicherungen & Reparatur")).clicked() {
                         cx.actions.push(Action::OpenSafety);
                     }
                     ui.end_row();
@@ -438,12 +452,12 @@ impl TabView for SettingsTab {
                     self.backup.save();
                 }
 
-                self.heading(ui, "tastenkuerzel", "Tastenkürzel");
+                self.heading(ui, "tastenkuerzel", crate::i18n::text("Tastenkürzel"));
                 self.keys_ui(ui);
 
                 self.heading(ui, "vscode", "Visual Studio Code");
                 ui.horizontal(|ui| {
-                    if ui.button("VS Code einrichten").on_hover_text("SQLTools mit MariaDB-Treiber installieren, Verbindung „EasyMySQL“ anlegen").clicked() {
+                    if ui.button(crate::i18n::text("VS Code einrichten")).on_hover_text(crate::i18n::text("SQLTools mit MariaDB-Treiber installieren, Verbindung „EasyMySQL“ anlegen")).clicked() {
                         cx.actions.push(Action::SetupVsCode);
                     }
                 });
@@ -476,7 +490,7 @@ mod tests {
     #[test]
     fn navigation_keeps_clicked_section_selected_at_bottom_and_tracks_scrolling() {
         let ctx = egui::Context::default();
-        style::apply(&ctx);
+        style::apply(&ctx, true);
         let mut tab = SettingsTab::new();
         let server = crate::server::Server::new(3306);
         let mut settings = crate::settings::Settings::default();

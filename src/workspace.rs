@@ -112,7 +112,7 @@ pub fn move_storage(from: &Path, to: &Path) -> Result<usize, String> {
         return Ok(0);
     }
     if to.starts_with(from) || from.starts_with(to) {
-        return Err("Der neue Ordner darf nicht im alten liegen (und umgekehrt).".into());
+        return Err(crate::i18n::text("Der neue Ordner darf nicht im alten liegen (und umgekehrt).").into());
     }
     std::fs::create_dir_all(to).map_err(|e| format!("{}: {e}", to.display()))?;
     let mut n = 0;
@@ -121,7 +121,7 @@ pub fn move_storage(from: &Path, to: &Path) -> Result<usize, String> {
         let src = e.path();
         let dst = to.join(e.file_name());
         if dst.exists() {
-            return Err(format!("„{}“ gibt es im neuen Ordner schon.", e.file_name().to_string_lossy()));
+            return Err(crate::tr_format!("„{}“ gibt es im neuen Ordner schon.", "“{}” already exists in the new folder.", e.file_name().to_string_lossy()));
         }
         if std::fs::rename(&src, &dst).is_err() {
             // anderes Laufwerk: kopieren, dann loeschen
@@ -197,7 +197,7 @@ pub fn unique_file(dir: &Path, base: &str, ext: &str) -> PathBuf {
 
 pub fn create_file(dir: &Path, name: &str, content: &str) -> Result<PathBuf, String> {
     if !valid_name(name) {
-        return Err("Ungültiger Dateiname.".into());
+        return Err(crate::i18n::text("Ungültiger Dateiname.").into());
     }
     let mut n = name.trim().to_string();
     if !n.contains('.') {
@@ -205,7 +205,7 @@ pub fn create_file(dir: &Path, name: &str, content: &str) -> Result<PathBuf, Str
     }
     let p = dir.join(n);
     if p.exists() {
-        return Err(format!("{} existiert bereits.", p.display()));
+        return Err(crate::tr_format!("{} existiert bereits.", "{} already exists.", p.display()));
     }
     atomic_write(&p, content).map_err(|e| e.to_string())?;
     Ok(p)
@@ -213,7 +213,7 @@ pub fn create_file(dir: &Path, name: &str, content: &str) -> Result<PathBuf, Str
 
 pub fn create_folder(dir: &Path, name: &str) -> Result<PathBuf, String> {
     if !valid_name(name) {
-        return Err("Ungültiger Ordnername.".into());
+        return Err(crate::i18n::text("Ungültiger Ordnername.").into());
     }
     let p = dir.join(name.trim());
     std::fs::create_dir_all(&p).map_err(|e| e.to_string())?;
@@ -222,11 +222,11 @@ pub fn create_folder(dir: &Path, name: &str) -> Result<PathBuf, String> {
 
 pub fn rename(path: &Path, new_name: &str) -> Result<PathBuf, String> {
     if !valid_name(new_name) {
-        return Err("Ungültiger Name.".into());
+        return Err(crate::i18n::text("Ungültiger Name.").into());
     }
     let target = path.with_file_name(new_name.trim());
     if target.exists() {
-        return Err(format!("{} existiert bereits.", target.display()));
+        return Err(crate::tr_format!("{} existiert bereits.", "{} already exists.", target.display()));
     }
     std::fs::rename(path, &target).map_err(|e| e.to_string())?;
     Ok(target)
@@ -378,7 +378,7 @@ pub fn scratch_path(id: usize) -> PathBuf {
 // ---------------------------------------------------------------------------
 // Sitzung: offene Registerkarten, Projekt, Seitenleiste
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Session {
     pub project: String,
     pub tabs: Vec<String>,

@@ -28,6 +28,7 @@ pub struct SqlTab {
     saved_text: String,
     last_edit: Instant,
     file_mtime: Option<std::time::SystemTime>,
+    file_check: Option<Instant>,
     conn: Option<Conn>,
     job: Option<Receiver<JobResult>>,
     /// Anweisungen des laufenden Auftrags (fuer den Verlauf)
@@ -82,6 +83,7 @@ impl SqlTab {
             saved_text: String::new(),
             last_edit: Instant::now(),
             file_mtime: None,
+            file_check: None,
             conn: None,
             job: None,
             running: Vec::new(),
@@ -156,7 +158,7 @@ impl SqlTab {
                 self.save_error = None;
                 self.file_mtime = std::fs::metadata(&target).and_then(|m| m.modified()).ok();
             }
-            Err(e) => self.save_error = Some(format!("Speichern fehlgeschlagen: {e}")),
+            Err(e) => self.save_error = Some(crate::tr_format!("Speichern fehlgeschlagen: {e}", "Save failed: {e}")),
         }
     }
 
@@ -175,7 +177,7 @@ impl SqlTab {
             return;
         }
         let Some(dbc) = cx.db else {
-            cx.error("Keine Verbindung zum Datenbankserver.");
+            cx.error(crate::i18n::text("Keine Verbindung zum Datenbankserver."));
             return;
         };
         let mut stmts = db::split_statements(&sql);
@@ -217,9 +219,9 @@ impl SqlTab {
             if !targets.is_empty() {
                 if let Some(env) = crate::backup::env() {
                     match crate::backup::create(&env, Some(targets.clone()), "vor-loeschen", &|_| {}) {
-                        Ok(_) => note = Some(format!("Vorher gesichert: {}", targets.join(", "))),
+                        Ok(_) => note = Some(crate::tr_format!("Vorher gesichert: {}", "Backup created: {}", targets.join(", "))),
                         Err(e) => {
-                            let _ = tx.send(fail(conn, format!("Nicht ausgeführt: Die Sicherung vor dem Löschen ist fehlgeschlagen ({e})")));
+                            let _ = tx.send(fail(conn, crate::tr_format!("Nicht ausgeführt: Die Sicherung vor dem Löschen ist fehlgeschlagen ({e})", "Not executed: The backup before deletion failed ({e})")));
                             return;
                         }
                     }
@@ -337,13 +339,13 @@ impl SqlTab {
         ui.horizontal(|ui| {
             for (i, (ri, _, s)) in sets.iter().enumerate() {
                 let r = &self.results[*ri];
-                let label = format!("Ergebnis {} · Z. {} ({})", i + 1, r.line + 1, s.rows.len());
+                let label = crate::tr_format!("Ergebnis {} · Z. {} ({})", "Result {} · Ln {} ({})", i + 1, r.line + 1, s.rows.len());
                 if ui.selectable_label(tab == i, label).clicked() {
                     tab = i;
                 }
             }
             let errs = self.results.iter().filter(|r| r.error.is_some()).count();
-            let label = if errs > 0 { format!("Meldungen ({errs} Fehler)") } else { format!("Meldungen ({})", self.results.len()) };
+            let label = if errs > 0 { crate::tr_format!("Meldungen ({errs} Fehler)", "Messages ({errs} errors)") } else { crate::tr_format!("Meldungen ({})", "Messages ({})", self.results.len()) };
             let txt = if errs > 0 { RichText::new(label).color(pal.error_text) } else { RichText::new(label) };
             if ui.selectable_label(tab == n_sets, txt).clicked() {
                 tab = n_sets;
@@ -361,11 +363,10 @@ impl SqlTab {
         }
         if tab < n_sets {
             let (_, _, set) = sets[tab];
-            let set = set.clone();
             ui.horizontal(|ui| {
-                let mut info = format!("{} Zeile(n)", set.rows.len());
+                let mut info = crate::tr_format!("{} Zeile(n)", "{} row(s)", set.rows.len());
                 if set.truncated {
-                    info.push_str(&format!(" (die ersten {})", db::MAX_ROWS));
+                    info.push_str(&crate::tr_format!(" (die ersten {})", " (first {})", db::MAX_ROWS));
                 }
                 ui.label(RichText::new(info).color(pal.ok_text));
                 grid::export_menu(ui, "ergebnis", &set.columns, &set.rows);
@@ -377,14 +378,14 @@ impl SqlTab {
                 for r in &self.results {
                     let (ok, msg) = match &r.error {
                         Some(e) => (false, e.clone()),
-                        None if !r.sets.is_empty() => (true, format!("{} Zeile(n) geliefert", r.sets.iter().map(|s| s.rows.len()).sum::<usize>())),
-                        None => (true, format!("{} Zeile(n) betroffen", r.affected)),
+                        None if !r.sets.is_empty() => (true, crate::tr_format!("{} Zeile(n) geliefert", "{} row(s) returned", r.sets.iter().map(|s| s.rows.len()).sum::<usize>())),
+                        None => (true, crate::tr_format!("{} Zeile(n) betroffen", "{} row(s) affected", r.affected)),
                     };
                     let color = if ok { pal.ok_text } else { pal.error_text };
                     ui.horizontal(|ui| {
                         let (rect, _) = ui.allocate_exact_size(egui::vec2(10.0, 14.0), egui::Sense::hover());
                         ui.painter().circle_filled(rect.center(), 3.5, color);
-                        if ui.link(format!("Zeile {}", r.line + 1)).clicked() {
+                        if ui.link(crate::tr_format!("Zeile {}", "Line {}", r.line + 1)).clicked() {
                             jump = Some(r.error_line.unwrap_or(r.line));
                         }
                         ui.label(RichText::new(format!("{:.3} s", r.elapsed.as_secs_f64())).small().color(pal.text_weak));
@@ -407,25 +408,25 @@ impl SqlTab {
             let mut other = cx.project.is_none();
             let mut cancel = false;
             if let Some(project) = cx.project {
-                egui::Window::new("Speichern unter")
+                egui::Window::new(crate::i18n::text("Speichern unter"))
                     .collapsible(false)
                     .resizable(false)
                     .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
                     .show(ctx, |ui| {
-                        ui.label(format!("Im Projekt „{}“:", workspace::dir_name(project)));
+                        ui.label(crate::tr_format!("Im Projekt „{}“:", "In project “{}”:", workspace::dir_name(project)));
                         let r = ui.add(egui::TextEdit::singleline(name).desired_width(260.0));
                         r.request_focus();
                         if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                             ok = true;
                         }
                         ui.horizontal(|ui| {
-                            if ui.button("Speichern").clicked() {
+                            if ui.button(crate::i18n::text("Speichern")).clicked() {
                                 ok = true;
                             }
-                            if ui.button("Anderer Ort …").clicked() {
+                            if ui.button(crate::i18n::text("Anderer Ort …")).clicked() {
                                 other = true;
                             }
-                            if ui.button("Abbrechen").clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                            if ui.button(crate::i18n::text("Abbrechen")).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
                                 cancel = true;
                             }
                         });
@@ -440,7 +441,7 @@ impl SqlTab {
                     }
                 }
             } else if other {
-                let p = rfd::FileDialog::new().add_filter("SQL-Datei", &["sql"]).set_file_name(format!("{name}.sql")).save_file();
+                let p = rfd::FileDialog::new().add_filter(crate::i18n::text("SQL-Datei"), &["sql"]).set_file_name(format!("{name}.sql")).save_file();
                 if p.is_none() {
                     cancel = true;
                 }
@@ -461,7 +462,7 @@ impl SqlTab {
                 }
                 self.save_as = None;
                 cx.actions.push(Action::FilesChanged);
-                cx.status(format!("Gespeichert: {}", p.display()));
+                cx.status(crate::tr_format!("Gespeichert: {}", "Saved: {}", p.display()));
             } else if cancel {
                 self.save_as = None;
             }
@@ -469,13 +470,13 @@ impl SqlTab {
         // Fruehere Fassungen
         if let Some(list) = self.history.clone() {
             let mut close = false;
-            egui::Window::new("Frühere Fassungen")
+            egui::Window::new(crate::i18n::text("Frühere Fassungen"))
                 .collapsible(false)
                 .default_size([520.0, 360.0])
                 .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
                 .show(ctx, |ui| {
                     if list.is_empty() {
-                        ui.label("Keine.");
+                        ui.label(crate::i18n::text("Keine."));
                     }
                     egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
                         for (time, path) in &list {
@@ -490,7 +491,7 @@ impl SqlTab {
                                     .take(50)
                                     .collect();
                                 ui.label(RichText::new(preview).monospace().small().color(style::pal().text_weak));
-                                if ui.small_button("Wiederherstellen").clicked() {
+                                if ui.small_button(crate::i18n::text("Wiederherstellen")).clicked() {
                                     if let Ok(t) = std::fs::read_to_string(path) {
                                         self.text = t;
                                         self.last_edit = Instant::now();
@@ -500,7 +501,7 @@ impl SqlTab {
                             });
                         }
                     });
-                    if ui.button("Schließen").clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                    if ui.button(crate::i18n::text("Schließen")).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
                         close = true;
                     }
                 });
@@ -515,7 +516,7 @@ impl TabView for SqlTab {
     fn title(&self) -> String {
         let name = match &self.file {
             Some(f) => f.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
-            None => format!("Unbenannt-{}", self.scratch_id),
+            None => crate::tr_format!("Unbenannt-{}", "Untitled-{}", self.scratch_id),
         };
         if self.dirty() { format!("{name} ●") } else { name }
     }
@@ -596,7 +597,7 @@ impl TabView for SqlTab {
     fn save_now(&mut self) {
         if self.file.is_none() && !self.text.trim().is_empty() && self.save_as.is_none() {
             // Strg+S bei unbenannter Abfrage: Speichern unter
-            self.save_as = Some("Neue Abfrage".into());
+            self.save_as = Some(crate::i18n::text("Neue Abfrage").into());
         }
         self.save();
     }
@@ -618,13 +619,16 @@ impl TabView for SqlTab {
         }
         // Aenderungen von aussen (z. B. VS Code) uebernehmen
         if let (Some(f), false) = (&self.file, self.dirty()) {
-            if let Ok(m) = std::fs::metadata(f).and_then(|m| m.modified()) {
-                if self.file_mtime.is_some_and(|old| old != m) {
-                    if let Ok(b) = std::fs::read(f) {
-                        self.text = String::from_utf8_lossy(&b).into_owned();
-                        self.saved_text = self.text.clone();
+            if self.file_check.is_none_or(|last| last.elapsed() >= Duration::from_secs(2)) {
+                self.file_check = Some(Instant::now());
+                if let Ok(m) = std::fs::metadata(f).and_then(|m| m.modified()) {
+                    if self.file_mtime.is_some_and(|old| old != m) {
+                        if let Ok(b) = std::fs::read(f) {
+                            self.text = String::from_utf8_lossy(&b).into_owned();
+                            self.saved_text = self.text.clone();
+                        }
+                        self.file_mtime = Some(m);
                     }
-                    self.file_mtime = Some(m);
                 }
             }
             ui.ctx().request_repaint_after(Duration::from_secs(2));
@@ -653,39 +657,39 @@ impl TabView for SqlTab {
                 self.words_for = "\u{0}".into();
             }
             ui.add_enabled_ui(self.job.is_none(), |ui| {
-                if icons::text_button(ui, Icon::Play, "Ausführen")
-                    .on_hover_text(format!("Datei oder Markierung ausführen ({})", crate::keymap::text(Cmd::RunAll)))
+                if icons::text_button(ui, Icon::Play, crate::i18n::text("Ausführen"))
+                    .on_hover_text(crate::tr_format!("Datei oder Markierung ausführen ({})", "Run file or selection ({})", crate::keymap::text(Cmd::RunAll)))
                     .clicked()
                 {
                     self.run_selection_or_all(cx);
                 }
                 if ui
-                    .button("Anweisung")
-                    .on_hover_text(format!("Anweisung am Cursor ausführen ({})", crate::keymap::text(Cmd::RunStatement)))
+                    .button(crate::i18n::text("Anweisung"))
+                    .on_hover_text(crate::tr_format!("Anweisung am Cursor ausführen ({})", "Run statement at cursor ({})", crate::keymap::text(Cmd::RunStatement)))
                     .clicked()
                 {
                     self.run_current(cx);
                 }
-                if ui.button("Plan").on_hover_text(format!("EXPLAIN der Anweisung am Cursor ({})", crate::keymap::text(Cmd::Explain))).clicked() {
+                if ui.button("Plan").on_hover_text(crate::tr_format!("EXPLAIN der Anweisung am Cursor ({})", "EXPLAIN statement at cursor ({})", crate::keymap::text(Cmd::Explain))).clicked() {
                     self.explain(cx);
                 }
             });
-            if ui.button("Formatieren").on_hover_text(crate::keymap::text(Cmd::Format)).clicked() {
+            if ui.button(crate::i18n::text("Formatieren")).on_hover_text(crate::keymap::text(Cmd::Format)).clicked() {
                 self.format();
             }
-            let more = icons::button(ui, Icon::More, "Weitere");
+            let more = icons::button(ui, Icon::More, crate::i18n::text("Weitere"));
             egui::Popup::menu(&more).show(|ui| {
-                if ui.button("Speichern unter …").clicked() {
-                    self.save_as = Some(self.file.as_ref().and_then(|f| f.file_stem()).map(|s| s.to_string_lossy().into_owned()).unwrap_or("Neue Abfrage".into()));
+                if ui.button(crate::i18n::text("Speichern unter …")).clicked() {
+                    self.save_as = Some(self.file.as_ref().and_then(|f| f.file_stem()).map(|s| s.to_string_lossy().into_owned()).unwrap_or(crate::i18n::text("Neue Abfrage").into()));
                     ui.close();
                 }
                 if let Some(f) = self.file.clone() {
-                    if ui.button("Frühere Fassungen …").clicked() {
+                    if ui.button(crate::i18n::text("Frühere Fassungen …")).clicked() {
                         self.history = Some(workspace::history(&f));
                         ui.close();
                     }
                 }
-                if ui.button("In VS Code öffnen").clicked() {
+                if ui.button(crate::i18n::text("In VS Code öffnen")).clicked() {
                     self.save();
                     let res = match &self.file {
                         Some(f) => crate::vscode::open_path(self.project.as_deref(), f, &self.database),
@@ -702,7 +706,7 @@ impl TabView for SqlTab {
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let (l, c) = self.editor.line_col;
-                ui.label(RichText::new(format!("Z. {l}, Sp. {c}")).small().color(pal.text_weak));
+                ui.label(RichText::new(crate::tr_format!("Z. {l}, Sp. {c}", "Ln {l}, Col {c}")).small().color(pal.text_weak));
             });
         });
 
@@ -731,5 +735,37 @@ impl TabView for SqlTab {
         }
         let ctx = ui.ctx().clone();
         self.dialogs(&ctx, cx);
+    }
+}
+
+#[cfg(test)]
+mod performance_tests {
+    use super::*;
+
+    /// Run with `cargo test performance_render -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "manual render benchmark"]
+    fn performance_render_large_result() {
+        let ctx = egui::Context::default();
+        let mut tab = SqlTab::empty();
+        tab.results = vec![StmtResult {
+            line: 0, preview: "SELECT".into(), affected: 0, error: None,
+            error_line: None, elapsed: Duration::ZERO,
+            sets: vec![db::ResultSet {
+                columns: (0..12).map(|i| format!("column_{i}")).collect(),
+                rows: (0..50_000).map(|r| (0..12).map(|c| Some(format!("value_{r}_{c}"))).collect()).collect(),
+                affected: 0, truncated: false,
+            }],
+        }];
+        let mut render = || {
+            let _ = ctx.run_ui(egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 760.0))),
+                ..Default::default()
+            }, |ui| tab.results_ui(ui, 18.0));
+        };
+        for _ in 0..5 { render(); }
+        let start = Instant::now();
+        for _ in 0..30 { render(); }
+        println!("50,000 rows × 12 columns: {:.3} ms/frame", start.elapsed().as_secs_f64() * 1000.0 / 30.0);
     }
 }

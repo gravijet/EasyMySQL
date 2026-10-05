@@ -22,6 +22,8 @@ pub struct LogTab {
     cleared_at: Option<usize>,
     cache: Vec<LogLine>,
     cache_count: Option<usize>,
+    visible_rows: Vec<usize>,
+    visible_for: Option<(usize, Filter, String, bool, bool, Option<usize>)>,
 }
 
 /// Anweisungen, die EasyMySQL selbst im Hintergrund sendet (Struktur lesen usw.)
@@ -49,7 +51,7 @@ fn internal(text: &str) -> bool {
 
 impl LogTab {
     pub fn new() -> Self {
-        Self { filter: Filter::All, search: String::new(), hide_internal: true, show_old: false, cleared_at: None, cache: Vec::new(), cache_count: None }
+        Self { filter: Filter::All, search: String::new(), hide_internal: true, show_old: false, cleared_at: None, cache: Vec::new(), cache_count: None, visible_rows: Vec::new(), visible_for: None }
     }
 
     fn visible(&self, l: &LogLine) -> bool {
@@ -67,7 +69,7 @@ impl LogTab {
 
 impl TabView for LogTab {
     fn title(&self) -> String {
-        "Server-Log".into()
+        crate::i18n::text("Server-Log").into()
     }
 
     fn key(&self) -> Option<String> {
@@ -87,16 +89,16 @@ impl TabView for LogTab {
         }
         ui.ctx().request_repaint_after(std::time::Duration::from_millis(700));
         ui.horizontal_wrapped(|ui| {
-            ui.selectable_value(&mut self.filter, Filter::All, "Alles");
+            ui.selectable_value(&mut self.filter, Filter::All, crate::i18n::text("Alles"));
             ui.selectable_value(&mut self.filter, Filter::Server, "Server");
-            ui.selectable_value(&mut self.filter, Filter::Queries, "Anweisungen");
+            ui.selectable_value(&mut self.filter, Filter::Queries, crate::i18n::text("Anweisungen"));
             ui.separator();
-            ui.add(egui::TextEdit::singleline(&mut self.search).hint_text("Filtern").desired_width(180.0));
+            ui.add(egui::TextEdit::singleline(&mut self.search).hint_text(crate::i18n::text("Filtern")).desired_width(180.0));
             ui.separator();
             let mut on = cx.settings.query_log;
             if ui
-                .checkbox(&mut on, "Alle Anweisungen mitschreiben")
-                .on_hover_text("Schreibt jede Anweisung an den Server mit – auch aus der Eingabeaufforderung (mysql) und anderen Programmen.")
+                .checkbox(&mut on, crate::i18n::text("Alle Anweisungen mitschreiben"))
+                .on_hover_text(crate::i18n::text("Schreibt jede Anweisung an den Server mit – auch aus der Eingabeaufforderung (mysql) und anderen Programmen."))
                 .changed()
             {
                 cx.settings.query_log = on;
@@ -105,29 +107,29 @@ impl TabView for LogTab {
                     self.filter = Filter::Queries;
                 }
             }
-            ui.checkbox(&mut self.hide_internal, "Interne ausblenden")
-                .on_hover_text("Anweisungen ausblenden, die EasyMySQL selbst sendet (Struktur lesen, Verbindungen)");
-            ui.checkbox(&mut self.show_old, "Frühere Sitzungen").on_hover_text("Meldungen vor dem letzten Start (aus server.log)");
+            ui.checkbox(&mut self.hide_internal, crate::i18n::text("Interne ausblenden"))
+                .on_hover_text(crate::i18n::text("Anweisungen ausblenden, die EasyMySQL selbst sendet (Struktur lesen, Verbindungen)"));
+            ui.checkbox(&mut self.show_old, crate::i18n::text("Frühere Sitzungen")).on_hover_text(crate::i18n::text("Meldungen vor dem letzten Start (aus server.log)"));
             ui.separator();
-            if ui.button("Kopieren").clicked() {
+            if ui.button(crate::i18n::text("Kopieren")).clicked() {
                 let text: Vec<String> = self.cache.iter().filter(|l| self.visible(l)).map(|l| format!("{}  {}", l.time, l.text)).collect();
                 ui.ctx().copy_text(text.join("\n"));
             }
-            if ui.button("Leeren").on_hover_text("Nur die Anzeige leeren; die Datei bleibt erhalten").clicked() {
+            if ui.button(crate::i18n::text("Leeren")).on_hover_text(crate::i18n::text("Nur die Anzeige leeren; die Datei bleibt erhalten")).clicked() {
                 self.cleared_at = Some(self.cache.len());
             }
-            ui.menu_button("Dateien", |ui| {
-                if ui.button("server.log öffnen").clicked() {
+            ui.menu_button(crate::i18n::text("Dateien"), |ui| {
+                if ui.button(crate::i18n::text("server.log öffnen")).clicked() {
                     crate::app::open_path(&crate::server::log_file());
                     ui.close();
                 }
-                if ui.button("abfragen.log öffnen").clicked() {
+                if ui.button(crate::i18n::text("abfragen.log öffnen")).clicked() {
                     crate::app::open_path(&crate::server::query_log_file());
                     ui.close();
                 }
                 if let Some(p) = &cx.server.paths {
                     ui.separator();
-                    if ui.button("Datenordner öffnen").clicked() {
+                    if ui.button(crate::i18n::text("Datenordner öffnen")).clicked() {
                         crate::app::open_path(&p.data);
                         ui.close();
                     }
@@ -135,19 +137,24 @@ impl TabView for LogTab {
             });
         });
         if cx.server.paths.is_none() {
-            ui.label(RichText::new("MariaDB wurde nicht gefunden.").color(pal.error_text));
+            ui.label(RichText::new(crate::i18n::text("MariaDB wurde nicht gefunden.")).color(pal.error_text));
         }
         let start = self.cleared_at.unwrap_or(0).min(self.cache.len());
-        let lines: Vec<&LogLine> = self.cache[start..].iter().filter(|l| self.visible(l)).collect();
+        let filter_key = (count, self.filter, self.search.clone(), self.hide_internal, self.show_old, self.cleared_at);
+        if self.visible_for.as_ref() != Some(&filter_key) {
+            self.visible_rows = (start..self.cache.len()).filter(|&index| self.visible(&self.cache[index])).collect();
+            self.visible_for = Some(filter_key);
+        }
         let row_h = ui.text_style_height(&egui::TextStyle::Monospace);
         style::sunken_frame().show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 0.0;
-            egui::ScrollArea::both().stick_to_bottom(true).auto_shrink([false, false]).show_rows(ui, row_h, lines.len(), |ui, range| {
-                for l in &lines[range] {
+            egui::ScrollArea::both().stick_to_bottom(true).auto_shrink([false, false]).show_rows(ui, row_h, self.visible_rows.len(), |ui, range| {
+                for &index in &self.visible_rows[range] {
+                    let l = &self.cache[index];
                     let low = l.text.to_lowercase();
-                    let color = if low.contains("[error]") || low.contains("fehler") || low.contains("error ") {
+                    let color = if low.contains("[error]") || low.contains("fehler") || low.contains("error ") || low.contains("error:") {
                         pal.error_text
-                    } else if low.contains("[warning]") || low.contains("hinweis") {
+                    } else if low.contains("[warning]") || low.contains("hinweis") || low.contains("hint:") {
                         style::pal().syn_function
                     } else if l.kind == LogKind::Query {
                         pal.syn_keyword

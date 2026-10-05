@@ -119,13 +119,13 @@ impl BackupInfo {
 
 pub fn reason_text(r: &str) -> &str {
     match r {
-        "auto" => "automatisch",
-        "manuell" => "manuell",
-        "vor-loeschen" => "vor dem Löschen",
-        "vor-wiederherstellen" => "vor dem Wiederherstellen",
-        "absturz" => "nach Absturz",
-        "rettung" => "Server-Rettung",
-        "vor-reparatur" => "vor der Reparatur",
+        "auto" => crate::i18n::text("automatisch"),
+        "manuell" => crate::i18n::text("manuell"),
+        "vor-loeschen" => crate::i18n::text("vor dem Löschen"),
+        "vor-wiederherstellen" => crate::i18n::text("vor dem Wiederherstellen"),
+        "absturz" => crate::i18n::text("nach Absturz"),
+        "rettung" => crate::i18n::text("Server-Rettung"),
+        "vor-reparatur" => crate::i18n::text("vor der Reparatur"),
         other => other,
     }
 }
@@ -185,7 +185,7 @@ pub fn list(dir: &Path) -> Vec<BackupInfo> {
 
 /// Ist eine automatische Sicherung faellig?
 pub fn due(dir: &Path, interval: Duration) -> bool {
-    match list(dir).into_iter().find(|b| b.reason == "auto" || b.reason == "manuell") {
+    match list(dir).into_iter().find(|b| b.reason == "auto" || b.reason == crate::i18n::text("manuell")) {
         Some(b) => SystemTime::now().duration_since(b.modified).map(|d| d >= interval).unwrap_or(true),
         None => true,
     }
@@ -234,7 +234,7 @@ pub fn dump_db(env: &Env, db: &str, file: &Path) -> Result<u64, String> {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| format!("mariadb-dump konnte nicht gestartet werden: {e}"))?;
+        .map_err(|e| crate::tr_format!("mariadb-dump konnte nicht gestartet werden: {e}", "Could not start mariadb-dump: {e}"))?;
     let mut stderr = child.stderr.take().unwrap();
     let err_thread = std::thread::spawn(move || {
         let mut s = String::new();
@@ -264,7 +264,7 @@ pub fn dump_db(env: &Env, db: &str, file: &Path) -> Result<u64, String> {
         }
         Err(e) => {
             let _ = std::fs::remove_file(&tmp);
-            Err(format!("Sicherung {db}: {e}"))
+            Err(crate::tr_format!("Sicherung {db}: {e}", "Backup {db}: {e}"))
         }
     }
 }
@@ -279,23 +279,22 @@ pub fn create(env: &Env, dbs: Option<Vec<String>>, reason: &str, log: &dyn Fn(St
     std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     let mut errors = Vec::new();
     for db in &dbs {
-        log(format!("Sichere {db} ..."));
+        log(crate::tr_format!("Sichere {db} ...", "Backing up {db} ..."));
         if let Err(e) = dump_db(env, db, &dir.join(format!("{db}.sql.gz"))) {
-            log(format!("FEHLER: {e}"));
+            log(crate::tr_format!("FEHLER: {e}", "ERROR: {e}"));
             errors.push(e);
         }
     }
     let _ = std::fs::write(
         dir.join("info.txt"),
-        format!(
-            "EasyMySQL-Sicherung\r\nZeitpunkt: {}\r\nAnlass: {}\r\nDatenbanken: {}\r\n",
+        crate::tr_format!("EasyMySQL-Sicherung\r\nZeitpunkt: {}\r\nAnlass: {}\r\nDatenbanken: {}\r\n", "EasyMySQL backup\r\nTime: {}\r\nReason: {}\r\nDatabases: {}\r\n",
             timestamp(),
             reason_text(reason),
             dbs.join(", ")
         ),
     );
     if dbs.is_empty() {
-        log("Keine Benutzer-Datenbanken vorhanden.".into());
+        log(crate::i18n::text("Keine Benutzer-Datenbanken vorhanden.").into());
     }
     if !errors.is_empty() && errors.len() == dbs.len() {
         return Err(errors.join("\n"));
@@ -334,14 +333,14 @@ pub fn restore(env: &Env, file: &Path, target: &str, log: &dyn Fn(String)) -> Re
         .exec_first("SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = ?", (target,))
         .map_err(|e| e.to_string())?;
     if exists.is_some() {
-        log(format!("Sichere die aktuelle Datenbank {target}, bevor sie ersetzt wird ..."));
+        log(crate::tr_format!("Sichere die aktuelle Datenbank {target}, bevor sie ersetzt wird ...", "Backing up the current database {target} before replacing it ..."));
         create(env, Some(vec![target.to_string()]), "vor-wiederherstellen", log)?;
         c.query_drop(format!("DROP DATABASE {}", q(target))).map_err(|e| e.to_string())?;
     }
     c.query_drop(format!("CREATE DATABASE {} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci", q(target)))
         .map_err(|e| e.to_string())?;
     drop(c);
-    log(format!("Spiele {} in {target} ein ...", file.display()));
+    log(crate::tr_format!("Spiele {} in {target} ein ...", "Restoring {} into {target} ...", file.display()));
     import_file(env, file, Some(target))
 }
 
@@ -356,7 +355,7 @@ pub fn import_file(env: &Env, file: &Path, db: Option<&str>) -> Result<(), Strin
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| format!("mariadb konnte nicht gestartet werden: {e}"))?;
+        .map_err(|e| crate::tr_format!("mariadb konnte nicht gestartet werden: {e}", "Could not start mariadb: {e}"))?;
     let mut stdin = child.stdin.take().unwrap();
     let f = std::fs::File::open(file).map_err(|e| e.to_string())?;
     let gz = file.extension().is_some_and(|x| x == "gz");
@@ -371,7 +370,7 @@ pub fn import_file(env: &Env, file: &Path, db: Option<&str>) -> Result<(), Strin
     if out.status.success() {
         Ok(())
     } else {
-        Err(format!("Einspielen fehlgeschlagen: {}", String::from_utf8_lossy(&out.stderr).trim()))
+        Err(crate::tr_format!("Einspielen fehlgeschlagen: {}", "Restore failed: {}", String::from_utf8_lossy(&out.stderr).trim()))
     }
 }
 

@@ -32,7 +32,7 @@ struct Release {
 
 impl Release {
     fn version(&self) -> Result<Version, String> {
-        Version::parse(self.tag_name.strip_prefix('v').unwrap_or(&self.tag_name)).map_err(|_| "Das GitHub Release hat keine gültige Versionsnummer.".into())
+        Version::parse(self.tag_name.strip_prefix('v').unwrap_or(&self.tag_name)).map_err(|_| crate::i18n::text("Das GitHub Release hat keine gültige Versionsnummer.").into())
     }
 
     fn newer_than(&self, current: &str) -> Result<bool, String> {
@@ -48,7 +48,7 @@ impl Release {
             .iter()
             .find(|a| a.name == name && trusted_download(&a.browser_download_url))
             .cloned()
-            .ok_or_else(|| "Für dieses Release ist noch kein Windows-Setup verfügbar. Bitte später erneut prüfen.".into())
+            .ok_or_else(|| crate::i18n::text("Für dieses Release ist noch kein Windows-Setup verfügbar. Bitte später erneut prüfen.").into())
     }
 }
 
@@ -74,13 +74,13 @@ fn check() -> Result<Option<Release>, String> {
     let mut response = match response {
         Ok(r) => r,
         Err(ureq::Error::StatusCode(404)) => return Ok(None),
-        Err(ureq::Error::StatusCode(403 | 429)) => return Err("GitHub begrenzt gerade die Update-Anfragen. Bitte später erneut versuchen.".into()),
-        Err(e) => return Err(format!("GitHub ist nicht erreichbar: {e}")),
+        Err(ureq::Error::StatusCode(403 | 429)) => return Err(crate::i18n::text("GitHub begrenzt gerade die Update-Anfragen. Bitte später erneut versuchen.").into()),
+        Err(e) => return Err(crate::tr_format!("GitHub ist nicht erreichbar: {e}", "Could not reach GitHub: {e}")),
     };
     let release: Release = response
         .body_mut()
         .read_json()
-        .map_err(|e| format!("GitHub-Antwort konnte nicht gelesen werden: {e}"))?;
+        .map_err(|e| crate::tr_format!("GitHub-Antwort konnte nicht gelesen werden: {e}", "Could not read the GitHub response: {e}"))?;
     if release.newer_than(env!("CARGO_PKG_VERSION"))? {
         Ok(Some(release))
     } else {
@@ -90,16 +90,16 @@ fn check() -> Result<Option<Release>, String> {
 
 fn verify_download(size: u64, hash: &str, asset: &Asset) -> Result<(), String> {
     if size != asset.size || size == 0 {
-        return Err("Der Download ist unvollständig. Bitte erneut herunterladen.".into());
+        return Err(crate::i18n::text("Der Download ist unvollständig. Bitte erneut herunterladen.").into());
     }
     let expected = asset
         .digest
         .as_deref()
         .and_then(|s| s.strip_prefix("sha256:"))
         .filter(|s| s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit()))
-        .ok_or("GitHub liefert keine gültige SHA-256-Prüfsumme für das Setup.")?;
+        .ok_or(crate::i18n::text("GitHub liefert keine gültige SHA-256-Prüfsumme für das Setup."))?;
     if !hash.eq_ignore_ascii_case(expected) {
-        return Err("Die Prüfsumme des Downloads stimmt nicht. Das Setup wird nicht gestartet.".into());
+        return Err(crate::i18n::text("Die Prüfsumme des Downloads stimmt nicht. Das Setup wird nicht gestartet.").into());
     }
     Ok(())
 }
@@ -107,7 +107,7 @@ fn verify_download(size: u64, hash: &str, asset: &Asset) -> Result<(), String> {
 fn download(release: &Release) -> Result<PathBuf, String> {
     let asset = release.setup()?;
     if asset.size == 0 || asset.size > MAX_SETUP {
-        return Err("Die Größe des Windows-Setups ist ungültig.".into());
+        return Err(crate::i18n::text("Die Größe des Windows-Setups ist ungültig.").into());
     }
     // Privater, pro Download eindeutiger Ordner statt einer gemeinsam benutzten EXE.
     let dir = std::env::temp_dir().join(format!(
@@ -174,7 +174,7 @@ impl Updater {
             return;
         }
         self.last_check = Some(Instant::now());
-        self.status = "Suche nach Updates auf GitHub …".into();
+        self.status = crate::i18n::text("Suche nach Updates auf GitHub …").into();
         let (tx, rx) = mpsc::channel();
         self.check_job = Some(rx);
         let ctx = ctx.clone();
@@ -195,7 +195,7 @@ impl Updater {
             self.check_job = None;
             match result {
                 Ok(Some(release)) => {
-                    self.status = format!("EasyMySQL {} ist verfügbar.", release.tag_name);
+                    self.status = crate::tr_format!("EasyMySQL {} ist verfügbar.", "EasyMySQL {} is available.", release.tag_name);
                     if self.available.as_ref().map(|r| &r.tag_name) != Some(&release.tag_name) {
                         self.ready = None;
                         self.open = true;
@@ -205,7 +205,7 @@ impl Updater {
                 Ok(None) => {
                     self.available = None;
                     self.ready = None;
-                    self.status = "EasyMySQL ist auf dem neuesten Stand.".into();
+                    self.status = crate::i18n::text("EasyMySQL ist auf dem neuesten Stand.").into();
                 }
                 Err(e) => self.status = e,
             }
@@ -216,9 +216,9 @@ impl Updater {
             match result {
                 Ok(path) => {
                     self.ready = Some(path);
-                    self.status = "Das Update ist heruntergeladen und geprüft.".into();
+                    self.status = crate::i18n::text("Das Update ist heruntergeladen und geprüft.").into();
                 }
-                Err(e) => self.status = format!("Download fehlgeschlagen: {e}"),
+                Err(e) => self.status = crate::tr_format!("Download fehlgeschlagen: {e}", "Download failed: {e}"),
             }
         }
     }
@@ -227,34 +227,34 @@ impl Updater {
     pub fn ui(&mut self, ctx: &egui::Context) -> bool {
         let mut open = self.open;
         let mut install = false;
-        egui::Window::new("EasyMySQL aktualisieren")
+        egui::Window::new(crate::i18n::text("EasyMySQL aktualisieren"))
             .open(&mut open)
             .collapsible(false)
             .resizable(false)
             .default_width(460.0)
             .show(ctx, |ui| {
-                ui.label(format!("Installierte Version: {}", env!("CARGO_PKG_VERSION")));
+                ui.label(crate::tr_format!("Installierte Version: {}", "Installed version: {}", env!("CARGO_PKG_VERSION")));
                 ui.add_space(8.0);
                 ui.label(&self.status);
                 if self.check_job.is_some() || self.download_job.is_some() {
                     ui.horizontal(|ui| {
                         ui.spinner();
                         ui.label(if self.download_job.is_some() {
-                            "Setup wird heruntergeladen …"
+                            crate::i18n::text("Setup wird heruntergeladen …")
                         } else {
-                            "GitHub wird geprüft …"
+                            crate::i18n::text("GitHub wird geprüft …")
                         });
                     });
                 } else if self.ready.is_some() && cfg!(windows) {
                     ui.label(
-                        "Zum Installieren werden Ihre Dateien gespeichert und der Datenbankserver sauber beendet. Anschließend öffnet sich das Windows-Setup.",
+                        crate::i18n::text("Zum Installieren werden Ihre Dateien gespeichert und der Datenbankserver sauber beendet. Anschließend öffnet sich das Windows-Setup."),
                     );
-                    install = ui.button("Update installieren").clicked();
+                    install = ui.button(crate::i18n::text("Update installieren")).clicked();
                 } else if let Some(release) = self.available.clone() {
                     if cfg!(windows) {
                         match release.setup() {
                             Ok(_) => {
-                                if ui.button("Update herunterladen").clicked() {
+                                if ui.button(crate::i18n::text("Update herunterladen")).clicked() {
                                     let (tx, rx) = mpsc::channel();
                                     self.download_job = Some(rx);
                                     let ctx = ctx.clone();
@@ -273,12 +273,12 @@ impl Updater {
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
                     if ui
-                        .add_enabled(self.check_job.is_none() && self.download_job.is_none(), egui::Button::new("Erneut prüfen"))
+                        .add_enabled(self.check_job.is_none() && self.download_job.is_none(), egui::Button::new(crate::i18n::text("Erneut prüfen")))
                         .clicked()
                     {
                         self.check_now(ctx, true);
                     }
-                    ui.hyperlink_to("GitHub Releases öffnen", RELEASES);
+                    ui.hyperlink_to(crate::i18n::text("GitHub Releases öffnen"), RELEASES);
                 });
             });
         self.open = open;
@@ -286,7 +286,7 @@ impl Updater {
     }
 
     pub fn launch(&self) -> Result<(), String> {
-        let path = self.ready.as_deref().ok_or("Es wurde noch kein Setup heruntergeladen.")?;
+        let path = self.ready.as_deref().ok_or(crate::i18n::text("Es wurde noch kein Setup heruntergeladen."))?;
         launch_setup(path)
     }
 }
@@ -312,13 +312,13 @@ fn launch_setup(path: &Path) -> Result<(), String> {
     if result as isize > 32 {
         Ok(())
     } else {
-        Err("Das Windows-Setup wurde nicht gestartet (möglicherweise wurde die Administratorfreigabe abgebrochen).".into())
+        Err(crate::i18n::text("Das Windows-Setup wurde nicht gestartet (möglicherweise wurde die Administratorfreigabe abgebrochen).").into())
     }
 }
 
 #[cfg(not(windows))]
 fn launch_setup(_path: &Path) -> Result<(), String> {
-    Err("Das automatische Setup ist nur unter Windows verfügbar. Bitte GitHub Releases öffnen.".into())
+    Err(crate::i18n::text("Das automatische Setup ist nur unter Windows verfügbar. Bitte GitHub Releases öffnen.").into())
 }
 
 #[cfg(test)]
