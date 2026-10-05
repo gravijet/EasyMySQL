@@ -5,8 +5,6 @@ Install it once, launch it, and use `mysql -u root` in Command Prompt.
 
 The interface starts in **English with dark mode**. Choose German or a light theme under **Settings → Appearance**. Menus show the active category and give subitems room to breathe.
 
-![Settings in English with dark mode](docs/settings.png)
-
 ## Installation
 
 1. Download `EasyMySQL-Setup-x.y.z.exe` from [Releases](https://github.com/gravijet/EasyMySQL/releases) and run it. MariaDB is included, so installation works offline. If Windows SmartScreen reports an unknown publisher, choose *More info → Run anyway*.
