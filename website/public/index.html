@@ -1,0 +1,575 @@
+<!doctype html>
+<html lang="de" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>EasyMySQL – MariaDB-Server und Datenbank-Manager für Windows</title>
+<meta name="description" content="EasyMySQL bringt MariaDB mit und startet den Server selbst. SQL-Editor, Tabellen bearbeiten, ER-Diagramme, Abfrage-Assistent und automatische Sicherungen für Windows.">
+<meta name="theme-color" content="#007ACC">
+<link rel="canonical" href="https://mysql.benjaminberger.at/">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<meta property="og:type" content="website">
+<meta property="og:title" content="EasyMySQL – MariaDB-Server und Datenbank-Manager für Windows">
+<meta property="og:description" content="MariaDB inklusive. SQL-Editor, ER-Diagramme, Abfrage-Assistent und automatische Sicherungen in einem Programm.">
+<meta property="og:url" content="https://mysql.benjaminberger.at/">
+<meta property="og:image" content="https://mysql.benjaminberger.at/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<script src="/boot.js"></script>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<!-- Symbole (selbst gezeichnet wie in der Anwendung) -->
+<svg class="sprite" width="0" height="0" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="i-files" viewBox="0 0 24 24"><rect x="5" y="3" width="11" height="14"/><path d="M8 7h11v14H8z" fill="var(--activity-bg)"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10" cy="10" r="6"/><path d="M14.500 14.500 20 20"/></symbol>
+    <symbol id="i-db" viewBox="0 0 24 24"><ellipse cx="12" cy="5.500" rx="8" ry="2.800"/><path d="M4 5.500v13c0 1.500 3.600 2.800 8 2.800s8-1.300 8-2.800v-13M4 12c0 1.500 3.600 2.800 8 2.800s8-1.300 8-2.800"/></symbol>
+    <symbol id="i-history" viewBox="0 0 24 24"><path d="M4.500 12a7.500 7.500 0 1 0 2.200-5.300M4 4v4h4M12 8v4.500l3 2"/></symbol>
+    <symbol id="i-diagram" viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="6"/><rect x="13" y="3" width="8" height="6"/><rect x="8" y="15" width="8" height="6"/><path d="M7 9l3 6M17 9l-3 6"/></symbol>
+    <symbol id="i-wizard" viewBox="0 0 24 24"><path d="M4 5h16l-6 7v7l-4-2v-5z"/></symbol>
+    <symbol id="i-backup" viewBox="0 0 24 24"><path d="M19.500 12A7.500 7.500 0 1 1 17.300 6.700M20 4v4h-4M12 8v4.500l3 2"/></symbol>
+    <symbol id="i-log" viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18"/><path d="M8 8h8M8 11h6M8 14h8M8 17h4"/></symbol>
+    <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.500"/><path d="M9.500 9.500a2.600 2.600 0 1 1 3.800 2.300c-.9.5-1.300 1-1.300 2"/><circle cx="12" cy="17" r=".8" fill="currentColor"/></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 4v11M7 11l5 5 5-5M5 20h14"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.600 5.600 7 7M17 17l1.400 1.400M5.600 18.400 7 17M17 7l1.400-1.400"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.500A8 8 0 0 1 9.500 4 8 8 0 1 0 20 14.500z"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4l12 8-12 8z" fill="currentColor"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.300" fill="currentColor"/><circle cx="12" cy="12" r="1.300" fill="currentColor"/><circle cx="19" cy="12" r="1.300" fill="currentColor"/></symbol>
+
+    <!-- ER-Diagramm (Krähenfuß) -->
+    <symbol id="er-shop" viewBox="0 0 580 280">
+      <g>
+        <rect class="er-box" x="16.500" y="28.500" width="150" height="100"/><rect class="er-head" x="17" y="29" width="149" height="22"/>
+        <text class="er-t" x="26" y="45">kunde</text>
+        <text class="er-k" x="24" y="68">PK</text><text class="er-c" x="44" y="68">id</text><text class="er-ty" x="158" y="68" text-anchor="end">int</text>
+        <text class="er-c" x="44" y="86">nachname*</text><text class="er-ty" x="158" y="86" text-anchor="end">varchar</text>
+        <text class="er-c" x="44" y="104">vorname</text><text class="er-ty" x="158" y="104" text-anchor="end">varchar</text>
+        <text class="er-c" x="44" y="122">ort</text><text class="er-ty" x="158" y="122" text-anchor="end">varchar</text>
+      </g>
+      <g>
+        <rect class="er-box" x="206.500" y="28.500" width="160" height="82"/><rect class="er-head" x="207" y="29" width="159" height="22"/>
+        <text class="er-t" x="216" y="45">bestellung</text>
+        <text class="er-k" x="214" y="68">PK</text><text class="er-c" x="234" y="68">id</text><text class="er-ty" x="358" y="68" text-anchor="end">int</text>
+        <text class="er-k" x="214" y="86">FK</text><text class="er-c" x="234" y="86">kunde_id</text><text class="er-ty" x="358" y="86" text-anchor="end">int</text>
+        <text class="er-c" x="234" y="104">datum*</text><text class="er-ty" x="358" y="104" text-anchor="end">date</text>
+      </g>
+      <g>
+        <rect class="er-box" x="206.500" y="178.500" width="160" height="82"/><rect class="er-head" x="207" y="179" width="159" height="22"/>
+        <text class="er-t" x="216" y="195">bestellposition</text>
+        <text class="er-k" x="214" y="218">PK</text><text class="er-k" x="228" y="218">FK</text><text class="er-c" x="252" y="218">bestellung_id</text>
+        <text class="er-k" x="214" y="236">PK</text><text class="er-k" x="228" y="236">FK</text><text class="er-c" x="252" y="236">artikel_id</text>
+        <text class="er-c" x="252" y="254">menge*</text><text class="er-ty" x="358" y="254" text-anchor="end">int</text>
+      </g>
+      <g>
+        <rect class="er-box" x="416.500" y="170.500" width="150" height="82"/><rect class="er-head" x="417" y="171" width="149" height="22"/>
+        <text class="er-t" x="426" y="187">artikel</text>
+        <text class="er-k" x="424" y="210">PK</text><text class="er-c" x="444" y="210">id</text><text class="er-ty" x="558" y="210" text-anchor="end">int</text>
+        <text class="er-c" x="444" y="228">name*</text><text class="er-ty" x="558" y="228" text-anchor="end">varchar</text>
+        <text class="er-c" x="444" y="246">preis*</text><text class="er-ty" x="558" y="246" text-anchor="end">decimal</text>
+      </g>
+      <!-- kunde 1:n bestellung (optional) -->
+      <path class="er-ln" d="M167 59H186V77H206"/><path class="er-ln" d="M173 53V65"/>
+      <path class="er-ln" d="M194 77 206 70M194 77H206M194 77 206 84"/><circle class="er-ln" cx="189" cy="77" r="3" fill="var(--bg)"/>
+      <!-- bestellung 1:n bestellposition -->
+      <path class="er-ln" d="M286 111V178"/><path class="er-ln" d="M279 119H293"/>
+      <path class="er-ln" d="M286 166 276 178M286 166V178M286 166 296 178"/>
+      <!-- artikel 1:n bestellposition -->
+      <path class="er-ln" d="M416 201H392V227H367"/><path class="er-ln" d="M406 195V207"/>
+      <path class="er-ln" d="M379 227 367 220M379 227H367M379 227 367 234"/>
+      <text class="er-zoom" x="570" y="272" text-anchor="end">100 %</text>
+    </symbol>
+  </defs>
+</svg>
+
+<header class="menubar">
+  <a class="brand" href="#start" aria-label="EasyMySQL"><img src="/favicon.svg" alt="" width="18" height="18"><span>EasyMySQL</span></a>
+  <nav class="menus" aria-label="Seitenmenü" data-en-aria="Page menu">
+    <a href="#funktionen" data-en="Features">Funktionen</a>
+    <a href="#sicherheit" data-en="Safety">Sicherheit</a>
+    <a href="#download" data-en="Download">Download</a>
+    <a href="#faq" data-en="Questions">Fragen</a>
+  </nav>
+  <div class="tools">
+    <a class="tool" href="#download" title="Aktuelle Version" data-en-title="Latest version"><i class="dot"></i><span class="lbl mono" data-ver></span></a>
+    <button class="tool" type="button" id="lang" aria-label="Sprache wechseln" data-en-aria="Switch language"><span class="seg"><span data-l="de">DE</span><b> / </b><span data-l="en">EN</span></span></button>
+    <button class="tool" type="button" id="theme" aria-label="Design wechseln" data-en-aria="Switch theme">
+      <svg class="i theme-sun" aria-hidden="true"><use href="#i-sun"/></svg><svg class="i theme-moon" aria-hidden="true"><use href="#i-moon"/></svg>
+    </button>
+  </div>
+</header>
+
+<nav class="activity" aria-label="Abschnitte" data-en-aria="Sections">
+  <a href="#start" data-sec="start" data-tip="Start" data-en-tip="Start" aria-label="Start"><svg class="i"><use href="#i-files"/></svg></a>
+  <a href="#funktionen" data-sec="funktionen" data-tip="Funktionen" data-en-tip="Features" aria-label="Funktionen"><svg class="i"><use href="#i-diagram"/></svg></a>
+  <a href="#sicherheit" data-sec="sicherheit" data-tip="Sicherheit" data-en-tip="Safety" aria-label="Sicherheit"><svg class="i"><use href="#i-backup"/></svg></a>
+  <a href="#download" data-sec="download" data-tip="Download" data-en-tip="Download" aria-label="Download"><svg class="i"><use href="#i-down"/></svg></a>
+  <a href="#faq" data-sec="faq" data-tip="Fragen" data-en-tip="Questions" aria-label="Fragen"><svg class="i"><use href="#i-help"/></svg></a>
+</nav>
+
+<main>
+
+<!-- ============================ START ============================ -->
+<section class="sec" id="start">
+  <div class="in">
+    <div class="hero">
+      <div>
+        <p class="kick" data-en="MariaDB server and database manager for Windows">MariaDB-Server und Datenbank-Manager für Windows</p>
+        <h1 data-en="MariaDB with a proper interface. One program.">MariaDB mit Oberfläche. In einem Programm.</h1>
+        <p class="lead" data-en="EasyMySQL ships with the database server and starts it as soon as the program runs. On top of that: an SQL editor, table editing, ER diagrams, a query builder and automatic backups.">EasyMySQL bringt den Datenbankserver gleich mit und startet ihn, sobald das Programm läuft. Dazu ein SQL-Editor, Tabellen bearbeiten, ER-Diagramme, ein Abfrage-Assistent und automatische Sicherungen.</p>
+        <div class="cta">
+          <a class="btn primary big" href="/download/setup" id="cta-setup" download>
+            <svg class="i" aria-hidden="true"><use href="#i-down"/></svg>
+            <span data-en="Download for Windows">Für Windows herunterladen</span>
+            <small data-ver-size></small>
+          </a>
+          <a class="btn big" href="/download/portable" download><span data-en="Portable ZIP">Portable ZIP</span></a>
+        </div>
+        <p class="note"><span data-en="Windows 64-bit">Windows 64-bit</span><span data-en="MariaDB included">MariaDB inklusive</span><span data-en="Works offline">Läuft offline</span><span data-ver-note></span></p>
+      </div>
+
+      <div class="panel" aria-label="Verbindung" data-en-aria="Connection">
+        <div class="panel-h"><span data-en="Connection">Verbindung</span><span class="r mono" data-en="after installation">nach der Installation</span></div>
+        <dl class="kv">
+          <dt data-en="Server">Server</dt><dd>127.0.0.1</dd>
+          <dt>Port</dt><dd>3306</dd>
+          <dt data-en="User">Benutzer</dt><dd>root</dd>
+          <dt data-en="Password">Passwort</dt><dd data-en="(empty)">(leer)</dd>
+        </dl>
+        <div class="term"><button class="btn copy" type="button" data-copy="mysql -u root" data-en="Copy">Kopieren</button><span class="p">C:\&gt;</span> mysql -u root
+Welcome to the MariaDB monitor.
+Your MariaDB connection id is 8
+<span data-ver-banner></span><span class="g">MariaDB [(none)]&gt;</span> <span class="caret"></span></div>
+      </div>
+    </div>
+
+    <!-- Nachbildung des Hauptfensters -->
+    <div class="win" role="img" aria-label="Das EasyMySQL-Fenster mit SQL-Editor, Datenbankliste und Ergebnistabelle" data-en-aria="The EasyMySQL window with SQL editor, database list and result table">
+      <div class="win-menu" aria-hidden="true">
+        <span data-en="File">Datei</span><span data-en="Edit">Bearbeiten</span><span data-en="View">Ansicht</span><span data-en="Run">Ausführen</span><span data-en="Database">Datenbank</span><span>Server</span><span data-en="Help">Hilfe</span>
+        <div class="tools-r"><svg class="i"><use href="#i-diagram"/></svg><svg class="i"><use href="#i-wizard"/></svg><svg class="i"><use href="#i-backup"/></svg><svg class="i"><use href="#i-log"/></svg><i class="dot"></i></div>
+      </div>
+      <div class="win-body">
+        <div class="w-act" aria-hidden="true">
+          <i><svg class="i"><use href="#i-files"/></svg></i><i><svg class="i"><use href="#i-search"/></svg></i><i class="on"><svg class="i"><use href="#i-db"/></svg></i><i><svg class="i"><use href="#i-history"/></svg></i>
+        </div>
+        <div class="w-side" aria-hidden="true">
+          <h4><span data-en="DATABASES">DATENBANKEN</span><span>+</span></h4>
+          <ul class="tree">
+            <li class="l1"><span class="tw">▾</span>shop</li>
+            <li class="l2"><span class="tw">▸</span>artikel</li>
+            <li class="l2"><span class="tw">▸</span>bestellposition</li>
+            <li class="l2"><span class="tw">▸</span>bestellung</li>
+            <li class="l2"><span class="tw">▾</span>kunde</li>
+            <li class="l3">id<em>int PK</em></li>
+            <li class="l3">nachname<em>varchar</em></li>
+            <li class="l3">vorname<em>varchar</em></li>
+            <li class="l3">ort<em>varchar</em></li>
+            <li class="l2 view"><span class="tw">▸</span>v_umsatz</li>
+            <li class="l1"><span class="tw">▸</span>schule</li>
+            <li class="l1"><span class="tw">▸</span>test</li>
+          </ul>
+        </div>
+        <div class="w-main">
+          <div class="w-tabs" role="tablist" aria-label="Registerkarten" data-en-aria="Tabs">
+            <button class="w-tab" role="tab" aria-selected="true" data-pane="p-sql" type="button">abfrage.sql <span class="x">✕</span></button>
+            <button class="w-tab" role="tab" aria-selected="false" data-pane="p-er" type="button" data-en="ER · shop">ER · shop <span class="x">✕</span></button>
+            <button class="w-tab" role="tab" aria-selected="false" data-pane="p-data" type="button">kunde <span class="x">✕</span></button>
+          </div>
+
+          <div class="w-pane on" id="p-sql" role="tabpanel">
+            <div class="w-bar"><span class="chip">shop ▾</span><span class="chip run"><svg class="i tiny"><use href="#i-play"/></svg> <span data-en="Run">Ausführen</span></span><span class="chip">Plan</span><span class="r mono">Ctrl+Enter</span></div>
+            <div class="editor">
+              <div class="gut" aria-hidden="true">1<br>2<br>3<br>4<br>5<br>6<br>7<br>8<br>9</div>
+              <pre class="code"><span class="c">-- Umsatz je Kunde</span>
+<span class="k">SELECT</span> <span class="i">k</span>.<span class="i">nachname</span>, <span class="i">k</span>.<span class="i">ort</span>, <span class="f">COUNT</span>(<span class="k">DISTINCT</span> <span class="i">b</span>.<span class="i">id</span>) <span class="k">AS</span> <span class="i">bestellungen</span>,
+       <span class="f">ROUND</span>(<span class="f">SUM</span>(<span class="i">p</span>.<span class="i">menge</span> * <span class="i">a</span>.<span class="i">preis</span>), <span class="n">2</span>) <span class="k">AS</span> <span class="i">umsatz</span>
+<span class="k">FROM</span> <span class="i">kunde</span> <span class="i">k</span>
+<span class="k">JOIN</span> <span class="i">bestellung</span> <span class="i">b</span> <span class="k">ON</span> <span class="i">b</span>.<span class="i">kunde_id</span> = <span class="i">k</span>.<span class="i">id</span>
+<span class="k">JOIN</span> <span class="i">bestellposition</span> <span class="i">p</span> <span class="k">ON</span> <span class="i">p</span>.<span class="i">bestellung_id</span> = <span class="i">b</span>.<span class="i">id</span>
+<span class="k">JOIN</span> <span class="i">artikel</span> <span class="i">a</span> <span class="k">ON</span> <span class="i">a</span>.<span class="i">id</span> = <span class="i">p</span>.<span class="i">artikel_id</span>
+<span class="k">WHERE</span> <span class="i">b</span>.<span class="i">datum</span> &gt;= <span class="s">'2026-01-01'</span>
+<span class="k">GROUP BY</span> <span class="i">k</span>.<span class="i">id</span> <span class="k">ORDER BY</span> <span class="i">umsatz</span> <span class="k">DESC</span> <span class="k">LIMIT</span> <span class="n">4</span>;<span class="caret"></span></pre>
+            </div>
+            <div class="res-tabs"><span class="on">Ergebnis 1 · Z. 2 (4)</span><span data-en="Messages">Meldungen</span></div>
+            <div class="scroll">
+              <table class="grid">
+                <thead><tr><th>nachname</th><th>ort</th><th class="num">bestellungen</th><th class="num">umsatz</th></tr></thead>
+                <tbody>
+                  <tr><td>Huber</td><td>Wien</td><td class="num">14</td><td class="num">2184.50</td></tr>
+                  <tr class="sel"><td>Gruber</td><td>Graz</td><td class="num">9</td><td class="num">1630.20</td></tr>
+                  <tr><td>Steiner</td><td>Linz</td><td class="num">7</td><td class="num">982.00</td></tr>
+                  <tr><td>Mayer</td><td class="null">NULL</td><td class="num">3</td><td class="num">214.90</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="w-foot"><i class="dot"></i><span data-en="Server running">Server läuft</span><span class="mono">127.0.0.1:3306</span><span class="r mono">4 <span data-en="rows">Zeilen</span> · 0,004 s</span></div>
+          </div>
+
+          <div class="w-pane" id="p-er" role="tabpanel">
+            <div class="w-bar"><span class="chip" data-en="Arrange">Anordnen</span><span class="chip" data-en="+ Relation">+ Beziehung</span><span class="chip" data-en="Export ▾">Export ▾</span><span class="chip" data-en="View ▾">Ansicht ▾</span><span class="r mono" data-en="Crow's foot">Krähenfuß</span></div>
+            <div class="er-wrap"><svg viewBox="0 0 580 280" preserveAspectRatio="xMidYMid meet" aria-hidden="true"><use href="#er-shop"/></svg></div>
+            <div class="w-foot"><i class="dot"></i><span data-en="Server running">Server läuft</span><span class="mono">127.0.0.1:3306</span><span class="r mono">4 <span data-en="tables">Tabellen</span> · 3 <span data-en="relations">Beziehungen</span></span></div>
+          </div>
+
+          <div class="w-pane" id="p-data" role="tabpanel">
+            <div class="w-bar"><span class="chip">shop.kunde</span><span class="chip mono">WHERE ort = 'Wien'</span><span class="chip" data-en="+ New row">+ Neue Zeile</span><span class="chip" data-en="Export ▾">Export ▾</span><span class="r mono">‹ 1–500 ›</span></div>
+            <div class="scroll grow">
+              <table class="grid">
+                <thead><tr><th class="num">id</th><th>nachname</th><th>vorname</th><th>ort</th><th>angelegt</th></tr></thead>
+                <tbody>
+                  <tr><td class="num">1</td><td>Huber</td><td>Anna</td><td>Wien</td><td>2024-02-11</td></tr>
+                  <tr><td class="num">4</td><td>Wallner</td><td>Paul</td><td>Wien</td><td>2024-03-02</td></tr>
+                  <tr class="sel"><td class="num">7</td><td>Pichler</td><td>Lena</td><td>Wien</td><td>2024-05-19</td></tr>
+                  <tr><td class="num">12</td><td>Moser</td><td class="null">NULL</td><td>Wien</td><td>2025-01-08</td></tr>
+                  <tr><td class="num">15</td><td>Bauer</td><td>Jonas</td><td>Wien</td><td>2025-04-23</td></tr>
+                  <tr><td class="num">21</td><td>Leitner</td><td>Eva</td><td>Wien</td><td>2025-09-30</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="w-foot"><i class="dot"></i><span data-en="Server running">Server läuft</span><span class="mono">127.0.0.1:3306</span><span class="r mono">6 <span data-en="rows">Zeilen</span></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ========================== FUNKTIONEN ========================== -->
+<section class="sec" id="funktionen">
+  <div class="in">
+    <div class="sechead">
+      <p class="kick"><svg class="i"><use href="#i-diagram"/></svg><span data-en="Features">Funktionen</span></p>
+      <h2 data-en="What you get once the server is running">Was man hat, sobald der Server läuft</h2>
+    </div>
+
+    <div class="feat">
+      <div class="feat-nav" role="tablist" aria-label="Funktionen" data-en-aria="Features" aria-orientation="vertical">
+        <button class="nav-i" role="tab" aria-selected="true" aria-controls="f-sql" id="t-sql" type="button" data-en="SQL editor">SQL-Editor</button>
+        <button class="nav-i" role="tab" aria-selected="false" aria-controls="f-data" id="t-data" type="button" data-en="Tables and data">Tabellen und Daten</button>
+        <button class="nav-i" role="tab" aria-selected="false" aria-controls="f-er" id="t-er" type="button" data-en="ER diagram">ER-Diagramm</button>
+        <button class="nav-i" role="tab" aria-selected="false" aria-controls="f-builder" id="t-builder" type="button" data-en="Query builder">Abfrage-Assistent</button>
+        <button class="nav-i" role="tab" aria-selected="false" aria-controls="f-project" id="t-project" type="button" data-en="Projects and commands">Projekte und Befehle</button>
+        <button class="nav-i" role="tab" aria-selected="false" aria-controls="f-more" id="t-more" type="button" data-en="Everything else">Und sonst</button>
+      </div>
+
+      <div class="feat-body">
+        <!-- SQL -->
+        <div class="fpane" id="f-sql" role="tabpanel" aria-labelledby="t-sql">
+          <div>
+            <h3 data-en="SQL editor">SQL-Editor</h3>
+            <p data-en="Files with any number of statements. Run the whole file, a selection, or only the statement under the cursor. Every result gets its own tab, errors are underlined where they happen.">Dateien mit beliebig vielen Anweisungen. Ausführen lässt sich die ganze Datei, die Markierung oder nur die Anweisung am Cursor. Jedes Ergebnis bekommt einen eigenen Reiter, Fehler werden an der Stelle unterstrichen.</p>
+            <ul>
+              <li data-en="Suggestions for tables, columns and functions while typing; after “alias.” the columns appear">Vorschläge für Tabellen, Spalten und Funktionen beim Tippen, nach „alias.“ erscheinen die Spalten</li>
+              <li data-en="EXPLAIN for the current statement: see which indexes are used">EXPLAIN für die aktuelle Anweisung: welche Indizes benutzt werden</li>
+              <li data-en="Formatter that leaves comments, strings and procedures alone, and does nothing on the second run">Formatierer, der Kommentare, Texte und Prozeduren in Ruhe lässt und beim zweiten Mal nichts mehr ändert</li>
+              <li data-en="Find, replace, go to line, minimap, bracket matching">Suchen, Ersetzen, Gehe zu Zeile, Minimap, Klammerhervorhebung</li>
+              <li data-en="Results as CSV, JSON, SQL, INSERT statements, Markdown, or copied straight into Excel">Ergebnisse als CSV, JSON, SQL, INSERT-Anweisungen, Markdown oder direkt für Excel kopiert</li>
+            </ul>
+          </div>
+          <div class="fig">
+            <pre class="code"><span class="k">DELIMITER</span> //
+<span class="k">CREATE PROCEDURE</span> <span class="f">anzahl_kunden</span>()
+<span class="k">BEGIN</span>
+  <span class="k">SELECT</span> <span class="f">COUNT</span>(*) <span class="k">FROM</span> <span class="i">kunde</span>;
+<span class="k">END</span> //
+<span class="k">DELIMITER</span> ;
+
+<span class="k">CALL</span> <span class="f">anzahl_kunden</span>();</pre>
+            <div class="keys">
+              <div data-en="Run file or selection">Datei oder Markierung ausführen</div><div><kbd>F5</kbd></div>
+              <div data-en="Run statement at cursor">Anweisung am Cursor</div><div><kbd>Ctrl</kbd> <kbd>Enter</kbd></div>
+              <div data-en="Execution plan">Ausführungsplan</div><div><kbd>Ctrl</kbd> <kbd>E</kbd></div>
+              <div data-en="Format SQL">SQL formatieren</div><div><kbd>Ctrl</kbd> <kbd>Alt</kbd> <kbd>L</kbd></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Daten -->
+        <div class="fpane" id="f-data" role="tabpanel" aria-labelledby="t-data">
+          <div>
+            <h3 data-en="Tables and data">Tabellen und Daten</h3>
+            <p data-en="Open a table with a double click, filter with a WHERE condition, edit cells in place. Enter saves right away, Esc cancels.">Tabelle per Doppelklick öffnen, mit einer WHERE-Bedingung filtern, Zellen direkt bearbeiten. Enter speichert sofort, Esc bricht ab.</p>
+            <ul>
+              <li data-en="Add, change and drop columns; indexes (normal or unique, across several columns)">Spalten hinzufügen, ändern und löschen; Indizes (normal oder eindeutig, auch über mehrere Spalten)</li>
+              <li data-en="Foreign keys with ON DELETE / ON UPDATE behaviour, including those pointing at the table">Fremdschlüssel mit Verhalten beim Löschen und Ändern, auch die eingehenden anderer Tabellen</li>
+              <li data-en="Table designer for new tables, with “Show SQL” for the CREATE statement">Tabellen-Designer für neue Tabellen, „SQL anzeigen“ zeigt die CREATE-Anweisung</li>
+              <li data-en="Export a whole database as .sql, tables in dependency order; import and run a .sql file">Ganze Datenbank als .sql exportieren, Tabellen in der Reihenfolge ihrer Abhängigkeiten; .sql-Dateien importieren und ausführen</li>
+            </ul>
+          </div>
+          <div class="fig">
+            <div class="panel-h"><span data-en="Structure · kunde">Struktur · kunde</span></div>
+            <div class="scroll">
+              <table class="grid">
+                <thead><tr><th data-en="Column">Spalte</th><th data-en="Type">Typ</th><th>NULL</th><th data-en="Default">Standard</th><th data-en="Key">Schlüssel</th></tr></thead>
+                <tbody>
+                  <tr><td>id</td><td class="mono-s">int</td><td>NO</td><td class="mono-s">AUTO_INCREMENT</td><td>PRIMARY</td></tr>
+                  <tr><td>nachname</td><td class="mono-s">varchar(80)</td><td>NO</td><td class="null">NULL</td><td>idx_nachname</td></tr>
+                  <tr><td>vorname</td><td class="mono-s">varchar(60)</td><td>YES</td><td class="null">NULL</td><td></td></tr>
+                  <tr><td>ort</td><td class="mono-s">varchar(60)</td><td>YES</td><td class="null">NULL</td><td></td></tr>
+                  <tr><td>angelegt</td><td class="mono-s">date</td><td>NO</td><td class="mono-s">curdate()</td><td></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- ER -->
+        <div class="fpane" id="f-er" role="tabpanel" aria-labelledby="t-er">
+          <div>
+            <h3 data-en="ER diagram">ER-Diagramm</h3>
+            <p data-en="Reads tables, keys and foreign keys of a database and draws the relations. Arrange it by hand or let EasyMySQL do it: connected tables side by side, as few crossings as possible.">Liest Tabellen, Schlüssel und Fremdschlüssel einer Datenbank aus und zeichnet die Beziehungen. Von Hand anordnen oder automatisch: verbundene Tabellen nebeneinander, möglichst wenige Kreuzungen.</p>
+            <ul>
+              <li data-en="1:n, 1:1 and n:m, optional relations marked; crow's foot, Chen or (min,max) notation">1:n, 1:1 und n:m, optionale Beziehungen markiert; Krähenfuß, Chen oder (min,max)</li>
+              <li data-en="Draw a relation from column to column: the foreign key (or join table) is created for you">Beziehung von Spalte zu Spalte ziehen: Fremdschlüssel oder Zwischentabelle werden angelegt</li>
+              <li data-en="The layout is remembered per database">Die Anordnung wird je Datenbank gespeichert</li>
+              <li data-en="Export as SVG, or open the CREATE TABLE script for all tables">Export als SVG oder als CREATE-TABLE-Skript für alle Tabellen</li>
+            </ul>
+          </div>
+          <div class="fig"><div class="er-wrap tall"><svg viewBox="0 0 580 280" aria-label="ER-Diagramm der Datenbank shop" role="img" data-en-aria="ER diagram of the shop database"><use href="#er-shop"/></svg></div></div>
+        </div>
+
+        <!-- Assistent -->
+        <div class="fpane" id="f-builder" role="tabpanel" aria-labelledby="t-builder">
+          <div>
+            <h3 data-en="Query builder">Abfrage-Assistent</h3>
+            <p data-en="Builds SELECT statements from blocks, from “all columns of a table” up to nested subqueries with WITH, UNION and window functions. The generated SQL is always visible and formatted.">Baut SELECT-Abfragen aus Bausteinen, von „alle Spalten einer Tabelle“ bis zu verschachtelten Unterabfragen mit WITH, UNION und Fensterfunktionen. Das erzeugte SQL steht immer daneben, formatiert.</p>
+            <ul>
+              <li data-en="JOINs suggest the tables connected by foreign keys and fill in the ON condition">JOINs bieten zuerst die über Fremdschlüssel verbundenen Tabellen an und füllen die ON-Bedingung aus</li>
+              <li data-en="Open the result in the editor, copy it, or save it as a view">Im Editor öffnen, kopieren oder als Sicht speichern</li>
+              <li data-en="Your work is saved continuously and is back after a restart">Der Inhalt wird laufend gespeichert und ist nach einem Neustart wieder da</li>
+            </ul>
+          </div>
+          <div class="fig">
+            <div class="blocks">
+              <div class="blk"><b>FROM</b><span>kunde k</span></div>
+              <div class="blk"><b>LEFT JOIN</b><span>bestellung b ON b.kunde_id = k.id</span></div>
+              <div class="blk"><b>SELECT</b><span>k.nachname, COUNT(b.id) AS anzahl</span></div>
+              <div class="blk"><b>WHERE</b><span>k.ort IN ('Wien', 'Graz')</span></div>
+              <div class="blk"><b>GROUP BY</b><span>k.nachname</span></div>
+              <div class="blk"><b>ORDER BY</b><span>anzahl DESC</span></div>
+            </div>
+            <pre class="code sep"><span class="k">SELECT</span> <span class="i">k</span>.<span class="i">nachname</span>, <span class="f">COUNT</span>(<span class="i">b</span>.<span class="i">id</span>) <span class="k">AS</span> <span class="i">anzahl</span>
+<span class="k">FROM</span> <span class="i">kunde</span> <span class="i">k</span>
+<span class="k">LEFT JOIN</span> <span class="i">bestellung</span> <span class="i">b</span> <span class="k">ON</span> <span class="i">b</span>.<span class="i">kunde_id</span> = <span class="i">k</span>.<span class="i">id</span>
+<span class="k">WHERE</span> <span class="i">k</span>.<span class="i">ort</span> <span class="k">IN</span> (<span class="s">'Wien'</span>, <span class="s">'Graz'</span>)
+<span class="k">GROUP BY</span> <span class="i">k</span>.<span class="i">nachname</span>
+<span class="k">ORDER BY</span> <span class="i">anzahl</span> <span class="k">DESC</span>;</pre>
+          </div>
+        </div>
+
+        <!-- Projekte -->
+        <div class="fpane" id="f-project" role="tabpanel" aria-labelledby="t-project">
+          <div>
+            <h3 data-en="Projects and commands">Projekte und Befehle</h3>
+            <p data-en="A project is just a folder of SQL files, on your disk, a USB stick or a cloud folder. Open tabs, unsaved queries and the query builder come back after a restart.">Ein Projekt ist einfach ein Ordner mit SQL-Dateien, auf der Festplatte, einem USB-Stick oder in einem Cloud-Ordner. Offene Registerkarten, unbenannte Abfragen und der Abfrage-Assistent sind nach einem Neustart wieder da.</p>
+            <ul>
+              <li data-en="Command list: type a few letters, the order only has to be roughly right (“nab” finds “New query”)">Befehlsliste: ein paar Buchstaben tippen, die Reihenfolge muss nur ungefähr stimmen („nab“ findet „Neue Abfrage“)</li>
+              <li data-en="Quick open for files in the project, search across files, earlier versions of files">Schnellöffnen für Dateien im Projekt, Suchen in Dateien, frühere Fassungen</li>
+              <li data-en="History of the last 3000 statements with time, database and duration">Verlauf der letzten 3000 Anweisungen mit Zeitpunkt, Datenbank und Dauer</li>
+              <li data-en="All shortcuts can be changed">Alle Tastenkürzel lassen sich ändern</li>
+            </ul>
+          </div>
+          <div class="fig pal">
+            <div class="pal-in"><span class="p">&gt;</span>nab</div>
+            <ul class="pal-l">
+              <li class="sel"><span><mark>N</mark>eue <mark>Ab</mark>frage</span><span>Ctrl+N</span></li>
+              <li><span><mark>N</mark>eue Datei im Projekt …</span><span>Ctrl+Alt+N</span></li>
+              <li><span>Abfrage-Assistent</span><span>Ctrl+Shift+Q</span></li>
+              <li><span><mark>N</mark>eue Tabelle … </span><span></span></li>
+              <li><span>ER-Diagramm</span><span>Ctrl+Shift+R</span></li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- Mehr -->
+        <div class="fpane" id="f-more" role="tabpanel" aria-labelledby="t-more">
+          <div>
+            <h3 data-en="Everything else">Und sonst</h3>
+            <ul class="flat">
+              <li data-en="The server keeps running in the notification area when the window is closed; quitting shuts it down cleanly, as does logging off or shutting down Windows">Der Server läuft im Infobereich weiter, wenn das Fenster geschlossen wird; Beenden fährt ihn sauber herunter, ebenso Abmelden oder Herunterfahren von Windows</li>
+              <li data-en="Server log with a filter for statements, even those sent from the command prompt or other programs">Server-Log mit Filter, auf Wunsch auch für Anweisungen aus der Eingabeaufforderung oder anderen Programmen</li>
+              <li data-en="ODBC data source “EasyMySQL” for Excel, Access and others (optional during setup)">ODBC-Datenquelle „EasyMySQL“ für Excel, Access und andere (beim Setup optional)</li>
+              <li data-en="Connect to any other MariaDB or MySQL server in the settings">Verbindung zu jedem anderen MariaDB- oder MySQL-Server in den Einstellungen</li>
+              <li data-en="Set up Visual Studio Code with SQLTools in one step; edits made there are picked up">Visual Studio Code mit SQLTools in einem Schritt einrichten; Änderungen dort werden übernommen</li>
+              <li data-en="Built-in searchable manual on F1; English or German, dark or light">Eingebautes, durchsuchbares Handbuch auf F1; Deutsch oder Englisch, dunkel oder hell</li>
+            </ul>
+          </div>
+          <div class="fig">
+            <div class="panel-h"><span data-en="Settings">Einstellungen</span></div>
+            <table class="grid">
+              <tbody>
+                <tr><td data-en="Language">Sprache</td><td class="mono-s">English / Deutsch</td></tr>
+                <tr><td data-en="Appearance">Darstellung</td><td class="mono-s">dark / light</td></tr>
+                <tr><td data-en="Font size">Schriftgröße</td><td class="mono-s">10–28 px</td></tr>
+                <tr><td data-en="Suggestions while typing">Vorschläge beim Tippen</td><td class="mono-s">on / off</td></tr>
+                <tr><td data-en="Backups">Sicherungen</td><td class="mono-s">2 h · 10 + 14 d</td></tr>
+                <tr><td data-en="Connection">Verbindung</td><td class="mono-s">127.0.0.1:3306</td></tr>
+                <tr><td data-en="Shortcuts">Tastenkürzel</td><td class="mono-s">F1 …</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =========================== SICHERHEIT =========================== -->
+<section class="sec" id="sicherheit">
+  <div class="in two">
+    <div>
+      <p class="kick"><svg class="i"><use href="#i-backup"/></svg><span data-en="Safety">Sicherheit</span></p>
+      <h2 data-en="A backup before anything goes wrong">Eine Sicherung, bevor etwas schiefgeht</h2>
+      <p class="sub" data-en="EasyMySQL assumes that one DROP too many will happen sooner or later, and that the power will fail at the worst moment.">EasyMySQL geht davon aus, dass früher oder später ein DROP zu viel passiert und der Strom im ungünstigsten Moment ausfällt.</p>
+      <div class="facts top">
+        <div class="fact"><h3 data-en="Before dangerous statements">Vor gefährlichen Anweisungen</h3><p data-en="DROP, TRUNCATE, and DELETE or UPDATE without WHERE back up the affected database first. If the backup fails, nothing is executed.">Bei DROP, TRUNCATE sowie DELETE oder UPDATE ohne WHERE wird die betroffene Datenbank vorher gesichert. Schlägt die Sicherung fehl, wird nichts ausgeführt.</p></div>
+        <div class="fact"><h3 data-en="On a schedule">Nach Zeitplan</h3><p data-en="At startup and every 2 hours by default. The newest 10 backups are kept, plus one per day for 14 days. The folder is yours to choose, for example a USB stick or network drive.">Beim Start und standardmäßig alle 2 Stunden. Aufbewahrt werden die neuesten 10 und eine je Tag für 14 Tage. Der Ordner ist frei wählbar, etwa ein USB-Stick oder Netzlaufwerk.</p></div>
+        <div class="fact"><h3 data-en="Crash safe">Absturzsicher</h3><p data-en="InnoDB writes every confirmed change to disk immediately. After a power cut MariaDB recovers on the next start, then all tables are checked.">InnoDB schreibt jede bestätigte Änderung sofort auf die Festplatte. Nach einem Stromausfall stellt MariaDB beim nächsten Start alles wieder her, danach werden alle Tabellen geprüft.</p></div>
+        <div class="fact"><h3 data-en="Repair">Reparatur</h3><p data-en="Check or repair all tables, convert MyISAM to InnoDB, and “Rescue server” if MariaDB no longer starts: the old data folder is kept aside untouched.">Alle Tabellen prüfen oder reparieren, MyISAM nach InnoDB umwandeln und „Server retten“, falls MariaDB nicht mehr startet: der alte Datenordner bleibt unverändert beiseite liegen.</p></div>
+      </div>
+    </div>
+    <div class="panel" role="img" aria-label="Liste von Sicherungen" data-en-aria="List of backups">
+      <div class="panel-h"><span data-en="Backups &amp; repair">Sicherungen &amp; Reparatur</span><span class="r"><span class="btn sm" data-en="Back up now">Jetzt sichern</span></span></div>
+      <div class="scroll">
+        <table class="grid bk">
+          <thead><tr><th data-en="Time">Zeitpunkt</th><th data-en="Reason">Anlass</th><th data-en="Database">Datenbank</th></tr></thead>
+          <tbody>
+            <tr><td>08:00</td><td data-en="scheduled">automatisch</td><td data-en="all">alle</td></tr>
+            <tr><td>06:00</td><td data-en="scheduled">automatisch</td><td data-en="all">alle</td></tr>
+            <tr class="sel"><td>05.10. 17:42</td><td><span class="pill warn">DROP TABLE kunde</span></td><td>shop</td></tr>
+            <tr><td>05.10. 17:10</td><td><span class="pill warn">DELETE <span data-en="without WHERE">ohne WHERE</span></span></td><td>shop</td></tr>
+            <tr><td>05.10. 16:00</td><td data-en="scheduled">automatisch</td><td data-en="all">alle</td></tr>
+            <tr><td>04.10. 09:15</td><td data-en="at startup">beim Start</td><td data-en="all">alle</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="msg"><span data-en="Restore under the old name (replaces the database) or under a new name.">Wiederherstellen unter altem Namen (ersetzt die Datenbank) oder unter neuem Namen.</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ DOWNLOAD ============================ -->
+<section class="sec" id="download">
+  <div class="in">
+    <div class="sechead">
+      <p class="kick"><svg class="i"><use href="#i-down"/></svg><span data-en="Download">Download</span></p>
+      <h2 data-en="Download EasyMySQL">EasyMySQL herunterladen</h2>
+      <p class="sub" data-en="This page always offers the newest version.">Hier liegt immer die neueste Version.</p>
+    </div>
+
+    <div class="two wide">
+      <div>
+        <div class="panel">
+          <div class="panel-h"><span data-en="Windows (64-bit)">Windows (64-bit)</span><span class="r mono" data-ver-head></span></div>
+          <div class="dl">
+            <div class="dl-row">
+              <div>
+                <h3><span data-file="setup">EasyMySQL-Setup.exe</span><span class="rec" data-en="recommended">empfohlen</span></h3>
+                <p data-en="Installs EasyMySQL and MariaDB, the optional ODBC driver and the environment variables. Works offline.">Installiert EasyMySQL und MariaDB, auf Wunsch den ODBC-Treiber und die Umgebungsvariablen. Funktioniert offline.</p>
+                <button class="hash" type="button" data-hash="setup" hidden title="SHA-256 kopieren" data-en-title="Copy SHA-256"><b>SHA-256</b><span></span></button>
+              </div>
+              <a class="btn primary big" href="/download/setup" download><svg class="i"><use href="#i-down"/></svg><span data-en="Download">Herunterladen</span><small data-size="setup"></small></a>
+            </div>
+            <div class="dl-row">
+              <div>
+                <h3 data-file="portable">EasyMySQL-portable.zip</h3>
+                <p data-en="Extract and run EasyMySQL.exe. Does not change PATH.">Entpacken und EasyMySQL.exe starten. Verändert PATH nicht.</p>
+                <button class="hash" type="button" data-hash="portable" hidden title="SHA-256 kopieren" data-en-title="Copy SHA-256"><b>SHA-256</b><span></span></button>
+              </div>
+              <a class="btn big" href="/download/portable" download><svg class="i"><use href="#i-down"/></svg><span data-en="Download">Herunterladen</span><small data-size="portable"></small></a>
+            </div>
+          </div>
+          <div class="meta-row"><span><span data-en="Version">Version</span> <b data-ver-plain>–</b></span><span><span data-en="Released">Veröffentlicht</span> <b data-date>–</b></span><span data-needs-mdb hidden>MariaDB <b data-mdb></b></span><span data-en="License: MIT">Lizenz: MIT</span></div>
+        </div>
+      </div>
+
+      <div>
+        <h3 class="sub-h" data-en="Installation">Installation</h3>
+        <ol class="steps">
+          <li><span data-en="Run the installer.">Setup starten.</span><small data-en="If Windows SmartScreen reports an unknown publisher, choose “More info”, then “Run anyway”.">Meldet Windows SmartScreen einen unbekannten Herausgeber: „Weitere Informationen“, dann „Trotzdem ausführen“.</small></li>
+          <li><span data-en="Start EasyMySQL.">EasyMySQL starten.</span><small data-en="The database server is initialized automatically on first launch.">Beim ersten Start wird der Datenbankserver automatisch eingerichtet.</small></li>
+          <li><span data-en="Open Command Prompt and enter:">Eingabeaufforderung öffnen und eingeben:</span><small class="mono cmd">mysql -u root</small></li>
+        </ol>
+        <h3 class="sub-h gap" data-en="Included">Enthalten</h3>
+        <ul class="incl">
+          <li><span>EasyMySQL</span><span data-ver-plain-v>–</span></li>
+          <li><span>MariaDB</span><span data-mdb-v></span></li>
+          <li><span data-en="MariaDB ODBC driver and “EasyMySQL” data source">MariaDB-ODBC-Treiber und Datenquelle „EasyMySQL“</span><span data-en="optional">optional</span></li>
+          <li><span data-en="Microsoft Visual C++ runtime">Microsoft Visual C++ Runtime</span><span></span></li>
+          <li><span data-en="Environment variables">Umgebungsvariablen</span><span>PATH, EASYMYSQL_HOME, MARIADB_HOME</span></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== FAQ ============================== -->
+<section class="sec" id="faq">
+  <div class="in">
+    <div class="sechead">
+      <p class="kick"><svg class="i"><use href="#i-help"/></svg><span data-en="Questions">Fragen</span></p>
+      <h2 data-en="Questions that come up">Fragen, die aufkommen</h2>
+    </div>
+    <div class="faq">
+      <details>
+        <summary data-en="Do I have to install MariaDB separately?">Muss ich MariaDB extra installieren?</summary>
+        <div class="a"><p data-en="No. The setup and the portable ZIP contain a complete MariaDB server with its command-line tools such as mysql and mysqldump.">Nein. Setup und portable ZIP enthalten einen vollständigen MariaDB-Server samt Kommandozeilenwerkzeugen wie <code>mysql</code> und <code>mysqldump</code>.</p></div>
+      </details>
+      <details>
+        <summary data-en="How do I connect?">Wie verbinde ich mich?</summary>
+        <div class="a"><p data-en="Server 127.0.0.1, port 3306, user root, no password. In Command Prompt: mysql -u root, as long as the server is running.">Server <code>127.0.0.1</code>, Port <code>3306</code>, Benutzer <code>root</code>, kein Passwort. In der Eingabeaufforderung: <code>mysql -u root</code>, solange der Server läuft.</p></div>
+      </details>
+      <details>
+        <summary data-en="Can the server be reached from other computers?">Ist der Server von anderen Rechnern erreichbar?</summary>
+        <div class="a"><p data-en="No. By default it accepts connections from the same PC only.">Nein. Er nimmt standardmäßig nur Verbindungen vom eigenen PC an.</p></div>
+      </details>
+      <details>
+        <summary data-en="What happens when I close the window?">Was passiert, wenn ich das Fenster schließe?</summary>
+        <div class="a"><p data-en="The window disappears, the server keeps running and the icon stays next to the clock. Quit properly with File → Quit or the tray menu. The server does not start with Windows.">Das Fenster verschwindet, der Server läuft weiter und das Symbol bleibt im Infobereich neben der Uhr. Richtig beenden über Datei → Beenden oder das Menü des Symbols. Mit Windows startet der Server nicht von selbst.</p></div>
+      </details>
+      <details>
+        <summary data-en="Can Excel or Access use the databases?">Können Excel oder Access die Datenbanken nutzen?</summary>
+        <div class="a"><p data-en="Yes, through the ODBC data source “EasyMySQL”, if you let the setup install it.">Ja, über die ODBC-Datenquelle „EasyMySQL“, sofern sie beim Setup mitinstalliert wurde.</p></div>
+      </details>
+      <details>
+        <summary data-en="Another database server is already using port 3306.">Auf Port 3306 läuft schon ein anderer Datenbankserver.</summary>
+        <div class="a"><p data-en="Then EasyMySQL uses that one (“external server”) and does not start its own. If that is not what you want, quit the other program (for example XAMPP) and restart EasyMySQL.">Dann verwendet EasyMySQL diesen („externer Server“) und startet keinen eigenen. Soll das nicht so sein, das andere Programm (zum Beispiel XAMPP) beenden und EasyMySQL neu starten.</p></div>
+      </details>
+      <details>
+        <summary data-en="The server does not start.">Der Server startet nicht.</summary>
+        <div class="a"><p data-en="Open the server log and read the last red lines, then try Server → Restart. If that does not help, Backups &amp; repair → Rescue server.">Server-Log öffnen und die letzten roten Zeilen lesen, dann Server → Neu starten. Hilft das nicht: Sicherungen &amp; Reparatur → Server retten.</p></div>
+      </details>
+      <details>
+        <summary data-en="Which language and theme does it use?">Welche Sprache und welches Design hat das Programm?</summary>
+        <div class="a"><p data-en="English and dark mode are the defaults. German and a light theme are available in the settings.">Standard sind Englisch und der dunkle Modus. Deutsch und ein helles Design lassen sich in den Einstellungen wählen.</p></div>
+      </details>
+      <details>
+        <summary data-en="Does it update itself?">Aktualisiert es sich selbst?</summary>
+        <div class="a"><p data-en="EasyMySQL checks for new versions at startup and every six hours. Downloading and installing is started by you.">EasyMySQL prüft beim Start und alle sechs Stunden auf neue Versionen. Herunterladen und Installieren startest du selbst.</p></div>
+      </details>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="foot">
+  <div class="in">
+    <span data-en="EasyMySQL is released under the MIT license. The bundled MariaDB is licensed under GPL v2.">EasyMySQL steht unter der MIT-Lizenz. Das enthaltene MariaDB steht unter GPL v2.</span>
+    <span data-en="MariaDB is a trademark of its respective owner.">MariaDB ist eine Marke des jeweiligen Inhabers.</span>
+  </div>
+</footer>
+
+<div class="status" role="contentinfo">
+  <a href="#download"><i class="dot"></i><span data-en="Server running">Server läuft</span></a>
+  <span class="mono opt">127.0.0.1:3306</span>
+  <span class="mono opt">root</span>
+  <span class="mono opt" data-mdb-status></span>
+  <span class="sp mono opt">Windows x64</span>
+  <a class="mono" href="#download" data-ver-status>EasyMySQL</a>
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>

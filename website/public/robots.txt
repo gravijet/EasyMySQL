@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+Disallow: /download/
+Disallow: /api/

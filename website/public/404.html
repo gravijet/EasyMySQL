@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="de" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>404 – EasyMySQL</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<script src="/boot.js"></script>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body class="nf">
+<main class="nf-box">
+  <pre class="code"><span class="c">-- 404</span>
+<span class="k">SELECT</span> * <span class="k">FROM</span> <span class="i">seite</span> <span class="k">WHERE</span> <span class="i">pfad</span> = <span class="s">'?'</span>;
+<span class="e">ERROR 1146: Table 'seite' doesn't exist</span></pre>
+  <p><a class="btn primary" href="/" data-en="Back to start">Zur Startseite</a></p>
+</main>
+<script src="/app.js"></script>
+</body>
+</html>
