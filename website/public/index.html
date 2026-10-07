@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>EasyMySQL</title>
 <meta name="description" content="EasyMySQL ist ein Windows-Programm, das einen MariaDB-Server mitbringt und Datenbanken verwaltet: Abfragen, Tabellen, ER-Diagramme, Sicherungen.">
-<meta name="theme-color" content="#ffffff">
+<meta name="theme-color" content="#f4f7fc">
 <link rel="canonical" href="https://mysql.benjaminberger.at/">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <meta property="og:type" content="website">
@@ -19,10 +19,8 @@
 </head>
 <body>
 
-<div class="page">
-
 <header class="top">
-  <span class="brand"><img src="/favicon.svg" alt="" width="24" height="24"> EasyMySQL</span>
+  <span class="brand"><img src="/favicon.svg" alt="" width="26" height="26"> EasyMySQL</span>
   <div class="lang" role="group" aria-label="Sprache / Language">
     <button type="button" data-lang="de" aria-pressed="true">DE</button>
     <button type="button" data-lang="en" aria-pressed="false">EN</button>
@@ -31,127 +29,100 @@
 
 <main>
 
-<section class="intro" id="start">
-  <h1 data-en="MariaDB server and database manager for Windows" >MariaDB-Server und Datenbank-Verwaltung für Windows</h1>
-  <p data-en="EasyMySQL brings its own MariaDB server and starts it as soon as the program runs. On top of that you get an SQL editor, tables you can edit, ER diagrams and automatic backups.">EasyMySQL bringt einen MariaDB-Server mit und startet ihn, sobald das Programm läuft. Dazu kommen ein SQL-Editor, Tabellen zum Bearbeiten, ER-Diagramme und automatische Sicherungen.</p>
+<section class="hero" id="start">
+  <h1 data-en="Your own database, set up quickly">Deine eigene Datenbank, schnell eingerichtet</h1>
+  <p class="sub" data-en="EasyMySQL brings a MariaDB server with it and lets you work with your data in one window: write queries, edit tables, draw diagrams, keep backups.">EasyMySQL bringt einen MariaDB-Server mit und lässt dich in einem Fenster mit deinen Daten arbeiten: Abfragen schreiben, Tabellen bearbeiten, Diagramme zeichnen, Sicherungen aufbewahren.</p>
   <p class="cta">
     <a class="btn" href="/download/setup" id="dl-main" data-en="Download for Windows">Für Windows herunterladen</a>
-    <span class="cta-meta" id="dl-meta" hidden></span>
   </p>
-  <p class="small"><a href="#download" data-en="Portable version and checksums">Portable Version und Prüfsummen</a></p>
+  <p class="meta" id="dl-meta" hidden></p>
+
+  <div class="gallery" id="gallery">
+    <div class="tabs" role="tablist" aria-label="Ansichten">
+      <button type="button" role="tab" id="t-sql" aria-selected="true" aria-controls="p-sql" data-en="SQL editor">SQL-Editor</button>
+      <button type="button" role="tab" id="t-data" aria-selected="false" aria-controls="p-data" tabindex="-1" data-en="Tables">Tabellen</button>
+      <button type="button" role="tab" id="t-er" aria-selected="false" aria-controls="p-er" tabindex="-1" data-en="Diagram">Diagramm</button>
+      <button type="button" role="tab" id="t-builder" aria-selected="false" aria-controls="p-builder" tabindex="-1" data-en="Query builder">Assistent</button>
+    </div>
+    <div class="frame">
+      <img id="p-sql" role="tabpanel" aria-labelledby="t-sql" src="/shots/sql.webp" width="1200" height="760" alt="Der SQL-Editor mit einer Abfrage und dem Ergebnis darunter" data-en-alt="The SQL editor with a query and its result below">
+      <img id="p-data" role="tabpanel" aria-labelledby="t-data" src="/shots/data.webp" width="1200" height="760" loading="lazy" hidden alt="Eine Tabelle mit Kundendaten" data-en-alt="A table with customer data">
+      <img id="p-er" role="tabpanel" aria-labelledby="t-er" src="/shots/er.webp" width="1200" height="760" loading="lazy" hidden alt="Das ER-Diagramm einer Shop-Datenbank" data-en-alt="The ER diagram of a shop database">
+      <img id="p-builder" role="tabpanel" aria-labelledby="t-builder" src="/shots/builder.webp" width="1200" height="760" loading="lazy" hidden alt="Der Abfrage-Assistent mit dem erzeugten SQL" data-en-alt="The query builder with the generated SQL">
+    </div>
+  </div>
 </section>
 
 <section class="features" id="funktionen">
-  <h2 data-en="Features">Funktionen</h2>
+  <h2 data-en="What it does">Was es kann</h2>
   <ul>
     <li>
-      <h3 data-en="SQL editor">SQL-Editor</h3>
-      <p data-en="Any number of statements per file, each result in its own tab. Suggestions while typing, EXPLAIN, a formatter, and export as CSV, JSON, SQL or Markdown.">Beliebig viele Anweisungen pro Datei, jedes Ergebnis in einem eigenen Reiter. Vorschläge beim Tippen, EXPLAIN, ein Formatierer und Export als CSV, JSON, SQL oder Markdown.</p>
+      <h3 data-en="Server included">Server inklusive</h3>
+      <p data-en="MariaDB is part of the program and starts with it. There is nothing else to install.">MariaDB gehört zum Programm und startet mit ihm. Du musst nichts weiter installieren.</p>
     </li>
     <li>
-      <h3 data-en="Tables">Tabellen</h3>
-      <p data-en="Double-click opens the data. Edit cells in place, filter with a WHERE clause. Change columns, indexes and foreign keys, or build a new table in the designer.">Ein Doppelklick öffnet die Daten. Zellen direkt bearbeiten, mit WHERE filtern. Spalten, Indizes und Fremdschlüssel ändern oder eine neue Tabelle im Designer bauen.</p>
+      <h3 data-en="Write queries">Abfragen schreiben</h3>
+      <p data-en="An editor with suggestions while you type and clear results. Export them as CSV, JSON or Markdown.">Ein Editor mit Vorschlägen beim Tippen und übersichtlichen Ergebnissen. Exportieren geht als CSV, JSON oder Markdown.</p>
     </li>
     <li>
-      <h3 data-en="ER diagram">ER-Diagramm</h3>
-      <p data-en="Draws the tables and relationships of a database. Arrange them automatically or by hand, export as SVG or as a CREATE TABLE script.">Zeichnet die Tabellen und Beziehungen einer Datenbank. Automatisch oder von Hand angeordnet, Export als SVG oder als CREATE-TABLE-Skript.</p>
+      <h3 data-en="Edit tables">Tabellen bearbeiten</h3>
+      <p data-en="Look at data, filter it and change it right in the table. New tables can be created without writing SQL.">Daten ansehen, filtern und direkt in der Tabelle ändern. Neue Tabellen legst du an, ohne SQL zu schreiben.</p>
     </li>
     <li>
-      <h3 data-en="Query builder">Abfrage-Assistent</h3>
-      <p data-en="Put a SELECT together from blocks, from a plain FROM up to WITH, UNION and window functions. The generated SQL always sits next to it.">SELECT aus Bausteinen zusammensetzen, vom einfachen FROM bis zu WITH, UNION und Fensterfunktionen. Das erzeugte SQL steht immer daneben.</p>
+      <h3 data-en="See connections">Zusammenhänge sehen</h3>
+      <p data-en="The diagram shows how the tables of a database relate. Rearrange it and export it as an image.">Das Diagramm zeigt, wie die Tabellen einer Datenbank zusammenhängen. Du kannst es umordnen und als Bild exportieren.</p>
     </li>
     <li>
-      <h3 data-en="Projects">Projekte</h3>
-      <p data-en="A project is a folder of SQL files. Command list, quick open, search in files, and a history of the last 3000 statements.">Ein Projekt ist ein Ordner mit SQL-Dateien. Dazu Befehlsliste, Schnellöffnen, Suche in Dateien und ein Verlauf der letzten 3000 Anweisungen.</p>
+      <h3 data-en="Build queries by clicking">Abfragen zusammenklicken</h3>
+      <p data-en="Assemble a query from blocks. The finished SQL appears right next to it.">Aus Bausteinen eine Abfrage zusammensetzen. Das fertige SQL steht gleich daneben.</p>
     </li>
     <li>
       <h3 data-en="Backups">Sicherungen</h3>
-      <p data-en="Before DROP, TRUNCATE and DELETE without WHERE the database is backed up first. There is also a schedule, and a repair tool for when a power cut leaves something broken.">Vor DROP, TRUNCATE und DELETE ohne WHERE wird die Datenbank zuerst gesichert. Dazu ein Zeitplan und ein Reparaturwerkzeug, falls nach einem Stromausfall etwas hakt.</p>
+      <p data-en="Before risky commands a backup is made automatically, and on a schedule as well.">Vor riskanten Befehlen wird automatisch gesichert, außerdem nach einem Zeitplan.</p>
     </li>
   </ul>
-  <p class="more" data-en="The server keeps running in the tray when the window is closed. There is an ODBC driver for Excel and Access, a one-step setup for Visual Studio Code, a manual on F1, and the interface comes in German and English, dark or light.">Der Server läuft im Infobereich weiter, wenn das Fenster geschlossen wird. Dazu ein ODBC-Treiber für Excel und Access, die Einrichtung von Visual Studio Code in einem Schritt, ein Handbuch auf F1, und die Oberfläche gibt es auf Deutsch und Englisch, dunkel oder hell.</p>
 </section>
 
 <section class="download" id="download">
-  <h2 data-en="Download">Download</h2>
-  <div class="rows">
-    <a class="row" href="/download/setup" id="row-setup">
-      <span class="row-t" data-en="Installer">Installer</span>
-      <span class="row-d"><span id="setup-name">EasyMySQL-Setup.exe</span><span class="row-s" id="setup-size"></span></span>
-      <span class="row-a" data-en="Download">Herunterladen</span>
-    </a>
-    <a class="row" href="/download/portable" id="row-portable">
-      <span class="row-t">Portable</span>
-      <span class="row-d"><span id="portable-name">EasyMySQL-portable.zip</span><span class="row-s" id="portable-size"></span></span>
-      <span class="row-a" data-en="Download">Herunterladen</span>
-    </a>
-  </div>
-  <dl class="facts">
-    <div><dt data-en="Version">Version</dt><dd id="f-version">–</dd></div>
-    <div><dt data-en="Released">Veröffentlicht</dt><dd id="f-date">–</dd></div>
-    <div data-needs-mdb hidden><dt>MariaDB</dt><dd id="f-mdb">–</dd></div>
-    <div><dt data-en="System">System</dt><dd>Windows, 64-bit</dd></div>
-    <div><dt data-en="Licence">Lizenz</dt><dd>MIT</dd></div>
-    <div class="wide"><dt>SHA-256 <span data-en="Installer">Installer</span></dt><dd><button type="button" class="hash" id="h-setup" title="Kopieren" data-en-title="Copy">–</button></dd></div>
-    <div class="wide"><dt>SHA-256 Portable</dt><dd><button type="button" class="hash" id="h-portable" title="Kopieren" data-en-title="Copy">–</button></dd></div>
-  </dl>
-
-  <ol class="steps">
-    <li>
-      <h3 data-en="Install">Installieren</h3>
-      <p data-en="Run the setup. If Windows reports an unknown publisher, click “More info” and then “Run anyway”. The portable version only needs to be unzipped, it leaves PATH alone.">Setup starten. Meldet Windows einen unbekannten Herausgeber, auf „Weitere Informationen“ und dann auf „Trotzdem ausführen“ klicken. Die portable Version wird nur entpackt und ändert PATH nicht.</p>
-    </li>
-    <li>
-      <h3 data-en="Start">Starten</h3>
-      <p data-en="On the first start EasyMySQL sets up the database server automatically.">Beim ersten Start richtet EasyMySQL den Datenbankserver automatisch ein.</p>
-    </li>
-    <li>
-      <h3 data-en="Connect">Verbinden</h3>
-      <p><span data-en="Server">Server</span> <code>127.0.0.1</code>, Port <code>3306</code>, <span data-en="user">Benutzer</span> <code>root</code>, <span data-en="no password.">kein Passwort.</span> <span data-en="From a command prompt:">In der Eingabeaufforderung:</span> <code>mysql -u root</code></p>
-    </li>
-  </ol>
+  <h2 data-en="Download">Herunterladen</h2>
+  <p class="lead" data-en="For Windows, 64-bit. Free and open source.">Für Windows, 64-bit. Kostenlos und quelloffen.</p>
+  <p class="cta">
+    <a class="btn big" href="/download/setup" id="dl-setup" data-en="Installer">Installer</a>
+    <a class="btn ghost big" href="/download/portable" id="dl-portable" data-en="Portable (ZIP)">Portable (ZIP)</a>
+  </p>
+  <p class="meta" id="dl-info"></p>
+  <p class="hint" data-en="If Windows shows a warning about an unknown publisher, click “More info” and then “Run anyway”.">Zeigt Windows eine Warnung vor einem unbekannten Herausgeber, auf „Weitere Informationen“ und dann auf „Trotzdem ausführen“ klicken.</p>
 </section>
 
 <section class="faq" id="fragen">
   <h2 data-en="Questions">Fragen</h2>
   <details>
     <summary data-en="Do I need to install MariaDB separately?">Muss ich MariaDB extra installieren?</summary>
-    <p data-en="No. The setup and the portable ZIP contain a complete MariaDB server with command line tools such as mysql and mysqldump.">Nein. Setup und portable ZIP enthalten einen vollständigen MariaDB-Server samt Kommandozeilenwerkzeugen wie mysql und mysqldump.</p>
-  </details>
-  <details>
-    <summary data-en="Can other computers reach the server?">Ist der Server von anderen Rechnern erreichbar?</summary>
-    <p data-en="No. By default it only accepts connections from your own PC.">Nein. Er nimmt standardmäßig nur Verbindungen vom eigenen PC an.</p>
+    <p data-en="No. It is included.">Nein, es ist dabei.</p>
   </details>
   <details>
     <summary data-en="What happens when I close the window?">Was passiert, wenn ich das Fenster schließe?</summary>
-    <p data-en="The window disappears, the server keeps running and the icon stays next to the clock. Quit properly with File → Quit or from the icon’s menu. The server does not start with Windows.">Das Fenster verschwindet, der Server läuft weiter und das Symbol bleibt im Infobereich neben der Uhr. Richtig beenden über Datei → Beenden oder das Menü des Symbols. Mit Windows startet der Server nicht von selbst.</p>
+    <p data-en="The server keeps running in the background and the icon stays next to the clock. Quit it with File → Quit. It does not start with Windows on its own.">Der Server läuft im Hintergrund weiter und das Symbol bleibt neben der Uhr. Beenden geht über Datei → Beenden. Mit Windows startet er nicht von selbst.</p>
   </details>
   <details>
-    <summary data-en="Another database server already uses port 3306.">Auf Port 3306 läuft schon ein anderer Datenbankserver.</summary>
-    <p data-en="Then EasyMySQL uses that one (“external server”) and does not start its own. To change that, quit the other program (XAMPP, for example) and restart EasyMySQL.">Dann verwendet EasyMySQL diesen („externer Server“) und startet keinen eigenen. Soll das nicht so sein, das andere Programm (zum Beispiel XAMPP) beenden und EasyMySQL neu starten.</p>
-  </details>
-  <details>
-    <summary data-en="The server does not start.">Der Server startet nicht.</summary>
-    <p data-en="Open the server log and read the last red lines, then choose Server → Restart. If that does not help: Backups &amp; repair → Rescue server. The old data folder is kept untouched.">Server-Log öffnen und die letzten roten Zeilen lesen, dann Server → Neu starten. Hilft das nicht: Sicherungen &amp; Reparatur → Server retten. Der alte Datenordner bleibt dabei unverändert liegen.</p>
+    <summary data-en="Can other computers reach my data?">Kommen andere Rechner an meine Daten?</summary>
+    <p data-en="No. By default the server only accepts connections from your own PC.">Nein. Der Server nimmt standardmäßig nur Verbindungen vom eigenen PC an.</p>
   </details>
   <details>
     <summary data-en="Does it update itself?">Aktualisiert es sich selbst?</summary>
-    <p data-en="EasyMySQL looks for new versions at startup and every six hours. You start the download and installation yourself.">EasyMySQL sucht beim Start und alle sechs Stunden nach neuen Versionen. Herunterladen und Installieren startest du selbst.</p>
+    <p data-en="EasyMySQL looks for new versions now and then and tells you. You decide when to install them.">EasyMySQL sucht regelmäßig nach neuen Versionen und sagt dir Bescheid. Wann du installierst, entscheidest du.</p>
   </details>
 </section>
 
 </main>
 
 <footer>
-  <p class="by"><span data-en="A program by">Ein Programm von</span> <a href="https://benjaminberger.at">Benjamin Berger</a></p>
+  <p><span data-en="A program by">Ein Programm von</span> <a href="https://benjaminberger.at">Benjamin Berger</a></p>
   <p class="legal">
     <a href="https://benjaminberger.at/impressum">Impressum</a>
     <a href="https://benjaminberger.at/datenschutz" data-en="Privacy">Datenschutz</a>
-    <span data-en="EasyMySQL is MIT licensed. The bundled MariaDB is GPL&nbsp;v2 and a trademark of its owner.">EasyMySQL steht unter der MIT-Lizenz. Das enthaltene MariaDB steht unter GPL&nbsp;v2 und ist eine Marke des jeweiligen Inhabers.</span>
   </p>
 </footer>
-
-</div>
 
 <script src="/app.js"></script>
 </body>
