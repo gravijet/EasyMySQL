@@ -1,4 +1,6 @@
-// GitHub Releases pruefen und das Windows-Setup im Hintergrund herunterladen.
+// Nach neuen Versionen suchen und das Windows-Setup im Hintergrund herunterladen.
+// Quelle ist die Website von EasyMySQL: /api/release liefert Version und Prüfsumme,
+// /download/setup das Setup.
 
 use eframe::egui;
 use semver::Version;
@@ -9,51 +11,52 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver};
 use std::time::{Duration, Instant};
 
-const API: &str = "https://api.github.com/repos/gravijet/EasyMySQL/releases/latest";
-pub const RELEASES: &str = "https://github.com/gravijet/EasyMySQL/releases";
+const SITE: &str = "https://mysql.benjaminberger.at";
+const API: &str = "https://mysql.benjaminberger.at/api/release";
+pub const DOWNLOAD_PAGE: &str = "https://mysql.benjaminberger.at/#download";
 const INTERVAL: Duration = Duration::from_secs(6 * 60 * 60);
 const MAX_SETUP: u64 = 1024 * 1024 * 1024;
 
 #[derive(Clone, Debug, Deserialize)]
 struct Asset {
     name: String,
-    browser_download_url: String,
-    size: u64,
-    digest: Option<String>,
+    url: String,
+    size: Option<u64>,
+    sha256: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct Files {
+    setup: Option<Asset>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
 struct Release {
-    tag_name: String,
-    draft: bool,
-    prerelease: bool,
-    assets: Vec<Asset>,
+    version: String,
+    files: Files,
 }
 
 impl Release {
     fn version(&self) -> Result<Version, String> {
-        Version::parse(self.tag_name.strip_prefix('v').unwrap_or(&self.tag_name)).map_err(|_| crate::i18n::text("Das GitHub Release hat keine gültige Versionsnummer.").into())
+        Version::parse(&self.version).map_err(|_| crate::i18n::text("Die Versionsnummer des Updates ist ungültig.").into())
     }
 
     fn newer_than(&self, current: &str) -> Result<bool, String> {
         let version = self.version()?;
         let current = Version::parse(current).map_err(|e| e.to_string())?;
-        Ok(!self.draft && !self.prerelease && version.pre.is_empty() && version.cmp_precedence(&current).is_gt())
+        Ok(version.pre.is_empty() && version.cmp_precedence(&current).is_gt())
     }
 
     fn setup(&self) -> Result<Asset, String> {
         let version = self.version()?;
         let name = format!("EasyMySQL-Setup-{version}.exe");
-        self.assets
+        self.files
+            .setup
             .iter()
-            .find(|a| a.name == name && trusted_download(&a.browser_download_url))
+            .find(|a| a.name == name && a.url.starts_with("/download/") && !a.url.contains(['?', '#', '\\']) && !a.url.contains(".."))
             .cloned()
             .ok_or_else(|| crate::i18n::text("Für dieses Release ist noch kein Windows-Setup verfügbar. Bitte später erneut prüfen.").into())
     }
-}
-
-fn trusted_download(url: &str) -> bool {
-    url.starts_with("https://github.com/gravijet/EasyMySQL/releases/download/")
 }
 
 fn agent(timeout: Duration) -> ureq::Agent {
@@ -66,21 +69,17 @@ fn agent(timeout: Duration) -> ureq::Agent {
 }
 
 fn check() -> Result<Option<Release>, String> {
-    let response = agent(Duration::from_secs(20))
-        .get(API)
-        .header("Accept", "application/vnd.github+json")
-        .header("X-GitHub-Api-Version", "2022-11-28")
-        .call();
+    let response = agent(Duration::from_secs(20)).get(API).header("Accept", "application/json").call();
     let mut response = match response {
         Ok(r) => r,
         Err(ureq::Error::StatusCode(404)) => return Ok(None),
-        Err(ureq::Error::StatusCode(403 | 429)) => return Err(crate::i18n::text("GitHub begrenzt gerade die Update-Anfragen. Bitte später erneut versuchen.").into()),
-        Err(e) => return Err(crate::tr_format!("GitHub ist nicht erreichbar: {e}", "Could not reach GitHub: {e}")),
+        Err(ureq::Error::StatusCode(403 | 429 | 502 | 503)) => return Err(crate::i18n::text("Der Update-Server ist gerade ausgelastet. Bitte später erneut versuchen.").into()),
+        Err(e) => return Err(crate::tr_format!("Update-Server nicht erreichbar: {e}", "Could not reach the update server: {e}")),
     };
     let release: Release = response
         .body_mut()
         .read_json()
-        .map_err(|e| crate::tr_format!("GitHub-Antwort konnte nicht gelesen werden: {e}", "Could not read the GitHub response: {e}"))?;
+        .map_err(|e| crate::tr_format!("Antwort des Update-Servers konnte nicht gelesen werden: {e}", "Could not read the update server response: {e}"))?;
     if release.newer_than(env!("CARGO_PKG_VERSION"))? {
         Ok(Some(release))
     } else {
@@ -89,15 +88,14 @@ fn check() -> Result<Option<Release>, String> {
 }
 
 fn verify_download(size: u64, hash: &str, asset: &Asset) -> Result<(), String> {
-    if size != asset.size || size == 0 {
+    if size == 0 || asset.size != Some(size) {
         return Err(crate::i18n::text("Der Download ist unvollständig. Bitte erneut herunterladen.").into());
     }
     let expected = asset
-        .digest
+        .sha256
         .as_deref()
-        .and_then(|s| s.strip_prefix("sha256:"))
         .filter(|s| s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit()))
-        .ok_or(crate::i18n::text("GitHub liefert keine gültige SHA-256-Prüfsumme für das Setup."))?;
+        .ok_or(crate::i18n::text("Für das Setup liegt keine gültige SHA-256-Prüfsumme vor."))?;
     if !hash.eq_ignore_ascii_case(expected) {
         return Err(crate::i18n::text("Die Prüfsumme des Downloads stimmt nicht. Das Setup wird nicht gestartet.").into());
     }
@@ -106,7 +104,8 @@ fn verify_download(size: u64, hash: &str, asset: &Asset) -> Result<(), String> {
 
 fn download(release: &Release) -> Result<PathBuf, String> {
     let asset = release.setup()?;
-    if asset.size == 0 || asset.size > MAX_SETUP {
+    let expected_size = asset.size.unwrap_or(0);
+    if expected_size == 0 || expected_size > MAX_SETUP {
         return Err(crate::i18n::text("Die Größe des Windows-Setups ist ungültig.").into());
     }
     // Privater, pro Download eindeutiger Ordner statt einer gemeinsam benutzten EXE.
@@ -123,10 +122,10 @@ fn download(release: &Release) -> Result<PathBuf, String> {
     let target = dir.join(&asset.name);
     let result = (|| {
         let mut response = agent(Duration::from_secs(15 * 60))
-            .get(&asset.browser_download_url)
+            .get(format!("{SITE}{}", asset.url))
             .call()
             .map_err(|e| e.to_string())?;
-        let mut reader = response.body_mut().as_reader().take(asset.size + 1);
+        let mut reader = response.body_mut().as_reader().take(expected_size + 1);
         let mut file = std::fs::OpenOptions::new()
             .write(true)
             .create_new(true)
@@ -174,7 +173,7 @@ impl Updater {
             return;
         }
         self.last_check = Some(Instant::now());
-        self.status = crate::i18n::text("Suche nach Updates auf GitHub …").into();
+        self.status = crate::i18n::text("Suche nach Updates …").into();
         let (tx, rx) = mpsc::channel();
         self.check_job = Some(rx);
         let ctx = ctx.clone();
@@ -195,8 +194,8 @@ impl Updater {
             self.check_job = None;
             match result {
                 Ok(Some(release)) => {
-                    self.status = crate::tr_format!("EasyMySQL {} ist verfügbar.", "EasyMySQL {} is available.", release.tag_name);
-                    if self.available.as_ref().map(|r| &r.tag_name) != Some(&release.tag_name) {
+                    self.status = crate::tr_format!("EasyMySQL {} ist verfügbar.", "EasyMySQL {} is available.", release.version);
+                    if self.available.as_ref().map(|r| &r.version) != Some(&release.version) {
                         self.ready = None;
                         self.open = true;
                     }
@@ -242,7 +241,7 @@ impl Updater {
                         ui.label(if self.download_job.is_some() {
                             crate::i18n::text("Setup wird heruntergeladen …")
                         } else {
-                            crate::i18n::text("GitHub wird geprüft …")
+                            crate::i18n::text("Update-Server wird geprüft …")
                         });
                     });
                 } else if self.ready.is_some() && cfg!(windows) {
@@ -278,7 +277,7 @@ impl Updater {
                     {
                         self.check_now(ctx, true);
                     }
-                    ui.hyperlink_to(crate::i18n::text("GitHub Releases öffnen"), RELEASES);
+                    ui.hyperlink_to(crate::i18n::text("Download-Seite öffnen"), DOWNLOAD_PAGE);
                 });
             });
         self.open = open;
@@ -318,7 +317,7 @@ fn launch_setup(path: &Path) -> Result<(), String> {
 
 #[cfg(not(windows))]
 fn launch_setup(_path: &Path) -> Result<(), String> {
-    Err(crate::i18n::text("Das automatische Setup ist nur unter Windows verfügbar. Bitte GitHub Releases öffnen.").into())
+    Err(crate::i18n::text("Das automatische Setup ist nur unter Windows verfügbar. Bitte die Download-Seite öffnen.").into())
 }
 
 #[cfg(test)]
@@ -326,53 +325,58 @@ mod tests {
     use super::*;
 
     fn release(tag: &str) -> Release {
-        serde_json::from_value(serde_json::json!({"tag_name":tag,"draft":false,"prerelease":false,"assets":[]})).unwrap()
+        serde_json::from_value(serde_json::json!({"version":tag,"files":{}})).unwrap()
+    }
+
+    fn asset(url: &str) -> Asset {
+        Asset { name: "EasyMySQL-Setup-3.1.0.exe".into(), url: url.into(), size: Some(3), sha256: None }
     }
 
     #[test]
     fn versions_are_compared_numerically_and_only_stable_releases_update() {
-        assert!(release("v3.10.0").newer_than("3.9.0").unwrap());
+        assert!(release("3.10.0").newer_than("3.9.0").unwrap());
         assert!(!release("3.0.1").newer_than("3.0.1").unwrap());
-        assert!(!release("v2.9.0").newer_than("3.0.1").unwrap());
-        assert!(!release("v4.0.0-beta.1").newer_than("3.0.1").unwrap());
-        assert!(!release("v3.0.1+build.2").newer_than("3.0.1").unwrap());
+        assert!(!release("2.9.0").newer_than("3.0.1").unwrap());
+        assert!(!release("4.0.0-beta.1").newer_than("3.0.1").unwrap());
+        assert!(!release("3.0.1+build.2").newer_than("3.0.1").unwrap());
         assert!(release("latest").newer_than("3.0.1").is_err());
-        let mut r = release("v4.0.0");
-        r.draft = true;
-        assert!(!r.newer_than("3.0.1").unwrap());
-        r.draft = false;
-        r.prerelease = true;
-        assert!(!r.newer_than("3.0.1").unwrap());
     }
 
     #[test]
-    fn setup_requires_exact_asset_and_repository() {
-        let mut r = release("v3.1.0");
+    fn setup_requires_exact_name_and_download_path() {
+        let mut r = release("3.1.0");
         assert!(r.setup().is_err());
-        r.assets.push(Asset {
-            name: "EasyMySQL-Setup-3.1.0.exe".into(),
-            browser_download_url: "https://github.com/gravijet/EasyMySQL/releases/download/v3.1.0/setup.exe".into(),
-            size: 3,
-            digest: None,
-        });
+        r.files.setup = Some(asset("/download/setup"));
         assert!(r.setup().is_ok());
-        r.assets[0].browser_download_url = "https://github.com.evil.test/gravijet/EasyMySQL/releases/download/x".into();
+        for bad in ["https://evil.test/download/setup", "//evil.test/download/setup", "/download/../x", "/other", "/download/setup?x=1"] {
+            r.files.setup = Some(asset(bad));
+            assert!(r.setup().is_err(), "{bad}");
+        }
+        r.files.setup = Some(Asset { name: "EasyMySQL-Setup-9.9.9.exe".into(), ..asset("/download/setup") });
         assert!(r.setup().is_err());
+    }
+
+    #[test]
+    fn release_json_from_the_site_is_understood() {
+        let r: Release = serde_json::from_str(
+            r#"{"version":"3.2.0","published":null,"mariadb":null,"files":{"setup":{"name":"EasyMySQL-Setup-3.2.0.exe","url":"/download/setup","size":10,"sha256":null},"portable":{"name":"x","url":"/download/portable","size":1,"sha256":null}}}"#,
+        )
+        .unwrap();
+        assert!(r.newer_than("3.1.0").unwrap());
+        assert!(r.setup().is_ok());
     }
 
     #[test]
     fn incomplete_or_modified_downloads_cannot_be_installed() {
         let hash = format!("{:x}", Sha256::digest(b"abc"));
-        let mut a = Asset {
-            name: String::new(),
-            browser_download_url: String::new(),
-            size: 3,
-            digest: Some(format!("sha256:{hash}")),
-        };
+        let mut a = Asset { name: String::new(), url: String::new(), size: Some(3), sha256: Some(hash.clone()) };
         assert!(verify_download(3, &hash, &a).is_ok());
         assert!(verify_download(2, &hash, &a).is_err());
         assert!(verify_download(3, &"0".repeat(64), &a).is_err());
-        a.digest = None;
+        a.sha256 = None;
+        assert!(verify_download(3, &hash, &a).is_err());
+        a.sha256 = Some(hash.clone());
+        a.size = None;
         assert!(verify_download(3, &hash, &a).is_err());
     }
 }

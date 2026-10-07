@@ -28,6 +28,13 @@ fn main() -> eframe::Result {
     if !platform::single_instance() {
         return Ok(());
     }
+    // Die Oberfläche braucht keine Hochleistungs-Grafikkarte: Die integrierte GPU startet
+    // schneller und spart Strom. Wer WGPU_POWER_PREF selbst setzt, behält seine Wahl.
+    #[cfg(windows)]
+    if std::env::var_os("WGPU_POWER_PREF").is_none() {
+        // SAFETY: Es läuft noch kein weiterer Thread.
+        unsafe { std::env::set_var("WGPU_POWER_PREF", "low") };
+    }
     let icon = egui::IconData {
         rgba: icon::icon_rgba(64),
         width: 64,

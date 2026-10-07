@@ -1,168 +1,135 @@
 (function () {
   "use strict";
   var root = document.documentElement;
-  var $ = function (s, c) { return (c || document).querySelector(s); };
-  var $$ = function (s, c) { return Array.prototype.slice.call((c || document).querySelectorAll(s)); };
-  var store = {
-    get: function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
-    set: function (k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
-  };
-  var lang = function () { return root.getAttribute("lang") === "en" ? "en" : "de"; };
+  var $ = function (s, r) { return (r || document).querySelector(s); };
+  var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
+  var reduce = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  /* ---------- Sprache: Deutsch steht im HTML, Englisch in data-en ---------- */
-  var ATTRS = [["data-en-aria", "aria-label"], ["data-en-title", "title"], ["data-en-tip", "data-tip"]];
-  function applyLang() {
-    var en = lang() === "en";
-    $$("[data-en]").forEach(function (el) {
-      if (el.__de === undefined) el.__de = el.innerHTML;
-      el.innerHTML = en ? el.getAttribute("data-en") : el.__de;
-    });
-    ATTRS.forEach(function (p) {
-      $$("[" + p[0] + "]").forEach(function (el) {
-        var k = "__de_" + p[1];
-        if (el[k] === undefined) el[k] = el.getAttribute(p[1]) || "";
-        el.setAttribute(p[1], en ? el.getAttribute(p[0]) : el[k]);
-      });
-    });
-    var t = $("title");
-    if (t) {
-      if (t.__de === undefined) t.__de = t.textContent;
-      t.textContent = en ? "EasyMySQL – MariaDB server and database manager for Windows" : t.__de;
-    }
-    renderRelease();
-  }
-  var langBtn = $("#lang");
-  if (langBtn) langBtn.addEventListener("click", function () {
-    var n = lang() === "de" ? "en" : "de";
-    root.setAttribute("lang", n);
-    store.set("em-lang", n);
-    applyLang();
-  });
-  var themeBtn = $("#theme");
-  if (themeBtn) themeBtn.addEventListener("click", function () {
-    var n = root.getAttribute("data-theme") === "dark" ? "light" : "dark";
-    root.setAttribute("data-theme", n);
-    store.set("em-theme", n);
-  });
+  // ---- Sprache -------------------------------------------------------------
+  var texts = new Map();
+  $$("[data-en]").forEach(function (el) { texts.set(el, el.textContent); });
+  $$("[data-en-title]").forEach(function (el) { el.setAttribute("data-de-title", el.title); });
+  var lang = root.getAttribute("lang") === "en" ? "en" : "de";
+  var rel = null;
 
-  /* ---------- neuestes Release ---------- */
-  var release = null;
-  function mb(bytes) {
-    if (!bytes) return "";
-    var v = bytes / 1048576;
-    return v.toLocaleString(lang() === "de" ? "de-AT" : "en-GB", { maximumFractionDigits: v < 10 ? 1 : 0 }) + " MB";
-  }
-  function setAll(sel, text) { $$(sel).forEach(function (el) { el.textContent = text; }); }
-  function renderRelease() {
-    var r = release;
-    if (!r) return;
-    var v = r.version, de = lang() === "de";
-    var setup = r.files.setup || {}, portable = r.files.portable;
-    setAll("[data-ver]", "v" + v);
-    setAll("[data-ver-head]", "v" + v);
-    setAll("[data-ver-plain]", v);
-    setAll("[data-ver-plain-v]", v);
-    setAll("[data-ver-status]", "EasyMySQL " + v);
-    setAll("[data-ver-note]", (de ? "Version " : "Version ") + v);
-    setAll("[data-ver-size]", "v" + v + (setup.size ? " · " + mb(setup.size) : ""));
-    setAll("[data-mdb]", r.mariadb || "");
-    setAll("[data-mdb-v]", r.mariadb || "");
-    $$("[data-needs-mdb]").forEach(function (el) { el.hidden = !r.mariadb; });
-    setAll("[data-mdb-status]", r.mariadb ? "MariaDB " + r.mariadb : "");
-    setAll("[data-ver-banner]", r.mariadb ? "Server version: " + r.mariadb + "-MariaDB mariadb.org binary distribution\n" : "");
-    setAll("[data-date]", r.published ? new Date(r.published).toLocaleDateString(de ? "de-AT" : "en-GB", { day: "numeric", month: "long", year: "numeric" }) : "–");
-    ["setup", "portable"].forEach(function (k) {
-      var f = r.files[k];
-      if (!f) return;
-      setAll('[data-file="' + k + '"]', f.name);
-      setAll('[data-size="' + k + '"]', mb(f.size));
-      $$('[data-hash="' + k + '"]').forEach(function (b) {
-        if (!f.sha256) return;
-        b.hidden = false;
-        b.__hash = f.sha256;
-        $("span", b).textContent = f.sha256;
-      });
+  function applyLang(l) {
+    lang = l;
+    root.setAttribute("lang", l);
+    texts.forEach(function (de, el) { el.textContent = l === "en" ? el.getAttribute("data-en") : de; });
+    $$("[data-en-title]").forEach(function (el) {
+      el.title = l === "en" ? el.getAttribute("data-en-title") : el.getAttribute("data-de-title");
     });
+    $$(".lang button").forEach(function (b) { b.setAttribute("aria-pressed", String(b.dataset.lang === l)); });
+    document.title = "EasyMySQL";
+    var d = document.querySelector('meta[name="description"]');
+    if (d) d.content = l === "en"
+      ? "EasyMySQL is a Windows program that brings a MariaDB server and manages databases: queries, tables, ER diagrams, backups."
+      : "EasyMySQL ist ein Windows-Programm, das einen MariaDB-Server mitbringt und Datenbanken verwaltet: Abfragen, Tabellen, ER-Diagramme, Sicherungen.";
+    if (rel) render(rel);
+    splitStatement();
   }
-  function loadRelease() {
-    var cached = store.get("em-rel");
-    if (cached) { try { release = JSON.parse(cached); renderRelease(); } catch (e) {} }
-    if (!window.fetch) return;
-    fetch("/api/release", { headers: { accept: "application/json" } })
-      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
-      .then(function (r) { release = r; store.set("em-rel", JSON.stringify(r)); renderRelease(); })
-      .catch(function () {});
-  }
-
-  /* ---------- Kopieren ---------- */
-  function copyText(text, done) {
-    function fallback() {
-      var t = document.createElement("textarea");
-      t.value = text; t.setAttribute("readonly", ""); t.className = "sr-copy";
-      document.body.appendChild(t); t.select();
-      try { document.execCommand("copy"); } catch (e) {}
-      document.body.removeChild(t); done();
-    }
-    if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text).then(done, fallback); else fallback();
-  }
-  document.addEventListener("click", function (e) {
-    var c = e.target.closest && e.target.closest("[data-copy]");
-    var h = e.target.closest && e.target.closest("[data-hash]");
-    var el = c || h;
-    if (!el) return;
-    var text = c ? c.getAttribute("data-copy") : h.__hash;
-    if (!text) return;
-    copyText(text, function () {
-      var target = c || $("b", h), old = target.innerHTML;
-      target.textContent = lang() === "de" ? "Kopiert" : "Copied";
-      setTimeout(function () { target.innerHTML = old; }, 1400);
+  $$(".lang button").forEach(function (b) {
+    b.addEventListener("click", function () {
+      try { localStorage.setItem("em-lang", b.dataset.lang); } catch (e) {}
+      applyLang(b.dataset.lang);
     });
   });
 
-  /* ---------- Registerkarten (Funktionen und Fenster-Nachbau) ---------- */
-  function tabs(list, tabSel, paneOf) {
-    if (!list) return;
-    var items = $$(tabSel, list);
-    function select(tab, focus) {
-      items.forEach(function (t) {
-        var on = t === tab;
-        t.setAttribute("aria-selected", on ? "true" : "false");
-        t.tabIndex = on ? 0 : -1;
-        var p = paneOf(t);
-        if (p) { p.hidden = !on; p.classList.toggle("on", on); }
-      });
-      if (focus) tab.focus();
-    }
-    items.forEach(function (t, i) {
-      t.addEventListener("click", function () { select(t); });
-      t.addEventListener("keydown", function (e) {
-        var n = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
-        if (e.key === "Home") n = -i;
-        if (e.key === "End") n = items.length - 1 - i;
-        if (n === undefined) return;
-        e.preventDefault();
-        select(items[(i + n + items.length) % items.length], true);
-      });
-    });
-    select(items.filter(function (t) { return t.getAttribute("aria-selected") === "true"; })[0] || items[0]);
+  // ---- Release -------------------------------------------------------------
+  function mb(n) {
+    if (!n) return "";
+    var v = n / 1048576;
+    return (v >= 100 ? Math.round(v) : v.toFixed(1)).toString().replace(".", lang === "de" ? "," : ".") + " MB";
   }
-  tabs($(".feat-nav"), ".nav-i", function (t) { return document.getElementById(t.getAttribute("aria-controls")); });
-  tabs($(".w-tabs"), ".w-tab", function (t) { return document.getElementById(t.getAttribute("data-pane")); });
+  function setText(id, t) { var el = document.getElementById(id); if (el) el.textContent = t; }
 
-  /* ---------- aktiver Abschnitt ---------- */
-  var secs = $$("main .sec");
-  function mark(id) {
-    $$(".activity a").forEach(function (a) { a.classList.toggle("on", a.getAttribute("data-sec") === id); });
-    $$(".menus a").forEach(function (a) { a.classList.toggle("on", a.getAttribute("href") === "#" + id); });
+  function render(r) {
+    var f = r.files || {}, s = f.setup, p = f.portable;
+    var loc = lang === "de" ? "de-AT" : "en-GB";
+    var meta = $("#dl-meta");
+    if (meta) { meta.textContent = r.version + (s && s.size ? " · " + mb(s.size) : ""); meta.hidden = false; }
+    setText("f-version", r.version);
+    if (r.published) {
+      var d = new Date(r.published);
+      if (!isNaN(d)) setText("f-date", d.toLocaleDateString(loc, { day: "numeric", month: "long", year: "numeric" }));
+    }
+    if (r.mariadb) { setText("f-mdb", r.mariadb); $$("[data-needs-mdb]").forEach(function (e) { e.hidden = false; }); }
+    [["setup", s], ["portable", p]].forEach(function (x) {
+      var k = x[0], a = x[1];
+      if (!a) return;
+      setText(k + "-name", a.name);
+      setText(k + "-size", mb(a.size));
+      var h = document.getElementById("h-" + k);
+      if (h) { h.textContent = a.sha256 || "–"; h.dataset.full = a.sha256 || ""; }
+      var row = document.getElementById("row-" + k);
+      if (row && a.url) row.setAttribute("href", a.url);
+    });
+    if (s && s.url) { var b = $("#dl-main"); if (b) b.setAttribute("href", s.url); }
   }
-  if ("IntersectionObserver" in window) {
+
+  try { var c = JSON.parse(localStorage.getItem("em-rel") || "null"); if (c && c.version) { rel = c; render(c); } } catch (e) {}
+  fetch("/api/release", { headers: { accept: "application/json" } })
+    .then(function (r) { if (!r.ok) throw 0; return r.json(); })
+    .then(function (r) {
+      rel = r; render(r);
+      try { localStorage.setItem("em-rel", JSON.stringify(r)); } catch (e) {}
+    })
+    .catch(function () {});
+
+  $$(".hash").forEach(function (b) {
+    b.addEventListener("click", function () {
+      var v = b.dataset.full;
+      if (!v || !navigator.clipboard) return;
+      navigator.clipboard.writeText(v).then(function () {
+        var old = b.textContent;
+        b.textContent = lang === "en" ? "Copied" : "Kopiert";
+        setTimeout(function () { b.textContent = old; }, 1400);
+      }).catch(function () {});
+    });
+  });
+
+  // ---- Aussage: Wörter leuchten beim Scrollen auf ----------------------------
+  var words = [];
+  function splitStatement() {
+    var p = document.getElementById("statement");
+    if (!p) return;
+    var text = p.textContent;
+    p.textContent = "";
+    words = text.split(" ").map(function (w, i, a) {
+      var s = document.createElement("span");
+      s.className = "w";
+      s.textContent = w + (i < a.length - 1 ? " " : "");
+      p.appendChild(s);
+      return s;
+    });
+    reveal();
+  }
+  function reveal() {
+    if (!words.length) return;
+    var p = document.getElementById("statement");
+    var r = p.getBoundingClientRect(), vh = window.innerHeight;
+    // 0 wenn der Absatz unten einläuft, 1 wenn seine Mitte etwa im oberen Drittel steht
+    var t = (vh * 0.92 - r.top) / (vh * 0.55 + r.height * 0.5);
+    var n = reduce ? words.length : Math.round(Math.max(0, Math.min(1, t)) * words.length);
+    words.forEach(function (w, i) { w.classList.toggle("on", i < n); });
+  }
+  var tick = false;
+  window.addEventListener("scroll", function () {
+    if (tick) return;
+    tick = true;
+    requestAnimationFrame(function () { tick = false; reveal(); });
+  }, { passive: true });
+  window.addEventListener("resize", reveal);
+
+  // ---- Einblenden ---------------------------------------------------------------
+  var rv = $$(".features li, .more, .rows, .facts, .steps li, .faq details");
+  if ("IntersectionObserver" in window && !reduce) {
+    rv.forEach(function (e) { e.classList.add("rv"); });
     var io = new IntersectionObserver(function (es) {
-      es.forEach(function (e) { if (e.isIntersecting) mark(e.target.id); });
-    }, { rootMargin: "-35% 0px -60% 0px" });
-    secs.forEach(function (s) { io.observe(s); });
+      es.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); } });
+    }, { rootMargin: "0px 0px -8% 0px", threshold: 0.05 });
+    rv.forEach(function (e) { io.observe(e); });
   }
-  mark("start");
 
-  applyLang();
-  loadRelease();
+  applyLang(lang);
 })();

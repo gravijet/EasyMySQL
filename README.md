@@ -4,7 +4,7 @@ MariaDB server and database manager for Windows. Includes an SQL editor, table e
 
 ## Install
 
-Download the installer or portable ZIP from [Releases](https://github.com/gravijet/EasyMySQL/releases). MariaDB is included. Launch EasyMySQL to initialize the server.
+Download the installer or portable ZIP from [mysql.benjaminberger.at](https://mysql.benjaminberger.at). MariaDB is included. Launch EasyMySQL to initialize the server.
 
 The default connection uses port `3306`, user `root` and an empty password. The server accepts connections from the same PC only. The installer adds the command-line tools to `PATH`:
 

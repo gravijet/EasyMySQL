@@ -654,7 +654,7 @@ pub const CHAPTERS: &[Chapter] = &[
                     Table(&[
                         ("Sprache", "Englisch als Standard, Deutsch wählbar"),
                         ("Darstellung", "dunkles Standarddesign, helles Design wählbar; die aktive Kategorie ist hervorgehoben"),
-                        ("Updates", "beim Start und alle sechs Stunden GitHub Releases prüfen; Download und Installation selbst starten"),
+                        ("Updates", "beim Start und alle sechs Stunden nach neuen Versionen suchen; Download und Installation selbst starten"),
                         ("Systemdatenbanken zeigen", "information_schema, mysql, performance_schema, sys in der Seitenleiste"),
                         ("Schriftgröße", "Schrift im SQL-Editor, 10 bis 28 Pixel"),
                         ("Minimap", "Übersicht rechts im Editor"),

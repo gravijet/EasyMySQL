@@ -245,7 +245,7 @@ impl TabView for SettingsTab {
                 self.heading(ui, "updates", "Updates");
                 ui.label(crate::tr_format!("Installierte Version: {}", "Installed version: {}", env!("CARGO_PKG_VERSION")));
                 ui.checkbox(&mut s.auto_update, crate::i18n::text("Beim Start und alle sechs Stunden nach Updates suchen"));
-                ui.label(crate::i18n::text("Neue Versionen werden über GitHub Releases gefunden. Die Installation starten Sie selbst."));
+                ui.label(crate::i18n::text("Neue Versionen werden automatisch gefunden. Die Installation starten Sie selbst."));
                 if ui.button(crate::i18n::text("Jetzt nach Updates suchen")).clicked() {
                     cx.actions.push(Action::Run(Cmd::CheckUpdates));
                 }

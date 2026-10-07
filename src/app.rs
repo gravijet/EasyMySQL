@@ -807,7 +807,7 @@ impl EasyApp {
         if self.last_state.is_busy() {
             ctx.request_repaint_after(Duration::from_millis(250));
         } else {
-            ctx.request_repaint_after(Duration::from_secs(2));
+            ctx.request_repaint_after(Duration::from_secs(5));
         }
     }
 

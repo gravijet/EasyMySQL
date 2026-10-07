@@ -178,7 +178,7 @@ jobs:
 
             - English interface by default; German is selectable under Settings → Appearance.
             - Dark mode by default; a light theme is also available.
-            - SQL editor, query builder, ER diagrams, automatic backups and GitHub update checks.
+            - SQL editor, query builder, ER diagrams, automatic backups and update checks.
             - Cached editor layout and diagram routes, shared result data, and background project scans and file searches.
 
             ### Included

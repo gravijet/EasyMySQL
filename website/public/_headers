@@ -9,3 +9,5 @@
   Cache-Control: public, max-age=300, must-revalidate
 /boot.js
   Cache-Control: public, max-age=300, must-revalidate
+/orbs.js
+  Cache-Control: public, max-age=300, must-revalidate

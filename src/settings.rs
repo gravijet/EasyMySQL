@@ -10,7 +10,7 @@ pub struct Settings {
     pub dark: bool,
     pub save_password: bool,
     pub show_system_dbs: bool,
-    /// Beim Start und alle sechs Stunden GitHub Releases pruefen.
+    /// Beim Start und alle sechs Stunden nach neuen Versionen suchen.
     pub auto_update: bool,
     /// Schriftgroesse im SQL-Editor (Pixel)
     pub editor_font: u32,
