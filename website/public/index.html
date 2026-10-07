@@ -5,10 +5,9 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>EasyMySQL</title>
 <meta name="description" content="EasyMySQL ist ein Windows-Programm, das einen MariaDB-Server mitbringt und Datenbanken verwaltet: Abfragen, Tabellen, ER-Diagramme, Sicherungen.">
-<meta name="theme-color" content="#090b12">
+<meta name="theme-color" content="#ffffff">
 <link rel="canonical" href="https://mysql.benjaminberger.at/">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<link rel="preload" href="/InterTight.woff2" as="font" type="font/woff2" crossorigin>
 <meta property="og:type" content="website">
 <meta property="og:title" content="EasyMySQL">
 <meta property="og:description" content="MariaDB-Server und Datenbank-Verwaltung für Windows.">
@@ -20,33 +19,30 @@
 </head>
 <body>
 
-<div class="lang" role="group" aria-label="Sprache / Language">
-  <button type="button" data-lang="de" aria-pressed="true">DE</button>
-  <button type="button" data-lang="en" aria-pressed="false">EN</button>
-</div>
+<div class="page">
+
+<header class="top">
+  <span class="brand"><img src="/favicon.svg" alt="" width="24" height="24"> EasyMySQL</span>
+  <div class="lang" role="group" aria-label="Sprache / Language">
+    <button type="button" data-lang="de" aria-pressed="true">DE</button>
+    <button type="button" data-lang="en" aria-pressed="false">EN</button>
+  </div>
+</header>
 
 <main>
 
-<section class="hero" id="start">
-  <canvas id="orbs" aria-hidden="true"></canvas>
-  <div class="hero-in">
-    <p class="lede" data-en="MariaDB server and database manager for Windows.">MariaDB-Server und Datenbank-Verwaltung für Windows.</p>
-    <h1>EasyMySQL</h1>
-    <div class="cta">
-      <a class="btn" href="/download/setup" id="dl-main" data-en="Download for Windows">Für Windows laden</a>
-      <span class="cta-meta" id="dl-meta" hidden></span>
-      <a class="alt" href="#download" data-en="Portable version">Portable Version</a>
-    </div>
-  </div>
-  <a class="scroll" href="#idee" data-en="Scroll">Scrollen</a>
-</section>
-
-<section class="statement" id="idee">
-  <p id="statement" data-en="One program that brings its own database server. Install it, start it, write queries.">Ein Programm, das den Datenbankserver gleich mitbringt. Installieren, starten, Abfragen schreiben.</p>
+<section class="intro" id="start">
+  <h1 data-en="MariaDB server and database manager for Windows" >MariaDB-Server und Datenbank-Verwaltung für Windows</h1>
+  <p data-en="EasyMySQL brings its own MariaDB server and starts it as soon as the program runs. On top of that you get an SQL editor, tables you can edit, ER diagrams and automatic backups.">EasyMySQL bringt einen MariaDB-Server mit und startet ihn, sobald das Programm läuft. Dazu kommen ein SQL-Editor, Tabellen zum Bearbeiten, ER-Diagramme und automatische Sicherungen.</p>
+  <p class="cta">
+    <a class="btn" href="/download/setup" id="dl-main" data-en="Download for Windows">Für Windows herunterladen</a>
+    <span class="cta-meta" id="dl-meta" hidden></span>
+  </p>
+  <p class="small"><a href="#download" data-en="Portable version and checksums">Portable Version und Prüfsummen</a></p>
 </section>
 
 <section class="features" id="funktionen">
-  <h2 class="eyebrow" data-en="Features">Funktionen</h2>
+  <h2 data-en="Features">Funktionen</h2>
   <ul>
     <li>
       <h3 data-en="SQL editor">SQL-Editor</h3>
@@ -82,12 +78,12 @@
     <a class="row" href="/download/setup" id="row-setup">
       <span class="row-t" data-en="Installer">Installer</span>
       <span class="row-d"><span id="setup-name">EasyMySQL-Setup.exe</span><span class="row-s" id="setup-size"></span></span>
-      <span class="row-a" aria-hidden="true">↓</span>
+      <span class="row-a" data-en="Download">Herunterladen</span>
     </a>
     <a class="row" href="/download/portable" id="row-portable">
       <span class="row-t">Portable</span>
       <span class="row-d"><span id="portable-name">EasyMySQL-portable.zip</span><span class="row-s" id="portable-size"></span></span>
-      <span class="row-a" aria-hidden="true">↓</span>
+      <span class="row-a" data-en="Download">Herunterladen</span>
     </a>
   </div>
   <dl class="facts">
@@ -155,7 +151,8 @@
   </p>
 </footer>
 
+</div>
+
 <script src="/app.js"></script>
-<script src="/orbs.js"></script>
 </body>
 </html>

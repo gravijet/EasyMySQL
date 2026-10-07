@@ -26,7 +26,6 @@
       ? "EasyMySQL is a Windows program that brings a MariaDB server and manages databases: queries, tables, ER diagrams, backups."
       : "EasyMySQL ist ein Windows-Programm, das einen MariaDB-Server mitbringt und Datenbanken verwaltet: Abfragen, Tabellen, ER-Diagramme, Sicherungen.";
     if (rel) render(rel);
-    splitStatement();
   }
   $$(".lang button").forEach(function (b) {
     b.addEventListener("click", function () {
@@ -87,49 +86,6 @@
       }).catch(function () {});
     });
   });
-
-  // ---- Aussage: Wörter leuchten beim Scrollen auf ----------------------------
-  var words = [];
-  function splitStatement() {
-    var p = document.getElementById("statement");
-    if (!p) return;
-    var text = p.textContent;
-    p.textContent = "";
-    words = text.split(" ").map(function (w, i, a) {
-      var s = document.createElement("span");
-      s.className = "w";
-      s.textContent = w + (i < a.length - 1 ? " " : "");
-      p.appendChild(s);
-      return s;
-    });
-    reveal();
-  }
-  function reveal() {
-    if (!words.length) return;
-    var p = document.getElementById("statement");
-    var r = p.getBoundingClientRect(), vh = window.innerHeight;
-    // 0 wenn der Absatz unten einläuft, 1 wenn seine Mitte etwa im oberen Drittel steht
-    var t = (vh * 0.92 - r.top) / (vh * 0.55 + r.height * 0.5);
-    var n = reduce ? words.length : Math.round(Math.max(0, Math.min(1, t)) * words.length);
-    words.forEach(function (w, i) { w.classList.toggle("on", i < n); });
-  }
-  var tick = false;
-  window.addEventListener("scroll", function () {
-    if (tick) return;
-    tick = true;
-    requestAnimationFrame(function () { tick = false; reveal(); });
-  }, { passive: true });
-  window.addEventListener("resize", reveal);
-
-  // ---- Einblenden ---------------------------------------------------------------
-  var rv = $$(".features li, .more, .rows, .facts, .steps li, .faq details");
-  if ("IntersectionObserver" in window && !reduce) {
-    rv.forEach(function (e) { e.classList.add("rv"); });
-    var io = new IntersectionObserver(function (es) {
-      es.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); } });
-    }, { rootMargin: "0px 0px -8% 0px", threshold: 0.05 });
-    rv.forEach(function (e) { io.observe(e); });
-  }
 
   applyLang(lang);
 })();
