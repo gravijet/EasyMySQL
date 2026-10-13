@@ -41,7 +41,8 @@ impl EasyApp {
         if let Some(s) = &session {
             self.side_view = SideView::from_name(&s.side_view);
             self.sidebar = s.sidebar;
-            for t in &s.tabs {
+            let tabs: &[String] = if self.settings.restore_tabs { &s.tabs } else { &[] };
+            for t in tabs {
                 if let Some(id) = t.strip_prefix("scratch\t").and_then(|r| r.split('\t').next()).and_then(|i| i.parse::<usize>().ok()) {
                     restored_scratch.push(id);
                 }
@@ -49,7 +50,7 @@ impl EasyApp {
                     self.tabs.push(tab);
                 }
             }
-            self.active = s.active.min(self.tabs.len().saturating_sub(1));
+            self.active = if self.settings.restore_tabs { s.active.min(self.tabs.len().saturating_sub(1)) } else { 0 };
         }
         // Unbenannte Abfragen, die in keiner Sitzung stehen (z. B. nach Absturz), nicht verlieren
         if let Ok(rd) = std::fs::read_dir(workspace::scratch_dir()) {
@@ -110,7 +111,22 @@ impl EasyApp {
             }
         };
         ui.horizontal(|ui| {
+            ui.set_min_height(34.0);
+            ui.spacing_mut().item_spacing.x = 2.0;
+            ui.spacing_mut().button_padding = vec2(11.0, 6.0);
+            // Zeichen und Name des Programms
+            {
+                let pal = style::pal();
+                let (r, _) = ui.allocate_exact_size(vec2(26.0, 26.0), Sense::hover());
+                ui.painter().rect_filled(r, 8.0, pal.accent);
+                icons::paint(ui.painter(), Rect::from_center_size(r.center(), vec2(16.0, 16.0)), Icon::Database, egui::Color32::WHITE);
+                ui.add_space(6.0);
+                ui.label(egui::RichText::new("EasyMySQL").strong().color(pal.text));
+                ui.add_space(14.0);
+            }
             egui::MenuBar::new().ui(ui, |ui| {
+                ui.spacing_mut().button_padding = vec2(12.0, 6.0);
+                ui.spacing_mut().item_spacing.x = 4.0;
                 ui.menu_button(crate::i18n::text("Datei"), |ui| {
                     item(ui, crate::i18n::text("Neue Abfrage"), Cmd::NewQuery, &mut cmd);
                     item(ui, crate::i18n::text("Datei öffnen …"), Cmd::OpenFile, &mut cmd);
@@ -207,9 +223,9 @@ impl EasyApp {
                     }
                 });
             });
-            // Werkzeuge, die eine Registerkarte oeffnen
+            // Rechts: Neue Abfrage, Werkzeuge und der Serverzustand
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.spacing_mut().item_spacing.x = 2.0;
+                ui.spacing_mut().item_spacing.x = 4.0;
                 let st = self.server.state();
                 let pal = style::pal();
                 let color = if st.is_running() {
@@ -217,13 +233,18 @@ impl EasyApp {
                 } else if matches!(st, State::Failed(_) | State::NotFound) {
                     pal.error_text
                 } else {
-                    style::pal().syn_function
+                    pal.warn_text
                 };
-                let (r, resp) = ui.allocate_exact_size(vec2(22.0, 22.0), Sense::click());
-                if resp.hovered() {
-                    ui.painter().rect_filled(r, 3.0, pal.hover);
-                }
-                ui.painter().circle_filled(r.center(), 4.5, color);
+                // Zustandsanzeige: Punkt und kurzer Text
+                let text = match &self.db {
+                    Some(d) => d.info.label(),
+                    None => st.text().to_string(),
+                };
+                let galley = ui.painter().layout_no_wrap(text, egui::FontId::proportional(12.5), pal.text_weak);
+                let (r, resp) = ui.allocate_exact_size(vec2(galley.size().x + 36.0, 28.0), Sense::click());
+                ui.painter().rect(r, 14.0, if resp.hovered() { pal.hover } else { pal.face_light }, egui::Stroke::new(1.0, pal.border), egui::StrokeKind::Inside);
+                ui.painter().circle_filled(pos2(r.left() + 15.0, r.center().y), 4.0, color);
+                ui.painter().galley(pos2(r.left() + 26.0, r.center().y - galley.size().y / 2.0), galley, pal.text_weak);
                 let tip = match &self.db {
                     Some(d) => format!("Server {} – {} (MariaDB {})", st.text(), d.info.label(), d.version.split('-').next().unwrap_or("")),
                     None => format!("Server {}", st.text()),
@@ -231,6 +252,7 @@ impl EasyApp {
                 if resp.on_hover_text(tip).clicked() {
                     cmd = Some(Cmd::ServerLog);
                 }
+                ui.add_space(6.0);
                 for (icon, c) in [(Icon::Wizard, Cmd::QueryBuilder), (Icon::Diagram, Cmd::ErDiagram)] {
                     let tip = match keymap::text(c) {
                         k if k.is_empty() => c.label().to_string(),
@@ -239,6 +261,14 @@ impl EasyApp {
                     if icons::button(ui, icon, &tip).clicked() {
                         cmd = Some(c);
                     }
+                }
+                ui.add_space(6.0);
+                let tip = match keymap::text(Cmd::NewQuery) {
+                    k if k.is_empty() => Cmd::NewQuery.label().to_string(),
+                    k => format!("{} ({k})", Cmd::NewQuery.label()),
+                };
+                if icons::primary_button(ui, Icon::Plus, crate::i18n::tr("Abfrage", "Query")).on_hover_text(tip).clicked() {
+                    cmd = Some(Cmd::NewQuery);
                 }
             });
         });
@@ -252,20 +282,23 @@ impl EasyApp {
 
     pub(super) fn activity_bar(&mut self, ui: &mut egui::Ui) {
         let pal = style::pal();
-        ui.add_space(4.0);
+        ui.add_space(6.0);
         for (icon, view, cmd) in [
             (Icon::Files, SideView::Explorer, Cmd::ShowExplorer),
             (Icon::Search, SideView::Search, Cmd::ShowSearch),
             (Icon::Database, SideView::Databases, Cmd::ShowDatabases),
             (Icon::History, SideView::History, Cmd::ShowHistory),
         ] {
-            let (r, resp) = ui.allocate_exact_size(vec2(44.0, 44.0), Sense::click());
+            let (slot, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 42.0), Sense::click());
+            let r = Rect::from_center_size(slot.center(), vec2(40.0, 38.0));
             let active = self.sidebar && self.side_view == view;
             if active {
-                ui.painter().rect_filled(Rect::from_min_size(r.min, vec2(2.0, r.height())), 0.0, pal.activity_active);
+                ui.painter().rect_filled(r, style::RADIUS as f32 + 2.0, pal.selection.gamma_multiply(if pal.dark { 0.75 } else { 0.9 }));
+            } else if resp.hovered() {
+                ui.painter().rect_filled(r, style::RADIUS as f32 + 2.0, pal.hover);
             }
-            let color = if active || resp.hovered() { pal.activity_active } else { pal.activity_fg };
-            icons::paint(ui.painter(), Rect::from_center_size(r.center(), vec2(24.0, 24.0)), icon, color);
+            let color = if active { pal.activity_active } else if resp.hovered() { pal.text } else { pal.activity_fg };
+            icons::paint(ui.painter(), Rect::from_center_size(r.center(), vec2(22.0, 22.0)), icon, color);
             let k = keymap::text(cmd);
             let tip = if k.is_empty() { cmd.label().to_string() } else { format!("{} ({k})", cmd.label()) };
             if resp.on_hover_text(tip).clicked() {
@@ -285,59 +318,92 @@ impl EasyApp {
     // Registerkarten
 
     pub(super) fn tab_bar(&mut self, ui: &mut egui::Ui) {
+        const BAR_H: f32 = 42.0;
+        const PILL_H: f32 = 30.0;
+        const GAP: f32 = 4.0;
+        const MAX_W: f32 = 216.0;
+        const ACTIVE_W: f32 = 190.0;
+        const MIN_W: f32 = 132.0;
+        const ICON_W: f32 = 42.0;
+        const LIST_W: f32 = 34.0;
         let pal = style::pal();
+        let font = egui::FontId::proportional(13.0);
+        let (bar, _) = ui.allocate_exact_size(vec2(ui.available_width(), BAR_H), Sense::hover());
+        block_autoscroll(bar);
+        let n = self.tabs.len();
+        let looks: Vec<TabLook> = self.tabs.iter().map(|t| TabLook { title: t.title(), icon: t.icon(), busy: t.busy(), modified: t.modified() }).collect();
+        // Wunschbreite je Reiter. Passen nicht alle, schrumpfen zuerst die langen Titel, dann die
+        // inaktiven Reiter bis auf ihr Symbol; der aktive behaelt seinen Titel.
+        let desired: Vec<f32> = looks
+            .iter()
+            .map(|l| (ui.painter().layout_no_wrap(l.title.clone(), font.clone(), pal.text).size().x + 52.0 + 22.0).clamp(90.0, MAX_W))
+            .collect();
+        let gaps = GAP * n.saturating_sub(1) as f32;
+        let avail = bar.width() - 4.0;
+        let active_i = self.active.min(n.saturating_sub(1));
+        let fit = |avail: f32| -> Vec<f32> {
+            if desired.iter().sum::<f32>() + gaps <= avail {
+                return desired.clone();
+            }
+            // Wasserstandsverfahren: gemeinsame Obergrenze der Breite, passend zum Platz
+            let budget = (avail - gaps).max(0.0);
+            let level = |floor: f32| -> Vec<f32> {
+                let (mut lo, mut hi) = (floor, MAX_W);
+                for _ in 0..24 {
+                    let mid = (lo + hi) / 2.0;
+                    let sum: f32 = desired.iter().enumerate().map(|(i, d)| if i == active_i { d.min(ACTIVE_W) } else { d.min(mid).max(floor.min(*d)) }).sum();
+                    if sum > budget { hi = mid } else { lo = mid }
+                }
+                desired.iter().enumerate().map(|(i, d)| if i == active_i { d.min(ACTIVE_W) } else { d.min(lo).max(floor.min(*d)) }).collect()
+            };
+            let readable = level(MIN_W);
+            if readable.iter().sum::<f32>() + gaps <= avail + 0.5 {
+                return readable;
+            }
+            desired.iter().enumerate().map(|(i, d)| if i == active_i { d.min(ACTIVE_W) } else { ICON_W }).collect()
+        };
+        let mut widths = fit(avail);
+        let scroll = widths.iter().sum::<f32>() + gaps > avail + 0.5;
+        if scroll {
+            widths = fit(avail - LIST_W);
+        }
+        let tabs_rect = Rect::from_min_max(bar.min + vec2(2.0, 0.0), bar.max - vec2(if scroll { LIST_W + 2.0 } else { 2.0 }, 0.0));
+
         let mut close = None;
         let mut close_others = None;
         let mut close_right = None;
         let mut close_all = false;
         let mut activate = None;
-        let (bar, _) = ui.allocate_exact_size(vec2(ui.available_width(), 32.0), Sense::hover());
-        block_autoscroll(bar);
-        ui.painter().rect_filled(bar, 0.0, pal.tab_bar_bg);
-        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(bar).layout(egui::Layout::left_to_right(egui::Align::Center)));
+        let mut rects: Vec<Rect> = Vec::with_capacity(n);
+        let mut dragging: Option<(usize, f32)> = None;
+        let mut dropped: Option<(usize, f32)> = None;
+        let active = self.active;
+        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(tabs_rect).layout(egui::Layout::left_to_right(egui::Align::Center)));
         egui::ScrollArea::horizontal().id_salt("tabbar").scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden).show(&mut child, |ui| {
-            ui.spacing_mut().item_spacing.x = 0.0;
-            for (i, t) in self.tabs.iter().enumerate() {
-                let sel = i == self.active;
-                let title = t.title();
-                let galley = ui.painter().layout_no_wrap(title.clone(), egui::FontId::proportional(13.0), pal.text);
-                let icon = t.icon();
-                let w = galley.size().x + 44.0 + if icon.is_some() { 22.0 } else { 0.0 };
-                let (r, resp) = ui.allocate_exact_size(vec2(w, 32.0), Sense::click());
+            ui.spacing_mut().item_spacing.x = GAP;
+            let time = ui.input(|i| i.time) as f32;
+            for (i, look) in looks.iter().enumerate() {
+                let sel = i == active;
+                let (r, resp) = ui.allocate_exact_size(vec2(widths[i], PILL_H), Sense::click_and_drag());
+                rects.push(r);
                 if sel {
                     resp.scroll_to_me(None);
                 }
-                let hovered = resp.hovered();
-                ui.painter().rect_filled(r, 0.0, if sel { pal.tab_active } else { pal.tab_inactive });
-                if sel {
-                    ui.painter().rect_filled(Rect::from_min_size(r.min, vec2(r.width(), 2.0)), 0.0, pal.accent);
-                }
-                ui.painter().vline(r.right(), r.y_range(), Stroke::new(1.0, pal.tab_bar_bg));
-                let color = if sel { pal.text } else { pal.text_weak };
-                let mut text_x = 12.0;
-                if let Some(ic) = icon {
-                    icons::paint(ui.painter(), Rect::from_center_size(pos2(r.left() + 20.0, r.center().y), vec2(14.0, 14.0)), ic, if sel { pal.accent } else { pal.text_weak });
-                    text_x = 34.0;
-                }
-                ui.painter().text(r.left_center() + vec2(text_x, 0.0), egui::Align2::LEFT_CENTER, &title, egui::FontId::proportional(13.0), color);
-                // Schliessen-Kreuz bzw. Laufanzeige
-                let cr = Rect::from_center_size(pos2(r.right() - 16.0, r.center().y), vec2(18.0, 18.0));
-                let over_close = ui.input(|i| i.pointer.hover_pos()).is_some_and(|p| cr.contains(p));
-                if t.busy() {
-                    let a = ui.input(|i| i.time) as f32 * 6.0;
-                    ui.painter().add(egui::Shape::line(
-                        (0..=10).map(|k| cr.center() + vec2((a + k as f32 * 0.45).cos(), (a + k as f32 * 0.45).sin()) * 5.0).collect(),
-                        Stroke::new(1.5, pal.accent),
-                    ));
-                    ui.ctx().request_repaint();
-                } else if t.modified() && !(hovered && over_close) {
-                    // Ungespeicherte Aenderungen: Punkt, beim Darueberfahren das Kreuz
-                    ui.painter().circle_filled(cr.center(), 4.0, color);
-                } else if sel || hovered {
-                    if over_close {
-                        ui.painter().rect_filled(cr, 3.0, pal.hover);
+                if resp.dragged() {
+                    if let Some(p) = ui.ctx().pointer_latest_pos() {
+                        dragging = Some((i, p.x));
                     }
-                    icons::paint(ui.painter(), cr, Icon::Close, color);
+                    continue;
+                }
+                if resp.drag_stopped()
+                    && let Some(p) = ui.ctx().pointer_latest_pos()
+                {
+                    dropped = Some((i, p.x));
+                }
+                let over_close = r.width() >= 100.0 && ui.input(|i| i.pointer.hover_pos()).is_some_and(|p| tab_close_rect(r).contains(p));
+                paint_tab(ui.painter(), r, look, sel, resp.hovered(), over_close, time, &font);
+                if look.busy {
+                    ui.ctx().request_repaint();
                 }
                 if resp.clicked() {
                     if over_close {
@@ -349,6 +415,8 @@ impl EasyApp {
                 if resp.middle_clicked() {
                     close = Some(i);
                 }
+                let cut = widths[i] < 100.0 || widths[i] + 1.0 < desired[i];
+                let resp = if cut { resp.on_hover_text_at_pointer(&look.title) } else { resp };
                 resp.context_menu(|ui| {
                     if ui.button(crate::i18n::text("Schließen")).clicked() {
                         close = Some(i);
@@ -366,7 +434,7 @@ impl EasyApp {
                         close_all = true;
                         ui.close();
                     }
-                    if let Some(f) = t.file() {
+                    if let Some(f) = self_file(&self.tabs, i) {
                         ui.separator();
                         if ui.button(crate::i18n::text("Im Datei-Explorer zeigen")).clicked() {
                             if let Some(d) = f.parent() {
@@ -382,6 +450,40 @@ impl EasyApp {
                 });
             }
         });
+        // Gezogener Reiter schwebt unter dem Mauszeiger; beim Loslassen wird er dort einsortiert
+        if let Some((i, x)) = dragging {
+            let w = widths[i];
+            let r = Rect::from_center_size(pos2(x.clamp(tabs_rect.left() + w / 2.0, tabs_rect.right() - w / 2.0), tabs_rect.center().y), vec2(w, PILL_H));
+            let painter = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("tab-drag")));
+            painter.rect_filled(r.translate(vec2(0.0, 2.0)), style::RADIUS as f32 + 1.0, egui::Color32::from_black_alpha(60));
+            paint_tab(&painter, r, &looks[i], true, false, false, 0.0, &font);
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+            self.active = i;
+        }
+        if let Some((i, x)) = dropped {
+            let to = rects.iter().enumerate().filter(|(k, r)| *k != i && r.center().x < x).count();
+            if to != i {
+                let t = self.tabs.remove(i);
+                self.tabs.insert(to, t);
+                self.active = to;
+            }
+        }
+        if scroll {
+            let r = Rect::from_center_size(pos2(bar.right() - LIST_W / 2.0 - 2.0, bar.center().y), vec2(28.0, 28.0));
+            let resp = ui.interact(r, egui::Id::new("tab-list"), Sense::click()).on_hover_text(crate::i18n::text("Alle Registerkarten"));
+            if resp.hovered() {
+                ui.painter().rect_filled(r, style::RADIUS as f32, pal.hover);
+            }
+            icons::paint(ui.painter(), Rect::from_center_size(r.center(), vec2(14.0, 14.0)), Icon::ChevronDown, pal.text_weak);
+            egui::Popup::menu(&resp).show(|ui| {
+                for (i, l) in looks.iter().enumerate() {
+                    if ui.add(egui::Button::new(&l.title).selected(i == active).min_size(vec2(180.0, 0.0))).clicked() {
+                        activate = Some(i);
+                        ui.close();
+                    }
+                }
+            });
+        }
         if close_all {
             self.run_cmd(&ui.ctx().clone(), Cmd::CloseAllTabs);
             return;
@@ -457,5 +559,71 @@ impl EasyApp {
         if let Some(i) = remove {
             self.toasts.remove(i);
         }
+    }
+}
+
+/// Was von einer Registerkarte zum Zeichnen gebraucht wird
+struct TabLook {
+    title: String,
+    icon: Option<Icon>,
+    busy: bool,
+    modified: bool,
+}
+
+fn self_file(tabs: &[Box<dyn TabView>], i: usize) -> Option<PathBuf> {
+    tabs.get(i).and_then(|t| t.file().map(|p| p.to_path_buf()))
+}
+
+/// Klickflaeche des Schliessen-Kreuzes (rechts im Reiter)
+fn tab_close_rect(r: Rect) -> Rect {
+    Rect::from_center_size(pos2(r.right() - 17.0, r.center().y), vec2(20.0, 20.0))
+}
+
+/// Reiter als abgerundete Kapsel: der aktive hebt sich ab, die anderen sind nur Text
+#[allow(clippy::too_many_arguments)]
+fn paint_tab(p: &egui::Painter, r: Rect, look: &TabLook, sel: bool, hovered: bool, over_close: bool, time: f32, font: &egui::FontId) {
+    let pal = style::pal();
+    let radius = style::RADIUS as f32 + 1.0;
+    if sel {
+        p.rect(r, radius, pal.bg, Stroke::new(1.0, pal.border), egui::StrokeKind::Inside);
+    } else if hovered {
+        p.rect_filled(r, radius, pal.hover);
+    }
+    let color = if sel { pal.text } else { pal.text_weak };
+    let icon = look.icon.unwrap_or(Icon::File);
+    // Zu schmal fuer den Titel: nur das Symbol (Titel im Tooltip)
+    if r.width() < 100.0 {
+        let c = if sel { pal.accent } else if hovered { pal.text } else { pal.text_weak };
+        icons::paint(p, Rect::from_center_size(r.center(), vec2(16.0, 16.0)), icon, c);
+        if look.busy {
+            p.circle_filled(r.right_top() + vec2(-8.0, 8.0), 3.0, pal.accent);
+        } else if look.modified {
+            p.circle_filled(r.right_top() + vec2(-8.0, 8.0), 3.0, pal.text_weak);
+        }
+        return;
+    }
+    let mut x = r.left() + 12.0;
+    icons::paint(p, Rect::from_center_size(pos2(x + 7.0, r.center().y), vec2(14.0, 14.0)), icon, if sel { pal.accent } else { pal.text_weak });
+    x += 22.0;
+    let max_w = (r.right() - 30.0 - x).max(10.0);
+    let mut job = egui::text::LayoutJob::simple_singleline(look.title.clone(), font.clone(), color);
+    job.wrap = egui::text::TextWrapping { max_width: max_w, max_rows: 1, break_anywhere: true, overflow_character: Some('…') };
+    let galley = p.layout_job(job);
+    p.galley(pos2(x, r.center().y - galley.size().y / 2.0), galley, color);
+    // Kreuz bzw. Laufanzeige bzw. Punkt fuer Ungespeichertes
+    let cr = tab_close_rect(r);
+    if look.busy {
+        let a = time * 6.0;
+        p.add(egui::Shape::line(
+            (0..=10).map(|k| cr.center() + vec2((a + k as f32 * 0.45).cos(), (a + k as f32 * 0.45).sin()) * 5.0).collect(),
+            Stroke::new(1.5, pal.accent),
+        ));
+    } else if look.modified && !(hovered && over_close) {
+        p.circle_filled(cr.center(), 3.5, color);
+    } else if sel || hovered {
+        if over_close {
+            p.rect_filled(cr, style::RADIUS as f32 - 1.0, pal.hover.gamma_multiply(1.6));
+        }
+        icons::paint(p, cr.shrink(4.0), Icon::Close, if over_close { pal.text } else { color });
     }
 }

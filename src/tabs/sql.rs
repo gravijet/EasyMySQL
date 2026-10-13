@@ -649,7 +649,7 @@ impl SqlTab {
                                     .take(50)
                                     .collect();
                                 ui.label(RichText::new(preview).monospace().small().color(style::pal().text_weak));
-                                if ui.small_button(crate::i18n::text("Wiederherstellen")).clicked()
+                                if ui.button(crate::i18n::text("Wiederherstellen")).clicked()
                                     && let Ok(t) = std::fs::read_to_string(path) {
                                         self.text = t;
                                         self.last_edit = Instant::now();
@@ -810,7 +810,8 @@ impl TabView for SqlTab {
         // Kopfzeile: Datenbank, Aktionen, Position
         ui.horizontal(|ui| {
             let mut dbs = vec![String::new()];
-            dbs.extend(cx.databases.iter().cloned());
+            let show_system = super::SHOW_SYSTEM_DBS.load(std::sync::atomic::Ordering::Relaxed);
+            dbs.extend(cx.databases.iter().filter(|d| show_system || !super::is_system_db(d) || **d == self.database).cloned());
             let mut d = self.database.clone();
             if super::str_combo(ui, self.editor.id.with("db"), &dbs, &mut d, 150.0) {
                 self.set_database(d);

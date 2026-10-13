@@ -143,7 +143,7 @@ impl EasyApp {
                         egui::ScrollArea::vertical().max_height(180.0).show(ui, |ui| {
                             for t in schema.tables.iter().filter(|t| *format == Format::Sql || !t.is_view) {
                                 let mut on = sel.contains(&t.name);
-                                if ui.checkbox(&mut on, &t.name).changed() {
+                                if crate::widgets::check(ui, &mut on, &t.name).changed() {
                                     if on {
                                         sel.push(t.name.clone());
                                     } else {
@@ -154,7 +154,7 @@ impl EasyApp {
                         });
                     }
                     if *format == Format::Sql {
-                        ui.checkbox(with_data, crate::i18n::text("Mit Daten"));
+                        crate::widgets::check(ui, with_data, crate::i18n::text("Mit Daten"));
                     }
                     ui.add_space(6.0);
                     ui.horizontal(|ui| {
@@ -184,7 +184,7 @@ impl EasyApp {
                     let r = crate::tabs::name_field(ui, egui::Id::new("tableop-name"), name, 240.0, false);
                     let valid = !name.trim().is_empty() && name.trim() != table;
                     if *copy {
-                        ui.checkbox(with_data, t("Mit Daten", "With data"));
+                        crate::widgets::check(ui, with_data, t("Mit Daten", "With data"));
                     }
                     ui.add_space(6.0);
                     ui.horizontal(|ui| {
@@ -245,11 +245,11 @@ impl EasyApp {
                             });
                             ui.end_row();
                             ui.label("");
-                            ui.checkbox(keep_all_a, t("Alle Zeilen von A behalten", "Keep all rows of A"));
+                            crate::widgets::check(ui, keep_all_a, t("Alle Zeilen von A behalten", "Keep all rows of A"));
                             ui.end_row();
                         }
                         ui.label(t("Neue Tabelle", "New table"));
-                        ui.add_sized([200.0, 22.0], egui::TextEdit::singleline(name));
+                        ui.add_sized([200.0, 22.0], egui::TextEdit::singleline(name).vertical_align(egui::Align::Center));
                         ui.end_row();
                     });
                     let select = match (&ta, &tb) {

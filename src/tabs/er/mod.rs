@@ -32,6 +32,12 @@ use routes::*;
 const HEADER_H: f32 = 22.0;
 const ROW_H: f32 = 17.0;
 const CHAR_W: f32 = 6.8;
+/// Schriftgroesse auf Stufen runden (je ca. 12 % groesser): siehe Kommentar bei den Tabellen in `draw`
+fn qsize(size: f32) -> f32 {
+    const STEP: f32 = 1.12;
+    STEP.powf((size.max(1.0).ln() / STEP.ln()).round())
+}
+
 const LINE_HI: Color32 = Color32::from_rgb(0xE0, 0x6C, 0x00);
 const PK_COLOR: Color32 = Color32::from_rgb(0xB0, 0x80, 0x00);
 const FK_COLOR: Color32 = Color32::from_rgb(0x20, 0x60, 0xC0);
@@ -53,8 +59,15 @@ enum Menu {
 }
 
 fn view_file() -> std::path::PathBuf {
-    crate::workspace::internal_dir().join("layouts").join("ansicht.txt")
+    // ansicht2: Chen (1, n, m) ist die neue Standardnotation; aeltere Wahl nicht uebernehmen
+    crate::workspace::internal_dir().join("layouts").join("ansicht2.txt")
 }
+
+/// Kleinster und groesster Zoom: auch sehr grosse Diagramme passen noch komplett ins Bild
+/// Erste Zeile der Anordnungsdatei (Version des Anordnungsverfahrens)
+const LAYOUT_TAG: &str = "#v2";
+const MIN_ZOOM: f32 = 0.01;
+const MAX_ZOOM: f32 = 3.0;
 
 pub struct ErTab {
     pub db: String,
@@ -97,11 +110,11 @@ fn layout_file(db: &str) -> std::path::PathBuf {
 
 impl ErTab {
     pub fn new(db: String) -> Self {
-        let (mut notation, mut collapse_nm, mut rel_labels) = (Notation::Crow, false, true);
+        let (mut notation, mut collapse_nm, mut rel_labels) = (Notation::Chen, false, true);
         if let Ok(text) = std::fs::read_to_string(view_file()) {
             for line in text.lines() {
                 match line.split_once('=') {
-                    Some(("notation", v)) => notation = Notation::ALL.into_iter().find(|n| n.key() == v).unwrap_or(Notation::Crow),
+                    Some(("notation", v)) => notation = Notation::ALL.into_iter().find(|n| n.key() == v).unwrap_or(Notation::Chen),
                     Some(("nm", v)) => collapse_nm = v == "1",
                     Some(("beschriftung", v)) => rel_labels = v != "0",
                     _ => {}
@@ -279,7 +292,9 @@ impl ErTab {
         self.pos.clear();
         self.routes.clear();
         if let Ok(text) = std::fs::read_to_string(layout_file(&self.db)) {
-            for line in text.lines() {
+            // Anordnungen der alten Versionen (ohne Kennung) werden neu berechnet
+            let current = text.lines().next() == Some(LAYOUT_TAG);
+            for line in text.lines().filter(|_| current) {
                 let p: Vec<&str> = line.split('\t').collect();
                 match p.as_slice() {
                     ["R", key, pts] => {
@@ -364,7 +379,7 @@ impl ErTab {
         if let Some(p) = path.parent() {
             let _ = std::fs::create_dir_all(p);
         }
-        let mut s = String::new();
+        let mut s = format!("{LAYOUT_TAG}\n");
         for (k, v) in &self.pos {
             let _ = writeln!(s, "{k}\t{}\t{}", v.x, v.y);
         }
@@ -375,14 +390,33 @@ impl ErTab {
         let _ = std::fs::write(path, s);
     }
 
-    /// Automatische Anordnung (siehe layout): wenig Kreuzungen, kompakt, etwa Bildschirmformat.
+    /// Automatische Anordnung (siehe layout): Eltern links, Kinder rechts, wenig Kreuzungen.
     fn auto_layout(&mut self) {
         let Some(schema) = self.schema.clone() else { return };
         self.ensure_boxes();
-        let sizes: Vec<(String, Vec2)> = schema.tables.iter().map(|t| (t.name.clone(), self.box_of(t))).collect();
-        let edges: Vec<(String, String)> = schema.fks.iter().map(|f| (f.table.clone(), f.ref_table.clone())).collect();
-        self.pos = layout::layout(&sizes, &edges);
+        let index: HashMap<&str, usize> = schema.tables.iter().enumerate().map(|(i, t)| (t.name.as_str(), i)).collect();
+        let sizes: Vec<Vec2> = schema.tables.iter().map(|t| self.box_of(t)).collect();
+        let mut edges = Vec::with_capacity(schema.fks.len());
+        let mut fk_of_edge = Vec::with_capacity(schema.fks.len());
+        for (i, fk) in schema.fks.iter().enumerate() {
+            let (Some(&child), Some(&parent)) = (index.get(fk.table.as_str()), index.get(fk.ref_table.as_str())) else { continue };
+            let (Some(cc), Some(pc)) = (fk.columns.first(), fk.ref_columns.first()) else { continue };
+            edges.push(layout::Edge {
+                child,
+                parent,
+                child_y: row_y(&schema.tables[child], cc),
+                parent_y: row_y(&schema.tables[parent], pc),
+            });
+            fk_of_edge.push(i);
+        }
+        let result = layout::layout(&sizes, &edges);
+        self.pos = schema.tables.iter().zip(&result.pos).map(|(t, p)| (t.name.clone(), *p)).collect();
         self.routes.clear();
+        for (lane, &fk) in result.lanes.into_iter().zip(&fk_of_edge) {
+            if let Some(points) = lane {
+                self.routes.insert(fk_key(&schema.fks[fk]), points);
+            }
+        }
     }
 
     fn bounds(&self) -> Option<Rect> {
@@ -401,7 +435,7 @@ impl ErTab {
         let margin = 30.0;
         let zx = (canvas.width() - 2.0 * margin) / b.width().max(1.0);
         let zy = (canvas.height() - 2.0 * margin) / b.height().max(1.0);
-        self.zoom = zx.min(zy).clamp(0.25, 1.4);
+        self.zoom = zx.min(zy).clamp(MIN_ZOOM, 1.4);
         let content = b.size() * self.zoom;
         let off = (canvas.size() - content) / 2.0;
         self.offset = off - b.min.to_vec2() * self.zoom;
@@ -506,11 +540,11 @@ impl TabView for ErTab {
                     ui.radio_value(&mut self.notation, n, n.label());
                 }
                 ui.separator();
-                ui.checkbox(&mut self.show_types, crate::i18n::text("Datentypen"));
+                crate::widgets::check(ui, &mut self.show_types, crate::i18n::text("Datentypen"));
                 if self.notation == Notation::Crow {
-                    ui.checkbox(&mut self.rel_labels, crate::i18n::text("1:n / 1:1 / n:m an den Linien"));
+                    crate::widgets::check(ui, &mut self.rel_labels, crate::i18n::text("1:n / 1:1 / n:m an den Linien"));
                 }
-                ui.checkbox(&mut self.collapse_nm, crate::i18n::text("Zwischentabellen als n:m-Linie"));
+                crate::widgets::check(ui, &mut self.collapse_nm, crate::i18n::text("Zwischentabellen als n:m-Linie"));
             });
             if before != (self.notation, self.collapse_nm, self.rel_labels) {
                 if before.1 != self.collapse_nm {

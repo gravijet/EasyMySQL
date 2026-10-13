@@ -164,15 +164,15 @@ impl TabView for DesignerTab {
                             }
                             ui.end_row();
                             for (i, c) in self.cols.iter_mut().enumerate() {
-                                ui.add_sized([120.0, 20.0], egui::TextEdit::singleline(&mut c.name));
+                                ui.add_sized([120.0, 20.0], egui::TextEdit::singleline(&mut c.name).vertical_align(egui::Align::Center));
                                 type_field(ui, ("dtype", i), &mut c.col_type);
-                                ui.checkbox(&mut c.primary, "");
-                                ui.checkbox(&mut c.not_null, "");
-                                ui.checkbox(&mut c.auto_inc, "");
-                                ui.checkbox(&mut c.unique, "");
-                                ui.add_sized([90.0, 20.0], egui::TextEdit::singleline(&mut c.default));
+                                crate::widgets::check(ui, &mut c.primary, "");
+                                crate::widgets::check(ui, &mut c.not_null, "");
+                                crate::widgets::check(ui, &mut c.auto_inc, "");
+                                crate::widgets::check(ui, &mut c.unique, "");
+                                ui.add_sized([90.0, 20.0], egui::TextEdit::singleline(&mut c.default).vertical_align(egui::Align::Center));
                                 ref_field(ui, ("dref", i), &targets, &mut c.references);
-                                ui.add_sized([120.0, 20.0], egui::TextEdit::singleline(&mut c.comment));
+                                ui.add_sized([120.0, 20.0], egui::TextEdit::singleline(&mut c.comment).vertical_align(egui::Align::Center));
                                 if crate::icons::button_sized(ui, crate::icons::Icon::Up, crate::i18n::text("Nach oben"), 18.0).clicked() && i > 0 {
                                     move_up = Some(i);
                                 }
@@ -200,7 +200,7 @@ impl TabView for DesignerTab {
             if ui.button(crate::i18n::text("Tabelle erstellen")).clicked() {
                 self.execute(cx);
             }
-            ui.checkbox(&mut self.show_sql, crate::i18n::text("SQL anzeigen"));
+            crate::widgets::check(ui, &mut self.show_sql, crate::i18n::text("SQL anzeigen"));
             if ui.button(crate::i18n::text("Im SQL-Editor öffnen")).clicked() {
                 cx.actions.push(Action::OpenSql {
                     db: Some(self.db.clone()),

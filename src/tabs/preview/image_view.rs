@@ -125,7 +125,7 @@ impl ImageView {
             self.fit = true;
             self.pan = Vec2::ZERO;
         }
-        if ui.small_button("1:1").on_hover_text(crate::i18n::text("Originalgröße")).clicked() {
+        if ui.button("1:1").on_hover_text(crate::i18n::text("Originalgröße")).clicked() {
             self.zoom_by(0.0);
         }
     }

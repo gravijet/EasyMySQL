@@ -20,41 +20,64 @@ mod imp {
     use std::sync::mpsc::{Receiver, channel};
     use tray_icon::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
     use tray_icon::{Icon, MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
-    use windows_sys::Win32::Foundation::{GetLastError, HWND};
     use std::path::PathBuf;
-    use std::sync::{Mutex, OnceLock};
+    use std::sync::OnceLock;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use windows_sys::Win32::Foundation::{GetLastError, HANDLE, HWND};
+    use windows_sys::core::BOOL;
     use windows_sys::Win32::System::DataExchange::COPYDATASTRUCT;
     use windows_sys::Win32::System::Threading::CreateMutexW;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        FindWindowW, IsIconic, SMTO_ABORTIFHUNG, SW_HIDE, SW_RESTORE, SW_SHOW,
-        SendMessageTimeoutW, SetForegroundWindow, ShowWindow, WM_COPYDATA,
+        AllowSetForegroundWindow, EnumWindows, GetPropW, GetWindowThreadProcessId, IsIconic, SMTO_ABORTIFHUNG,
+        SW_HIDE, SW_RESTORE, SW_SHOW, SendMessageTimeoutW, SetForegroundWindow, SetPropW, ShowWindow, WM_COPYDATA,
     };
 
-    /// Kennung der Nachricht, mit der eine zweite Instanz Dateien an die laufende schickt
+    /// Kennung der Weckmeldung, mit der eine zweite Instanz die laufende aufweckt
     const COPY_MAGIC: usize = 0x454D_5346;
+    /// Fenstereigenschaft, an der die zweite Instanz das Hauptfenster erkennt (der Titel allein
+    /// passt auch auf einen Explorer-Ordner namens "EasyMySQL")
+    const MAIN_PROP: &str = "EasyMySQL.Hauptfenster";
 
-    /// Von anderen Instanzen geschickte Dateien (werden im naechsten Bild geoeffnet)
-    static OPENED: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
+    static WAKE: AtomicBool = AtomicBool::new(false);
     static OPEN_HOOK: OnceLock<Box<dyn Fn() + Send + Sync>> = OnceLock::new();
 
     pub fn install_open_hook(f: Box<dyn Fn() + Send + Sync>) {
         let _ = OPEN_HOOK.set(f);
     }
 
-    pub fn take_opened() -> Vec<PathBuf> {
-        OPENED.lock().map(|mut q| std::mem::take(&mut *q)).unwrap_or_default()
+    /// Wurde die Instanz von einer zweiten (oder durch Fokus) aufgeweckt, kommen die
+    /// uebergebenen Dateien zurueck (ggf. leer).
+    pub fn take_opened() -> Option<Vec<PathBuf>> {
+        WAKE.swap(false, Ordering::Relaxed).then(super::take_queue)
     }
 
-    /// Dateien aus der Kommandozeile an die laufende Instanz schicken.
-    fn forward_files(h: HWND, files: &[PathBuf]) {
-        if files.is_empty() {
-            return;
+    pub fn wake() {
+        WAKE.store(true, Ordering::Relaxed);
+    }
+
+    extern "system" fn find_main(h: HWND, out: isize) -> BOOL {
+        let prop = wide(MAIN_PROP);
+        if unsafe { GetPropW(h, prop.as_ptr()) }.is_null() {
+            return 1;
         }
-        let text = files.iter().map(|p| p.to_string_lossy().into_owned()).collect::<Vec<_>>().join("\n");
-        let wide: Vec<u16> = text.encode_utf16().collect();
-        let data = COPYDATASTRUCT { dwData: COPY_MAGIC, cbData: (wide.len() * 2) as u32, lpData: wide.as_ptr() as *mut core::ffi::c_void };
+        unsafe { *(out as *mut HWND) = h };
+        0
+    }
+
+    fn main_window() -> Option<HWND> {
+        let mut found: HWND = std::ptr::null_mut();
+        unsafe { EnumWindows(Some(find_main), &mut found as *mut HWND as isize) };
+        (!found.is_null()).then_some(found)
+    }
+
+    /// Laufende Instanz aufwecken (die Dateien stehen in der Warteschlangendatei).
+    fn wake_remote(h: HWND) {
+        let data = COPYDATASTRUCT { dwData: COPY_MAGIC, cbData: 0, lpData: std::ptr::null_mut() };
         let mut result: usize = 0;
         unsafe {
+            let mut pid = 0u32;
+            GetWindowThreadProcessId(h, &mut pid);
+            AllowSetForegroundWindow(pid);
             SendMessageTimeoutW(h, WM_COPYDATA, 0, &data as *const COPYDATASTRUCT as LPARAM, SMTO_ABORTIFHUNG, 3000, &mut result);
         }
     }
@@ -79,6 +102,12 @@ mod imp {
         run(r"HKCU\Software\Classes\EasyMySQL.sql\shell\open\command", None, &format!("\"{exe}\" \"%1\""))?;
         run(r"HKCU\Software\Classes\.sql", None, "EasyMySQL.sql")?;
         run(r"HKCU\Software\Classes\.sql\OpenWithProgids", Some("EasyMySQL.sql"), "")?;
+        // Auch in der Liste "Standard-Apps" erscheinen und unter "Öffnen mit" angeboten werden
+        run(r"HKCU\Software\Classes\Applications\EasyMySQL.exe\shell\open\command", None, &format!("\"{exe}\" \"%1\""))?;
+        run(r"HKCU\Software\EasyMySQL\Capabilities", Some("ApplicationName"), "EasyMySQL")?;
+        run(r"HKCU\Software\EasyMySQL\Capabilities", Some("ApplicationDescription"), crate::i18n::text("SQL-Editor und MariaDB-Verwaltung"))?;
+        run(r"HKCU\Software\EasyMySQL\Capabilities\FileAssociations", Some(".sql"), "EasyMySQL.sql")?;
+        run(r"HKCU\Software\RegisteredApplications", Some("EasyMySQL"), r"Software\EasyMySQL\Capabilities")?;
         unsafe {
             windows_sys::Win32::UI::Shell::SHChangeNotify(
                 windows_sys::Win32::UI::Shell::SHCNE_ASSOCCHANGED as i32,
@@ -90,9 +119,9 @@ mod imp {
         Ok(())
     }
 
-    /// Windows-Einstellungen "Standard-Apps" oeffnen
+    /// Windows-Einstellungen "Standard-Apps" direkt bei EasyMySQL oeffnen
     pub fn open_default_apps() {
-        let _ = std::process::Command::new("explorer").arg("ms-settings:defaultapps").spawn();
+        let _ = std::process::Command::new("explorer").arg("ms-settings:defaultapps?registeredAppUser=EasyMySQL").spawn();
     }
 
     const ERROR_ALREADY_EXISTS: u32 = 183;
@@ -112,7 +141,31 @@ mod imp {
         }
     }
 
-    pub fn hide_window(hwnd: isize) {
+    /// Mauszeiger im Fenster (in Punkten). Waehrend Dateien von aussen ueber das Fenster gezogen werden,
+/// meldet das Fenster keine Mausbewegung; unter Windows wird der Zeiger deshalb direkt abgefragt.
+pub fn cursor_pos(hwnd: Option<isize>, pixels_per_point: f32) -> Option<egui::Pos2> {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::Foundation::{HWND, POINT};
+        use windows_sys::Win32::Graphics::Gdi::ScreenToClient;
+        use windows_sys::Win32::UI::WindowsAndMessaging::GetCursorPos;
+        let h = hwnd? as HWND;
+        let mut p = POINT { x: 0, y: 0 };
+        unsafe {
+            if GetCursorPos(&mut p) == 0 || ScreenToClient(h, &mut p) == 0 {
+                return None;
+            }
+        }
+        Some(egui::pos2(p.x as f32, p.y as f32) / pixels_per_point)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (hwnd, pixels_per_point);
+        None
+    }
+}
+
+pub fn hide_window(hwnd: isize) {
         unsafe {
             ShowWindow(hwnd as HWND, SW_HIDE);
         }
@@ -124,11 +177,15 @@ mod imp {
             let name = wide("Local\\EasyMySQL_Einzelinstanz");
             let _m = CreateMutexW(std::ptr::null(), 0, name.as_ptr());
             if GetLastError() == ERROR_ALREADY_EXISTS {
-                let title = wide("EasyMySQL");
-                let h = FindWindowW(std::ptr::null(), title.as_ptr());
-                if !h.is_null() {
-                    forward_files(h, files);
-                    show_window(h as isize);
+                super::enqueue(files);
+                // Die laufende Instanz startet evtl. gerade erst: kurz auf ihr Fenster warten
+                for _ in 0..25 {
+                    if let Some(h) = main_window() {
+                        wake_remote(h);
+                        show_window(h as isize);
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(200));
                 }
                 return false;
             }
@@ -166,12 +223,8 @@ mod imp {
                 }
                 WM_COPYDATA => {
                     let data = lparam as *const COPYDATASTRUCT;
-                    if !data.is_null() && (*data).dwData == COPY_MAGIC && !(*data).lpData.is_null() {
-                        let units = std::slice::from_raw_parts((*data).lpData as *const u16, (*data).cbData as usize / 2);
-                        let text = String::from_utf16_lossy(units);
-                        if let Ok(mut queue) = OPENED.lock() {
-                            queue.extend(text.lines().filter(|l| !l.is_empty()).map(PathBuf::from));
-                        }
+                    if !data.is_null() && (*data).dwData == COPY_MAGIC {
+                        wake();
                         if let Some(f) = OPEN_HOOK.get() {
                             f();
                         }
@@ -197,6 +250,7 @@ mod imp {
         let _ = SHUTDOWN_HOOK.set(f);
         unsafe {
             SetWindowSubclass(hwnd as HWND, Some(subclass_proc), 0x454D, 0);
+            SetPropW(hwnd as HWND, wide(MAIN_PROP).as_ptr(), 1 as HANDLE);
         }
     }
 
@@ -273,16 +327,59 @@ pub fn single_instance(files: &[PathBuf]) -> bool {
     }
 }
 
-/// Dateien, die eine zweite Instanz (Doppelklick im Explorer) an diese geschickt hat
-pub fn take_opened_files() -> Vec<PathBuf> {
+/// Warteschlange fuer Dateien, die eine zweite Instanz (Doppelklick im Explorer) uebergibt:
+/// eine Datei statt einer Fensternachricht, damit nichts verloren geht, wenn die laufende
+/// Instanz gerade nicht antwortet.
+fn queue_file() -> PathBuf {
+    crate::server::app_data_dir().join("oeffnen.txt")
+}
+
+#[cfg_attr(not(windows), allow(dead_code))]
+fn enqueue(files: &[PathBuf]) {
+    use std::io::Write;
+    if files.is_empty() {
+        return;
+    }
+    let path = queue_file();
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+        for p in files {
+            let _ = writeln!(f, "{}", p.display());
+        }
+    }
+}
+
+#[cfg_attr(not(windows), allow(dead_code))]
+fn take_queue() -> Vec<PathBuf> {
+    let path = queue_file();
+    let taken = path.with_extension("lesen");
+    if std::fs::rename(&path, &taken).is_err() {
+        return Vec::new();
+    }
+    let text = std::fs::read_to_string(&taken).unwrap_or_default();
+    let _ = std::fs::remove_file(&taken);
+    text.lines().filter(|l| !l.is_empty()).map(PathBuf::from).filter(|p| p.is_file()).collect()
+}
+
+/// `Some(Dateien)`, wenn eine zweite Instanz diese aufgeweckt hat (Fenster nach vorn holen;
+/// die Liste kann leer sein).
+pub fn take_opened_files() -> Option<Vec<PathBuf>> {
     #[cfg(windows)]
     {
         imp::take_opened()
     }
     #[cfg(not(windows))]
     {
-        Vec::new()
+        None
     }
+}
+
+/// Die Warteschlange beim naechsten Bild pruefen (z. B. wenn das Fenster den Fokus bekommt)
+pub fn check_queue() {
+    #[cfg(windows)]
+    imp::wake();
 }
 
 /// `f` aufrufen, sobald Dateien von einer zweiten Instanz eintreffen (fuer ein neues Bild)
@@ -336,6 +433,30 @@ pub fn create_tray(ctx: &egui::Context, hwnd: Option<isize>) -> Option<(Tray, Re
     #[cfg(not(windows))]
     {
         let _ = (ctx, hwnd);
+        None
+    }
+}
+
+/// Mauszeiger im Fenster (in Punkten). Waehrend Dateien von aussen ueber das Fenster gezogen werden,
+/// meldet das Fenster keine Mausbewegung; unter Windows wird der Zeiger deshalb direkt abgefragt.
+pub fn cursor_pos(hwnd: Option<isize>, pixels_per_point: f32) -> Option<egui::Pos2> {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::Foundation::{HWND, POINT};
+        use windows_sys::Win32::Graphics::Gdi::ScreenToClient;
+        use windows_sys::Win32::UI::WindowsAndMessaging::GetCursorPos;
+        let h = hwnd? as HWND;
+        let mut p = POINT { x: 0, y: 0 };
+        unsafe {
+            if GetCursorPos(&mut p) == 0 || ScreenToClient(h, &mut p) == 0 {
+                return None;
+            }
+        }
+        Some(egui::pos2(p.x as f32, p.y as f32) / pixels_per_point)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (hwnd, pixels_per_point);
         None
     }
 }

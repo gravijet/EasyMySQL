@@ -187,23 +187,23 @@ pub struct Chip {
 pub fn chip(ui: &mut egui::Ui, label: &str, color: Option<egui::Color32>, selected: bool) -> Chip {
     let pal = crate::style::pal();
     let galley = ui.painter().layout_no_wrap(label.to_string(), egui::FontId::proportional(12.5), pal.text);
-    let (r, resp) = ui.allocate_exact_size(egui::vec2(galley.size().x + 38.0, 24.0), egui::Sense::click());
+    let (r, resp) = ui.allocate_exact_size(egui::vec2(galley.size().x + 44.0, 26.0), egui::Sense::click());
     let p = ui.painter();
+    let radius = crate::style::RADIUS as f32;
     if selected {
-        p.rect_filled(r, 3.0, pal.tab_active);
-        p.rect_filled(egui::Rect::from_min_size(egui::pos2(r.left() + 6.0, r.bottom() - 2.0), egui::vec2(r.width() - 12.0, 2.0)), 1.0, pal.accent);
+        p.rect(r, radius, pal.face_light, egui::Stroke::new(1.0, pal.border), egui::StrokeKind::Inside);
     } else if resp.hovered() {
-        p.rect_filled(r, 3.0, pal.hover);
+        p.rect_filled(r, radius, pal.hover);
     }
     let fg = color.unwrap_or(if selected { pal.text } else { pal.text_weak });
-    p.galley(egui::pos2(r.left() + 10.0, r.center().y - galley.size().y / 2.0), galley, fg);
-    let cr = egui::Rect::from_center_size(egui::pos2(r.right() - 13.0, r.center().y), egui::vec2(16.0, 16.0));
+    p.galley(egui::pos2(r.left() + 12.0, r.center().y - galley.size().y / 2.0), galley, fg);
+    let cr = egui::Rect::from_center_size(egui::pos2(r.right() - 15.0, r.center().y), egui::vec2(18.0, 18.0));
     let over = ui.ctx().pointer_hover_pos().is_some_and(|q| cr.contains(q));
     if selected || resp.hovered() {
         if over {
-            p.rect_filled(cr, 3.0, pal.hover);
+            p.rect_filled(cr, radius - 2.0, pal.hover.gamma_multiply(1.6));
         }
-        crate::icons::paint(p, cr.shrink(2.0), crate::icons::Icon::Close, if over { pal.text } else { pal.text_weak });
+        crate::icons::paint(p, cr.shrink(3.0), crate::icons::Icon::Close, if over { pal.text } else { pal.text_weak });
     }
     Chip { clicked: resp.clicked() && !over, closed: (resp.clicked() && over) || resp.middle_clicked() }
 }
@@ -291,6 +291,10 @@ pub trait TabView {
     fn file(&self) -> Option<&std::path::Path> {
         None
     }
+    /// Verarbeitet die Registerkarte selbst, wenn diese Datei auf das Fenster gezogen wird?
+    fn takes_drop(&self, _path: &std::path::Path) -> bool {
+        false
+    }
     /// Datei/Ordner wurde im Explorer umbenannt
     fn file_renamed(&mut self, _old: &std::path::Path, _new: &std::path::Path) {}
     /// Vor dem Schliessen (speichern). false = nicht schliessen
@@ -315,14 +319,30 @@ pub trait TabView {
 }
 
 /// Auswahlfeld fuer eine Datenbank. Liefert true bei Aenderung.
+/// Abschnittsueberschrift einer Seite: kleiner, abgesetzter Text mit einheitlichem Abstand
+pub fn section_title(ui: &mut egui::Ui, text: &str) {
+    ui.add_space(12.0);
+    ui.label(egui::RichText::new(text).size(12.5).strong().color(crate::style::pal().text_weak));
+    ui.add_space(4.0);
+}
+
+/// Systemdatenbanken in Auswahllisten zeigen? (Einstellung)
+pub static SHOW_SYSTEM_DBS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn is_system_db(name: &str) -> bool {
+    matches!(name.to_ascii_lowercase().as_str(), "information_schema" | "mysql" | "performance_schema" | "sys")
+}
+
 pub fn db_combo(ui: &mut egui::Ui, id: &str, dbs: &[String], value: &mut String) -> bool {
     let mut changed = false;
+    let show_system = SHOW_SYSTEM_DBS.load(std::sync::atomic::Ordering::Relaxed);
+    let dbs: Vec<&String> = dbs.iter().filter(|d| show_system || !is_system_db(d) || *d == value).collect();
     crate::widgets::combo(id)
         .selected_text(if value.is_empty() { crate::i18n::text("(keine)") } else { value.as_str() })
         .width(170.0)
         .show_ui(ui, |ui| {
             for d in dbs {
-                if ui.selectable_label(value == d, d).clicked() {
+                if ui.selectable_label(value == d, d.as_str()).clicked() {
                     *value = d.clone();
                     changed = true;
                 }

@@ -74,12 +74,12 @@ impl EasyApp {
         let mut new_profile: Option<Option<Profile>> = None;
         let mut close: Option<usize> = None;
         let mut hide = false;
-        let frame = egui::Frame::new().fill(pal.bg).stroke(Stroke::new(1.0, pal.border));
+        let frame = egui::Frame::new().fill(pal.face).inner_margin(egui::Margin { left: 0, right: 8, top: 0, bottom: 8 });
         egui::Panel::bottom("terminal-dock").resizable(true).default_size(280.0).min_size(110.0).frame(frame).show(ui, |ui| {
+          style::panel_card(ui, pal.bg, egui::Margin::symmetric(8, 6), |ui| {
             // Kopfzeile: Registerkarten links, Aktionen rechts
-            let (bar, _) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::hover());
+            let (bar, _) = ui.allocate_exact_size(vec2(ui.available_width(), 28.0), Sense::hover());
             let painter = ui.painter_at(bar);
-            painter.rect_filled(bar, 0.0, pal.tab_bar_bg);
             let mut child = ui.new_child(egui::UiBuilder::new().max_rect(bar).layout(egui::Layout::left_to_right(egui::Align::Center)));
             child.spacing_mut().item_spacing.x = 0.0;
             child.add_space(10.0);
@@ -90,12 +90,11 @@ impl EasyApp {
                 let sel = i == active;
                 let galley = painter.layout_no_wrap(t.title.clone(), egui::FontId::proportional(13.0), pal.text);
                 let w = galley.size().x + 56.0;
-                let (r, resp) = child.allocate_exact_size(vec2(w, 30.0), Sense::click());
+                let (r, resp) = child.allocate_exact_size(vec2(w, 28.0), Sense::click());
                 if sel {
-                    painter.rect_filled(r, 0.0, pal.tab_active);
-                    painter.rect_filled(egui::Rect::from_min_size(r.min, vec2(r.width(), 2.0)), 0.0, pal.accent);
+                    painter.rect(r, style::RADIUS as f32, pal.face_light, Stroke::new(1.0, pal.border), egui::StrokeKind::Inside);
                 } else if resp.hovered() {
-                    painter.rect_filled(r, 0.0, pal.hover);
+                    painter.rect_filled(r, style::RADIUS as f32, pal.hover);
                 }
                 let color = if sel { pal.text } else { pal.text_weak };
                 icons::paint(&painter, egui::Rect::from_center_size(pos2(r.left() + 16.0, r.center().y), vec2(14.0, 14.0)), Icon::Terminal, color);
@@ -146,6 +145,7 @@ impl EasyApp {
                 let focus = std::mem::take(&mut self.terminal.focus);
                 terminal::show(ui, egui::Id::new(("terminal", t.uid)), &mut t.session, focus);
             }
+          });
         });
         if let Some(i) = close
             && i < self.terminal.tabs.len()

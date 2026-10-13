@@ -17,6 +17,7 @@ pub fn recording() -> bool {
 
 pub const SECTIONS: &[(&str, &str)] = &[
     ("darstellung", "Darstellung"),
+    ("start", "Start"),
     ("updates", "Updates"),
     ("editor", "Editor"),
     ("maus", "Maus"),
@@ -129,7 +130,9 @@ impl SettingsTab {
                     let top = ui.cursor().top();
                     ui.horizontal(|ui| {
                         ui.set_min_height(34.0);
-                        ui.add_sized([250.0, 22.0], egui::Label::new(cmd.label()).truncate());
+                        ui.allocate_ui_with_layout(egui::vec2(210.0, 22.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                            ui.add(egui::Label::new(cmd.label()).truncate());
+                        });
                         let list = self.keymap.get(cmd).to_vec();
                         for (i, b) in list.iter().enumerate() {
                             let rec = self.record == Some((cmd, Some(i)));
@@ -249,6 +252,20 @@ impl TabView for SettingsTab {
                     ui.label(crate::i18n::text("Systemdatenbanken zeigen"));
                     crate::widgets::switch(ui, &mut s.show_system_dbs, "information_schema, mysql, …");
                     ui.end_row();
+                });
+
+                self.heading(ui, "start", crate::i18n::text("Start"));
+                grid(ui, "g-start", &mut |ui| {
+                    ui.label(crate::i18n::text("Registerkarten"));
+                    crate::widgets::switch(ui, &mut s.restore_tabs, crate::i18n::text("Beim Start wieder öffnen"))
+                        .on_hover_text(crate::i18n::text("Ungespeicherte Abfragen bleiben immer erhalten."));
+                    ui.end_row();
+                    if crate::platform::CAN_ASSOCIATE {
+                        ui.label(crate::i18n::text("Schließen"));
+                        crate::widgets::switch(ui, &mut s.background, crate::i18n::text("Im Infobereich weiterlaufen"))
+                            .on_hover_text(crate::i18n::text("Sonst beendet das Schließen des Fensters EasyMySQL und den Server."));
+                        ui.end_row();
+                    }
                 });
 
                 self.heading(ui, "updates", "Updates");

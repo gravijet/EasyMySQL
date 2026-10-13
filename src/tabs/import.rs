@@ -213,12 +213,12 @@ impl ImportTab {
         if self.kind == Kind::Redis {
             egui::Grid::new("redis").num_columns(4).spacing([8.0, 6.0]).show(ui, |ui| {
                 ui.label("Server");
-                ui.add_sized([180.0, 22.0], egui::TextEdit::singleline(&mut self.redis.host));
+                ui.add_sized([180.0, 22.0], egui::TextEdit::singleline(&mut self.redis.host).vertical_align(egui::Align::Center));
                 ui.label("Port");
                 ui.add(egui::DragValue::new(&mut self.redis.port).range(1..=65535));
                 ui.end_row();
                 ui.label(crate::i18n::text("Passwort"));
-                ui.add_sized([180.0, 22.0], egui::TextEdit::singleline(&mut self.redis.password).password(true));
+                ui.add_sized([180.0, 22.0], egui::TextEdit::singleline(&mut self.redis.password).vertical_align(egui::Align::Center).password(true));
                 ui.label("DB");
                 ui.add(egui::DragValue::new(&mut self.redis.db).range(0..=63));
                 ui.end_row();
@@ -269,6 +269,10 @@ impl TabView for ImportTab {
         self.job.is_some()
     }
 
+    fn takes_drop(&self, path: &std::path::Path) -> bool {
+        Kind::from_path(path).is_some()
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, cx: &mut Ctx) {
         self.poll(cx);
         let pal = style::pal();
@@ -309,8 +313,8 @@ impl TabView for ImportTab {
                     ui.set_min_width(ui.available_width());
                     for e in self.entries.iter_mut() {
                         ui.horizontal(|ui| {
-                            ui.checkbox(&mut e.on, "");
-                            ui.add_sized([220.0, 22.0], egui::TextEdit::singleline(&mut e.scan.name));
+                            crate::widgets::check(ui, &mut e.on, "");
+                            ui.add_sized([220.0, 22.0], egui::TextEdit::singleline(&mut e.scan.name).vertical_align(egui::Align::Center));
                             let cols: Vec<String> = e.scan.columns.iter().map(|c| format!("{}  {}", c.name, c.ty.sql())).collect();
                             ui.label(RichText::new(crate::tr_format!("{} Zeilen, {} Spalten", "{} rows, {} columns", e.scan.rows, e.scan.columns.len())).color(pal.text_weak))
                                 .on_hover_text(cols.join("\n"));
@@ -324,13 +328,13 @@ impl TabView for ImportTab {
                     ui.set_min_width(ui.available_width());
                     ui.horizontal(|ui| {
                         ui.radio_value(&mut self.new_db, true, crate::i18n::text("Neue Datenbank"));
-                        ui.add_enabled_ui(self.new_db, |ui| ui.add_sized([180.0, 22.0], egui::TextEdit::singleline(&mut self.new_name)));
+                        ui.add_enabled_ui(self.new_db, |ui| ui.add_sized([180.0, 22.0], egui::TextEdit::singleline(&mut self.new_name).vertical_align(egui::Align::Center)));
                     });
                     ui.horizontal(|ui| {
                         ui.radio_value(&mut self.new_db, false, crate::i18n::text("Vorhandene"));
                         ui.add_enabled_ui(!self.new_db, |ui| super::db_combo(ui, "imp-db", cx.databases, &mut self.database));
                     });
-                    ui.checkbox(&mut self.replace, crate::i18n::text("Vorhandene Tabellen gleichen Namens ersetzen"));
+                    crate::widgets::check(ui, &mut self.replace, crate::i18n::text("Vorhandene Tabellen gleichen Namens ersetzen"));
                     ui.add_space(4.0);
                     let any = self.entries.iter().any(|e| e.on);
                     if ui.add_enabled_ui(any && cx.db.is_some(), |ui| icons::primary_button(ui, Icon::Upload, crate::i18n::text("Importieren"))).inner.clicked() {

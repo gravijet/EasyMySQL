@@ -100,8 +100,7 @@ impl TabView for LogTab {
             ui.add(egui::TextEdit::singleline(&mut self.search).hint_text(crate::i18n::text("Filtern")).desired_width(180.0));
             ui.separator();
             let mut on = cx.settings.query_log;
-            if ui
-                .checkbox(&mut on, crate::i18n::text("Alle Anweisungen mitschreiben"))
+            if crate::widgets::check(ui, &mut on, crate::i18n::text("Alle Anweisungen mitschreiben"))
                 .changed()
             {
                 cx.settings.query_log = on;
@@ -110,8 +109,8 @@ impl TabView for LogTab {
                     self.filter = Filter::Queries;
                 }
             }
-            ui.checkbox(&mut self.hide_internal, crate::i18n::text("Interne ausblenden"));
-            ui.checkbox(&mut self.show_old, crate::i18n::text("Frühere Sitzungen"));
+            crate::widgets::check(ui, &mut self.hide_internal, crate::i18n::text("Interne ausblenden"));
+            crate::widgets::check(ui, &mut self.show_old, crate::i18n::text("Frühere Sitzungen"));
             ui.separator();
             if ui.button(crate::i18n::text("Kopieren")).clicked() {
                 let text: Vec<String> = self.cache.iter().filter(|l| self.visible(l)).map(|l| format!("{}  {}", l.time, l.text)).collect();

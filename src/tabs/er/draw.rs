@@ -23,7 +23,7 @@ impl ErTab {
             let scroll = ui.input(|i| i.smooth_scroll_delta.y / speed + i.zoom_delta().ln() * 200.0);
             if scroll.abs() > 0.1 {
                 let old = self.zoom;
-                self.zoom = (self.zoom * (1.0 + scroll * 0.0015)).clamp(0.2, 3.0);
+                self.zoom = (self.zoom * (1.0 + scroll * 0.0015)).clamp(MIN_ZOOM, MAX_ZOOM);
                 if let Some(mouse) = hover {
                     let world = (mouse - origin - self.offset) / old;
                     self.offset = mouse - origin - world * self.zoom;
@@ -180,7 +180,7 @@ impl ErTab {
             }
         }
 
-        // Beziehungslinien: nur die im Bild sichtbaren; bei starkem Verkleinern vereinfacht
+        // Beziehungslinien: nur die im Bild sichtbaren, in jeder Groesse als Kurven
         let focus_table = match &self.drag {
             Drag::Table(t) => Some(t.clone()),
             _ => hover_table.clone(),
@@ -204,26 +204,15 @@ impl ErTab {
         };
         for (i, fk) in schema.fks.iter().enumerate() {
             let Some(path) = &paths[i] else { continue };
-            if !geometry.bounds[i].intersects(view) {
+            let bounds = geometry.bounds[i];
+            if !bounds.intersects(view) || (bounds.width() * z < 1.0 && bounds.height() * z < 1.0) {
                 continue;
             }
             let (color, width) = style_of(i, fk);
             let stroke = Stroke::new((width * z).max(1.0), color);
-            if detail {
-                for seg in path {
-                    let s = seg.map(screen);
-                    painter.add(Shape::CubicBezier(egui::epaint::CubicBezierShape::from_points_stroke(
-                        s,
-                        false,
-                        Color32::TRANSPARENT,
-                        stroke,
-                    )));
-                }
-            } else {
-                // Ein grober Linienzug aus jedem vierten Stuetzpunkt reicht, wenn man nichts mehr lesen kann
-                let pl = &geometry.polylines[i];
-                let pts: Vec<Pos2> = pl.iter().step_by(4).chain(pl.last()).map(|p| screen(*p)).collect();
-                painter.add(Shape::line(pts, stroke));
+            for seg in path {
+                let s = seg.map(screen);
+                painter.add(Shape::CubicBezier(egui::epaint::CubicBezierShape::from_points_stroke(s, false, Color32::TRANSPARENT, stroke)));
             }
             // Kardinalitaeten (1:1, 1:n, n:m, optional) in der gewaehlten Notation
             if detail {
@@ -248,7 +237,7 @@ impl ErTab {
         }
         if detail {
             // Beschriftungen ueber alle Linien
-            let small = FontId::proportional((10.5 * z).max(6.0));
+            let small = FontId::proportional(qsize((10.5 * z).max(6.0)));
             for (i, p, s, align) in &geometry.texts {
                 if view.contains(*p) {
                     painter.text(screen(*p), *align, s, small.clone(), style_of(*i, &schema.fks[*i]).0);
@@ -256,7 +245,7 @@ impl ErTab {
             }
         }
         if z > 0.35 {
-            let font = FontId::proportional(10.5 * z);
+            let font = FontId::proportional(qsize(10.5 * z));
             for (i, p, s) in &geometry.tags {
                 if !view.contains(*p) {
                     continue;
@@ -269,59 +258,108 @@ impl ErTab {
             }
         }
 
-        // Tabellen
-        let font = FontId::proportional(12.0 * z);
-        let bold = FontId::proportional(12.5 * z);
-        let small = FontId::proportional(9.5 * z);
-        for t in &schema.tables {
+        // Tabellen. Schriftgroessen werden gestuft: jede neue Groesse legt Zeichen im Schrift-
+        // Atlas an, den egui nie verkleinert (stufenloses Zoomen liesse den Speicher anwachsen).
+        let pal = style::pal();
+        let font = FontId::proportional(qsize(12.0 * z));
+        let bold = FontId::proportional(qsize(12.5 * z));
+        let small = FontId::proportional(qsize(9.5 * z));
+        let radius = (6.0 * z).clamp(1.0, 8.0) as u8;
+        let round = egui::CornerRadius::same(radius);
+        let round_top = egui::CornerRadius { nw: radius, ne: radius, sw: 0, se: 0 };
+        let columns = 12.0 * z >= 7.0;
+        let title_inside = 12.5 * z >= 8.5;
+        let mut unlabeled: Vec<(usize, Rect)> = Vec::new();
+        for (ti, t) in schema.tables.iter().enumerate() {
             let r = Rect::from_min_size(screen(self.table_rect_world(t).min), self.box_of(t) * z);
             if !r.intersects(rect) {
                 continue;
             }
-            // Stark herausgezoomt ist Text unlesbar und teuer: nur noch Kasten (und Name)
-            if z < 0.38 {
-                painter.rect_filled(r, 0.0, style::pal().er_box);
-                let head = Rect::from_min_size(r.min, vec2(r.width(), (HEADER_H * z).max(2.0)));
-                painter.rect_filled(head, 0.0, if t.is_view { style::pal().er_view_header } else { style::pal().er_header });
-                painter.rect_stroke(r, 0.0, Stroke::new(1.0, style::pal().border), StrokeKind::Inside);
-                if z >= 0.3 {
-                    painter.text(head.left_center() + vec2(4.0 * z, 0.0), Align2::LEFT_CENTER, &t.name, bold.clone(), style::pal().text);
-                }
+            let focused = focus_table.as_deref() == Some(t.name.as_str());
+            let head_color = if t.is_view { pal.er_view_header } else { pal.er_header };
+            if z >= 0.3 {
+                painter.rect_filled(r.translate(vec2(0.0, 2.0) * z).expand(1.0 * z), round, Color32::from_black_alpha(if pal.dark { 60 } else { 26 }));
+            }
+            painter.rect_filled(r, round, pal.er_box);
+            let head = Rect::from_min_size(r.min, vec2(r.width(), (HEADER_H * z).max(2.0)));
+            painter.rect_filled(head, round_top, head_color);
+            let outline = if focused { Stroke::new(1.8, LINE_HI) } else { Stroke::new(1.0, pal.border) };
+            if !title_inside {
+                // Zu klein fuer Text: Name spaeter ueber Kollisionspruefung setzen
+                painter.rect_stroke(r, round, outline, StrokeKind::Inside);
+                unlabeled.push((ti, r));
                 continue;
             }
-            let focused = focus_table.as_deref() == Some(t.name.as_str());
-            painter.rect_filled(r.translate(vec2(3.0, 3.0) * z), 0.0, Color32::from_black_alpha(22));
-            painter.rect_filled(r, 0.0, style::pal().er_box);
-            let head = Rect::from_min_size(r.min, vec2(r.width(), HEADER_H * z));
-            painter.rect_filled(head, 0.0, if t.is_view { style::pal().er_view_header } else { style::pal().er_header });
-            painter.line_segment([head.left_bottom(), head.right_bottom()], Stroke::new(1.0, style::pal().border));
+            let clip = painter.with_clip_rect(r.intersect(rect));
             let title = if t.is_view { crate::tr_format!("{} (Sicht)", "{} (View)", t.name) } else { t.name.clone() };
-            painter.text(head.left_center() + vec2(6.0 * z, 0.0), Align2::LEFT_CENTER, title, bold.clone(), style::pal().text);
-            for (i, c) in t.columns.iter().enumerate() {
-                let y = r.top() + (HEADER_H + 3.0 + ROW_H * i as f32 + ROW_H / 2.0) * z;
-                let is_fk = raw.is_fk_column(&t.name, &c.name);
-                let x0 = r.left() + 5.0 * z;
-                if c.is_pk() {
-                    painter.text(pos2(x0, y), Align2::LEFT_CENTER, "PK", small.clone(), PK_COLOR);
-                } else if is_fk {
-                    painter.text(pos2(x0, y), Align2::LEFT_CENTER, "FK", small.clone(), FK_COLOR);
-                }
-                let mut label = c.name.clone();
-                if !c.nullable && !c.is_pk() {
-                    label.push_str(" *");
-                }
-                let nf = if c.is_pk() { bold.clone() } else { font.clone() };
-                painter.text(pos2(x0 + 22.0 * z, y), Align2::LEFT_CENTER, label, nf, style::pal().text);
-                if self.show_types {
-                    painter.text(pos2(r.right() - 16.0 * z, y), Align2::RIGHT_CENTER, &c.col_type, font.clone(), style::pal().er_type);
-                }
-                // Anfasser zum Verknuepfen (nur bei Maus ueber der Tabelle)
-                if focused && !t.is_view && matches!(self.drag, Drag::None) {
-                    painter.circle(pos2(r.right() - 7.0 * z, y), 3.5 * z, style::pal().er_box, Stroke::new(1.2, LINE_HI));
+            clip.text(head.left_center() + vec2(8.0 * z, 0.0), Align2::LEFT_CENTER, title, bold.clone(), pal.text);
+            if columns {
+                let type_x = r.right() - 14.0 * z;
+                for (i, c) in t.columns.iter().enumerate() {
+                    let y = r.top() + (HEADER_H + 3.0 + ROW_H * i as f32 + ROW_H / 2.0) * z;
+                    if y < rect.top() - 10.0 || y > rect.bottom() + 10.0 {
+                        continue;
+                    }
+                    let is_fk = raw.is_fk_column(&t.name, &c.name);
+                    let x0 = r.left() + 8.0 * z;
+                    if c.is_pk() {
+                        clip.text(pos2(x0, y), Align2::LEFT_CENTER, "PK", small.clone(), PK_COLOR);
+                    } else if is_fk {
+                        clip.text(pos2(x0, y), Align2::LEFT_CENTER, "FK", small.clone(), FK_COLOR);
+                    }
+                    let mut label = c.name.clone();
+                    if !c.nullable && !c.is_pk() {
+                        label.push_str(" *");
+                    }
+                    let nf = if c.is_pk() { bold.clone() } else { font.clone() };
+                    clip.text(pos2(x0 + 22.0 * z, y), Align2::LEFT_CENTER, label, nf, pal.text);
+                    if self.show_types {
+                        clip.text(pos2(type_x, y), Align2::RIGHT_CENTER, type_label(&c.col_type), font.clone(), pal.er_type);
+                    }
+                    // Anfasser zum Verknuepfen (nur bei Maus ueber der Tabelle)
+                    if focused && !t.is_view && matches!(self.drag, Drag::None) {
+                        painter.circle(pos2(r.right() - 7.0 * z, y), 3.5 * z, pal.er_box, Stroke::new(1.2, LINE_HI));
+                    }
                 }
             }
-            let stroke = if focused { Stroke::new(1.8, LINE_HI) } else { Stroke::new(1.0, style::pal().border) };
-            painter.rect_stroke(r, 0.0, stroke, StrokeKind::Inside);
+            painter.rect_stroke(r, round, outline, StrokeKind::Inside);
+        }
+        // Namen herausgezoomter Tabellen: die mit den meisten Beziehungen zuerst, ohne dass sich
+        // Beschriftungen ueberdecken (wie Ortsnamen auf einer Karte)
+        if !unlabeled.is_empty() {
+            let lookup: HashMap<usize, Rect> = unlabeled.into_iter().collect();
+            let label_font = FontId::proportional(10.0);
+            const CELL: f32 = 96.0;
+            let mut placed: Vec<Rect> = Vec::new();
+            let mut grid: HashMap<(i32, i32), Vec<usize>> = HashMap::new();
+            let cells = |r: Rect| {
+                let (x0, x1) = ((r.min.x / CELL).floor() as i32, (r.max.x / CELL).floor() as i32);
+                let (y0, y1) = ((r.min.y / CELL).floor() as i32, (r.max.y / CELL).floor() as i32);
+                (x0..=x1).flat_map(move |x| (y0..=y1).map(move |y| (x, y)))
+            };
+            let mut drawn = 0;
+            for &ti in &geometry.label_order {
+                let Some(r) = lookup.get(&ti) else { continue };
+                let galley = painter.layout_no_wrap(schema.tables[ti].name.clone(), label_font.clone(), pal.text);
+                let size = galley.size() + vec2(8.0, 3.0);
+                let lr = Rect::from_min_size(pos2(r.left().max(rect.left() + 2.0), r.top().max(rect.top() + 2.0)), size);
+                if lr.right() > rect.right() || lr.bottom() > rect.bottom() {
+                    continue;
+                }
+                if cells(lr).filter_map(|c| grid.get(&c)).flatten().any(|&k| placed[k].expand(1.0).intersects(lr)) {
+                    continue;
+                }
+                for c in cells(lr) {
+                    grid.entry(c).or_default().push(placed.len());
+                }
+                placed.push(lr);
+                painter.rect_filled(lr, 3.0, pal.er_canvas.gamma_multiply(0.88));
+                painter.galley(lr.min + vec2(4.0, 1.5), galley, pal.text);
+                drawn += 1;
+                if drawn >= 800 {
+                    break;
+                }
+            }
         }
 
         // Neue Beziehung: gestrichelte Linie zur Maus
@@ -344,11 +382,23 @@ impl ErTab {
         if let (Some(i), Drag::None) = (hover_fk, &self.drag) {
             resp.clone().on_hover_text(self.rel_text(&schema, &schema.fks[i]));
         }
+        // Tooltip fuer eine Spalte, deren Typ gekuerzt ist oder die einen Kommentar hat
+        if let (Some(p), Drag::None, true) = (hover, &self.drag, z >= 0.58)
+            && let Some((tn, Some(cn))) = self.column_at(&schema, self.to_world(origin, p))
+            && let Some(c) = schema.table(&tn).and_then(|t| t.columns.iter().find(|c| c.name == cn))
+            && (type_label(&c.col_type) != c.col_type || !c.comment.is_empty())
+        {
+            let mut text = format!("{}  {}", c.name, c.col_type);
+            if !c.comment.is_empty() {
+                text.push_str(&format!("\n{}", c.comment));
+            }
+            resp.clone().on_hover_text(text);
+        }
 
         if schema.tables.is_empty() {
             painter.text(rect.center(), Align2::CENTER_CENTER, crate::i18n::text("Diese Datenbank enthält noch keine Tabellen."), FontId::proportional(14.0), style::pal().text_weak);
         }
-        painter.rect_stroke(rect, 0.0, Stroke::new(1.0, style::pal().border), StrokeKind::Inside);
+        painter.rect_stroke(rect, style::RADIUS + 3, Stroke::new(1.0, style::pal().border), StrokeKind::Inside);
 
         // Kontextmenue
         let menu = self.menu.clone();

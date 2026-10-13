@@ -231,7 +231,7 @@ fn column_picker(ui: &mut egui::Ui, id: egui::Id, src: &mut String, col: &mut St
         ui.horizontal(|ui| {
             ui.label("Name:");
             ui.add(egui::TextEdit::singleline(col).desired_width(90.0));
-            if ui.small_button(crate::i18n::text("ohne Tabelle")).clicked() {
+            if ui.button(crate::i18n::text("ohne Tabelle")).clicked() {
                 src.clear();
             }
         });
@@ -302,7 +302,7 @@ fn expr_ui(ui: &mut egui::Ui, e: &mut Expr, env: &Env, id: egui::Id) {
                 }
                 ui.label("(");
                 if func_def(name).is_some_and(|d| d.aggregate) {
-                    ui.checkbox(distinct, RichText::new("DISTINCT").small());
+                    crate::widgets::check(ui, distinct, RichText::new("DISTINCT").small());
                 }
                 let mut remove = None;
                 for (i, a) in args.iter_mut().enumerate() {
@@ -325,7 +325,7 @@ fn expr_ui(ui: &mut egui::Ui, e: &mut Expr, env: &Env, id: egui::Id) {
                 ui.label(")");
                 if func_def(name).is_none_or(|d| d.window || d.aggregate) {
                     let mut on = over.is_some();
-                    if ui.checkbox(&mut on, RichText::new("OVER").small()).changed() {
+                    if crate::widgets::check(ui, &mut on, RichText::new("OVER").small()).changed() {
                         *over = on.then(Window::default);
                     }
                 }
@@ -372,11 +372,11 @@ fn expr_ui(ui: &mut egui::Ui, e: &mut Expr, env: &Env, id: egui::Id) {
                         whens.remove(i);
                     }
                     ui.horizontal(|ui| {
-                        if ui.small_button("+ WHEN").clicked() {
+                        if ui.button("+ WHEN").clicked() {
                             whens.push((Cond::Cmp { left: env.first_column(), op: CmpOp::Eq, right: vec![Expr::Value(String::new())], quant: Quant::None, sub: None }, Expr::Value(String::new())));
                         }
                         let mut has_else = otherwise.is_some();
-                        if ui.checkbox(&mut has_else, "ELSE").changed() {
+                        if crate::widgets::check(ui, &mut has_else, "ELSE").changed() {
                             *otherwise = has_else.then(|| Box::new(Expr::Value(String::new())));
                         }
                         if let Some(o) = otherwise {
@@ -580,7 +580,7 @@ fn cond_group_ui(ui: &mut egui::Ui, c: &mut Cond, env: &Env, id: egui::Id) {
                 ui.selectable_value(any, false, crate::i18n::text("UND – alle müssen gelten"));
                 ui.selectable_value(any, true, crate::i18n::text("ODER – eine muss gelten"));
             });
-            ui.checkbox(not, "NICHT");
+            crate::widgets::check(ui, not, "NICHT");
         });
     }
     let mut remove = None;
@@ -605,16 +605,16 @@ fn cond_group_ui(ui: &mut egui::Ui, c: &mut Cond, env: &Env, id: egui::Id) {
         items.remove(i);
     }
     ui.horizontal(|ui| {
-        if ui.small_button(crate::i18n::text("+ Bedingung")).clicked() {
+        if ui.button(crate::i18n::text("+ Bedingung")).clicked() {
             items.push(new_cmp(env));
         }
-        if ui.small_button(crate::i18n::text("+ Gruppe (…)")).clicked() {
+        if ui.button(crate::i18n::text("+ Gruppe (…)")).clicked() {
             items.push(Cond::Group { any: !*any, not: false, items: vec![new_cmp(env)] });
         }
-        if ui.small_button("+ EXISTS").clicked() {
+        if ui.button("+ EXISTS").clicked() {
             items.push(Cond::Exists { not: false, query: Box::new(new_query(env)) });
         }
-        if ui.small_button("+ SQL").clicked() {
+        if ui.button("+ SQL").clicked() {
             items.push(Cond::Raw(String::new()));
         }
     });
@@ -734,7 +734,7 @@ fn sources_ui(ui: &mut egui::Ui, s: &mut Select, env: &Env, id: egui::Id) {
                         if src.using.trim().is_empty() {
                             ui.horizontal(|ui| {
                                 keyword(ui, "ON");
-                                if src.on.is_empty() && ui.small_button("USING …").clicked() {
+                                if src.on.is_empty() && ui.button("USING …").clicked() {
                                     src.using = "id".into();
                                 }
                             });
@@ -743,7 +743,7 @@ fn sources_ui(ui: &mut egui::Ui, s: &mut Select, env: &Env, id: egui::Id) {
                             ui.horizontal(|ui| {
                                 keyword(ui, "USING");
                                 ui.add(egui::TextEdit::singleline(&mut src.using).desired_width(160.0).hint_text(crate::i18n::text("spalte1, spalte2")));
-                                if ui.small_button("ON").clicked() {
+                                if ui.button("ON").clicked() {
                                     src.using.clear();
                                 }
                             });
@@ -808,7 +808,7 @@ fn sources_ui(ui: &mut egui::Ui, s: &mut Select, env: &Env, id: egui::Id) {
 
 fn items_ui(ui: &mut egui::Ui, s: &mut Select, env: &Env, id: egui::Id) {
     ui.horizontal(|ui| {
-        ui.checkbox(&mut s.distinct, "DISTINCT");
+        crate::widgets::check(ui, &mut s.distinct, "DISTINCT");
         if s.items.is_empty() {
             ui.label(RichText::new(crate::i18n::text("alle Spalten (*)")).color(style::pal().text_weak));
         }
@@ -876,16 +876,16 @@ fn items_ui(ui: &mut egui::Ui, s: &mut Select, env: &Env, id: egui::Id) {
                 });
             }
         });
-        if ui.small_button(crate::i18n::text("+ Ausdruck")).clicked() {
+        if ui.button(crate::i18n::text("+ Ausdruck")).clicked() {
             s.items.push(Item { expr: Expr::Op { op: "*".into(), left: Box::new(env.first_column()), right: Box::new(Expr::Value("1".into())) }, alias: String::new() });
         }
-        if ui.small_button("+ CASE").clicked() {
+        if ui.button("+ CASE").clicked() {
             s.items.push(Item { expr: convert(&env.first_column(), Kind::Case, env), alias: String::new() });
         }
-        if ui.small_button(crate::i18n::text("+ Unterabfrage")).clicked() {
+        if ui.button(crate::i18n::text("+ Unterabfrage")).clicked() {
             s.items.push(Item { expr: Expr::Sub(Box::new(new_query(env))), alias: String::new() });
         }
-        if !s.items.is_empty() && ui.small_button(crate::i18n::text("Alle entfernen")).clicked() {
+        if !s.items.is_empty() && ui.button(crate::i18n::text("Alle entfernen")).clicked() {
             s.items.clear();
         }
     });
@@ -900,13 +900,13 @@ fn select_ui(ui: &mut egui::Ui, s: &mut Select, env: &Env, id: egui::Id) {
     section(ui, id.with("group"), "GROUP BY", crate::i18n::text("Gruppieren"), group_open, |ui| {
         ui.horizontal_wrapped(|ui| {
             expr_list_ui(ui, &mut s.group, &inner, id.with("g"));
-            ui.checkbox(&mut s.rollup, "WITH ROLLUP");
+            crate::widgets::check(ui, &mut s.rollup, "WITH ROLLUP");
         });
         let needed = s.needed_group();
         if !needed.is_empty() && needed.iter().any(|e| !s.group.contains(e)) {
             ui.horizontal(|ui| {
                 ui.label(RichText::new(crate::i18n::text("Spalten ohne Zusammenfassung fehlen in GROUP BY.")).small().color(style::pal().syn_function));
-                if ui.small_button(crate::i18n::text("Übernehmen")).clicked() {
+                if ui.button(crate::i18n::text("Übernehmen")).clicked() {
                     for e in needed {
                         if !s.group.contains(&e) {
                             s.group.push(e);
@@ -947,7 +947,7 @@ fn query_ui(ui: &mut egui::Ui, qr: &mut Query, env: &Env, id: egui::Id) {
     if !qr.with.is_empty() {
         ui.horizontal(|ui| {
             keyword(ui, "WITH");
-            ui.checkbox(&mut qr.recursive, "RECURSIVE");
+            crate::widgets::check(ui, &mut qr.recursive, "RECURSIVE");
         });
         let mut remove = None;
         for i in 0..qr.with.len() {
@@ -1015,7 +1015,7 @@ fn query_ui(ui: &mut egui::Ui, qr: &mut Query, env: &Env, id: egui::Id) {
                 }
             }
         });
-        if ui.small_button("+ WITH").clicked() {
+        if ui.button("+ WITH").clicked() {
             let k = qr.with.len() + 1;
             qr.with.push(Cte { name: format!("hilf{k}"), columns: String::new(), query: new_query(&env) });
         }
@@ -1394,63 +1394,77 @@ impl TabView for BuilderTab {
             }
         }
 
-        ui.horizontal_wrapped(|ui| {
+        ui.horizontal(|ui| {
             let mut d = self.db.clone();
             if super::db_combo(ui, "bdb", cx.databases, &mut d) {
                 self.db = d;
             }
-            for m in Mode::ALL {
-                if ui.selectable_label(self.mode == m, m.label()).clicked() {
-                    self.mode = m;
-                    self.result = None;
-                    self.error = None;
-                }
-            }
-            ui.separator();
-            ui.add_enabled_ui(self.job.is_none(), |ui| {
-                if icons::primary_button(ui, Icon::Play, crate::i18n::text("Ausführen")).on_hover_text(crate::keymap::text(crate::keymap::Cmd::RunAll)).clicked() {
-                    self.run(cx);
-                }
-            });
-            if self.mode == Mode::Select
-                && ui.add_enabled_ui(self.job.is_none(), |ui| icons::button(ui, Icon::Explain, crate::i18n::text("Ausführungsplan (EXPLAIN)"))).inner.clicked()
-            {
-                self.explain(cx);
-            }
-            if ui.add_enabled_ui(!self.undo.is_empty(), |ui| icons::button(ui, Icon::Undo, crate::i18n::text("Rückgängig (Strg+Z)"))).inner.clicked() {
-                self.undo();
-            }
-            if ui.add_enabled_ui(!self.redo.is_empty(), |ui| icons::button(ui, Icon::Redo, crate::i18n::text("Wiederholen (Strg+Y)"))).inner.clicked() {
-                self.redo();
-            }
-            ui.separator();
-            if ui.button(crate::i18n::text("Im Editor öffnen")).clicked() && !sql.is_empty() {
-                cx.actions.push(Action::OpenSql { db: Some(self.db.clone()), sql: format!("{sql};\n"), run: false });
-            }
-            if ui.button(crate::i18n::text("Kopieren")).clicked() {
-                ui.ctx().copy_text(sql.clone());
-            }
-            if icons::button(ui, Icon::Code, crate::i18n::text("Als Java-Code kopieren")).clicked() && !sql.is_empty() {
-                let target = crate::javagen::Target::new(&cx.settings.conn, &self.db);
-                ui.ctx().copy_text(crate::javagen::query_class(&self.current_sql(), &target));
-                cx.status(crate::i18n::text("Java-Code kopiert."));
-            }
-            if self.mode == Mode::Select {
-                if ui.button(crate::i18n::text("Als Sicht speichern …")).clicked() {
-                    self.view_name = Some(String::new());
-                }
-                ui.checkbox(&mut self.live, crate::i18n::text("Live-Vorschau")).on_hover_text(crate::i18n::text("Zeigt das Ergebnis (höchstens 200 Zeilen) schon während der Eingabe"));
-            }
-            if ui.button(crate::i18n::text("Neu")).clicked() {
-                self.query = Query::default();
-                self.dml = Dml::default();
-                if let Some(t) = self.schema.as_ref().and_then(|s| s.tables.first()) {
-                    self.query.parts[0].select.sources = vec![Source::table(&t.name)];
-                }
+            ui.add_space(4.0);
+            let items: Vec<(Mode, &str)> = Mode::ALL.iter().map(|m| (*m, m.label())).collect();
+            if crate::widgets::segmented(ui, &mut self.mode, &items) {
                 self.result = None;
                 self.error = None;
             }
+            // Rechts: Ausfuehren, Rueckgaengig, weitere Aktionen
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.add_enabled_ui(self.job.is_none(), |ui| {
+                    if icons::primary_button(ui, Icon::Play, crate::i18n::text("Ausführen")).on_hover_text(crate::keymap::text(crate::keymap::Cmd::RunAll)).clicked() {
+                        self.run(cx);
+                    }
+                });
+                if self.mode == Mode::Select
+                    && ui.add_enabled_ui(self.job.is_none(), |ui| icons::button(ui, Icon::Explain, crate::i18n::text("Ausführungsplan (EXPLAIN)"))).inner.clicked()
+                {
+                    self.explain(cx);
+                }
+                let more = icons::button(ui, Icon::More, crate::i18n::text("Weitere Aktionen"));
+                egui::Popup::menu(&more).show(|ui| {
+                    if ui.button(crate::i18n::text("Im Editor öffnen")).clicked() {
+                        if !sql.is_empty() {
+                            cx.actions.push(Action::OpenSql { db: Some(self.db.clone()), sql: format!("{sql};\n"), run: false });
+                        }
+                        ui.close();
+                    }
+                    if ui.button(crate::i18n::text("Kopieren")).clicked() {
+                        ui.ctx().copy_text(sql.clone());
+                        ui.close();
+                    }
+                    if ui.button(crate::i18n::text("Als Java-Code kopieren")).clicked() {
+                        if !sql.is_empty() {
+                            let target = crate::javagen::Target::new(&cx.settings.conn, &self.db);
+                            ui.ctx().copy_text(crate::javagen::query_class(&self.current_sql(), &target));
+                            cx.status(crate::i18n::text("Java-Code kopiert."));
+                        }
+                        ui.close();
+                    }
+                    if self.mode == Mode::Select && ui.button(crate::i18n::text("Als Sicht speichern …")).clicked() {
+                        self.view_name = Some(String::new());
+                        ui.close();
+                    }
+                    if self.mode == Mode::Select {
+                        crate::widgets::check(ui, &mut self.live, crate::i18n::text("Live-Vorschau")).on_hover_text(crate::i18n::text("Zeigt das Ergebnis (höchstens 200 Zeilen) schon während der Eingabe"));
+                    }
+                    ui.separator();
+                    if ui.button(crate::i18n::text("Neu")).clicked() {
+                        self.query = Query::default();
+                        self.dml = Dml::default();
+                        if let Some(t) = self.schema.as_ref().and_then(|s| s.tables.first()) {
+                            self.query.parts[0].select.sources = vec![Source::table(&t.name)];
+                        }
+                        self.result = None;
+                        self.error = None;
+                        ui.close();
+                    }
+                });
+                if ui.add_enabled_ui(!self.redo.is_empty(), |ui| icons::button(ui, Icon::Redo, crate::i18n::text("Wiederholen (Strg+Y)"))).inner.clicked() {
+                    self.redo();
+                }
+                if ui.add_enabled_ui(!self.undo.is_empty(), |ui| icons::button(ui, Icon::Undo, crate::i18n::text("Rückgängig (Strg+Z)"))).inner.clicked() {
+                    self.undo();
+                }
+            });
         });
+        ui.add_space(4.0);
 
         // Ergebnis und SQL unten
         egui::Panel::bottom(egui::Id::new(("builder-bottom", &self.id)))

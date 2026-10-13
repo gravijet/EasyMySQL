@@ -59,12 +59,13 @@ fn display(v: &str) -> String {
     s
 }
 
-fn cell_lines(ui: &egui::Ui) {
+/// Innenabstand links in jeder Zelle, damit der Text nicht am Rand klebt
+const PAD: f32 = 10.0;
+
+/// Trennstrich zwischen zwei Spaltenkoepfen (kurz, damit die Kopfzeile ruhig bleibt)
+fn header_divider(ui: &egui::Ui) {
     let r = ui.max_rect();
-    let p = ui.painter();
-    let st = Stroke::new(1.0, style::pal().grid_line);
-    p.hline(r.left()..=r.right() + 4.0, r.bottom() + 1.5, st);
-    p.vline(r.right() + 3.5, r.top() - 2.0..=r.bottom() + 2.0, st);
+    ui.painter().vline(r.right() + 3.5, r.center().y - 7.0..=r.center().y + 7.0, Stroke::new(1.0, style::pal().border));
 }
 
 /// Zeichnet die Tabelle. `editable`: Doppelklick bearbeitet eine Zelle.
@@ -81,7 +82,7 @@ pub fn show(
     if columns.is_empty() {
         return events;
     }
-    let row_h = 20.0;
+    let row_h = 26.0;
     let mut commit: Option<(usize, usize, Option<String>)> = None;
     let mut cancel = false;
 
@@ -94,7 +95,7 @@ pub fn show(
             .resizable(true)
             .auto_shrink([false, false])
             .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
-            .column(Column::exact(44.0));
+            .column(Column::exact(52.0));
         if let Some(r) = state.scroll_to.take() {
             tb = tb.scroll_to_row(r, None);
         }
@@ -105,21 +106,20 @@ pub fn show(
                     chars = chars.max(v.lines().next().unwrap_or("").chars().take(40).count());
                 }
             }
-            let w = (chars as f32 * 7.5 + 20.0).clamp(50.0, 320.0);
+            let w = (chars as f32 * 7.5 + 2.0 * PAD + 6.0).clamp(60.0, 340.0);
             tb = tb.column(Column::initial(w).at_least(30.0).clip(true).resizable(true));
         }
-        tb.header(22.0, |mut header| {
+        tb.header(30.0, |mut header| {
             header.col(|ui| {
-                ui.painter()
-                    .rect_filled(ui.max_rect().expand(3.0), 0.0, style::pal().face);
-                cell_lines(ui);
-                ui.label("#");
+                ui.painter().rect_filled(ui.max_rect().expand2(egui::vec2(4.0, 2.0)), 0.0, style::pal().face_light);
+                ui.add_space(PAD);
+                ui.label(RichText::new("#").color(style::pal().text_weak));
             });
             for (ci, c) in columns.iter().enumerate() {
                 header.col(|ui| {
-                    ui.painter()
-                        .rect_filled(ui.max_rect().expand(3.0), 0.0, style::pal().face);
-                    cell_lines(ui);
+                    ui.painter().rect_filled(ui.max_rect().expand2(egui::vec2(4.0, 2.0)), 0.0, style::pal().face_light);
+                    header_divider(ui);
+                    ui.add_space(PAD);
                     if edit != Edit::CellsAndColumns {
                         ui.label(RichText::new(c).strong());
                         return;
@@ -170,9 +170,7 @@ pub fn show(
                 let data = &rows[r];
                 row.set_selected(state.selected == Some(r));
                 row.col(|ui| {
-                    ui.painter()
-                        .rect_filled(ui.max_rect().expand(3.0), 0.0, style::pal().face);
-                    cell_lines(ui);
+                    ui.add_space(PAD);
                     let resp = ui.add(
                         egui::Label::new(RichText::new((r + 1).to_string()).color(style::pal().text_weak))
                             .sense(Sense::click()),
@@ -183,7 +181,7 @@ pub fn show(
                 });
                 for (c, val) in data.iter().enumerate() {
                     row.col(|ui| {
-                        cell_lines(ui);
+                        ui.add_space(PAD);
                         if let Some((er, ec, text, focused)) = state.editing.as_mut()
                             && *er == r && *ec == c {
                                 let resp = ui.add(
