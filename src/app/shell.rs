@@ -434,13 +434,15 @@ impl EasyApp {
         let mut y = screen.bottom() - 12.0;
         for (i, t) in self.toasts.iter().enumerate().rev() {
             let galley = ctx.fonts_mut(|f| f.layout(t.text.clone(), egui::FontId::proportional(13.0), pal.text, 380.0));
-            let size = galley.size() + vec2(28.0, 16.0);
+            let size = galley.size() + vec2(28.0 + 22.0, 16.0);
             let r = Rect::from_min_size(pos2(screen.right() - 12.0 - size.x, y - size.y), size);
             let area = egui::Area::new(egui::Id::new(("toast", i, &t.text))).order(egui::Order::Foreground).fixed_pos(r.min).show(ctx, |ui| {
                 let (rr, resp) = ui.allocate_exact_size(size, Sense::click());
-                ui.painter().rect(rr, 4.0, pal.face_light, Stroke::new(1.0, if t.error { pal.error_text } else { pal.border }), egui::StrokeKind::Inside);
+                ui.painter().rect(rr, 5.0, pal.face_light, Stroke::new(1.0, if t.error { pal.error_text } else { pal.border }), egui::StrokeKind::Inside);
                 ui.painter().rect_filled(Rect::from_min_size(rr.min, vec2(3.0, rr.height())), 0.0, if t.error { pal.error_text } else { pal.accent });
-                ui.painter().galley(rr.min + vec2(14.0, 8.0), galley, pal.text);
+                let (icon, tint) = if t.error { (Icon::Alert, pal.error_text) } else { (Icon::Check, pal.accent) };
+                icons::paint(ui.painter(), Rect::from_center_size(pos2(rr.left() + 22.0, rr.center().y), vec2(16.0, 16.0)), icon, tint);
+                ui.painter().galley(rr.min + vec2(36.0, 8.0), galley, pal.text);
                 resp
             });
             if area.inner.clicked() {

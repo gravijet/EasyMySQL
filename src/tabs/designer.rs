@@ -173,7 +173,7 @@ impl TabView for DesignerTab {
                                 ui.add_sized([90.0, 20.0], egui::TextEdit::singleline(&mut c.default));
                                 ref_field(ui, ("dref", i), &targets, &mut c.references);
                                 ui.add_sized([120.0, 20.0], egui::TextEdit::singleline(&mut c.comment));
-                                if ui.small_button("▲").clicked() && i > 0 {
+                                if crate::icons::button_sized(ui, crate::icons::Icon::Up, crate::i18n::text("Nach oben"), 18.0).clicked() && i > 0 {
                                     move_up = Some(i);
                                 }
                                 if crate::icons::button_sized(ui, crate::icons::Icon::Close, crate::i18n::text("Spalte entfernen"), 18.0).clicked() {

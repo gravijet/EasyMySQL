@@ -136,10 +136,11 @@ fn section_ui(ui: &mut egui::Ui, s: &Section, cx: &mut Ctx, goto: &mut Option<St
                 });
             }
             B::Tip(t) => {
-                let r = egui::Frame::new().fill(pal.face_light).inner_margin(egui::Margin { left: 12, right: 8, top: 6, bottom: 6 }).show(ui, |ui| {
+                let r = egui::Frame::new().fill(pal.face_light).inner_margin(egui::Margin { left: 34, right: 8, top: 6, bottom: 6 }).show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     ui.label(crate::i18n::text(t));
                 });
+                crate::icons::paint(ui.painter(), egui::Rect::from_center_size(egui::pos2(r.response.rect.left() + 18.0, r.response.rect.top() + 16.0), egui::vec2(16.0, 16.0)), crate::icons::Icon::Info, pal.accent);
                 ui.painter().rect_filled(egui::Rect::from_min_size(r.response.rect.min, egui::vec2(3.0, r.response.rect.height())), 0.0, pal.accent);
             }
             B::Code(code) => {
@@ -284,12 +285,12 @@ impl TabView for HelpTab {
                 }
                 ui.separator();
                 ui.horizontal(|ui| {
-                    if self.chapter > 0 && ui.button(format!("← {}", crate::i18n::text(CHAPTERS[self.chapter - 1].title))).clicked() {
+                    if self.chapter > 0 && crate::icons::text_button(ui, crate::icons::Icon::ArrowLeft, crate::i18n::text(CHAPTERS[self.chapter - 1].title)).clicked() {
                         self.chapter -= 1;
                         self.goto = CHAPTERS[self.chapter].sections.first().map(|s| s.id.to_string());
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if self.chapter + 1 < CHAPTERS.len() && ui.button(format!("{} →", crate::i18n::text(CHAPTERS[self.chapter + 1].title))).clicked() {
+                        if self.chapter + 1 < CHAPTERS.len() && crate::icons::text_button_right(ui, crate::icons::Icon::ArrowRight, crate::i18n::text(CHAPTERS[self.chapter + 1].title)).clicked() {
                             self.chapter += 1;
                             self.goto = CHAPTERS[self.chapter].sections.first().map(|s| s.id.to_string());
                         }

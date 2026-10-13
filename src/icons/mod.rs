@@ -47,23 +47,17 @@ pub enum Icon {
     Columns,
     Key,
     Link,
-    Server,
     Settings,
     Book,
     Terminal,
     Shield,
     Save,
-    Copy,
     Download,
-    Upload,
     Alert,
     Check,
     Info,
-    Image,
     Sparkles,
-    Braces,
     Layers,
-    Filter,
     ArrowLeft,
     ArrowRight,
 }
@@ -107,23 +101,17 @@ impl Icon {
             Icon::Columns => "columns-3",
             Icon::Key => "key-round",
             Icon::Link => "link",
-            Icon::Server => "server",
             Icon::Settings => "settings",
             Icon::Book => "book-open",
             Icon::Terminal => "terminal",
             Icon::Shield => "shield-check",
             Icon::Save => "save",
-            Icon::Copy => "copy",
             Icon::Download => "download",
-            Icon::Upload => "upload",
             Icon::Alert => "circle-alert",
             Icon::Check => "circle-check",
             Icon::Info => "info",
-            Icon::Image => "image",
             Icon::Sparkles => "sparkles",
-            Icon::Braces => "braces",
             Icon::Layers => "layers",
-            Icon::Filter => "funnel",
             Icon::ArrowLeft => "arrow-left",
             Icon::ArrowRight => "arrow-right",
         }
@@ -190,19 +178,41 @@ pub fn button_sized(ui: &mut egui::Ui, icon: Icon, tip: &str, size: f32) -> Resp
     if tip.is_empty() { resp } else { resp.on_hover_text(tip) }
 }
 
-/// Knopf mit Symbol und Text
+/// Knopf mit Symbol und Text (Symbol links)
 pub fn text_button(ui: &mut egui::Ui, icon: Icon, text: &str) -> Response {
+    labelled_button(ui, icon, text, false, false)
+}
+
+/// Knopf mit Text und Symbol rechts davon (z. B. "Weiter ->")
+pub fn text_button_right(ui: &mut egui::Ui, icon: Icon, text: &str) -> Response {
+    labelled_button(ui, icon, text, false, true)
+}
+
+/// Hervorgehobene Hauptaktion (blau gefuellt, z. B. Ausfuehren)
+pub fn primary_button(ui: &mut egui::Ui, icon: Icon, text: &str) -> Response {
+    labelled_button(ui, icon, text, true, false)
+}
+
+fn labelled_button(ui: &mut egui::Ui, icon: Icon, text: &str, primary: bool, icon_right: bool) -> Response {
     let pal = style::pal();
     let galley = ui.painter().layout_no_wrap(text.to_string(), egui::FontId::proportional(13.0), pal.text);
-    let size = vec2(galley.size().x + 30.0, ui.spacing().interact_size.y.max(22.0));
+    let size = vec2(galley.size().x + 38.0, ui.spacing().interact_size.y.max(24.0));
     let (r, resp) = ui.allocate_exact_size(size, Sense::click());
-    let visuals = ui.style().interact(&resp);
-    ui.painter().rect(r, 2.0, visuals.weak_bg_fill, visuals.bg_stroke, egui::StrokeKind::Inside);
-    let color = if ui.is_enabled() { visuals.fg_stroke.color } else { pal.text_weak };
-    let ir = Rect::from_center_size(pos2(r.left() + 13.0, r.center().y), vec2(14.0, 14.0));
-    let icon_color = if icon == Icon::Play && ui.is_enabled() { pal.ok_text } else { color };
-    paint(ui.painter(), ir, icon, icon_color);
-    ui.painter().galley_with_override_text_color(pos2(r.left() + 24.0, r.center().y - galley.size().y / 2.0), galley, color);
+    let enabled = ui.is_enabled();
+    let visuals = *ui.style().interact(&resp);
+    let (fill, fg) = if primary && enabled {
+        let fill = if resp.is_pointer_button_down_on() { pal.accent.gamma_multiply(0.8) } else if resp.hovered() { pal.accent.lerp_to_gamma(Color32::WHITE, 0.14) } else { pal.accent };
+        (fill, Color32::WHITE)
+    } else {
+        (visuals.weak_bg_fill, if enabled { visuals.fg_stroke.color } else { pal.text_weak })
+    };
+    ui.painter().rect(r, 3.0, fill, if primary { Stroke::NONE } else { visuals.bg_stroke }, egui::StrokeKind::Inside);
+    let (icon_x, text_x) = if icon_right { (r.right() - 15.0, r.left() + 11.0) } else { (r.left() + 15.0, r.left() + 28.0) };
+    paint(ui.painter(), Rect::from_center_size(pos2(icon_x, r.center().y), vec2(14.0, 14.0)), icon, fg);
+    ui.painter().galley_with_override_text_color(pos2(text_x, r.center().y - galley.size().y / 2.0), galley, fg);
+    if resp.has_focus() {
+        ui.painter().rect_stroke(r, 3.0, Stroke::new(1.0, pal.accent), egui::StrokeKind::Outside);
+    }
     resp
 }
 
@@ -217,8 +227,8 @@ mod tests {
         for icon in [
             Files, Search, Database, History, Diagram, Wizard, Close, Plus, Refresh, NewFile, NewFolder, ChevronDown, ChevronRight, ChevronLeft, Play,
             More, Trash, Up, Down, Collapse, ZoomIn, ZoomOut, Fit, External, Folder, FolderOpen, File, FileText, FileCode, FileImage, FileSheet,
-            FileJson, Table, Columns, Key, Link, Server, Settings, Book, Terminal, Shield, Save, Copy, Download, Upload, Alert, Check, Info, Image,
-            Sparkles, Braces, Layers, Filter, ArrowLeft, ArrowRight,
+            FileJson, Table, Columns, Key, Link, Settings, Book, Terminal, Shield, Save, Download, Alert, Check, Info,
+            Sparkles, Layers, ArrowLeft, ArrowRight,
         ] {
             let polys = shapes(icon);
             assert!(!polys.is_empty(), "{icon:?}");
@@ -241,8 +251,8 @@ mod tests {
         let all = [
             Files, Search, Database, History, Diagram, Wizard, Close, Plus, Refresh, NewFile, NewFolder, ChevronDown, ChevronRight, ChevronLeft, Play,
             More, Trash, Up, Down, Collapse, ZoomIn, ZoomOut, Fit, External, Folder, FolderOpen, File, FileText, FileCode, FileImage, FileSheet,
-            FileJson, Table, Columns, Key, Link, Server, Settings, Book, Terminal, Shield, Save, Copy, Download, Upload, Alert, Check, Info, Image,
-            Sparkles, Braces, Layers, Filter, ArrowLeft, ArrowRight,
+            FileJson, Table, Columns, Key, Link, Settings, Book, Terminal, Shield, Save, Download, Alert, Check, Info,
+            Sparkles, Layers, ArrowLeft, ArrowRight,
         ];
         const CELL: usize = 96;
         const COLS: usize = 10;

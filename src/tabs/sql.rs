@@ -703,7 +703,7 @@ impl TabView for SqlTab {
                 self.set_database(d);
             }
             ui.add_enabled_ui(self.job.is_none(), |ui| {
-                if icons::text_button(ui, Icon::Play, crate::i18n::text("Ausführen"))
+                if icons::primary_button(ui, Icon::Play, crate::i18n::text("Ausführen"))
                     .on_hover_text(crate::tr_format!("Datei oder Markierung ausführen ({})", "Run file or selection ({})", crate::keymap::text(Cmd::RunAll)))
                     .clicked()
                 {
@@ -712,6 +712,12 @@ impl TabView for SqlTab {
             });
             if ui.button(crate::i18n::text("Formatieren")).on_hover_text(crate::keymap::text(Cmd::Format)).clicked() {
                 self.format();
+            }
+            if self.file.is_some() {
+                let tip = format!("{} ({})", crate::i18n::text("Speichern"), crate::keymap::text(Cmd::Save));
+                if ui.add_enabled_ui(self.dirty(), |ui| icons::button(ui, Icon::Save, &tip)).inner.clicked() {
+                    self.save();
+                }
             }
             let (errors, warnings, fixable) = self.editor.lint_summary();
             if errors + warnings > 0 {

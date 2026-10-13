@@ -207,11 +207,26 @@ pub fn set_theme(ctx: &egui::Context, dark: bool) {
         .into();
         let sp = &mut style.spacing;
         sp.item_spacing = egui::vec2(6.0, 4.0);
-        sp.button_padding = egui::vec2(8.0, 3.0);
-        sp.interact_size.y = 20.0;
-        sp.window_margin = Margin::same(8);
+        sp.button_padding = egui::vec2(11.0, 3.0);
+        sp.interact_size.y = 22.0;
+        sp.window_margin = Margin::same(10);
         sp.menu_margin = Margin::same(4);
-        sp.scroll = egui::style::ScrollStyle::solid();
+        // Schlanke Bildlaufleisten wie in Visual Studio Code: dezent, ueber dem Inhalt, beim Darueberfahren breiter
+        sp.scroll = egui::style::ScrollStyle {
+            floating: true,
+            bar_width: 10.0,
+            floating_width: 6.0,
+            floating_allocated_width: 6.0,
+            handle_min_length: 28.0,
+            foreground_color: true,
+            dormant_background_opacity: 0.0,
+            active_background_opacity: 0.0,
+            interact_background_opacity: 0.1,
+            dormant_handle_opacity: 0.3,
+            active_handle_opacity: 0.5,
+            interact_handle_opacity: 0.75,
+            ..egui::style::ScrollStyle::solid()
+        };
         sp.combo_width = 160.0;
         style.animation_time = 0.0;
         style.visuals = visuals(pal());
@@ -220,9 +235,9 @@ pub fn set_theme(ctx: &egui::Context, dark: bool) {
 
 fn visuals(p: &Pal) -> Visuals {
     let mut v = if p.dark { Visuals::dark() } else { Visuals::light() };
-    let r = CornerRadius::same(2);
-    v.window_corner_radius = CornerRadius::same(4);
-    v.menu_corner_radius = CornerRadius::same(4);
+    let r = CornerRadius::same(3);
+    v.window_corner_radius = CornerRadius::same(6);
+    v.menu_corner_radius = CornerRadius::same(5);
     v.window_shadow = Shadow { offset: [0, 4], blur: 12, spread: 0, color: Color32::from_black_alpha(if p.dark { 120 } else { 50 }) };
     v.popup_shadow = Shadow { offset: [0, 2], blur: 8, spread: 0, color: Color32::from_black_alpha(if p.dark { 110 } else { 40 }) };
     v.window_fill = p.face;
@@ -234,27 +249,31 @@ fn visuals(p: &Pal) -> Visuals {
     v.code_bg_color = p.bg;
     v.hyperlink_color = if p.dark { rgb(0x37, 0x94, 0xFF) } else { p.accent };
     v.selection.bg_fill = p.selection;
-    v.selection.stroke = Stroke::new(1.0, p.text);
+    // Fokusrahmen von Eingabefeldern und Schaltflaechen
+    v.selection.stroke = Stroke::new(1.0, p.accent);
     v.window_highlight_topmost = false;
     v.striped = true;
     v.override_text_color = Some(p.text);
 
     let w = &mut v.widgets;
+    // Flache Schaltflaechen: dunkles Grau, beim Darueberfahren heller, beim Druecken blau (wie die Schaltflaechen in VS Code)
     let (btn, btn_hover, btn_active) = if p.dark {
-        (rgb(0x3A, 0x3D, 0x41), rgb(0x45, 0x49, 0x4E), rgb(0x0E, 0x63, 0x9C))
+        (rgb(0x3A, 0x3D, 0x41), rgb(0x47, 0x4B, 0x50), rgb(0x0E, 0x63, 0x9C))
     } else {
-        (rgb(0xFD, 0xFD, 0xFD), rgb(0xE5, 0xF1, 0xFB), rgb(0xCC, 0xE4, 0xF7))
+        (rgb(0xE6, 0xE6, 0xE6), rgb(0xD8, 0xD8, 0xD8), rgb(0xBF, 0xDC, 0xF5))
     };
+    // Rand der Eingabefelder und Haken: im hellen Design sichtbar, im dunklen unauffaellig
+    let edge = if p.dark { Stroke::NONE } else { Stroke::new(1.0, rgb(0xC8, 0xC8, 0xC8)) };
     w.noninteractive.bg_fill = p.face;
     w.noninteractive.weak_bg_fill = p.face;
     w.noninteractive.bg_stroke = Stroke::new(1.0, p.border);
     w.noninteractive.fg_stroke = Stroke::new(1.0, p.text);
     w.noninteractive.corner_radius = r;
     for (ws, fill, stroke) in [
-        (&mut w.inactive, btn, Stroke::new(1.0, p.border)),
-        (&mut w.hovered, btn_hover, Stroke::new(1.0, p.accent)),
+        (&mut w.inactive, btn, edge),
+        (&mut w.hovered, btn_hover, edge),
         (&mut w.active, btn_active, Stroke::new(1.0, p.accent)),
-        (&mut w.open, btn_hover, Stroke::new(1.0, p.border)),
+        (&mut w.open, btn_hover, edge),
     ] {
         ws.bg_fill = fill;
         ws.weak_bg_fill = fill;

@@ -405,7 +405,7 @@ impl TabView for DataTab {
             grid::export_menu(ui, &self.table, &self.columns, &self.rows);
             ui.separator();
             let total = self.total.unwrap_or(self.rows.len() as u64);
-            if ui.add_enabled(self.offset > 0, egui::Button::new("<")).clicked() {
+            if ui.add_enabled_ui(self.offset > 0, |ui| crate::icons::button(ui, crate::icons::Icon::ChevronLeft, crate::i18n::text("Vorherige Seite"))).inner.clicked() {
                 self.offset = self.offset.saturating_sub(self.limit);
                 self.reload(cx);
             }
@@ -415,10 +415,7 @@ impl TabView for DataTab {
                 to,
                 total
             ));
-            if ui
-                .add_enabled((to as u64) < total, egui::Button::new(">"))
-                .clicked()
-            {
+            if ui.add_enabled_ui((to as u64) < total, |ui| crate::icons::button(ui, crate::icons::Icon::ChevronRight, crate::i18n::text("Nächste Seite"))).inner.clicked() {
                 self.offset += self.limit;
                 self.reload(cx);
             }

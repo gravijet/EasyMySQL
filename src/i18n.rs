@@ -637,6 +637,7 @@ impl Language {
             "Editor-Schrift verkleinern" => "Decrease editor font size",
             "Editor-Schrift zurücksetzen" => "Reset editor font size",
             "Als Java-Code kopieren" => "Copy as Java code",
+            "Nach oben" => "Move up",
             "Das Bild konnte nicht gelesen werden." => "The image could not be read.",
             "Vergrößern" => "Zoom in",
             "Verkleinern" => "Zoom out",

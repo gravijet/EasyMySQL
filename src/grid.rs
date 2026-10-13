@@ -298,7 +298,8 @@ pub fn export_menu(ui: &mut egui::Ui, name: &str, columns: &[String], rows: &[Ro
             let _ = std::fs::write(p, content);
         }
     };
-    ui.menu_button("Export", |ui| {
+    let button = crate::icons::text_button(ui, crate::icons::Icon::Download, "Export");
+    egui::Popup::menu(&button).show(|ui| {
         if ui.button(crate::i18n::text("Kopieren (für Excel)")).clicked() {
             ui.ctx().copy_text(to_tsv(columns, rows));
             ui.close();
