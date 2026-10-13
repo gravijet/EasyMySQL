@@ -29,6 +29,9 @@ use std::sync::Mutex;
 use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 
+/// Ergebnis eines Verbindungsaufbaus: Datenbank und (bei SSH) der Tunnel dazu
+type Connected = Result<(Db, Option<crate::ssh::Tunnel>), String>;
+
 /// Kontext fuer Registerkarten aus den Feldern der App (getrennte Ausleihe der Felder)
 macro_rules! cx {
     ($s:ident, $actions:expr) => {
@@ -39,6 +42,7 @@ macro_rules! cx {
             server: &$s.server,
             project: $s.project.as_deref(),
             settings: &mut $s.settings,
+            history: &$s.history,
             actions: $actions,
         }
     };
@@ -76,6 +80,9 @@ pub struct EasyApp {
     export_job: Option<Receiver<Result<PathBuf, String>>>,
     backup_last_check: Option<Instant>,
     check_job: Option<Receiver<Result<crate::repair::CheckResult, String>>>,
+    /// Verbindungsaufbau ueber SSH im Hintergrund (zweiter Wert: bei Fehler Dialog zeigen)
+    connect_job: Option<(Receiver<Connected>, bool)>,
+    tunnel: Option<crate::ssh::Tunnel>,
     myisam_hint_done: bool,
     /// Geoeffneter Projektordner (None = keiner)
     project: Option<PathBuf>,
@@ -174,6 +181,8 @@ impl EasyApp {
             export_job: None,
             backup_last_check: None,
             check_job: None,
+            connect_job: None,
+            tunnel: None,
             myisam_hint_done: false,
             project,
             tree: None,
@@ -233,8 +242,36 @@ impl EasyApp {
     // Verbindung
 
     fn connect(&mut self, show_dialog_on_error: bool) {
-        match Db::connect(&self.settings.conn) {
-            Ok(db) => {
+        if self.connect_job.is_some() {
+            return;
+        }
+        self.tunnel = None;
+        if !self.settings.ssh.enabled {
+            let r = Db::connect(&self.settings.conn).map(|d| (d, None));
+            return self.finish_connect(r, show_dialog_on_error);
+        }
+        // Der Tunnel braucht einige Sekunden: im Hintergrund aufbauen, die Oberflaeche bleibt bedienbar
+        let (ssh, conn) = (self.settings.ssh.clone(), self.settings.conn.clone());
+        let ctx = CTX.lock().unwrap().clone();
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let r = crate::ssh::open(&ssh, &conn.host, conn.port).and_then(|t| {
+                let via = crate::db::ConnInfo { host: "127.0.0.1".into(), port: t.local_port, ..conn };
+                Db::connect(&via).map(|d| (d, Some(t)))
+            });
+            let _ = tx.send(r);
+            if let Some(c) = ctx {
+                c.request_repaint();
+            }
+        });
+        self.connect_job = Some((rx, show_dialog_on_error));
+        self.toast(crate::i18n::tr("Verbinde über SSH …", "Connecting via SSH …"));
+    }
+
+    fn finish_connect(&mut self, result: Connected, show_dialog_on_error: bool) {
+        match result {
+            Ok((db, tunnel)) => {
+                self.tunnel = tunnel;
                 let info = db.info.clone();
                 self.db = Some(db);
                 self.query_log_applied = None;
@@ -316,6 +353,14 @@ impl EasyApp {
                     Err(e) => self.toast_error(crate::tr_format!("Automatische Sicherung fehlgeschlagen: {e}", "Automatic backup failed: {e}")),
                 }
             }
+        if let Some((rx, show)) = &self.connect_job {
+            ctx.request_repaint_after(Duration::from_millis(200));
+            if let Ok(r) = rx.try_recv() {
+                let show = *show;
+                self.connect_job = None;
+                self.finish_connect(r, show);
+            }
+        }
         if let Some(rx) = &self.export_job {
             ctx.request_repaint_after(Duration::from_millis(300));
             if let Ok(r) = rx.try_recv() {
@@ -544,6 +589,8 @@ impl EasyApp {
                     crate::backup::set_env(None);
                 }
                 Action::OpenSafety => self.open_tab(Box::new(SafetyTab::new())),
+                Action::OpenImport => self.open_tab(Box::new(crate::tabs::import::ImportTab::new())),
+                Action::OpenUsers => self.open_tab(Box::new(crate::tabs::users::UsersTab::new())),
                 Action::FilesChanged => self.tree_scan = None,
                 Action::OpenFileAt { path, line } => {
                     self.open_file(&path);
@@ -598,7 +645,7 @@ impl EasyApp {
     }
 
     fn is_local(&self) -> bool {
-        matches!(self.settings.conn.host.as_str(), "127.0.0.1" | "localhost") && self.settings.conn.port == self.server.port
+        !self.settings.ssh.enabled && matches!(self.settings.conn.host.as_str(), "127.0.0.1" | "localhost") && self.settings.conn.port == self.server.port
     }
 
     /// Geaenderte Einstellungen anwenden und speichern
@@ -692,6 +739,8 @@ impl EasyApp {
             }
             Cmd::QueryBuilder => self.handle_actions(vec![Action::OpenBuilder(Some(self.current_db.clone()))]),
             Cmd::Backups => self.handle_actions(vec![Action::OpenSafety]),
+            Cmd::Import => self.handle_actions(vec![Action::OpenImport]),
+            Cmd::Users => self.handle_actions(vec![Action::OpenUsers]),
             _ => {}
         }
         let _ = ctx;
@@ -757,6 +806,8 @@ impl EasyApp {
             Cmd::ErDiagram,
             Cmd::QueryBuilder,
             Cmd::Backups,
+            Cmd::Import,
+            Cmd::Users,
         ];
         // Waehrend ein Kuerzel in den Einstellungen aufgezeichnet wird, nichts ausloesen
         if crate::tabs::settings::recording() {

@@ -220,8 +220,9 @@ pub const CHAPTERS: &[Chapter] = &[
                 title: "Ergebnisse und Meldungen",
                 blocks: &[
                     List(&[
-                        "Jede Anweisung mit Ergebnis bekommt einen eigenen Reiter („Ergebnis 2 · Z. 14 (37)“ = zweites Ergebnis, Anweisung ab Zeile 14, 37 Zeilen).",
+                        "Jede Anweisung mit Ergebnis bekommt einen eigenen Reiter („Ergebnis 2 · Z. 14 (37)“ = zweites Ergebnis, Anweisung ab Zeile 14, 37 Zeilen). Das Kreuz im Reiter schließt ihn.",
                         "„Meldungen“ zeigt jede Anweisung mit Dauer und betroffenen Zeilen. „Zeile n“ springt an die Stelle im Text.",
+                        "Die Uhr rechts oben öffnet den Verlauf: Doppelklick fügt eine frühere Anweisung in den Editor ein, Rechtsklick führt sie erneut aus.",
                         "Nach einem Fehler wird abgebrochen. Die Fehlerzeile ist rot unterstrichen, zu häufigen Fehlern steht ein Hinweis in der gewählten Sprache dabei.",
                         "Angezeigt werden höchstens 50 000 Zeilen je Ergebnis.",
                         "Die Trennlinie zwischen Editor und Ergebnis lässt sich verschieben.",
@@ -347,7 +348,7 @@ pub const CHAPTERS: &[Chapter] = &[
                     List(&[
                         "Datenbanken aufklappen zeigt die Tabellen, Tabellen aufklappen die Spalten mit Datentyp. PK = Primärschlüssel, FK = Fremdschlüssel. Sichten sind kursiv.",
                         "Doppelklick auf eine Tabelle öffnet ihre Daten.",
-                        "Rechtsklick auf eine Tabelle: Daten, Struktur, SELECT, Name kopieren, Leeren, Löschen.",
+                        "Rechtsklick auf eine Tabelle: Daten, Struktur, SELECT, Name kopieren, Java-Klasse, Exportieren, Umbenennen, Kopieren, Zusammenfügen, Leeren, Löschen.",
                         "Rechtsklick auf eine Datenbank: neue Abfrage, neue Tabelle, ER-Diagramm, Abfrage-Assistent, Exportieren, Löschen.",
                         "Die zuletzt angeklickte Datenbank ist fett und wird für neue Abfragen verwendet.",
                         "„+“ legt eine neue Datenbank an (mit Sortierung, z. B. utf8mb4_german2_ci für deutsche Sortierung von Umlauten).",
@@ -358,17 +359,16 @@ pub const CHAPTERS: &[Chapter] = &[
             },
             Section {
                 id: "daten",
-                title: "Daten ansehen und bearbeiten",
+                title: "Daten und Struktur direkt bearbeiten",
                 blocks: &[
                     List(&[
-                        "WHERE: eine Bedingung eingeben (z. B. preis > 10) und Enter drücken.",
-                        "Sortieren nach einer Spalte, auf- oder absteigend.",
-                        "Es werden je 500 Zeilen gezeigt, < und > blättern.",
-                        "Doppelklick auf eine Zelle: bearbeiten, Enter speichert sofort, Esc bricht ab.",
-                        "Rechtsklick auf eine Zelle: Wert kopieren, Zeile kopieren, bearbeiten, auf NULL setzen, Zeile löschen.",
-                        "„+ Neue Zeile“: Werte eingeben; „Standard“ angehakt = Standardwert bzw. AUTO_INCREMENT.",
+                        "WHERE: eine Bedingung eingeben (z. B. preis > 10) und Enter drücken. Es werden je 500 Zeilen gezeigt, < und > blättern.",
+                        "Doppelklick auf eine Zelle: bearbeiten, Enter speichert sofort, Esc bricht ab. Rechtsklick: kopieren, auf NULL setzen, Zeile löschen.",
+                        "„+ Zeile“ legt sofort eine Zeile mit Standardwerten an und springt dorthin; sind Pflichtwerte nötig, fragt ein Dialog danach.",
+                        "Klick auf eine Spaltenüberschrift öffnet das Spaltenmenü: umbenennen, Datentyp ändern, nach links/rechts/an den Anfang/ans Ende verschieben, kopieren, neue Spalte danach, analysieren, sortieren, löschen. „+ Spalte“ fügt eine Spalte am Ende hinzu.",
+                        "„Spalte analysieren“ zeigt Anzahl, leere und verschiedene Werte, kleinsten und größten Wert, den Durchschnitt und die häufigsten Werte; ein Klick auf einen Wert zeigt genau diese Zeilen.",
+                        "Strg+Z (oder der Pfeil in der Leiste) macht die letzte Änderung rückgängig: Werte, gelöschte Zeilen. Tabellen mit Binärdaten sind davon ausgenommen.",
                         "Hat eine Tabelle keinen Primärschlüssel, werden Änderungen über alle Spaltenwerte der Zeile zugeordnet.",
-                        "Export wie bei Abfrageergebnissen.",
                     ]),
                 ],
             },
@@ -381,6 +381,7 @@ pub const CHAPTERS: &[Chapter] = &[
                         "Indizes anlegen (normal oder eindeutig, auch über mehrere Spalten) und löschen.",
                         "Fremdschlüssel anlegen und löschen, mit Verhalten beim Löschen und Ändern (RESTRICT, CASCADE, SET NULL, NO ACTION).",
                         "Auch eingehende Fremdschlüssel anderer Tabellen werden angezeigt.",
+                        "Die Pfeile über der Liste verschieben die gewählte Spalte nach oben oder unten.",
                         "Tabelle umbenennen. Unten steht die vollständige CREATE-Anweisung.",
                     ]),
                 ],
@@ -395,14 +396,44 @@ pub const CHAPTERS: &[Chapter] = &[
                 ],
             },
             Section {
-                id: "export",
-                title: "Exportieren und importieren",
+                id: "tabellenaktionen",
+                title: "Tabellen kopieren, umbenennen, zusammenfügen",
                 blocks: &[
                     List(&[
-                        "Datenbank → Exportieren: ganze Datenbank als .sql-Datei, mit oder ohne Daten. Tabellen stehen in der Reihenfolge ihrer Abhängigkeiten.",
-                        "Datenbank → SQL-Datei importieren: Datei öffnen und sofort ausführen.",
+                        "Rechtsklick auf eine Tabelle: Umbenennen, Kopieren (mit oder ohne Daten, samt Indizes), Zusammenfügen.",
+                        "Zusammenfügen erzeugt aus zwei Tabellen eine neue: „Zeilen untereinander“ (UNION ALL, Spalten gleichen Namens werden zusammengelegt, fehlende bleiben leer) oder „Spalten nebeneinander“ (JOIN über gleiche Werte, vorgeschlagen werden Fremdschlüssel).",
+                        "Das erzeugte SELECT wird angezeigt. „In Editor öffnen“ übernimmt die Anweisung zum Anpassen.",
+                    ]),
+                ],
+            },
+            Section {
+                id: "export",
+                title: "Exportieren",
+                blocks: &[
+                    List(&[
+                        "Datenbank → Exportieren oder Rechtsklick auf eine Datenbank bzw. Tabelle. Tabellen: alle oder eine Auswahl.",
+                        "Formate: SQL (mit oder ohne Daten, in der Reihenfolge der Abhängigkeiten), JSON, CSV (eine Datei je Tabelle, Semikolon, UTF-8), XML und eine SQLite-Datei.",
+                        "Die Daten werden Zeile für Zeile geschrieben, auch riesige Tabellen belegen kaum Speicher.",
                         "Einzelne Ergebnisse: Export-Knopf über der Tabelle.",
                     ]),
+                ],
+            },
+            Section {
+                id: "import",
+                title: "Importieren",
+                blocks: &[
+                    List(&[
+                        "Datenbank → Importieren (oder eine Datei auf die Registerkarte ziehen). Quellen: SQLite-Datei, MongoDB-Export, CSV-Dateien und ein laufender Redis-Server.",
+                        "Spaltentypen werden aus den Werten bestimmt (Zahlen, Datum, Text, JSON). Tabellennamen lassen sich ändern, Tabellen abwählen.",
+                        "SQLite: Primärschlüssel, AUTO_INCREMENT und Beziehungen werden übernommen.",
+                        "MongoDB: Exporte von mongoexport (JSON oder eine Zeile je Dokument) und mongodump (.bson). Verschachtelte Felder landen in einer JSON-Spalte, _id ist der Primärschlüssel.",
+                        "CSV: Trennzeichen und Kodierung (UTF-8 oder Windows) werden erkannt, die erste Zeile ist die Kopfzeile.",
+                        "Redis: Strings, Hashes, Listen, Sets und Sorted Sets werden zu den Tabellen redis_strings, redis_hashes, redis_lists, redis_sets und redis_zsets.",
+                        "Ziel ist eine neue oder eine vorhandene Datenbank. Gleichnamige Tabellen werden übersprungen, sofern „ersetzen“ nicht angehakt ist.",
+                        "SQL-Dateien: Datenbank → SQL-Datei importieren führt die Datei sofort aus.",
+                    ]),
+                    Tip("Ein Import läuft im Hintergrund und lässt sich abbrechen. Eine fehlgeschlagene Tabelle wird wieder entfernt."),
+                    Open("Importieren", Cmd(Cmd::Import)),
                 ],
             },
         ],
@@ -741,6 +772,20 @@ pub const CHAPTERS: &[Chapter] = &[
                 ],
             },
             Section {
+                id: "benutzer",
+                title: "Benutzer und Rechte",
+                blocks: &[
+                    List(&[
+                        "Server → Benutzer & Rechte. Links stehen alle Konten, „+“ legt ein neues an (Name, Host, Passwort, auf Wunsch mit einer eigenen Datenbank und allen Rechten darauf).",
+                        "Host „localhost“ erlaubt nur diesen Computer, „%“ jeden Computer.",
+                        "Rechts: Passwort ändern, Konto löschen und die Rechte. Oben stehen die Stellen, an denen das Konto Rechte hat; ein Klick wählt sie aus.",
+                        "„Gilt für“ wählt global, eine Datenbank oder eine einzelne Tabelle. Die Voreinstellungen „Nur lesen“, „Lesen & Schreiben“ und „Alles“ setzen die Haken; „Übernehmen“ führt nur die nötigen GRANT- und REVOKE-Anweisungen aus (sie stehen im Tooltip).",
+                    ]),
+                    Tip("Das Konto root hat alle Rechte. Wer Rechte vergibt, braucht selbst das Recht GRANT OPTION."),
+                    Open("Benutzer & Rechte", Cmd(Cmd::Users)),
+                ],
+            },
+            Section {
                 id: "sicherungen",
                 title: "Sicherungen",
                 blocks: &[
@@ -809,6 +854,8 @@ pub const CHAPTERS: &[Chapter] = &[
                     P("Standard ist der eigene Server (127.0.0.1, Port 3306, root ohne Passwort). Unter Einstellungen → Verbindung lässt sich jeder andere \
                        MariaDB- oder MySQL-Server eintragen. „Passwort speichern“ legt es in der Einstellungsdatei ab (unverschlüsselt); sonst muss es nach \
                        jedem Start neu eingegeben werden. „Standard“ setzt die Werte für den eigenen Server."),
+                    P("„Über SSH-Tunnel verbinden“ erreicht einen Server, der nur von seinem eigenen Rechner aus zugänglich ist: EasyMySQL baut mit dem OpenSSH-Client (ssh) einen Tunnel auf. \
+                       Server und Port gelten dann aus Sicht des SSH-Servers (meist 127.0.0.1 und 3306). Anmeldung mit Schlüsseldatei, ssh-Agent oder Passwort; unbekannte Server werden beim ersten Mal gemerkt."),
                     Open("Verbindung einstellen", Settings("verbindung")),
                 ],
             },
@@ -859,6 +906,8 @@ pub const CHAPTERS: &[Chapter] = &[
                         Cmd::ErDiagram,
                         Cmd::QueryBuilder,
                         Cmd::Backups,
+                        Cmd::Import,
+                        Cmd::Users,
                         Cmd::Format,
                         Cmd::FixAll,
                         Cmd::CopyJava,

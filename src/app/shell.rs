@@ -27,6 +27,8 @@ impl EasyApp {
             ["builder", db] => Box::new(BuilderTab::new(Some(db.to_string()).filter(|d| !d.is_empty()))),
             ["builder", id, db] => Box::new(BuilderTab::restore(id, db)),
             ["safety"] => Box::new(SafetyTab::new()),
+            ["users"] => Box::new(crate::tabs::users::UsersTab::new()),
+            ["import"] => Box::new(crate::tabs::import::ImportTab::new()),
             ["log"] => Box::new(LogTab::new()),
             ["settings"] => Box::new(SettingsTab::new()),
             ["help"] => Box::new(HelpTab::new()),
@@ -161,10 +163,11 @@ impl EasyApp {
                     ui.separator();
                     if ui.add_enabled(connected, egui::Button::new(crate::i18n::text("Exportieren …"))).clicked() {
                         if let Some(d) = self.need_db() {
-                            self.dialogs.push(Dialog::Export { db: d, with_data: true });
+                            self.dialogs.push(Dialog::Export { db: d, only: None, with_data: true, format: crate::transfer::export::Format::Sql });
                         }
                         ui.close();
                     }
+                    item(ui, crate::i18n::text("Importieren …"), Cmd::Import, &mut cmd);
                     if ui.add_enabled(connected, egui::Button::new(crate::i18n::text("SQL-Datei importieren …"))).clicked() {
                         ui.close();
                         self.open_sql_file(true);
@@ -187,6 +190,7 @@ impl EasyApp {
                     ui.separator();
                     item(ui, crate::i18n::text("Server-Log"), Cmd::ServerLog, &mut cmd);
                     item(ui, crate::i18n::text("Sicherungen & Reparatur"), Cmd::Backups, &mut cmd);
+                    item(ui, crate::i18n::text("Benutzer & Rechte"), Cmd::Users, &mut cmd);
                     ui.separator();
                     if ui.button(crate::i18n::text("Verbindung …")).clicked() {
                         actions.push(Action::OpenSettings(Some("verbindung".into())));

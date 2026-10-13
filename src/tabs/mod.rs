@@ -6,12 +6,14 @@ pub mod designer;
 pub mod er;
 pub mod help;
 mod help_content;
+pub mod import;
 pub mod log;
 pub mod preview;
 pub mod safety;
 pub mod settings;
 pub mod sql;
 pub mod structure;
+pub mod users;
 
 use crate::db::{Db, Schema};
 use crate::keymap::Cmd;
@@ -41,6 +43,8 @@ pub enum Action {
     /// Verbindung trennen (z. B. vor der Server-Rettung)
     Disconnect,
     OpenSafety,
+    OpenImport,
+    OpenUsers,
     /// Dateien im Projekt haben sich geaendert (Explorer neu einlesen)
     FilesChanged,
     /// Datei oeffnen und zu einer Zeile (0-basiert) springen
@@ -152,6 +156,8 @@ pub struct Ctx<'a> {
     /// Geoeffneter Projektordner
     pub project: Option<&'a std::path::Path>,
     pub settings: &'a mut crate::settings::Settings,
+    /// Verlauf der ausgefuehrten Anweisungen, neueste zuerst
+    pub history: &'a [crate::qhistory::Entry],
     pub actions: &'a mut Vec<Action>,
 }
 
@@ -169,6 +175,37 @@ impl Ctx<'_> {
     pub fn status(&mut self, s: impl Into<String>) {
         self.actions.push(Action::Status(s.into()));
     }
+}
+
+/// Ergebnis eines Reiters mit Schliessen-Kreuz
+pub struct Chip {
+    pub clicked: bool,
+    pub closed: bool,
+}
+
+/// Kleiner Reiter mit Kreuz (Ergebnisbereich): Klick waehlt, Kreuz oder Mittelklick schliesst.
+pub fn chip(ui: &mut egui::Ui, label: &str, color: Option<egui::Color32>, selected: bool) -> Chip {
+    let pal = crate::style::pal();
+    let galley = ui.painter().layout_no_wrap(label.to_string(), egui::FontId::proportional(12.5), pal.text);
+    let (r, resp) = ui.allocate_exact_size(egui::vec2(galley.size().x + 38.0, 24.0), egui::Sense::click());
+    let p = ui.painter();
+    if selected {
+        p.rect_filled(r, 3.0, pal.tab_active);
+        p.rect_filled(egui::Rect::from_min_size(egui::pos2(r.left() + 6.0, r.bottom() - 2.0), egui::vec2(r.width() - 12.0, 2.0)), 1.0, pal.accent);
+    } else if resp.hovered() {
+        p.rect_filled(r, 3.0, pal.hover);
+    }
+    let fg = color.unwrap_or(if selected { pal.text } else { pal.text_weak });
+    p.galley(egui::pos2(r.left() + 10.0, r.center().y - galley.size().y / 2.0), galley, fg);
+    let cr = egui::Rect::from_center_size(egui::pos2(r.right() - 13.0, r.center().y), egui::vec2(16.0, 16.0));
+    let over = ui.ctx().pointer_hover_pos().is_some_and(|q| cr.contains(q));
+    if selected || resp.hovered() {
+        if over {
+            p.rect_filled(cr, 3.0, pal.hover);
+        }
+        crate::icons::paint(p, cr.shrink(2.0), crate::icons::Icon::Close, if over { pal.text } else { pal.text_weak });
+    }
+    Chip { clicked: resp.clicked() && !over, closed: (resp.clicked() && over) || resp.middle_clicked() }
 }
 
 /// Bild-rauf/-runter sowie Pos1/Ende scrollen den Bereich, der gleich danach folgt (umgebende oder naechste
@@ -280,7 +317,7 @@ pub trait TabView {
 /// Auswahlfeld fuer eine Datenbank. Liefert true bei Aenderung.
 pub fn db_combo(ui: &mut egui::Ui, id: &str, dbs: &[String], value: &mut String) -> bool {
     let mut changed = false;
-    egui::ComboBox::from_id_salt(id)
+    crate::widgets::combo(id)
         .selected_text(if value.is_empty() { crate::i18n::text("(keine)") } else { value.as_str() })
         .width(170.0)
         .show_ui(ui, |ui| {
@@ -297,7 +334,7 @@ pub fn db_combo(ui: &mut egui::Ui, id: &str, dbs: &[String], value: &mut String)
 /// Einfaches Auswahlfeld fuer eine Liste von Strings.
 pub fn str_combo(ui: &mut egui::Ui, id: impl std::hash::Hash + std::fmt::Debug, items: &[String], value: &mut String, width: f32) -> bool {
     let mut changed = false;
-    egui::ComboBox::from_id_salt(id)
+    crate::widgets::combo(id)
         .selected_text(if value.is_empty() { "–" } else { value.as_str() })
         .width(width)
         .show_ui(ui, |ui| {

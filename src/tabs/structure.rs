@@ -10,7 +10,6 @@ enum Dlg {
     Column { orig: Option<String>, def: ColDef, after: String },
     Index { name: String, cols: String, unique: bool },
     Fk { col: String, target: String, on_delete: String, on_update: String },
-    Rename(String),
 }
 
 pub struct StructureTab {
@@ -103,7 +102,6 @@ impl StructureTab {
             Dlg::Column { orig: Some(o), .. } => crate::tr_format!("Spalte {o} ändern", "Edit column {o}"),
             Dlg::Index { .. } => crate::i18n::text("Index hinzufügen").into(),
             Dlg::Fk { .. } => crate::i18n::text("Fremdschlüssel (Beziehung) hinzufügen").into(),
-            Dlg::Rename(_) => crate::i18n::text("Tabelle umbenennen").into(),
         };
         let cols: Vec<String> = self
             .info
@@ -194,11 +192,6 @@ impl StructureTab {
                         super::str_combo(ui, "fkupd", &rules, on_update, 120.0);
                         ui.end_row();
                     }
-                    Dlg::Rename(n) => {
-                        ui.label(crate::i18n::text("Neuer Name:"));
-                        ui.text_edit_singleline(n);
-                        ui.end_row();
-                    }
                 });
                 ui.separator();
                 ui.horizontal(|ui| {
@@ -280,17 +273,9 @@ impl StructureTab {
                         on_update
                     )
                 }
-                Dlg::Rename(n) => format!("RENAME TABLE {full} TO {}.{}", q(&self.db), q(n.trim())),
-            };
-            let rename = match self.dlg.as_ref().unwrap() {
-                Dlg::Rename(n) => Some(n.trim().to_string()),
-                _ => None,
             };
             if self.alter(cx, sql) {
                 self.dlg = None;
-                if let Some(n) = rename {
-                    self.table = n;
-                }
             }
         } else if close {
             self.dlg = None;
@@ -384,6 +369,22 @@ impl TabView for StructureTab {
                     sql: format!("ALTER TABLE {} DROP COLUMN {}", self.full(), q(&c.name)),
                 });
             }
+            let sel_i = self.selected.filter(|i| *i < info.columns.len());
+            let mut mv = None;
+            ui.add_enabled_ui(sel_i.is_some() && !view, |ui| {
+                if crate::icons::button(ui, crate::icons::Icon::ArrowUp, crate::i18n::tr("Spalte nach oben", "Move column up")).clicked() {
+                    mv = Some(crate::db::Move::Left);
+                }
+                if crate::icons::button(ui, crate::icons::Icon::ArrowDown, crate::i18n::tr("Spalte nach unten", "Move column down")).clicked() {
+                    mv = Some(crate::db::Move::Right);
+                }
+            });
+            if let (Some(m), Some(i)) = (mv, sel_i)
+                && let Some(sql) = crate::db::move_column(&self.full(), &info, &info.columns[i].name, m)
+                && self.alter(cx, sql)
+            {
+                self.selected = Some(if m == crate::db::Move::Left { i - 1 } else { i + 1 });
+            }
             ui.separator();
             if ui.add_enabled(!view, egui::Button::new("+ Index")).clicked() {
                 self.dlg = Some(Dlg::Index {
@@ -401,14 +402,8 @@ impl TabView for StructureTab {
                 });
             }
             ui.separator();
-            if ui.button(crate::i18n::text("Umbenennen")).clicked() {
-                self.dlg = Some(Dlg::Rename(self.table.clone()));
-            }
             if ui.button(crate::i18n::text("Daten anzeigen")).clicked() {
                 cx.actions.push(Action::OpenData { db: self.db.clone(), table: self.table.clone() });
-            }
-            if ui.button(crate::i18n::text("Aktualisieren")).clicked() {
-                self.reload(cx);
             }
         });
         ui.add_space(4.0);

@@ -8,6 +8,8 @@ use egui_extras::{Column, TableBuilder};
 #[derive(Default)]
 pub struct GridState {
     pub selected: Option<usize>,
+    /// Zeile, zu der beim naechsten Zeichnen gescrollt wird
+    pub scroll_to: Option<usize>,
     editing: Option<(usize, usize, String, bool)>,
 }
 
@@ -18,7 +20,29 @@ impl GridState {
     }
 }
 
+/// Was in der Tabelle bearbeitet werden darf
+#[derive(Clone, Copy, PartialEq)]
+pub enum Edit {
+    /// nur ansehen
+    View,
+    /// Werte und Spalten (Kopfzeilenmenue) aendern
+    CellsAndColumns,
+}
+
+/// Aktion aus dem Menue einer Spaltenueberschrift
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum ColumnAction {
+    Edit,
+    Move(crate::db::Move),
+    Duplicate,
+    AddAfter,
+    Analyze,
+    Sort(bool),
+    Delete,
+}
+
 pub enum GridEvent {
+    Column(usize, ColumnAction),
     /// Zelle geaendert (Zeile, Spalte, neuer Wert)
     Edit(usize, usize, Option<String>),
     DeleteRow(usize),
@@ -49,9 +73,10 @@ pub fn show(
     id: impl std::hash::Hash + std::fmt::Debug,
     columns: &[String],
     rows: &[Row],
-    editable: bool,
+    edit: Edit,
     state: &mut GridState,
 ) -> Vec<GridEvent> {
+    let editable = edit == Edit::CellsAndColumns;
     let mut events = Vec::new();
     if columns.is_empty() {
         return events;
@@ -70,6 +95,9 @@ pub fn show(
             .auto_shrink([false, false])
             .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
             .column(Column::exact(44.0));
+        if let Some(r) = state.scroll_to.take() {
+            tb = tb.scroll_to_row(r, None);
+        }
         for (ci, c) in columns.iter().enumerate() {
             let mut chars = c.chars().count();
             for r in rows.iter().take(100) {
@@ -87,12 +115,52 @@ pub fn show(
                 cell_lines(ui);
                 ui.label("#");
             });
-            for c in columns {
+            for (ci, c) in columns.iter().enumerate() {
                 header.col(|ui| {
                     ui.painter()
                         .rect_filled(ui.max_rect().expand(3.0), 0.0, style::pal().face);
                     cell_lines(ui);
-                    ui.label(RichText::new(c).strong());
+                    if edit != Edit::CellsAndColumns {
+                        ui.label(RichText::new(c).strong());
+                        return;
+                    }
+                    let resp = ui.add(egui::Label::new(RichText::new(c).strong()).selectable(false).truncate().sense(Sense::click()));
+                    let tip = crate::i18n::tr("Klicken für Spaltenmenü", "Click for column menu");
+                    let resp = resp.on_hover_text(tip).on_hover_cursor(egui::CursorIcon::PointingHand);
+                    if resp.hovered() || resp.is_pointer_button_down_on() {
+                        let r = ui.max_rect();
+                        crate::icons::paint(ui.painter(), egui::Rect::from_center_size(egui::pos2(r.right() - 4.0, r.center().y), egui::vec2(12.0, 12.0)), crate::icons::Icon::ChevronDown, style::pal().text_weak);
+                    }
+                    let mut menu = |ui: &mut egui::Ui| {
+                        use crate::db::Move;
+                        let t = crate::i18n::tr;
+                        let mut item = |ui: &mut egui::Ui, label: &str, a: ColumnAction| {
+                            if ui.button(label).clicked() {
+                                events.push(GridEvent::Column(ci, a));
+                                ui.close();
+                            }
+                        };
+                        item(ui, t("Umbenennen / Typ ändern …", "Rename / change type …"), ColumnAction::Edit);
+                        item(ui, t("Nach links", "Move left"), ColumnAction::Move(Move::Left));
+                        item(ui, t("Nach rechts", "Move right"), ColumnAction::Move(Move::Right));
+                        item(ui, t("An den Anfang", "Move to start"), ColumnAction::Move(Move::First));
+                        item(ui, t("An das Ende", "Move to end"), ColumnAction::Move(Move::Last));
+                        ui.separator();
+                        item(ui, t("Spalte kopieren", "Duplicate column"), ColumnAction::Duplicate);
+                        item(ui, t("Neue Spalte danach …", "New column after …"), ColumnAction::AddAfter);
+                        ui.separator();
+                        item(ui, t("Spalte analysieren …", "Analyze column …"), ColumnAction::Analyze);
+                        ui.separator();
+                        item(ui, t("Aufsteigend sortieren", "Sort ascending"), ColumnAction::Sort(false));
+                        item(ui, t("Absteigend sortieren", "Sort descending"), ColumnAction::Sort(true));
+                        ui.separator();
+                        item(ui, t("Spalte löschen …", "Delete column …"), ColumnAction::Delete);
+                    };
+                    // Linksklick und Rechtsklick oeffnen dasselbe Menue
+                    if resp.secondary_clicked() {
+                        egui::Popup::open_id(ui.ctx(), egui::Popup::default_response_id(&resp));
+                    }
+                    egui::Popup::menu(&resp).show(&mut menu);
                 });
             }
         })

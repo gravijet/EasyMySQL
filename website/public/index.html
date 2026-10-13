@@ -43,12 +43,16 @@
       <button type="button" role="tab" id="t-data" aria-selected="false" aria-controls="p-data" tabindex="-1" data-en="Tables">Tabellen</button>
       <button type="button" role="tab" id="t-er" aria-selected="false" aria-controls="p-er" tabindex="-1" data-en="Diagram">Diagramm</button>
       <button type="button" role="tab" id="t-builder" aria-selected="false" aria-controls="p-builder" tabindex="-1" data-en="Query builder">Assistent</button>
+      <button type="button" role="tab" id="t-users" aria-selected="false" aria-controls="p-users" tabindex="-1" data-en="Users">Benutzer</button>
+      <button type="button" role="tab" id="t-import" aria-selected="false" aria-controls="p-import" tabindex="-1" data-en="Import">Import</button>
     </div>
     <div class="frame">
       <img id="p-sql" role="tabpanel" aria-labelledby="t-sql" src="/shots/sql.webp" width="1200" height="760" alt="Der SQL-Editor mit einer Abfrage und dem Ergebnis darunter" data-en-alt="The SQL editor with a query and its result below">
-      <img id="p-data" role="tabpanel" aria-labelledby="t-data" src="/shots/data.webp" width="1200" height="760" loading="lazy" hidden alt="Eine Tabelle mit Kundendaten" data-en-alt="A table with customer data">
+      <img id="p-data" role="tabpanel" aria-labelledby="t-data" src="/shots/data.webp" width="1200" height="760" loading="lazy" hidden alt="Eine Tabelle mit Kundendaten und dem Spaltenmenü" data-en-alt="A table with customer data and the column menu">
       <img id="p-er" role="tabpanel" aria-labelledby="t-er" src="/shots/er.webp" width="1200" height="760" loading="lazy" hidden alt="Das ER-Diagramm einer Shop-Datenbank" data-en-alt="The ER diagram of a shop database">
       <img id="p-builder" role="tabpanel" aria-labelledby="t-builder" src="/shots/builder.webp" width="1200" height="760" loading="lazy" hidden alt="Der Abfrage-Assistent mit dem erzeugten SQL" data-en-alt="The query builder with the generated SQL">
+      <img id="p-users" role="tabpanel" aria-labelledby="t-users" src="/shots/users.webp" width="1200" height="760" loading="lazy" hidden alt="Die Verwaltung von Benutzern und ihren Rechten" data-en-alt="Managing users and their privileges">
+      <img id="p-import" role="tabpanel" aria-labelledby="t-import" src="/shots/import.webp" width="1200" height="760" loading="lazy" hidden alt="Der Import aus Redis in neue Tabellen" data-en-alt="Importing from Redis into new tables">
     </div>
   </div>
 </section>
@@ -62,11 +66,11 @@
     </li>
     <li>
       <h3 data-en="Write queries">Abfragen schreiben</h3>
-      <p data-en="An editor with suggestions while you type and clear results. Export them as CSV, JSON or Markdown.">Ein Editor mit Vorschlägen beim Tippen und übersichtlichen Ergebnissen. Exportieren geht als CSV, JSON oder Markdown.</p>
+      <p data-en="An editor with suggestions and error marking while you type, and a history of everything you ran.">Ein Editor mit Vorschlägen und Fehlermarkierung beim Tippen und einem Verlauf aller ausgeführten Abfragen.</p>
     </li>
     <li>
       <h3 data-en="Edit tables">Tabellen bearbeiten</h3>
-      <p data-en="Look at data, filter it and change it right in the table. New tables can be created without writing SQL.">Daten ansehen, filtern und direkt in der Tabelle ändern. Neue Tabellen legst du an, ohne SQL zu schreiben.</p>
+      <p data-en="Change values and the structure right in the table: rename, move and copy columns, with undo. Merge tables with a click.">Werte und Struktur direkt in der Tabelle ändern: Spalten umbenennen, verschieben und kopieren, mit Rückgängig. Tabellen zusammenfügen per Klick.</p>
     </li>
     <li>
       <h3 data-en="See connections">Zusammenhänge sehen</h3>
@@ -75,6 +79,18 @@
     <li>
       <h3 data-en="Build queries by clicking">Abfragen zusammenklicken</h3>
       <p data-en="Assemble a query from blocks. The finished SQL appears right next to it.">Aus Bausteinen eine Abfrage zusammensetzen. Das fertige SQL steht gleich daneben.</p>
+    </li>
+    <li>
+      <h3 data-en="Import and export">Import und Export</h3>
+      <p data-en="Import SQLite, MongoDB exports, CSV and Redis. Export as SQL, JSON, CSV, XML or a SQLite file.">Importiere SQLite, MongoDB-Exporte, CSV und Redis. Exportiere als SQL, JSON, CSV, XML oder SQLite-Datei.</p>
+    </li>
+    <li>
+      <h3 data-en="Users and privileges">Benutzer und Rechte</h3>
+      <p data-en="Create accounts and grant privileges per database or table with a few clicks.">Konten anlegen und Rechte je Datenbank oder Tabelle mit wenigen Klicks vergeben.</p>
+    </li>
+    <li>
+      <h3 data-en="Reach remote servers">Entfernte Server erreichen</h3>
+      <p data-en="Connect to a database on another machine through an SSH tunnel.">Verbinde dich über einen SSH-Tunnel mit einer Datenbank auf einem anderen Rechner.</p>
     </li>
     <li>
       <h3 data-en="Backups">Sicherungen</h3>
@@ -107,6 +123,10 @@
   <details>
     <summary data-en="Can other computers reach my data?">Kommen andere Rechner an meine Daten?</summary>
     <p data-en="No. By default the server only accepts connections from your own PC.">Nein. Der Server nimmt standardmäßig nur Verbindungen vom eigenen PC an.</p>
+  </details>
+  <details>
+    <summary data-en="Can I use it for a server on another computer?">Kann ich einen Server auf einem anderen Rechner verwenden?</summary>
+    <p data-en="Yes. Enter its address under Settings → Connection. If it only accepts connections from itself, tick “Connect through an SSH tunnel”.">Ja. Trage die Adresse unter Einstellungen → Verbindung ein. Nimmt der Server nur Verbindungen von sich selbst an, hake „Über SSH-Tunnel verbinden“ an.</p>
   </details>
   <details>
     <summary data-en="Does it update itself?">Aktualisiert es sich selbst?</summary>

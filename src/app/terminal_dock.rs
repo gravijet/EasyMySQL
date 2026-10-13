@@ -29,7 +29,9 @@ impl TerminalDock {
 
 impl EasyApp {
     fn terminal_profiles(&self) -> Vec<Profile> {
-        terminal::profiles(self.server.paths.as_ref().map(|p| p.bin.as_path()), &self.settings.conn)
+        // Mit SSH-Tunnel gilt die Adresse des Tunnels
+        let conn = self.db.as_ref().map(|d| d.info.clone()).unwrap_or_else(|| self.settings.conn.clone());
+        terminal::profiles(self.server.paths.as_ref().map(|p| p.bin.as_path()), &conn)
     }
 
     /// Neues Terminal in der gewaehlten Shell (None = Standard) im Projektordner
