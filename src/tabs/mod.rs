@@ -7,6 +7,7 @@ pub mod er;
 pub mod help;
 mod help_content;
 pub mod log;
+pub mod preview;
 pub mod safety;
 pub mod settings;
 pub mod sql;
@@ -235,6 +236,14 @@ pub trait TabView {
         None
     }
     fn busy(&self) -> bool {
+        false
+    }
+    /// Symbol vor dem Titel in der Registerkartenleiste
+    fn icon(&self) -> Option<crate::icons::Icon> {
+        None
+    }
+    /// Hat die Datei Aenderungen, die noch nicht gespeichert sind? (Punkt statt Kreuz)
+    fn modified(&self) -> bool {
         false
     }
     /// Eintrag fuer die Sitzungsdatei (zum Wiederherstellen beim Start)

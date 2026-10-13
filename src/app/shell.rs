@@ -12,6 +12,13 @@ impl EasyApp {
     pub(super) fn tab_from_session(&self, entry: &str) -> Option<Box<dyn TabView>> {
         let parts: Vec<&str> = entry.split('\t').collect();
         Some(match parts.as_slice() {
+            ["preview", path] => {
+                let p = Path::new(path);
+                let mut head = [0u8; 8192];
+                let n = std::fs::File::open(p).and_then(|mut f| std::io::Read::read(&mut f, &mut head)).ok()?;
+                let ctx = crate::app::CTX.lock().unwrap().clone()?;
+                Box::new(crate::tabs::preview::PreviewTab::open(&ctx, p, crate::tabs::preview::detect(p, &head[..n])).ok()?)
+            }
             ["sql", path] => Box::new(SqlTab::open_file(Path::new(path), "", self.project.as_deref()).ok()?),
             ["scratch", id, db] => Box::new(SqlTab::restore_scratch(id.parse().ok()?, db.to_string())?),
             ["er", db] => Box::new(ErTab::new(db.to_string())),
@@ -290,7 +297,8 @@ impl EasyApp {
                 let sel = i == self.active;
                 let title = t.title();
                 let galley = ui.painter().layout_no_wrap(title.clone(), egui::FontId::proportional(13.0), pal.text);
-                let w = galley.size().x + 44.0;
+                let icon = t.icon();
+                let w = galley.size().x + 44.0 + if icon.is_some() { 22.0 } else { 0.0 };
                 let (r, resp) = ui.allocate_exact_size(vec2(w, 32.0), Sense::click());
                 if sel {
                     resp.scroll_to_me(None);
@@ -302,7 +310,12 @@ impl EasyApp {
                 }
                 ui.painter().vline(r.right(), r.y_range(), Stroke::new(1.0, pal.tab_bar_bg));
                 let color = if sel { pal.text } else { pal.text_weak };
-                ui.painter().text(r.left_center() + vec2(12.0, 0.0), egui::Align2::LEFT_CENTER, &title, egui::FontId::proportional(13.0), color);
+                let mut text_x = 12.0;
+                if let Some(ic) = icon {
+                    icons::paint(ui.painter(), Rect::from_center_size(pos2(r.left() + 20.0, r.center().y), vec2(14.0, 14.0)), ic, if sel { pal.accent } else { pal.text_weak });
+                    text_x = 34.0;
+                }
+                ui.painter().text(r.left_center() + vec2(text_x, 0.0), egui::Align2::LEFT_CENTER, &title, egui::FontId::proportional(13.0), color);
                 // Schliessen-Kreuz bzw. Laufanzeige
                 let cr = Rect::from_center_size(pos2(r.right() - 16.0, r.center().y), vec2(18.0, 18.0));
                 let over_close = ui.input(|i| i.pointer.hover_pos()).is_some_and(|p| cr.contains(p));
@@ -313,6 +326,9 @@ impl EasyApp {
                         Stroke::new(1.5, pal.accent),
                     ));
                     ui.ctx().request_repaint();
+                } else if t.modified() && !(hovered && over_close) {
+                    // Ungespeicherte Aenderungen: Punkt, beim Darueberfahren das Kreuz
+                    ui.painter().circle_filled(cr.center(), 4.0, color);
                 } else if sel || hovered {
                     if over_close {
                         ui.painter().rect_filled(cr, 3.0, pal.hover);

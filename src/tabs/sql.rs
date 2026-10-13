@@ -558,12 +558,20 @@ impl SqlTab {
 }
 
 impl TabView for SqlTab {
+    fn icon(&self) -> Option<Icon> {
+        Some(if self.file.is_some() { Icon::FileCode } else { Icon::NewFile })
+    }
+
+    fn modified(&self) -> bool {
+        self.file.is_some() && self.dirty()
+    }
+
     fn title(&self) -> String {
         let name = match &self.file {
             Some(f) => f.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
             None => crate::tr_format!("Unbenannt-{}", "Untitled-{}", self.scratch_id),
         };
-        if self.dirty() { format!("{name} ●") } else { name }
+        name
     }
 
     fn busy(&self) -> bool {

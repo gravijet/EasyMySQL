@@ -183,6 +183,10 @@ fn section_ui(ui: &mut egui::Ui, s: &Section, cx: &mut Ctx, goto: &mut Option<St
 }
 
 impl TabView for HelpTab {
+    fn icon(&self) -> Option<crate::icons::Icon> {
+        Some(crate::icons::Icon::Book)
+    }
+
     fn title(&self) -> String {
         crate::i18n::text("Handbuch").into()
     }

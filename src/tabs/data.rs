@@ -297,6 +297,10 @@ impl DataTab {
 }
 
 impl TabView for DataTab {
+    fn icon(&self) -> Option<crate::icons::Icon> {
+        Some(crate::icons::Icon::Table)
+    }
+
     fn title(&self) -> String {
         crate::tr_format!("{} (Daten)", "{} (Data)", self.table)
     }

@@ -175,6 +175,10 @@ impl SettingsTab {
 }
 
 impl TabView for SettingsTab {
+    fn icon(&self) -> Option<crate::icons::Icon> {
+        Some(crate::icons::Icon::Settings)
+    }
+
     fn title(&self) -> String {
         crate::i18n::text("Einstellungen").into()
     }

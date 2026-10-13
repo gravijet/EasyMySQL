@@ -1189,6 +1189,10 @@ impl BuilderTab {
 }
 
 impl TabView for BuilderTab {
+    fn icon(&self) -> Option<crate::icons::Icon> {
+        Some(crate::icons::Icon::Wizard)
+    }
+
     fn title(&self) -> String {
         if self.db.is_empty() { crate::i18n::text("Abfrage-Assistent").into() } else { crate::tr_format!("Assistent: {}", "Builder: {}", self.db) }
     }

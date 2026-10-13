@@ -440,6 +440,10 @@ impl ErTab {
 }
 
 impl TabView for ErTab {
+    fn icon(&self) -> Option<crate::icons::Icon> {
+        Some(crate::icons::Icon::Diagram)
+    }
+
     fn title(&self) -> String {
         crate::tr_format!("ER-Diagramm: {}", "ER diagram: {}", self.db)
     }

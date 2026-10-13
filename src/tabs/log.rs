@@ -68,6 +68,10 @@ impl LogTab {
 }
 
 impl TabView for LogTab {
+    fn icon(&self) -> Option<crate::icons::Icon> {
+        Some(crate::icons::Icon::Terminal)
+    }
+
     fn title(&self) -> String {
         crate::i18n::text("Server-Log").into()
     }

@@ -303,6 +303,10 @@ fn header_cell(ui: &mut egui::Ui, t: &str) {
 }
 
 impl TabView for StructureTab {
+    fn icon(&self) -> Option<crate::icons::Icon> {
+        Some(crate::icons::Icon::Columns)
+    }
+
     fn title(&self) -> String {
         crate::tr_format!("{} (Struktur)", "{} (Structure)", self.table)
     }

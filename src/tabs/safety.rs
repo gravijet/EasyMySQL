@@ -386,6 +386,10 @@ impl SafetyTab {
 }
 
 impl TabView for SafetyTab {
+    fn icon(&self) -> Option<crate::icons::Icon> {
+        Some(crate::icons::Icon::Shield)
+    }
+
     fn title(&self) -> String {
         crate::i18n::text("Sicherungen & Reparatur").into()
     }

@@ -107,6 +107,7 @@ pub const COLLATIONS: &[&str] = &[
 
 impl EasyApp {
     pub fn new(cc: &eframe::CreationContext, startup_files: Vec<PathBuf>) -> Self {
+        *CTX.lock().unwrap() = Some(cc.egui_ctx.clone());
         let mut settings = Settings::load();
         crate::workspace::set_storage_root(&settings.storage_dir);
         for p in crate::workspace::migrate_legacy() {
@@ -864,6 +865,17 @@ impl EasyApp {
         let key = format!("file:{}", p.to_string_lossy().to_lowercase());
         if let Some(i) = self.tabs.iter().position(|t| t.key().as_deref() == Some(&key)) {
             self.active = i;
+            return;
+        }
+        // Bilder, PDF-Dokumente und andere Binaerdateien bekommen eine Vorschau statt des Texteditors
+        let mut head = [0u8; 8192];
+        let n = std::fs::File::open(p).and_then(|mut f| std::io::Read::read(&mut f, &mut head)).unwrap_or(0);
+        let kind = crate::tabs::preview::detect(p, &head[..n]);
+        if kind != crate::tabs::preview::Kind::Text {
+            match crate::tabs::preview::PreviewTab::open(&CTX.lock().unwrap().clone().unwrap_or_default(), p, kind) {
+                Ok(tab) => self.open_tab(Box::new(tab)),
+                Err(e) => self.error(e),
+            }
             return;
         }
         match SqlTab::open_file(p, &self.current_db, self.project.as_deref()) {

@@ -71,6 +71,10 @@ impl DesignerTab {
 }
 
 impl TabView for DesignerTab {
+    fn icon(&self) -> Option<crate::icons::Icon> {
+        Some(crate::icons::Icon::NewFile)
+    }
+
     fn title(&self) -> String {
         if self.name.is_empty() {
             crate::i18n::text("Neue Tabelle").into()

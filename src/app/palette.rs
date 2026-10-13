@@ -83,7 +83,7 @@ impl EasyApp {
         } else {
             let mut files = Vec::new();
             if let Some(t) = &self.tree {
-                side::text_files(t, &mut files);
+                side::openable_files(t, &mut files);
             }
             let root = self.project.clone().unwrap_or_default();
             for f in files {

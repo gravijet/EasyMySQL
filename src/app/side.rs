@@ -77,6 +77,20 @@ pub fn text_files(n: &Node, out: &mut Vec<PathBuf>) {
     }
 }
 
+/// Dateien fuer die Schnellsuche: Textdateien sowie Bilder und PDF-Dokumente
+pub fn openable_files(n: &Node, out: &mut Vec<PathBuf>) {
+    for c in &n.children {
+        if c.is_dir {
+            openable_files(c, out);
+        } else {
+            let ext = c.name.rsplit('.').next().unwrap_or("").to_lowercase();
+            if matches!(ext.as_str(), "sql" | "txt" | "md" | "csv" | "json") || crate::tabs::preview::previewable_name(&c.name) {
+                out.push(c.path.clone());
+            }
+        }
+    }
+}
+
 /// Treffer je Datei: (Datei, [(Zeile, Text)])
 type Hits = Vec<(PathBuf, Vec<(usize, String)>)>;
 
