@@ -27,6 +27,12 @@ const TYPES: &[&str] = &[
     "TIME", "TIMESTAMP", "TINYBLOB", "TINYINT", "TINYTEXT", "VARBINARY", "VARCHAR", "YEAR",
 ];
 
+/// Datentyp-Name (fuer die Farbgebung im Editor)
+pub fn is_type(word: &str) -> bool {
+    let u = upper(word);
+    u != "COMMENT" && TYPES.binary_search(&u.as_str()).is_ok()
+}
+
 #[derive(Clone, Debug, PartialEq)]
 enum Tok {
     Word(String),
@@ -178,6 +184,16 @@ fn is_subquery(g: &[Node]) -> bool {
     matches!(g.first().and_then(word_of).as_deref(), Some("SELECT" | "WITH"))
 }
 
+/// Unterabfragen mit mindestens drei Klauseln (z. B. SELECT, FROM, WHERE) stehen immer auf mehreren
+/// Zeilen, kurze wie `(SELECT MAX(x) FROM t)` bleiben in der Zeile.
+fn is_block_subquery(g: &[Node]) -> bool {
+    is_subquery(g) && split_clauses(g).len() >= 3
+}
+
+fn has_block_subquery(nodes: &[Node]) -> bool {
+    nodes.iter().any(|n| matches!(n, Node::G(g) if is_block_subquery(g)))
+}
+
 struct Fmt {
     /// CREATE/ALTER: Datentypen gross schreiben, Spaltenliste je Zeile
     ddl: bool,
@@ -296,7 +312,7 @@ impl Fmt {
     fn clause(&self, kw: &str, body: &[Node], indent: usize) -> String {
         let head = if kw.is_empty() { String::new() } else { format!("{kw} ") };
         let one = format!("{head}{}", self.inline(body, indent + 2)).trim_end().to_string();
-        if indent + one.chars().count() <= WIDTH && !one.contains('\n') {
+        if indent + one.chars().count() <= WIDTH && !one.contains('\n') && !has_block_subquery(body) {
             return one;
         }
         let pad = " ".repeat(indent);
@@ -309,8 +325,11 @@ impl Fmt {
                         .iter()
                         .enumerate()
                         .map(|(i, (op, p))| {
-                            let t = self.expand(p, indent + 2);
-                            if i == 0 { t } else { format!("{op} {t}") }
+                            if i == 0 {
+                                self.expand(p, indent + 2)
+                            } else {
+                                format!("{op} {}", self.expand(p, indent + 4))
+                            }
                         })
                         .collect();
                     return format!("{head}{}", items.join(&cont));
@@ -325,12 +344,19 @@ impl Fmt {
         // Join-Klausel: ON-Bedingung auf eigene Zeile
         if kw.ends_with("JOIN")
             && let Some(pos) = body.iter().position(|n| word_of(n).as_deref() == Some("ON")) {
-                let table = self.inline(&body[..pos], indent + 2);
+                let table = self.expand(&body[..pos], indent + 2);
                 let on = self.clause("ON", &body[pos + 1..], indent + 2);
                 return format!("{head}{table}{cont}{on}");
             }
         // Kommalisten fortlaufend fuellen
         let items = split_commas(body);
+        if items.len() > 1 && items.iter().any(|it| it.iter().any(|n| matches!(n, Node::G(g) if is_block_subquery(g)) || word_of(n).as_deref() == Some("CASE"))) {
+            let lines: Vec<String> = items.iter().map(|it| self.expand(it, indent + 4)).collect();
+            if lines.iter().any(|t| t.contains('\n')) {
+                let sep = format!(",{cont}");
+                return format!("{}{cont}{}", head.trim_end(), lines.join(&sep));
+            }
+        }
         if items.len() > 1 {
             let mut out = head.clone();
             let mut col = indent + out.chars().count();
@@ -358,21 +384,35 @@ impl Fmt {
     /// Ausdruck; Unterabfragen und lange Spaltendefinitionen werden mehrzeilig.
     fn expand(&self, nodes: &[Node], indent: usize) -> String {
         let one = self.inline(nodes, indent);
-        if indent + one.chars().count() <= WIDTH && !one.contains('\n') {
+        if indent + one.chars().count() <= WIDTH && !one.contains('\n') && !has_block_subquery(nodes) {
             return one;
         }
         let pad = " ".repeat(indent.saturating_sub(2));
         let mut out = String::new();
         let mut prev: Option<&Node> = None;
         let mut prev2: Option<&Node> = None;
+        let mut skip_to = 0;
         for (i, n) in nodes.iter().enumerate() {
+            if i < skip_to {
+                continue;
+            }
             if !out.is_empty() && self.space_between(prev2, prev, n) && !out.ends_with('\n') {
                 out.push(' ');
+            }
+            if word_of(n).as_deref() == Some("CASE")
+                && let Some(end) = case_end(nodes, i)
+                && self.inline(&nodes[i..=end], indent).chars().count() > CASE_INLINE
+            {
+                out.push_str(&self.case_block(&nodes[i..=end], pad.len()));
+                skip_to = end + 1;
+                prev2 = nodes.get(end.wrapping_sub(1));
+                prev = Some(&nodes[end]);
+                continue;
             }
             match n {
                 Node::G(g) if is_subquery(g) => {
                     let inner = self.inline(g, indent);
-                    if indent + inner.chars().count() + 2 <= WIDTH && !inner.contains('\n') {
+                    if indent + inner.chars().count() + 2 <= WIDTH && !inner.contains('\n') && !is_block_subquery(g) {
                         out.push_str(&format!("({inner})"));
                     } else {
                         out.push_str(&format!("(\n{}\n{pad})", self.block(g, indent)));
@@ -395,6 +435,57 @@ impl Fmt {
             prev = Some(n);
         }
         out.trim_end().to_string()
+    }
+}
+
+/// Laengere CASE-Ausdruecke werden auf mehrere Zeilen verteilt
+const CASE_INLINE: usize = 50;
+
+/// Position des END, das zum CASE an Stelle `start` gehoert
+fn case_end(nodes: &[Node], start: usize) -> Option<usize> {
+    let mut depth = 0;
+    for (i, n) in nodes.iter().enumerate().skip(start) {
+        match word_of(n).as_deref() {
+            Some("CASE") => depth += 1,
+            Some("END") => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(i);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+impl Fmt {
+    /// CASE ... END mit einer Zeile je WHEN/ELSE; `pad` ist die Spalte von CASE bzw. END.
+    fn case_block(&self, nodes: &[Node], pad: usize) -> String {
+        let inner = &nodes[1..nodes.len() - 1];
+        let mut cuts = Vec::new();
+        let mut depth = 0;
+        for (i, n) in inner.iter().enumerate() {
+            match word_of(n).as_deref() {
+                Some("CASE") => depth += 1,
+                Some("END") if depth > 0 => depth -= 1,
+                Some("WHEN" | "ELSE") if depth == 0 => cuts.push(i),
+                _ => {}
+            }
+        }
+        let Some(&first) = cuts.first() else { return self.inline(nodes, pad) };
+        let operand = self.inline(&inner[..first], pad + 2);
+        let mut out = if operand.is_empty() { "CASE".to_string() } else { format!("CASE {operand}") };
+        for (k, &from) in cuts.iter().enumerate() {
+            let to = cuts.get(k + 1).copied().unwrap_or(inner.len());
+            out.push('\n');
+            out.push_str(&" ".repeat(pad + 2));
+            out.push_str(&self.inline(&inner[from..to], pad + 4));
+        }
+        out.push('\n');
+        out.push_str(&" ".repeat(pad));
+        out.push_str("END");
+        out
     }
 }
 
@@ -679,6 +770,49 @@ mod tests {
     fn subqueries_union_and_comments() {
         let f = format_sql("-- Umsatz\nselect id from a union all select id from b;\n\n\n# zweite\nselect * from t where id in (select x from y);");
         assert_eq!(f, "-- Umsatz\nSELECT id\nFROM a\nUNION ALL\nSELECT id\nFROM b;\n\n# zweite\nSELECT *\nFROM t\nWHERE id IN (SELECT x FROM y);\n");
+    }
+
+    #[test]
+    fn subquery_with_where_gets_its_own_lines_but_short_ones_stay() {
+        let f = format_sql("select * from schiedsrichter sr where not exists (select 1 from Spielleitung sp where sp.SchiedsrichterNr = sr.SchiedsrichterNR)");
+        assert_eq!(
+            f,
+            "SELECT *\nFROM schiedsrichter sr\nWHERE NOT EXISTS (\n  SELECT 1\n  FROM Spielleitung sp\n  WHERE sp.SchiedsrichterNr = sr.SchiedsrichterNR\n)\n"
+        );
+        assert_eq!(format_sql(&f), f);
+        let short = format_sql("select name from t where price = (select max(price) from items)");
+        assert!(short.contains("(SELECT MAX(price) FROM items)"), "{short}");
+    }
+
+    #[test]
+    fn formatting_is_stable_for_nested_queries() {
+        for q in [
+            "select s.id, s.name, count(*) as n, (select max(p.punkte) from pruefung p where p.sid = s.id) as best from schueler s left join klasse k on k.id = s.klasse_id and k.aktiv = 1 where s.alter > 10 and (s.name like 'A%' or s.name like 'B%') group by s.id, s.name having count(*) > 1 order by n desc, s.name limit 10",
+            "select * from a where x in (select y from b where z > 1 and w < 5) and not exists (select 1 from c where c.id = a.id)",
+            "select case when a > 1 then 'x' when a > 2 then 'y' else 'z' end as c, coalesce(b, 0) from t",
+            "with t as (select id, sum(x) as s from o group by id) select * from t join u on u.id = t.id where t.s > 100",
+            "update t set a = 1, b = 'x' where id in (select id from u where flag = 1)",
+            "insert into t (a, b, c) select a, b, c from u where d = 1",
+            "select a from (select a, b from t where b > 1) x join (select a from u where c = 2) y on x.a = y.a",
+            "delete from t where id not in (select id from u where v = 1 and w = 2)",
+            "select distinct a, b from t where a between 1 and 5 and b is not null union select a, b from u where a = 1",
+            "select case when kategorie = 'a' then 'Sehr lange Beschriftung A' when kategorie = 'b' then 'Sehr lange Beschriftung B' else 'Sonstiges' end as bezeichnung, id from produkte",
+        ] {
+            let once = format_sql(q);
+            assert_eq!(format_sql(&once), once, "{q}");
+        }
+    }
+
+    #[test]
+    fn select_list_with_subquery_is_one_item_per_line() {
+        let f = format_sql("select s.id, (select max(p.x) from p where p.sid = s.id) as best from s");
+        assert_eq!(f, "SELECT\n  s.id,\n  (\n    SELECT MAX(p.x)\n    FROM p\n    WHERE p.sid = s.id\n  ) AS best\nFROM s\n");
+    }
+
+    #[test]
+    fn long_case_gets_a_line_per_branch() {
+        let f = format_sql("select case when kategorie = 'a' then 'Sehr lange Beschriftung A' when kategorie = 'b' then 'Sehr lange Beschriftung B' else 'Sonstiges' end as bezeichnung from produkte");
+        assert!(f.contains("CASE\n  WHEN kategorie = 'a' THEN 'Sehr lange Beschriftung A'\n  WHEN kategorie = 'b' THEN 'Sehr lange Beschriftung B'\n  ELSE 'Sonstiges'\nEND AS bezeichnung"), "{f}");
     }
 
     #[test]

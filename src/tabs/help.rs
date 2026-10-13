@@ -28,7 +28,7 @@ fn section_text(s: &Section) -> String {
     let mut t = crate::i18n::text(s.title).to_string();
     for b in s.blocks {
         match b {
-            B::P(x) | B::Tip(x) | B::Code(x) | B::Shell(x) | B::Open(x, _) => {
+            B::P(x) | B::Tip(x) | B::Code(x) | B::Source(x) | B::Shell(x) | B::Open(x, _) => {
                 t.push(' ');
                 t.push_str(crate::i18n::text(x));
             }
@@ -157,6 +157,15 @@ fn section_ui(ui: &mut egui::Ui, s: &Section, cx: &mut Ctx, goto: &mut Option<St
                         ui.ctx().copy_text(code.to_string());
                     }
                 });
+            }
+            B::Source(code) => {
+                style::sunken_frame().inner_margin(egui::Margin::same(8)).show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    ui.add(egui::Label::new(RichText::new(*code).monospace().color(pal.text)).selectable(true));
+                });
+                if ui.small_button(crate::i18n::text("Kopieren")).clicked() {
+                    ui.ctx().copy_text(code.to_string());
+                }
             }
             B::Open(label, target) => {
                 if ui.button(crate::i18n::text(label)).clicked() {

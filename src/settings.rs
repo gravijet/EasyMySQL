@@ -28,7 +28,14 @@ pub struct Settings {
     pub recent: Vec<PathBuf>,
     /// Alle Anweisungen an den Server mitschreiben (MariaDB general log)
     pub query_log: bool,
+    /// Dateien im Editor kurz nach der letzten Aenderung automatisch speichern
+    pub autosave: bool,
 }
+
+/// Schriftgroesse im SQL-Editor (Pixel): Standard und Grenzen
+pub const DEFAULT_FONT: u32 = 13;
+pub const MIN_FONT: u32 = 8;
+pub const MAX_FONT: u32 = 40;
 
 fn path() -> PathBuf {
     crate::server::app_data_dir().join("einstellungen.txt")
@@ -43,7 +50,7 @@ impl Default for Settings {
             save_password: false,
             show_system_dbs: false,
             auto_update: true,
-            editor_font: 13,
+            editor_font: DEFAULT_FONT,
             auto_suggest: true,
             auto_close: true,
             scroll_speed: 1.5,
@@ -51,6 +58,7 @@ impl Default for Settings {
             storage_dir: String::new(),
             recent: Vec::new(),
             query_log: false,
+            autosave: true,
         }
     }
 }
@@ -76,7 +84,7 @@ impl Settings {
                 "save_password" => s.save_password = on,
                 "show_system_dbs" => s.show_system_dbs = on,
                 "auto_update" => s.auto_update = on,
-                "editor_font" => s.editor_font = v.parse().unwrap_or(13),
+                "editor_font" => s.editor_font = v.parse().unwrap_or(DEFAULT_FONT).clamp(MIN_FONT, MAX_FONT),
                 "auto_suggest" => s.auto_suggest = on,
                 "auto_close" => s.auto_close = on,
                 "scroll_speed" => s.scroll_speed = v.parse().unwrap_or(1.5f32).clamp(0.25, 6.0),
@@ -84,6 +92,7 @@ impl Settings {
                 "storage_dir" => s.storage_dir = v,
                 "recent" if !v.is_empty() => s.recent.push(PathBuf::from(v)),
                 "query_log" => s.query_log = on,
+                "autosave" => s.autosave = on,
                 _ => {}
             }
         }
@@ -98,7 +107,7 @@ impl Settings {
         let b = |x: bool| if x { "1" } else { "0" };
         let mut text = format!(
             "language={}\ndark={}\nhost={}\nport={}\nuser={}\nsave_password={}\nshow_system_dbs={}\nauto_update={}\neditor_font={}\n\
-             auto_suggest={}\nauto_close={}\nscroll_speed={}\nautoscroll={}\nstorage_dir={}\nquery_log={}\n",
+             auto_suggest={}\nauto_close={}\nscroll_speed={}\nautoscroll={}\nstorage_dir={}\nquery_log={}\nautosave={}\n",
             self.language.id(),
             b(self.dark),
             self.conn.host,
@@ -114,6 +123,7 @@ impl Settings {
             b(self.autoscroll),
             self.storage_dir,
             b(self.query_log),
+            b(self.autosave),
         );
         for r in &self.recent {
             text.push_str(&format!("recent={}\n", r.display()));

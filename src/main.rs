@@ -9,6 +9,7 @@ mod grid;
 mod icon;
 mod i18n;
 mod icons;
+mod javagen;
 mod keymap;
 mod platform;
 mod qhistory;

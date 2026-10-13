@@ -124,6 +124,13 @@ impl EasyApp {
                         self.quit();
                     }
                 });
+                ui.menu_button(crate::i18n::text("Ansicht"), |ui| {
+                    item(ui, crate::i18n::text("Seitenleiste ein/aus"), Cmd::ToggleSidebar, &mut cmd);
+                    ui.separator();
+                    item(ui, crate::i18n::text("Editor-Schrift vergrößern"), Cmd::FontLarger, &mut cmd);
+                    item(ui, crate::i18n::text("Editor-Schrift verkleinern"), Cmd::FontSmaller, &mut cmd);
+                    item(ui, crate::i18n::text("Editor-Schrift zurücksetzen"), Cmd::FontReset, &mut cmd);
+                });
                 ui.menu_button(crate::i18n::text("Datenbank"), |ui| {
                     let connected = self.db.is_some();
                     if ui.add_enabled(connected, egui::Button::new(crate::i18n::text("Neue Datenbank …"))).clicked() {

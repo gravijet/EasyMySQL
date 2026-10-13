@@ -29,6 +29,8 @@ pub enum B {
     Table(&'static [(&'static str, &'static str)]),
     /// Befehle mit ihren aktuellen Tastenkuerzeln
     Keys(&'static [Cmd]),
+    /// Programmcode (Java u. a.) ohne SQL-Farben, mit Kopieren-Knopf
+    Source(&'static str),
     Tip(&'static str),
     /// SQL-Beispiel (kann in eine neue Abfrage uebernommen werden)
     Code(&'static str),
@@ -546,6 +548,89 @@ pub const CHAPTERS: &[Chapter] = &[
         ],
     },
     Chapter {
+        title: "Java und JDBC",
+        sections: &[
+            Section {
+                id: "java-verbinden",
+                title: "Java mit der Datenbank verbinden",
+                blocks: &[
+                    P("Java spricht über JDBC mit der Datenbank. Dafür braucht das Projekt einen Treiber, den MariaDB Connector/J – eine einzelne JAR-Datei."),
+                    Steps(&[
+                        "Treiber hinzufügen: Mit Maven die Abhängigkeit unten eintragen. Ohne Maven die Datei „mariadb-java-client“ von mariadb.com/downloads/connectors herunterladen und dem Projekt als Bibliothek hinzufügen (IntelliJ: Projektstruktur → Bibliotheken, Eclipse: Build Path → Add External JARs).",
+                        "Die Verbindungsadresse lautet jdbc:mariadb://localhost:3306/datenbankname. Der Datenbankname am Ende ist optional.",
+                        "Benutzer und Passwort angeben. In EasyMySQL ist es standardmäßig der Benutzer root ohne Passwort. EasyMySQL muss laufen, denn der Server startet mit dem Programm.",
+                    ]),
+                    Source("<dependency>\n  <groupId>org.mariadb.jdbc</groupId>\n  <artifactId>mariadb-java-client</artifactId>\n  <version>3.5.3</version>\n</dependency>"),
+                    Tip("Auch der „MySQL Connector/J“ funktioniert. Die Adresse beginnt dann mit jdbc:mysql://."),
+                ],
+            },
+            Section {
+                id: "java-abfragen",
+                title: "Daten abfragen",
+                blocks: &[
+                    P("Eine Abfrage hat immer drei Schritte: verbinden, Anweisung vorbereiten, das Ergebnis Zeile für Zeile lesen. „try (…)“ schließt alles automatisch wieder."),
+                    Source("import java.sql.*;\n\npublic class Beispiel {\n    public static void main(String[] args) throws SQLException {\n        String url = \"jdbc:mariadb://localhost:3306/schule\";\n        String sql = \"SELECT id, vorname FROM schueler WHERE klasse_id = ?\";\n\n        try (Connection con = DriverManager.getConnection(url, \"root\", \"\");\n             PreparedStatement ps = con.prepareStatement(sql)) {\n            ps.setInt(1, 3);\n            try (ResultSet rs = ps.executeQuery()) {\n                while (rs.next()) {\n                    int id = rs.getInt(\"id\");\n                    String vorname = rs.getString(\"vorname\");\n                    System.out.println(id + \" \" + vorname);\n                }\n            }\n        }\n    }\n}"),
+                    List(&[
+                        "Immer PreparedStatement mit ? verwenden und die Werte mit setInt, setString oder setObject einsetzen. Werte nie mit + in den SQL-Text kleben – das öffnet SQL-Injection.",
+                        "rs.next() springt zur nächsten Zeile und liefert false, wenn keine mehr kommt.",
+                        "Spalten lassen sich über den Namen (rs.getString(\"vorname\")) oder die Nummer ab 1 lesen. Bei NULL liefert getInt die Zahl 0; mit rs.wasNull() oder rs.getObject(\"spalte\", Integer.class) erkennt man das.",
+                    ]),
+                ],
+            },
+            Section {
+                id: "java-aendern",
+                title: "Daten ändern und Transaktionen",
+                blocks: &[
+                    P("INSERT, UPDATE und DELETE laufen mit executeUpdate(). Es liefert die Zahl der betroffenen Zeilen."),
+                    Source("// Zeile einfügen und den neuen AUTO_INCREMENT-Wert lesen\nString sql = \"INSERT INTO schueler (vorname, klasse_id) VALUES (?, ?)\";\ntry (PreparedStatement ps = con.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {\n    ps.setString(1, \"Mia\");\n    ps.setInt(2, 3);\n    ps.executeUpdate();\n    try (ResultSet keys = ps.getGeneratedKeys()) {\n        if (keys.next()) System.out.println(\"Neue id: \" + keys.getLong(1));\n    }\n}\n\n// Mehrere Anweisungen zusammen oder gar nicht ausführen\ncon.setAutoCommit(false);\ntry {\n    // ... mehrere executeUpdate()-Aufrufe ...\n    con.commit();\n} catch (SQLException e) {\n    con.rollback();\n    throw e;\n}"),
+                ],
+            },
+            Section {
+                id: "java-typen",
+                title: "SQL-Typen und Java-Typen",
+                blocks: &[
+                    Table(&[
+                        ("INT, SMALLINT, TINYINT", "int / Integer"),
+                        ("BIGINT", "long / Long"),
+                        ("DECIMAL, NUMERIC", "BigDecimal"),
+                        ("FLOAT, DOUBLE", "float, double"),
+                        ("VARCHAR, CHAR, TEXT, ENUM", "String"),
+                        ("DATE", "LocalDate"),
+                        ("DATETIME, TIMESTAMP", "LocalDateTime"),
+                        ("TIME", "LocalTime"),
+                        ("TINYINT(1), BIT(1)", "boolean / Boolean"),
+                        ("BLOB, VARBINARY", "byte[]"),
+                    ]),
+                    P("Mit rs.getObject(\"spalte\", LocalDate.class) und ps.setObject(1, datum) lassen sich Datum und Uhrzeit direkt mit den Klassen aus java.time verwenden. Spalten, die NULL sein dürfen, bekommen den Klassentyp (Integer statt int)."),
+                ],
+            },
+            Section {
+                id: "java-erzeugen",
+                title: "Java-Code von EasyMySQL erzeugen lassen",
+                blocks: &[
+                    List(&[
+                        "Rechtsklick auf eine Tabelle in der Seitenleiste → Java-Klasse kopieren. In der Zwischenablage liegen ein Record mit passenden Feldern und eine DAO-Klasse mit findAll, findById, insert, update und delete.",
+                        "Im SQL-Editor kopiert der Befehl „Als Java-Code kopieren“ die markierte Anweisung (sonst die unter dem Cursor) als fertige Klasse mit main-Methode.",
+                        "Host, Port und Benutzer stammen aus der Verbindung. Das Passwort wird nie eingetragen – dort steht ein leerer Text, den man anpasst.",
+                    ]),
+                    Keys(&[Cmd::CopyJava]),
+                ],
+            },
+            Section {
+                id: "java-fehler",
+                title: "Typische Java-Fehler",
+                blocks: &[
+                    Table(&[
+                        ("No suitable driver found", "Die Treiber-JAR fehlt im Klassenpfad bzw. in der Maven-Abhängigkeit. Die Adresse muss mit jdbc:mariadb:// beginnen."),
+                        ("Communications link failure", "EasyMySQL bzw. der Server läuft nicht, oder Host und Port stimmen nicht (Standard: localhost, 3306)."),
+                        ("Access denied for user", "Benutzer oder Passwort stimmen nicht. Standard: root ohne Passwort."),
+                        ("Unknown database", "Den Datenbanknamen am Ende der Adresse prüfen oder die Datenbank zuerst anlegen."),
+                    ]),
+                ],
+            },
+        ],
+    },
+    Chapter {
         title: "Verlauf",
         sections: &[Section {
             id: "verlauf",
@@ -723,6 +808,10 @@ pub const CHAPTERS: &[Chapter] = &[
                         Cmd::QueryBuilder,
                         Cmd::Backups,
                         Cmd::Format,
+                        Cmd::CopyJava,
+                        Cmd::FontLarger,
+                        Cmd::FontSmaller,
+                        Cmd::FontReset,
                         Cmd::Suggest,
                         Cmd::Find,
                         Cmd::Replace,
@@ -739,7 +828,6 @@ pub const CHAPTERS: &[Chapter] = &[
                         Cmd::Indent,
                         Cmd::Outdent,
                     ]),
-                    P("Außerdem: Strg+Plus / Strg+Minus vergrößert bzw. verkleinert die ganze Oberfläche, Strg+0 setzt sie zurück."),
                 ],
             },
             Section {

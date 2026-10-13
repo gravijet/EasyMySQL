@@ -43,7 +43,7 @@ pub(super) fn is_word_char(c: char) -> bool {
     c.is_alphanumeric() || c == '_' || c == '$'
 }
 
-pub(super) fn is_keyword(w: &str) -> bool {
+pub fn is_keyword(w: &str) -> bool {
     let u = w.to_ascii_uppercase();
     KEYWORDS.binary_search(&u.as_str()).is_ok()
         || matches!(u.as_str(), "SCHEMA" | "PROCEDURE" | "FUNCTION" | "RETURNS" | "DECLARE" | "WHILE" | "LOOP" | "DO")
@@ -54,7 +54,7 @@ pub(super) static FONT_SIZE: std::sync::atomic::AtomicU32 = std::sync::atomic::A
 
 /// Schriftgroesse des Editors (Einstellungen)
 pub fn set_font_size(px: u32) {
-    FONT_SIZE.store(px.clamp(10, 24), std::sync::atomic::Ordering::Relaxed);
+    FONT_SIZE.store(px.clamp(crate::settings::MIN_FONT, crate::settings::MAX_FONT), std::sync::atomic::Ordering::Relaxed);
 }
 
 pub fn font_size() -> f32 {
@@ -71,6 +71,7 @@ pub fn highlight(text: &str, font: FontId) -> LayoutJob {
             job.append(&text[byte(a)..byte(b)], 0.0, TextFormat::simple(font.clone(), color));
         }
     };
+    let pal = crate::style::pal();
     let mut i = 0;
     while i < n {
         let c = chars[i].1;
@@ -80,14 +81,14 @@ pub fn highlight(text: &str, font: FontId) -> LayoutJob {
             while i < n && chars[i].1 != '\n' {
                 i += 1;
             }
-            push(&mut job, start, i, crate::style::pal().syn_comment);
+            push(&mut job, start, i, pal.syn_comment);
         } else if c == '/' && next == '*' {
             i += 2;
             while i < n && !(chars[i].1 == '*' && i + 1 < n && chars[i + 1].1 == '/') {
                 i += 1;
             }
             i = (i + 2).min(n);
-            push(&mut job, start, i, crate::style::pal().syn_comment);
+            push(&mut job, start, i, pal.syn_comment);
         } else if c == '\'' || c == '"' {
             i += 1;
             while i < n && chars[i].1 != c {
@@ -97,48 +98,73 @@ pub fn highlight(text: &str, font: FontId) -> LayoutJob {
                 i += 1;
             }
             i = (i + 1).min(n);
-            push(&mut job, start, i, crate::style::pal().syn_string);
+            push(&mut job, start, i, pal.syn_string);
         } else if c == '`' {
             i += 1;
             while i < n && chars[i].1 != '`' {
                 i += 1;
             }
             i = (i + 1).min(n);
-            push(&mut job, start, i, crate::style::pal().syn_ident);
+            push(&mut job, start, i, pal.syn_ident);
         } else if c.is_ascii_digit() {
             while i < n && (chars[i].1.is_ascii_alphanumeric() || chars[i].1 == '.') {
                 i += 1;
             }
-            push(&mut job, start, i, crate::style::pal().syn_number);
+            push(&mut job, start, i, pal.syn_number);
+        } else if c == '@' {
+            // @Variable, @@system_variable, @`name`
+            while i < n && chars[i].1 == '@' {
+                i += 1;
+            }
+            while i < n && (is_word_char(chars[i].1) || chars[i].1 == '.') {
+                i += 1;
+            }
+            push(&mut job, start, i, pal.syn_variable);
         } else if is_word_char(c) {
             while i < n && is_word_char(chars[i].1) {
                 i += 1;
             }
             let word = &text[byte(start)..byte(i)];
+            let qualified = start > 0 && chars[start - 1].1 == '.';
+            let qualifier = i < n && chars[i].1 == '.';
             let mut j = i;
             while j < n && chars[j].1 == ' ' {
                 j += 1;
             }
-            let color = if j < n && chars[j].1 == '(' && FUNCTIONS.contains(&word.to_ascii_uppercase().as_str()) {
-                crate::style::pal().syn_function
+            let call = j < n && chars[j].1 == '(';
+            let upper = word.to_ascii_uppercase();
+            let color = if qualified {
+                pal.syn_text
+            } else if qualifier {
+                pal.syn_ident
+            } else if call && FUNCTIONS.contains(&upper.as_str()) {
+                pal.syn_function
+            } else if matches!(upper.as_str(), "NULL" | "TRUE" | "FALSE" | "UNKNOWN") {
+                pal.syn_const
+            } else if crate::sqlfmt::is_type(word) {
+                pal.syn_type
             } else if is_keyword(word) {
-                crate::style::pal().syn_keyword
+                pal.syn_keyword
             } else {
-                crate::style::pal().syn_text
+                pal.syn_text
             };
             push(&mut job, start, i, color);
         } else {
+            // Operatoren abgesetzt, Klammern, Kommas und Leerraum in Textfarbe
+            let op = |c: char| matches!(c, '=' | '<' | '>' | '!' | '+' | '-' | '*' | '/' | '%' | '&' | '|' | '^' | '~' | ':');
+            let is_op = op(c);
             while i < n {
                 let c = chars[i].1;
                 let nx = if i + 1 < n { chars[i + 1].1 } else { '\0' };
                 if is_word_char(c)
-                    || c.is_ascii_digit()
                     || c == '\''
                     || c == '"'
                     || c == '`'
                     || c == '#'
+                    || c == '@'
                     || (c == '-' && nx == '-')
                     || (c == '/' && nx == '*')
+                    || (i > start && op(c) != is_op)
                 {
                     break;
                 }
@@ -147,7 +173,7 @@ pub fn highlight(text: &str, font: FontId) -> LayoutJob {
             if i == start {
                 i += 1;
             }
-            push(&mut job, start, i, crate::style::pal().syn_text);
+            push(&mut job, start, i, if is_op { pal.syn_op } else { pal.syn_text });
         }
     }
     job

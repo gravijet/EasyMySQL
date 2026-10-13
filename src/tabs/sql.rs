@@ -280,6 +280,20 @@ impl SqlTab {
         }
     }
 
+    /// Markierung bzw. Anweisung am Cursor als fertige Java-Klasse (JDBC) in die Zwischenablage
+    fn copy_java(&mut self, cx: &mut Ctx) {
+        let sql = match self.selection.clone() {
+            Some(s) => s,
+            None => match self.current_statement() {
+                Some(s) => s.sql,
+                None => return,
+            },
+        };
+        let target = crate::javagen::Target::new(&cx.settings.conn, &self.database);
+        cx.actions.push(Action::CopyText(crate::javagen::query_class(&sql, &target)));
+        cx.status(crate::i18n::text("Java-Code kopiert."));
+    }
+
     fn format(&mut self) {
         self.text = sqledit::format_sql(&self.text);
         self.last_edit = Instant::now();
@@ -535,6 +549,7 @@ impl TabView for SqlTab {
             Cmd::RunStatement => self.run_current(cx),
             Cmd::Explain => self.explain(cx),
             Cmd::Format => self.format(),
+            Cmd::CopyJava => self.copy_java(cx),
             Cmd::Find | Cmd::Replace | Cmd::GotoLine => self.editor.pending = Some(cmd),
             _ => return false,
         }

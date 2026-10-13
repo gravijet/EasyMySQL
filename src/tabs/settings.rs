@@ -248,7 +248,7 @@ impl TabView for SettingsTab {
                 self.heading(ui, "editor", "Editor");
                 grid(ui, "g-editor", &mut |ui| {
                     ui.label(crate::i18n::text("Schriftgröße"));
-                    ui.add(egui::Slider::new(&mut s.editor_font, 10..=28).suffix(" px"));
+                    ui.add(egui::Slider::new(&mut s.editor_font, crate::settings::MIN_FONT..=crate::settings::MAX_FONT).suffix(" px"));
                     ui.end_row();
                     ui.label(crate::i18n::text("Vorschläge beim Tippen"));
                     ui.checkbox(&mut s.auto_suggest, crate::i18n::text("Automatisch Vorschläge zeigen"))

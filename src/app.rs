@@ -15,7 +15,7 @@ use crate::db::{self, Db};
 use crate::keymap::{self, Cmd};
 use crate::platform::{self, TrayCmd};
 use crate::server::{Server, State};
-use crate::settings::Settings;
+use crate::settings::{self, Settings};
 use crate::style;
 use crate::tabs::{
     Action, Ctx, SchemaCache, TabView, builder::BuilderTab, data::DataTab, designer::DesignerTab, er::ErTab, help::HelpTab,
@@ -114,6 +114,8 @@ impl EasyApp {
         keymap::install(keymap::Keymap::load());
         crate::i18n::install(settings.language);
         style::apply(&cc.egui_ctx, settings.dark);
+        // Strg + / Strg - aendern nur die Schrift im Editor (egui wuerde sonst die ganze Oberflaeche skalieren)
+        cc.egui_ctx.options_mut(|o| o.zoom_with_keyboard = false);
         apply_editor_prefs(&settings);
         let server = Server::new(3306);
         let hwnd = platform::window_handle(cc);
@@ -515,6 +517,11 @@ impl EasyApp {
                     }
                 }
                 Action::OpenLog => self.open_tab(Box::new(LogTab::new())),
+                Action::CopyText(text) => {
+                    if let Some(ctx) = CTX.lock().unwrap().as_ref() {
+                        ctx.copy_text(text);
+                    }
+                }
                 Action::Run(cmd) => {
                     let ctx = CTX.lock().unwrap().clone();
                     if let Some(ctx) = ctx {
@@ -573,7 +580,7 @@ impl EasyApp {
 
     fn run_cmd(&mut self, ctx: &egui::Context, cmd: Cmd) {
         match cmd {
-            Cmd::RunAll | Cmd::RunStatement | Cmd::Explain | Cmd::Format | Cmd::Find | Cmd::Replace | Cmd::GotoLine => {
+            Cmd::RunAll | Cmd::RunStatement | Cmd::Explain | Cmd::Format | Cmd::CopyJava | Cmd::Find | Cmd::Replace | Cmd::GotoLine => {
                 let mut acts = Vec::new();
                 if let Some(t) = self.tabs.get_mut(self.active) {
                     t.command(cmd, &mut cx!(self, &mut acts));
@@ -615,6 +622,9 @@ impl EasyApp {
             Cmd::CommandPalette => self.palette = Some(palette::Palette::new(true)),
             Cmd::QuickOpen => self.palette = Some(palette::Palette::new(false)),
             Cmd::ToggleSidebar => self.sidebar = !self.sidebar,
+            Cmd::FontLarger => self.set_editor_font(self.settings.editor_font.saturating_add(1)),
+            Cmd::FontSmaller => self.set_editor_font(self.settings.editor_font.saturating_sub(1)),
+            Cmd::FontReset => self.set_editor_font(settings::DEFAULT_FONT),
             Cmd::ShowExplorer => self.show_side(SideView::Explorer),
             Cmd::ShowSearch => {
                 self.show_side(SideView::Search);
@@ -636,6 +646,17 @@ impl EasyApp {
             _ => {}
         }
         let _ = ctx;
+    }
+
+    /// Schriftgroesse im Editor aendern und merken; die uebrige Oberflaeche bleibt unveraendert.
+    fn set_editor_font(&mut self, px: u32) {
+        let px = px.clamp(settings::MIN_FONT, settings::MAX_FONT);
+        if px != self.settings.editor_font {
+            self.settings.editor_font = px;
+            apply_editor_prefs(&self.settings);
+            self.settings.save();
+        }
+        self.toast(crate::tr_format!("Editor-Schrift: {px} px", "Editor font size: {px} px"));
     }
 
     fn show_side(&mut self, v: SideView) {
@@ -670,6 +691,9 @@ impl EasyApp {
             Cmd::CommandPalette,
             Cmd::QuickOpen,
             Cmd::ToggleSidebar,
+            Cmd::FontLarger,
+            Cmd::FontSmaller,
+            Cmd::FontReset,
             Cmd::ShowExplorer,
             Cmd::ShowSearch,
             Cmd::ShowDatabases,

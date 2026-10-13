@@ -485,6 +485,7 @@ impl EasyApp {
             return;
         };
         let show_sys = self.settings.show_system_dbs;
+        let conn = self.settings.conn.clone();
         let mut dialogs = Vec::new();
         let pal = style::pal();
         egui::ScrollArea::both().id_salt("tree").auto_shrink([false, false]).show(ui, |ui| {
@@ -555,6 +556,11 @@ impl EasyApp {
                                     }
                                     if ui.button(crate::i18n::text("Name kopieren")).clicked() {
                                         ui.ctx().copy_text(t.name.clone());
+                                        ui.close();
+                                    }
+                                    if ui.button(crate::i18n::text("Java-Klasse kopieren")).on_hover_text(crate::i18n::text("Record und DAO-Klasse (JDBC) für diese Tabelle")).clicked() {
+                                        ui.ctx().copy_text(crate::javagen::table_class(t, &crate::javagen::Target::new(&conn, d)));
+                                        actions.push(Action::Status(crate::i18n::text("Java-Code kopiert.").into()));
                                         ui.close();
                                     }
                                     ui.separator();

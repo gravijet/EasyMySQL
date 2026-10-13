@@ -49,6 +49,8 @@ pub enum Action {
     /// Einstellungen oeffnen, optional bei einem Abschnitt
     OpenSettings(Option<String>),
     OpenLog,
+    /// Text in die Zwischenablage
+    CopyText(String),
     /// Befehl ausfuehren (wie per Tastenkuerzel)
     Run(Cmd),
     /// Ausgefuehrte Anweisungen fuer den Verlauf
