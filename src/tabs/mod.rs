@@ -4,7 +4,6 @@ pub mod builder;
 pub mod data;
 pub mod designer;
 pub mod er;
-mod er_layout;
 pub mod help;
 mod help_content;
 pub mod log;

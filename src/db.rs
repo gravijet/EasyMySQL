@@ -508,6 +508,23 @@ fn s(v: &Option<String>) -> String {
     v.clone().unwrap_or_default()
 }
 
+
+const SQL_TABLES: &str = "SELECT TABLE_NAME, TABLE_TYPE, IFNULL(ENGINE,''), TABLE_ROWS, IFNULL(TABLE_COMMENT,'') \
+    FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? ORDER BY TABLE_NAME";
+const SQL_COLUMNS: &str = "SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_KEY, COLUMN_DEFAULT, \
+    EXTRA, IFNULL(COLUMN_COMMENT,'') FROM information_schema.COLUMNS \
+    WHERE TABLE_SCHEMA = ? ORDER BY TABLE_NAME, ORDINAL_POSITION";
+const SQL_FKS: &str = "SELECT k.CONSTRAINT_NAME, k.TABLE_NAME, k.COLUMN_NAME, k.REFERENCED_TABLE_NAME, \
+    k.REFERENCED_COLUMN_NAME, r.UPDATE_RULE, r.DELETE_RULE \
+    FROM information_schema.KEY_COLUMN_USAGE k \
+    JOIN information_schema.REFERENTIAL_CONSTRAINTS r \
+      ON r.CONSTRAINT_SCHEMA = k.CONSTRAINT_SCHEMA AND r.CONSTRAINT_NAME = k.CONSTRAINT_NAME \
+     AND r.TABLE_NAME = k.TABLE_NAME \
+    WHERE k.TABLE_SCHEMA = ? AND k.REFERENCED_TABLE_NAME IS NOT NULL \
+    ORDER BY k.TABLE_NAME, k.CONSTRAINT_NAME, k.ORDINAL_POSITION";
+const SQL_UNIQUE: &str = "SELECT TABLE_NAME, INDEX_NAME, COLUMN_NAME FROM information_schema.STATISTICS \
+    WHERE TABLE_SCHEMA = ? AND NON_UNIQUE = 0 ORDER BY TABLE_NAME, INDEX_NAME, SEQ_IN_INDEX";
+
 impl Db {
     pub fn connect(info: &ConnInfo) -> Result<Db, String> {
         let pool = Pool::new(info.opts()).map_err(err_text)?;
@@ -574,11 +591,16 @@ impl Db {
             name: db.to_string(),
             ..Default::default()
         };
-        let tables = self.rows(
-            "SELECT TABLE_NAME, TABLE_TYPE, IFNULL(ENGINE,''), TABLE_ROWS, IFNULL(TABLE_COMMENT,'') \
-             FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? ORDER BY TABLE_NAME",
-            (db,),
-        )?;
+        // Die vier Abfragen laufen gleichzeitig (jede mit eigener Verbindung aus dem Pool).
+        let (tables, cols, fks, uniq) = std::thread::scope(|sc| {
+            let tables = sc.spawn(|| self.rows(SQL_TABLES, (db,)));
+            let cols = sc.spawn(|| self.rows(SQL_COLUMNS, (db,)));
+            let fks = sc.spawn(|| self.rows(SQL_FKS, (db,)));
+            let uniq = self.rows(SQL_UNIQUE, (db,));
+            let join = |h: std::thread::ScopedJoinHandle<'_, Result<Vec<Row>, String>>| h.join().unwrap_or_else(|_| Err("Abbruch".into()));
+            (join(tables), join(cols), join(fks), uniq)
+        });
+        let (tables, cols, fks, uniq) = (tables?, cols?, fks?, uniq?);
         let mut idx: HashMap<String, usize> = HashMap::with_capacity(tables.len());
         for r in tables {
             idx.insert(s(&r[0]), schema.tables.len());
@@ -591,12 +613,6 @@ impl Db {
                 columns: Vec::new(),
             });
         }
-        let cols = self.rows(
-            "SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_KEY, COLUMN_DEFAULT, \
-             EXTRA, IFNULL(COLUMN_COMMENT,'') FROM information_schema.COLUMNS \
-             WHERE TABLE_SCHEMA = ? ORDER BY TABLE_NAME, ORDINAL_POSITION",
-            (db,),
-        )?;
         for r in cols {
             if let Some(&i) = r[0].as_deref().and_then(|n| idx.get(n)) {
                 schema.tables[i].columns.push(ColumnInfo {
@@ -611,22 +627,6 @@ impl Db {
                 });
             }
         }
-        let fks = self.rows(
-            "SELECT k.CONSTRAINT_NAME, k.TABLE_NAME, k.COLUMN_NAME, k.REFERENCED_TABLE_NAME, \
-             k.REFERENCED_COLUMN_NAME, r.UPDATE_RULE, r.DELETE_RULE \
-             FROM information_schema.KEY_COLUMN_USAGE k \
-             JOIN information_schema.REFERENTIAL_CONSTRAINTS r \
-               ON r.CONSTRAINT_SCHEMA = k.CONSTRAINT_SCHEMA AND r.CONSTRAINT_NAME = k.CONSTRAINT_NAME \
-              AND r.TABLE_NAME = k.TABLE_NAME \
-             WHERE k.TABLE_SCHEMA = ? AND k.REFERENCED_TABLE_NAME IS NOT NULL \
-             ORDER BY k.TABLE_NAME, k.CONSTRAINT_NAME, k.ORDINAL_POSITION",
-            (db,),
-        )?;
-        let uniq = self.rows(
-            "SELECT TABLE_NAME, INDEX_NAME, COLUMN_NAME FROM information_schema.STATISTICS \
-             WHERE TABLE_SCHEMA = ? AND NON_UNIQUE = 0 ORDER BY TABLE_NAME, INDEX_NAME, SEQ_IN_INDEX",
-            (db,),
-        )?;
         let mut last: Option<(String, String)> = None;
         for r in uniq {
             let key = (s(&r[0]), s(&r[1]));
