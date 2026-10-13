@@ -205,7 +205,15 @@ fn markers(path: &Path, rel: Rel, notation: Notation, labels: bool) -> Vec<Prim>
 /// Beschriftungen an Linienenden ohne Ueberlappung setzen (Weltkoordinaten): gleiche Texte
 /// am selben Ort werden zusammengefasst, verschiedene nach aussen weggeschoben.
 fn place_texts<T: Clone>(items: Vec<(Pos2, String, Align2, T)>) -> Vec<(Pos2, String, Align2, T)> {
+    // Gitter aus Zellen, damit nur benachbarte Beschriftungen verglichen werden (nicht alle)
+    const CELL: f32 = 64.0;
+    let cells_of = |r: Rect| {
+        let (x0, x1) = ((r.min.x / CELL).floor() as i32, (r.max.x / CELL).floor() as i32);
+        let (y0, y1) = ((r.min.y / CELL).floor() as i32, (r.max.y / CELL).floor() as i32);
+        (x0..=x1).flat_map(move |x| (y0..=y1).map(move |y| (x, y)))
+    };
     let mut placed: Vec<(Rect, String)> = Vec::new();
+    let mut grid: HashMap<(i32, i32), Vec<usize>> = HashMap::new();
     let mut out = Vec::new();
     'items: for (mut p, s, align, extra) in items {
         let w = s.chars().count() as f32 * 6.0 + 2.0;
@@ -219,13 +227,25 @@ fn place_texts<T: Clone>(items: Vec<(Pos2, String, Align2, T)>) -> Vec<(Pos2, St
         };
         for _ in 0..8 {
             let r = rect_at(p);
-            let Some((o, os)) = placed.iter().find(|(o, _)| o.intersects(r)) else { break };
+            // zuerst gesetzte Beschriftung, die sich mit r ueberlappt
+            let hit = cells_of(r)
+                .filter_map(|c| grid.get(&c))
+                .flatten()
+                .copied()
+                .filter(|&k| placed[k].0.intersects(r))
+                .min();
+            let Some(k) = hit else { break };
+            let (o, os) = &placed[k];
             if *os == s {
                 continue 'items;
             }
             p.x += if left { o.max.x + 3.0 - r.min.x } else { o.min.x - 3.0 - r.max.x };
         }
-        placed.push((rect_at(p), s.clone()));
+        let r = rect_at(p);
+        for c in cells_of(r) {
+            grid.entry(c).or_default().push(placed.len());
+        }
+        placed.push((r, s.clone()));
         out.push((p, s, align, extra));
     }
     out
@@ -235,16 +255,37 @@ fn view_file() -> std::path::PathBuf {
     crate::workspace::internal_dir().join("layouts").join("ansicht.txt")
 }
 
+/// Alles, was sich nur mit Struktur, Positionen oder Notation aendert (nicht mit Zoom/Versatz):
+/// wird einmal berechnet und dann in jedem Bild nur noch gezeichnet.
 struct RouteGeometry {
     paths: Vec<Option<Path>>,
     polylines: Vec<Vec<Pos2>>,
+    /// Umrandung jeder Linie (Weltkoordinaten) zum schnellen Aussortieren ausserhalb des Bildes
+    bounds: Vec<Rect>,
+    /// Schluessel (`fk_key`) jeder Beziehung
+    keys: Vec<String>,
+    /// Linien, Kreise und Rauten der Kardinalitaetsmarken je Beziehung
+    shapes: Vec<Vec<Prim>>,
+    /// Umrahmte Beschriftungen in der Linienmitte: (Beziehung, Ort, Text)
+    tags: Vec<(usize, Pos2, String)>,
+    /// Beschriftungen an den Linienenden, schon ueberlappungsfrei: (Beziehung, Ort, Text, Ausrichtung)
+    texts: Vec<(usize, Pos2, String, Align2)>,
 }
 struct RouteCache {
     schema: Arc<Schema>,
     positions: HashMap<String, Pos2>,
     routes: HashMap<String, Vec<Pos2>>,
     show_types: bool,
+    notation: Notation,
+    rel_labels: bool,
     geometry: Arc<RouteGeometry>,
+}
+
+/// Kastengroessen aller Tabellen; sie zu berechnen kostet pro Aufruf alle Spaltennamen zu zaehlen.
+struct BoxCache {
+    schema: Arc<Schema>,
+    show_types: bool,
+    sizes: HashMap<String, Vec2>,
 }
 
 pub struct ErTab {
@@ -275,6 +316,7 @@ pub struct ErTab {
     /// Verbinden: Ziehen von einer beliebigen Spalte legt eine Beziehung an
     connect_mode: bool,
     route_cache: Option<RouteCache>,
+    box_cache: Option<BoxCache>,
 }
 
 fn layout_file(db: &str) -> std::path::PathBuf {
@@ -430,6 +472,7 @@ impl ErTab {
             selected: None,
             connect_mode: false,
             route_cache: None,
+            box_cache: None,
         }
     }
 
@@ -447,8 +490,8 @@ impl ErTab {
         let _ = crate::workspace::atomic_write(&path, &s);
     }
 
-    fn set_schema(&mut self, s: Option<Schema>) {
-        self.raw = s.map(Arc::new);
+    fn set_schema(&mut self, s: Option<Arc<Schema>>) {
+        self.raw = s;
         self.rebuild_view();
     }
 
@@ -465,11 +508,11 @@ impl ErTab {
             return;
         }
         let mut view = raw.as_ref().clone();
-        if self.collapse_nm {
+        {
             let js = raw.junctions();
-            let hidden: Vec<&str> = js.iter().map(|(j, _, _)| j.as_str()).collect();
-            view.tables.retain(|t| !hidden.contains(&t.name.as_str()));
-            view.fks.retain(|f| !hidden.contains(&f.table.as_str()));
+            let hidden: std::collections::HashSet<&str> = js.iter().map(|(j, _, _)| j.as_str()).collect();
+            view.tables.retain(|t| !hidden.contains(t.name.as_str()));
+            view.fks.retain(|f| !hidden.contains(f.table.as_str()));
             for (j, a, b) in &js {
                 let (fa, fb) = (&raw.fks[*a], &raw.fks[*b]);
                 let syn = ForeignKey {
@@ -484,6 +527,7 @@ impl ErTab {
                 view.fks.push(syn);
             }
         }
+        view.invalidate_index();
         self.schema = Some(Arc::new(view));
     }
 
@@ -589,10 +633,11 @@ impl ErTab {
 
     /// Neue Tabellen (ohne gespeicherte Position) rechts daneben platzieren.
     fn place_new_tables(&mut self, schema: &Schema) {
+        self.ensure_boxes();
         let mut max_x: f32 = 0.0;
         for t in &schema.tables {
             if let Some(p) = self.pos.get(&t.name) {
-                max_x = max_x.max(p.x + box_size(t, self.show_types).x);
+                max_x = max_x.max(p.x + self.box_of(t).x);
             }
         }
         // Wieder eingeblendete Zwischentabellen zwischen ihre beiden Tabellen setzen
@@ -604,9 +649,9 @@ impl ErTab {
             if let (Some(pa), Some(pb), Some(sa), Some(sb), Some(sj)) = (
                 self.pos.get(ta),
                 self.pos.get(tb),
-                schema.table(ta).map(|t| box_size(t, self.show_types)),
-                schema.table(tb).map(|t| box_size(t, self.show_types)),
-                schema.table(&j).map(|t| box_size(t, self.show_types)),
+                schema.table(ta).map(|t| self.box_of(t)),
+                schema.table(tb).map(|t| self.box_of(t)),
+                schema.table(&j).map(|t| self.box_of(t)),
             ) {
                 let mid = (Rect::from_min_size(*pa, sa).center().to_vec2() + Rect::from_min_size(*pb, sb).center().to_vec2()) / 2.0;
                 let mut r = Rect::from_min_size((mid - sj / 2.0).to_pos2(), sj);
@@ -614,7 +659,7 @@ impl ErTab {
                 let others: Vec<Rect> = schema
                     .tables
                     .iter()
-                    .filter_map(|t| self.pos.get(&t.name).map(|p| Rect::from_min_size(*p, box_size(t, self.show_types)).expand(10.0)))
+                    .filter_map(|t| self.pos.get(&t.name).map(|p| Rect::from_min_size(*p, self.box_of(t)).expand(10.0)))
                     .collect();
                 for _ in 0..200 {
                     match others.iter().find(|o| o.intersects(r)) {
@@ -629,7 +674,7 @@ impl ErTab {
         for t in &schema.tables {
             if !self.pos.contains_key(&t.name) {
                 self.pos.insert(t.name.clone(), pos2(max_x + 80.0, y));
-                y += box_size(t, self.show_types).y + 30.0;
+                y += self.box_of(t).y + 30.0;
             }
         }
     }
@@ -653,7 +698,8 @@ impl ErTab {
     /// Automatische Anordnung (siehe er_layout): wenig Kreuzungen, kompakt, etwa Bildschirmformat.
     fn auto_layout(&mut self) {
         let Some(schema) = self.schema.clone() else { return };
-        let sizes: Vec<(String, Vec2)> = schema.tables.iter().map(|t| (t.name.clone(), box_size(t, self.show_types))).collect();
+        self.ensure_boxes();
+        let sizes: Vec<(String, Vec2)> = schema.tables.iter().map(|t| (t.name.clone(), self.box_of(t))).collect();
         let edges: Vec<(String, String)> = schema.fks.iter().map(|f| (f.table.clone(), f.ref_table.clone())).collect();
         self.pos = super::er_layout::layout(&sizes, &edges);
         self.routes.clear();
@@ -664,7 +710,7 @@ impl ErTab {
         let mut r: Option<Rect> = None;
         for t in &schema.tables {
             let p = self.pos.get(&t.name).copied().unwrap_or_default();
-            let b = Rect::from_min_size(p, box_size(t, self.show_types));
+            let b = Rect::from_min_size(p, self.box_of(t));
             r = Some(r.map_or(b, |r| r.union(b)));
         }
         r
@@ -685,9 +731,30 @@ impl ErTab {
         ((p - origin - self.offset) / self.zoom).to_pos2()
     }
 
+    /// Groesse der Tabellenkarte, aus dem Zwischenspeicher (siehe `ensure_boxes`)
+    fn box_of(&self, t: &TableInfo) -> Vec2 {
+        if let (Some(c), Some(s)) = (&self.box_cache, &self.schema) {
+            if c.show_types == self.show_types && Arc::ptr_eq(&c.schema, s) {
+                if let Some(v) = c.sizes.get(&t.name) {
+                    return *v;
+                }
+            }
+        }
+        box_size(t, self.show_types)
+    }
+
+    fn ensure_boxes(&mut self) {
+        let Some(schema) = &self.schema else { return };
+        if self.box_cache.as_ref().is_some_and(|c| c.show_types == self.show_types && Arc::ptr_eq(&c.schema, schema)) {
+            return;
+        }
+        let sizes = schema.tables.iter().map(|t| (t.name.clone(), box_size(t, self.show_types))).collect();
+        self.box_cache = Some(BoxCache { schema: Arc::clone(schema), show_types: self.show_types, sizes });
+    }
+
     fn table_rect_world(&self, t: &TableInfo) -> Rect {
         let p = self.pos.get(&t.name).copied().unwrap_or_default();
-        Rect::from_min_size(p, box_size(t, self.show_types))
+        Rect::from_min_size(p, self.box_of(t))
     }
 
     /// Endpunkte einer Beziehung: (Anfang am Kind, Richtung, Ende am Elternteil, Richtung, Fahrspuren).
@@ -720,61 +787,80 @@ impl ErTab {
         })
     }
 
-    /// Enden mehrere Linien am selben Punkt (z. B. alle Verweise auf kunde.id), werden sie
-    /// leicht aufgefaechert – sortiert nach der Hoehe des anderen Endes, damit sie sich nicht kreuzen.
-    fn port_offset(&self, schema: &Schema, fk: &ForeignKey, p: Pos2, d: f32, at_start: bool) -> f32 {
-        let me = (fk_key(fk), at_start);
-        let mut group: Vec<(f32, (String, bool))> = Vec::new();
-        for g in &schema.fks {
-            let Some((a, da, b, db, lanes)) = self.endpoints(schema, g) else { continue };
+    /// Linienverlauf aller Beziehungen (Weltkoordinaten), in der Reihenfolge von `schema.fks`.
+    ///
+    /// Enden mehrere Linien am selben Punkt (z. B. alle Verweise auf kunde.id), werden sie leicht
+    /// aufgefaechert – sortiert nach der Hoehe des anderen Endes, damit sie sich nicht kreuzen.
+    /// Die Endpunkte werden dafuer einmal berechnet und gruppiert (statt je Linie alle anderen
+    /// zu durchsuchen), sonst waere der Aufwand bei tausenden Beziehungen quadratisch.
+    fn all_paths(&self, schema: &Schema) -> Vec<Option<Path>> {
+        let ends: Vec<_> = schema.fks.iter().map(|fk| self.endpoints(schema, fk)).collect();
+        // Gruppe = gleicher Punkt und gleiche Richtung
+        let mut groups: HashMap<(u32, u32, i32), Vec<(f32, usize, bool)>> = HashMap::new();
+        let group_key = |p: Pos2, d: f32| (p.x.to_bits(), p.y.to_bits(), d as i32);
+        for (i, e) in ends.iter().enumerate() {
+            let Some((a, da, b, db, lanes)) = e else { continue };
             let (na, nb) = match lanes {
                 Some(l) => (l[0], l[l.len() - 1]),
-                None => (b, a),
+                None => (*b, *a),
             };
-            if a.distance(p) < 0.5 && da == d {
-                group.push((na.y, (fk_key(g), true)));
+            groups.entry(group_key(*a, *da)).or_default().push((na.y, i, true));
+            groups.entry(group_key(*b, *db)).or_default().push((nb.y, i, false));
+        }
+        let mut start_off = vec![0.0f32; ends.len()];
+        let mut end_off = vec![0.0f32; ends.len()];
+        for group in groups.values_mut() {
+            let n = group.len();
+            if n <= 1 {
+                continue;
             }
-            if b.distance(p) < 0.5 && db == d {
-                group.push((nb.y, (fk_key(g), false)));
-            }
-        }
-        let n = group.len();
-        if n <= 1 {
-            return 0.0;
-        }
-        group.sort_by(|x, y| x.0.total_cmp(&y.0).then_with(|| x.1.cmp(&y.1)));
-        let idx = group.iter().position(|(_, k)| *k == me).unwrap_or(0);
-        let step = (12.0 / (n - 1) as f32).min(5.0);
-        (idx as f32 - (n - 1) as f32 / 2.0) * step
-    }
-
-    /// Linienverlauf einer Beziehung (Weltkoordinaten).
-    fn edge_path(&self, schema: &Schema, fk: &ForeignKey) -> Option<Path> {
-        let (mut a, da, mut b, db, lanes) = self.endpoints(schema, fk)?;
-        a.y += self.port_offset(schema, fk, a, da, true);
-        b.y += self.port_offset(schema, fk, b, db, false);
-        if fk.table == fk.ref_table {
-            let bend = 40.0 + (a.y - b.y).abs() * 0.2;
-            return Some(vec![[a, a + vec2(bend, 0.0), b + vec2(bend, 0.0), b]]);
-        }
-        if let Some(lanes) = lanes {
-            let mut pts = vec![a];
-            pts.extend(lanes.iter().copied());
-            pts.push(b);
-            let mut path = Vec::new();
-            for w in pts.windows(2) {
-                if (w[0].y - w[1].y).abs() < 0.5 {
-                    path.push([w[0], w[0].lerp(w[1], 0.33), w[0].lerp(w[1], 0.66), w[1]]);
+            group.sort_by(|x, y| x.0.total_cmp(&y.0).then_with(|| (x.1, x.2).cmp(&(y.1, y.2))));
+            let step = (12.0 / (n - 1) as f32).min(5.0);
+            for (idx, &(_, i, at_start)) in group.iter().enumerate() {
+                let off = (idx as f32 - (n - 1) as f32 / 2.0) * step;
+                if at_start {
+                    start_off[i] = off;
                 } else {
-                    path.push(bezier_between(w[0], w[1], -1.0, 1.0));
+                    end_off[i] = off;
                 }
             }
-            return Some(path);
         }
-        Some(vec![bezier_between(a, b, da, db)])
+        schema
+            .fks
+            .iter()
+            .zip(ends)
+            .enumerate()
+            .map(|(i, (fk, e))| {
+                let (mut a, da, mut b, db, lanes) = e?;
+                a.y += start_off[i];
+                b.y += end_off[i];
+                if fk.table == fk.ref_table {
+                    let bend = 40.0 + (a.y - b.y).abs() * 0.2;
+                    return Some(vec![[a, a + vec2(bend, 0.0), b + vec2(bend, 0.0), b]]);
+                }
+                if let Some(lanes) = lanes {
+                    let mut pts = vec![a];
+                    pts.extend(lanes.iter().copied());
+                    pts.push(b);
+                    let mut path = Vec::new();
+                    for w in pts.windows(2) {
+                        if (w[0].y - w[1].y).abs() < 0.5 {
+                            path.push([w[0], w[0].lerp(w[1], 0.33), w[0].lerp(w[1], 0.66), w[1]]);
+                        } else {
+                            path.push(bezier_between(w[0], w[1], -1.0, 1.0));
+                        }
+                    }
+                    return Some(path);
+                }
+                Some(vec![bezier_between(a, b, da, db)])
+            })
+            .collect()
     }
 
     fn remove_routes_of(&mut self, table: &str) {
+        if self.routes.is_empty() {
+            return;
+        }
         if let Some(s) = &self.schema {
             for fk in s.fks.iter().filter(|f| f.table == table || f.ref_table == table) {
                 self.routes.remove(&fk_key(fk));
@@ -818,18 +904,54 @@ impl ErTab {
     fn geometry(&mut self, schema: &Arc<Schema>) -> Arc<RouteGeometry> {
         if let Some(cache) = &self.route_cache {
             if Arc::ptr_eq(schema, &cache.schema) && cache.positions == self.pos
-                && cache.routes == self.routes && cache.show_types == self.show_types {
+                && cache.routes == self.routes && cache.show_types == self.show_types
+                && cache.notation == self.notation && cache.rel_labels == self.rel_labels {
                 return Arc::clone(&cache.geometry);
             }
         }
-        let paths: Vec<Option<Path>> = schema.fks.iter().map(|fk| self.edge_path(schema, fk)).collect();
-        let polylines = paths.iter().map(|path| path.as_ref().map(|segments| {
+        self.ensure_boxes();
+        let paths = self.all_paths(schema);
+        let polylines: Vec<Vec<Pos2>> = paths.iter().map(|path| path.as_ref().map(|segments| {
             segments.iter().flat_map(|segment| (0..=12).map(move |i| sample(segment, i as f32 / 12.0))).collect()
         }).unwrap_or_default()).collect();
-        let geometry = Arc::new(RouteGeometry { paths, polylines });
+        let bounds = paths.iter().map(|path| {
+            let mut r = Rect::NOTHING;
+            for seg in path.iter().flatten() {
+                for p in seg {
+                    r.extend_with(*p);
+                }
+            }
+            r
+        }).collect();
+        let keys = schema.fks.iter().map(fk_key).collect();
+        let rels: Vec<Rel> = schema.fks.iter().map(|fk| self.rel(schema, fk)).collect();
+        let mut shapes = vec![Vec::new(); paths.len()];
+        let mut tags = Vec::new();
+        let mut texts = Vec::new();
+        let mut text_edge = Vec::new();
+        for (i, path) in paths.iter().enumerate() {
+            let Some(path) = path else { continue };
+            for prim in markers(path, rels[i], self.notation, self.rel_labels) {
+                match prim {
+                    Prim::Text(p, s, align) => {
+                        texts.push((p, s, align, ()));
+                        text_edge.push(i);
+                    }
+                    Prim::Tag(p, s) => tags.push((i, p, s)),
+                    other => shapes[i].push(other),
+                }
+            }
+        }
+        // Beschriftungen ueberlappungsfrei setzen; die Zuordnung zur Linie bleibt erhalten
+        let texts = place_texts(texts.into_iter().zip(text_edge).map(|((p, s, a, _), e)| (p, s, a, e)).collect())
+            .into_iter()
+            .map(|(p, s, a, e)| (e, p, s, a))
+            .collect();
+        let geometry = Arc::new(RouteGeometry { paths, polylines, bounds, keys, shapes, tags, texts });
         self.route_cache = Some(RouteCache {
             schema: Arc::clone(schema), positions: self.pos.clone(), routes: self.routes.clone(),
-            show_types: self.show_types, geometry: Arc::clone(&geometry),
+            show_types: self.show_types, notation: self.notation, rel_labels: self.rel_labels,
+            geometry: Arc::clone(&geometry),
         });
         geometry
     }
@@ -876,6 +998,9 @@ impl ErTab {
             let mut best = None;
             let mut best_d = 6.0 / zm;
             for (i, pl) in polylines.iter().enumerate() {
+                if !geometry.bounds[i].expand(best_d).contains(p) {
+                    continue;
+                }
                 for w in pl.windows(2) {
                     let d = dist_to_segment(p, w[0], w[1]);
                     if d < best_d {
@@ -960,7 +1085,7 @@ impl ErTab {
             }
         }
         if resp.clicked() {
-            self.selected = pointer.filter(|p| hit_table(self, *p).is_none()).and_then(hit_fk).map(|i| fk_key(&schema.fks[i]));
+            self.selected = pointer.filter(|p| hit_table(self, *p).is_none()).and_then(hit_fk).map(|i| geometry.keys[i].clone());
         }
         // Entf: ausgewaehlte Beziehung loeschen
         let editing_text = ui.ctx().egui_wants_keyboard_input();
@@ -1017,20 +1142,19 @@ impl ErTab {
             }
         }
 
-        // Beziehungslinien
+        // Beziehungslinien: nur die im Bild sichtbaren; bei starkem Verkleinern vereinfacht
         let focus_table = match &self.drag {
             Drag::Table(t) => Some(t.clone()),
             _ => hover_table.clone(),
         };
         let raw = self.raw.clone().unwrap_or_else(|| schema.clone());
-        let mut tags: Vec<(Pos2, String, Color32)> = Vec::new();
-        let mut texts: Vec<(Pos2, String, Align2, Color32)> = Vec::new();
-        for (i, fk) in schema.fks.iter().enumerate() {
-            let Some(path) = &paths[i] else { continue };
+        let view = Rect::from_min_max(self.to_world(origin, rect.min), self.to_world(origin, rect.max)).expand(24.0);
+        let detail = z >= 0.3;
+        let style_of = |i: usize, fk: &ForeignKey| -> (Color32, f32) {
             let related = focus_table.as_ref().map(|t| *t == fk.table || *t == fk.ref_table);
             let is_hover = hover_fk == Some(i) || matches!(self.menu, Some(Menu::Fk(j)) if j == i);
-            let is_sel = self.selected.as_deref() == Some(fk_key(fk).as_str());
-            let (color, width) = if is_sel {
+            let is_sel = self.selected.as_deref() == Some(geometry.keys[i].as_str());
+            if is_sel {
                 (LINE_HI, 3.2)
             } else if is_hover || related == Some(true) {
                 (LINE_HI, 2.2)
@@ -1038,48 +1162,70 @@ impl ErTab {
                 (style::pal().er_line_dim, 1.2)
             } else {
                 (style::pal().er_line, 1.4)
-            };
+            }
+        };
+        for (i, fk) in schema.fks.iter().enumerate() {
+            let Some(path) = &paths[i] else { continue };
+            if !geometry.bounds[i].intersects(view) {
+                continue;
+            }
+            let (color, width) = style_of(i, fk);
             let stroke = Stroke::new((width * z).max(1.0), color);
-            for seg in path {
-                let s = seg.map(screen);
-                painter.add(Shape::CubicBezier(egui::epaint::CubicBezierShape::from_points_stroke(
-                    s,
-                    false,
-                    Color32::TRANSPARENT,
-                    stroke,
-                )));
+            if detail {
+                for seg in path {
+                    let s = seg.map(screen);
+                    painter.add(Shape::CubicBezier(egui::epaint::CubicBezierShape::from_points_stroke(
+                        s,
+                        false,
+                        Color32::TRANSPARENT,
+                        stroke,
+                    )));
+                }
+            } else {
+                // Ein grober Linienzug aus jedem vierten Stuetzpunkt reicht, wenn man nichts mehr lesen kann
+                let pl = &geometry.polylines[i];
+                let pts: Vec<Pos2> = pl.iter().step_by(4).chain(pl.last()).map(|p| screen(*p)).collect();
+                painter.add(Shape::line(pts, stroke));
             }
             // Kardinalitaeten (1:1, 1:n, n:m, optional) in der gewaehlten Notation
-            let rel = self.rel(&schema, fk);
-            for prim in markers(path, rel, self.notation, self.rel_labels) {
-                match prim {
-                    Prim::Line(p, q) => {
-                        painter.line_segment([screen(p), screen(q)], stroke);
-                    }
-                    Prim::Circle(c, r) => {
-                        painter.circle(screen(c), r * z, style::pal().er_canvas, stroke);
-                    }
-                    Prim::Text(p, s, align) => texts.push((p, s, align, color)),
-                    Prim::Tag(p, s) => tags.push((screen(p), s, color)),
-                    Prim::Diamond(c, r) => {
-                        let c = screen(c);
-                        let (w, h) = (r * 1.4 * z, r * z);
-                        let pts = vec![c + vec2(-w, 0.0), c + vec2(0.0, -h), c + vec2(w, 0.0), c + vec2(0.0, h)];
-                        painter.add(Shape::convex_polygon(pts, style::pal().er_canvas, stroke));
+            if detail {
+                for prim in &geometry.shapes[i] {
+                    match prim {
+                        Prim::Line(p, q) => {
+                            painter.line_segment([screen(*p), screen(*q)], stroke);
+                        }
+                        Prim::Circle(c, r) => {
+                            painter.circle(screen(*c), *r * z, style::pal().er_canvas, stroke);
+                        }
+                        Prim::Diamond(c, r) => {
+                            let c = screen(*c);
+                            let (w, h) = (*r * 1.4 * z, *r * z);
+                            let pts = vec![c + vec2(-w, 0.0), c + vec2(0.0, -h), c + vec2(w, 0.0), c + vec2(0.0, h)];
+                            painter.add(Shape::convex_polygon(pts, style::pal().er_canvas, stroke));
+                        }
+                        Prim::Text(..) | Prim::Tag(..) => {}
                     }
                 }
             }
         }
-        // Beschriftungen ueber alle Linien
-        let small = FontId::proportional((10.5 * z).max(6.0));
-        for (p, s, align, color) in place_texts(texts) {
-            painter.text(screen(p), align, s, small.clone(), color);
+        if detail {
+            // Beschriftungen ueber alle Linien
+            let small = FontId::proportional((10.5 * z).max(6.0));
+            for (i, p, s, align) in &geometry.texts {
+                if view.contains(*p) {
+                    painter.text(screen(*p), *align, s, small.clone(), style_of(*i, &schema.fks[*i]).0);
+                }
+            }
         }
         if z > 0.35 {
             let font = FontId::proportional(10.5 * z);
-            for (p, s, color) in tags {
-                let galley = painter.layout_no_wrap(s, font.clone(), color);
-                let r = Rect::from_center_size(p, galley.size() + vec2(8.0, 2.0) * z);
+            for (i, p, s) in &geometry.tags {
+                if !view.contains(*p) {
+                    continue;
+                }
+                let color = style_of(*i, &schema.fks[*i]).0;
+                let galley = painter.layout_no_wrap(s.clone(), font.clone(), color);
+                let r = Rect::from_center_size(screen(*p), galley.size() + vec2(8.0, 2.0) * z);
                 painter.rect(r, 3.0 * z, style::pal().er_canvas, Stroke::new(1.0, color), StrokeKind::Inside);
                 painter.galley(r.center() - galley.size() / 2.0, galley, color);
             }
@@ -1090,8 +1236,19 @@ impl ErTab {
         let bold = FontId::proportional(12.5 * z);
         let small = FontId::proportional(9.5 * z);
         for t in &schema.tables {
-            let r = Rect::from_min_size(screen(self.table_rect_world(t).min), box_size(t, self.show_types) * z);
+            let r = Rect::from_min_size(screen(self.table_rect_world(t).min), self.box_of(t) * z);
             if !r.intersects(rect) {
+                continue;
+            }
+            // Stark herausgezoomt ist Text unlesbar und teuer: nur noch Kasten (und Name)
+            if z < 0.38 {
+                painter.rect_filled(r, 0.0, style::pal().er_box);
+                let head = Rect::from_min_size(r.min, vec2(r.width(), (HEADER_H * z).max(2.0)));
+                painter.rect_filled(head, 0.0, if t.is_view { style::pal().er_view_header } else { style::pal().er_header });
+                painter.rect_stroke(r, 0.0, Stroke::new(1.0, style::pal().border), StrokeKind::Inside);
+                if z >= 0.3 {
+                    painter.text(head.left_center() + vec2(4.0 * z, 0.0), Align2::LEFT_CENTER, &t.name, bold.clone(), style::pal().text);
+                }
                 continue;
             }
             let focused = focus_table.as_deref() == Some(t.name.as_str());
@@ -1409,8 +1566,9 @@ impl ErTab {
         let raw = self.raw.as_deref().unwrap_or(schema);
         let mut tags: Vec<(Pos2, String)> = Vec::new();
         let mut texts: Vec<(Pos2, String, Align2, ())> = Vec::new();
-        for fk in &schema.fks {
-            let Some(path) = self.edge_path(schema, fk) else { continue };
+        let all_paths = self.all_paths(schema);
+        for (fk, path) in schema.fks.iter().zip(all_paths) {
+            let Some(path) = path else { continue };
             let mut d = format!("M{} {}", path[0][0].x, path[0][0].y);
             for s in &path {
                 let _ = write!(d, " C{} {} {} {} {} {}", s[1].x, s[1].y, s[2].x, s[2].y, s[3].x, s[3].y);
@@ -1632,7 +1790,7 @@ mod tests {
     #[test]
     fn routes_reuse_geometry_for_pan_zoom_and_update_after_drag() {
         let mut diagram = ErTab::new("shop".into());
-        diagram.set_schema(Some(shop()));
+        diagram.set_schema(Some(Arc::new(shop())));
         diagram.auto_layout();
         let schema = diagram.schema.clone().unwrap();
         let original = diagram.geometry(&schema);
@@ -1661,10 +1819,11 @@ mod tests {
             ],
             unique_keys: vec![],
             fks: vec![fk("schueler", "klasse_id", "klasse"), fk("note", "schueler_id", "schueler"), fk("note", "lehrer_id", "lehrer")],
+            ..Default::default()
         };
         let mut er = ErTab::new("x".into());
         er.collapse_nm = false;
-        er.set_schema(Some(schema.clone()));
+        er.set_schema(Some(Arc::new(schema.clone())));
         er.auto_layout();
         // keine Ueberlappungen
         let rects: Vec<Rect> = schema.tables.iter().map(|t| er.table_rect_world(t)).collect();
@@ -1674,8 +1833,8 @@ mod tests {
             }
         }
         // keine Linie laeuft durch eine fremde Tabelle
-        for f in &schema.fks {
-            let path = er.edge_path(&schema, f).unwrap();
+        for (f, path) in schema.fks.iter().zip(er.all_paths(&schema)) {
+            let path = path.unwrap();
             for t in schema.tables.iter().filter(|t| t.name != f.table && t.name != f.ref_table) {
                 let r = er.table_rect_world(t);
                 for seg in &path {
@@ -1713,6 +1872,7 @@ mod tests {
                 ("position".into(), vec!["bestellung_id".into(), "artikel_id".into()]),
                 ("ausweis".into(), vec!["kunde_id".into()]),
             ],
+            ..Default::default()
         }
     }
 
@@ -1720,7 +1880,7 @@ mod tests {
     fn collapse_many_to_many() {
         let mut er = ErTab::new("shop".into());
         er.collapse_nm = true;
-        er.set_schema(Some(shop()));
+        er.set_schema(Some(Arc::new(shop())));
         let v = er.schema.clone().unwrap();
         assert!(v.table("position").is_none(), "Zwischentabelle ausgeblendet");
         assert_eq!(v.fks.len(), 3);
@@ -1733,7 +1893,8 @@ mod tests {
         assert_eq!(er.rel(&v, a).label(), "1:1");
         // Layout mit n:m-Linie und wieder einblenden: Zwischentabelle bekommt einen Platz
         er.auto_layout();
-        assert!(er.edge_path(&v, nm).is_some());
+        let nm_index = v.fks.iter().position(|f| std::ptr::eq(f, nm)).unwrap();
+        assert!(er.all_paths(&v)[nm_index].is_some());
         er.notation = Notation::Crow;
         er.rel_labels = true;
         let svg = er.to_svg();
@@ -1839,5 +2000,35 @@ mod tests {
         assert_eq!(out.len(), 3, "gleiche Beschriftung zusammengefasst");
         assert!(out[1].0.x > 100.0 + 6.0, "andere Beschriftung nach aussen geschoben");
         assert_eq!(out[2].0, pos2(300.0, 50.0));
+    }
+
+    /// Handmessung mit einer riesigen Datenbank: `cargo test --release er_geometry_timing -- --ignored --nocapture`
+    #[test]
+    #[ignore = "manual benchmark"]
+    fn er_geometry_timing() {
+        let n = 3000;
+        let tables: Vec<TableInfo> = (0..n).map(|i| table(&format!("t{i}"), &["id", "a_id", "b_id", "name", "created"])).collect();
+        let mut fks = Vec::new();
+        for i in 1..n {
+            if i % 10 != 0 {
+                fks.push(fk(&format!("t{i}"), "a_id", &format!("t{}", i / 2)));
+                fks.push(fk(&format!("t{i}"), "b_id", &format!("t{}", i / 3)));
+            }
+        }
+        let schema = Arc::new(Schema { name: "gross".into(), tables, fks, ..Default::default() });
+        let mut er = ErTab::new("gross".into());
+        er.set_schema(Some(schema.clone()));
+        let t = std::time::Instant::now();
+        er.auto_layout();
+        println!("Anordnen: {:?}", t.elapsed());
+        let t = std::time::Instant::now();
+        let geometry = er.geometry(&schema);
+        println!("Geometrie ({} Linien): {:?}", geometry.paths.len(), t.elapsed());
+        let t = std::time::Instant::now();
+        let _ = er.geometry(&schema);
+        println!("Geometrie aus dem Zwischenspeicher: {:?}", t.elapsed());
+        let t = std::time::Instant::now();
+        let svg = er.to_svg();
+        println!("SVG ({} KB): {:?}", svg.len() / 1024, t.elapsed());
     }
 }

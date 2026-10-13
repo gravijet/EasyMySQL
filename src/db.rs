@@ -101,6 +101,14 @@ pub fn value_to_string(v: &Value) -> Option<String> {
     }
 }
 
+/// Wie `value_to_string`, verbraucht den Wert aber und uebernimmt Byte-Puffer ohne Kopie.
+pub fn value_into_string(v: Value) -> Option<String> {
+    match v {
+        Value::Bytes(b) => Some(String::from_utf8(b).unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned())),
+        other => value_to_string(&other),
+    }
+}
+
 pub fn opt_to_value(v: &Option<String>) -> Value {
     match v {
         None => Value::NULL,
@@ -189,10 +197,36 @@ pub fn opt_lit(v: &Option<String>) -> String {
     }
 }
 
+/// Geschaetzter Speicherbedarf eines Ergebnisses, ab dem nicht weiter gelesen wird. Jede Zelle
+/// zaehlt mit ihrer Laenge plus einem festen Aufschlag fuer `Option<String>` und die Zuteilung.
+pub const MAX_RESULT_BYTES: usize = 192 * 1024 * 1024;
+const CELL_OVERHEAD: usize = 40;
+
+/// Ist der Text eine reine Leseabfrage? Nur dann darf ein zu grosses Ergebnis serverseitig
+/// abgebrochen werden – ein CALL oder INSERT ... SELECT soll nie mittendrin enden.
+fn is_read_only(sql: &str) -> bool {
+    let mut t = sql.trim_start();
+    while t.starts_with('(') {
+        t = t[1..].trim_start();
+    }
+    let word: String = t.chars().take_while(|c| c.is_ascii_alphabetic()).collect::<String>().to_ascii_uppercase();
+    matches!(word.as_str(), "SELECT" | "WITH" | "SHOW" | "TABLE" | "VALUES" | "DESCRIBE" | "DESC" | "EXPLAIN")
+        && !t.to_ascii_uppercase().contains("INTO ")
+}
+
 /// Fuehrt einen (ggf. mehrteiligen) SQL-Text aus und sammelt alle Ergebnisse.
 pub fn run_script<C: Queryable>(conn: &mut C, sql: &str) -> QueryOutput {
+    run_script_with(conn, sql, None)
+}
+
+/// Wie `run_script`. `abort` wird einmal aufgerufen, sobald eine Leseabfrage mehr Zeilen
+/// liefert, als gespeichert werden (siehe `MAX_ROWS`): Der Aufrufer kann dann die Abfrage auf
+/// dem Server beenden (`KILL QUERY`), statt den Rest noch ueber das Netz zu lesen und zu
+/// verwerfen.
+pub fn run_script_with<C: Queryable>(conn: &mut C, sql: &str, abort: Option<&dyn Fn()>) -> QueryOutput {
     let start = Instant::now();
     let mut out = QueryOutput::default();
+    let read_only = is_read_only(sql);
     match conn.query_iter(sql) {
         Ok(mut result) => {
             while let Some(set) = result.iter() {
@@ -207,22 +241,38 @@ pub fn run_script<C: Queryable>(conn: &mut C, sql: &str) -> QueryOutput {
                 };
                 rs.affected = set.affected_rows();
                 let mut failed = None;
+                let mut bytes = 0usize;
+                let mut aborted = false;
                 for row in set {
                     match row {
                         Ok(row) => {
-                            if rs.rows.len() >= MAX_ROWS {
-                                rs.truncated = true;
+                            if rs.truncated {
+                                // Abbruch ist angefordert; bis er greift, nichts mehr speichern.
                                 continue;
                             }
-                            let r: Row = row.unwrap().iter().map(value_to_string).collect();
+                            if rs.rows.len() >= MAX_ROWS || bytes >= MAX_RESULT_BYTES {
+                                rs.truncated = true;
+                                if read_only {
+                                    if let Some(abort) = abort {
+                                        abort();
+                                        aborted = true;
+                                    }
+                                }
+                                continue;
+                            }
+                            let r: Row = row.unwrap().into_iter().map(value_into_string).collect();
+                            bytes += r.iter().map(|c| c.as_ref().map_or(0, String::len) + CELL_OVERHEAD).sum::<usize>();
                             rs.rows.push(r);
                         }
+                        // Nach einem gewollten Abbruch meldet der Server "Query execution was interrupted".
+                        Err(_) if aborted => break,
                         Err(e) => {
                             failed = Some(err_text(e));
                             break;
                         }
                     }
                 }
+                rs.rows.shrink_to_fit();
                 out.sets.push(rs);
                 if let Some(e) = failed {
                     out.error = Some(e);
@@ -307,6 +357,18 @@ pub struct Schema {
     pub fks: Vec<ForeignKey>,
     /// Eindeutige Indizes (inkl. Primaerschluessel): (Tabelle, Spalten)
     pub unique_keys: Vec<(String, Vec<String>)>,
+    /// Suchtabellen, beim ersten Nachschlagen aufgebaut (siehe `invalidate_index`)
+    pub(crate) index: std::sync::OnceLock<SchemaIndex>,
+}
+
+/// Schnelle Nachschlagetabellen: Bei tausenden Tabellen waeren lineare Suchen pro Bild zu langsam.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct SchemaIndex {
+    tables: HashMap<String, usize>,
+    /// Tabelle -> Spalten, die an einem Fremdschluessel beteiligt sind
+    fk_columns: HashMap<String, HashSet<String>>,
+    /// Tabelle -> eindeutige Schluessel (Spalten sortiert)
+    unique: HashMap<String, Vec<Vec<String>>>,
 }
 
 /// Art einer Beziehung
@@ -317,15 +379,35 @@ pub enum RelKind {
 }
 
 impl Schema {
+    fn index(&self) -> &SchemaIndex {
+        self.index.get_or_init(|| {
+            let mut ix = SchemaIndex::default();
+            for (i, t) in self.tables.iter().enumerate() {
+                ix.tables.entry(t.name.clone()).or_insert(i);
+            }
+            for f in &self.fks {
+                ix.fk_columns.entry(f.table.clone()).or_default().extend(f.columns.iter().cloned());
+            }
+            for (t, k) in &self.unique_keys {
+                let mut k = k.clone();
+                k.sort();
+                ix.unique.entry(t.clone()).or_default().push(k);
+            }
+            ix
+        })
+    }
+
+    /// Nach Aenderungen an `tables`, `fks` oder `unique_keys` aufrufen, damit die
+    /// Suchtabellen neu aufgebaut werden.
+    pub fn invalidate_index(&mut self) {
+        self.index = Default::default();
+    }
+
     /// 1:1, wenn die Fremdschluessel-Spalten eindeutig sind, sonst 1:n.
     pub fn rel_kind(&self, fk: &ForeignKey) -> RelKind {
         let mut cols = fk.columns.clone();
         cols.sort();
-        let unique = self.unique_keys.iter().any(|(t, k)| {
-            let mut k = k.clone();
-            k.sort();
-            *t == fk.table && k == cols
-        });
+        let unique = self.index().unique.get(&fk.table).is_some_and(|keys| keys.contains(&cols));
         if unique { RelKind::OneToOne } else { RelKind::OneToMany }
     }
 
@@ -341,26 +423,25 @@ impl Schema {
     /// Primaerschluessel (bzw. einen eindeutigen Schluessel) bilden.
     pub fn junctions(&self) -> Vec<(String, usize, usize)> {
         let mut out = Vec::new();
+        let mut by_table: HashMap<&str, Vec<usize>> = HashMap::new();
+        let mut referenced: HashSet<&str> = HashSet::new();
+        for (i, f) in self.fks.iter().enumerate() {
+            by_table.entry(f.table.as_str()).or_default().push(i);
+            referenced.insert(f.ref_table.as_str());
+        }
         for t in &self.tables {
-            let fks: Vec<usize> = self.fks.iter().enumerate().filter(|(_, f)| f.table == t.name).map(|(i, _)| i).collect();
-            if fks.len() != 2 {
-                continue;
-            }
+            let Some(fks) = by_table.get(t.name.as_str()).filter(|v| v.len() == 2) else { continue };
             let (a, b) = (&self.fks[fks[0]], &self.fks[fks[1]]);
             if a.ref_table == b.ref_table || a.ref_table == t.name || b.ref_table == t.name {
                 continue;
             }
             // Wird die Tabelle selbst referenziert, ist sie eine eigene Entitaet.
-            if self.fks.iter().any(|f| f.ref_table == t.name) {
+            if referenced.contains(t.name.as_str()) {
                 continue;
             }
             let mut both: Vec<String> = a.columns.iter().chain(b.columns.iter()).cloned().collect();
             both.sort();
-            let pk_match = self.unique_keys.iter().any(|(tt, k)| {
-                let mut k = k.clone();
-                k.sort();
-                *tt == t.name && k == both
-            });
+            let pk_match = self.index().unique.get(&t.name).is_some_and(|keys| keys.contains(&both));
             if pk_match {
                 out.push((t.name.clone(), fks[0], fks[1]));
             }
@@ -369,13 +450,16 @@ impl Schema {
     }
 
     pub fn table(&self, name: &str) -> Option<&TableInfo> {
-        self.tables.iter().find(|t| t.name == name)
+        // Veraltete Eintraege (Tabellen wurden ohne `invalidate_index` geaendert) werden erkannt
+        // und per lineare Suche korrigiert.
+        match self.index().tables.get(name).and_then(|&i| self.tables.get(i)) {
+            Some(t) if t.name == name => Some(t),
+            _ => self.tables.iter().find(|t| t.name == name),
+        }
     }
 
     pub fn is_fk_column(&self, table: &str, column: &str) -> bool {
-        self.fks
-            .iter()
-            .any(|f| f.table == table && f.columns.iter().any(|c| c == column))
+        self.index().fk_columns.get(table).is_some_and(|cols| cols.contains(column))
     }
 
     /// Tabellen in Abhaengigkeitsreihenfolge (referenzierte zuerst).
@@ -440,11 +524,8 @@ impl Db {
 
     pub fn rows(&self, sql: &str, params: impl Into<Params>) -> Result<Vec<Row>, String> {
         let mut c = self.conn()?;
-        let res: Vec<mysql::Row> = c.exec(sql, params).map_err(err_text)?;
-        Ok(res
-            .into_iter()
-            .map(|r| r.unwrap().iter().map(value_to_string).collect())
-            .collect())
+        c.exec_map(sql, params, |r: mysql::Row| r.unwrap().into_iter().map(value_into_string).collect())
+            .map_err(err_text)
     }
 
     /// Text-Protokoll-Abfrage mit Spaltennamen.
@@ -489,7 +570,7 @@ impl Db {
              FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? ORDER BY TABLE_NAME",
             (db,),
         )?;
-        let mut idx = HashMap::new();
+        let mut idx: HashMap<String, usize> = HashMap::with_capacity(tables.len());
         for r in tables {
             idx.insert(s(&r[0]), schema.tables.len());
             schema.tables.push(TableInfo {
@@ -508,7 +589,7 @@ impl Db {
             (db,),
         )?;
         for r in cols {
-            if let Some(&i) = idx.get(&s(&r[0])) {
+            if let Some(&i) = r[0].as_deref().and_then(|n| idx.get(n)) {
                 schema.tables[i].columns.push(ColumnInfo {
                     name: s(&r[1]),
                     col_type: s(&r[2]),
@@ -549,17 +630,16 @@ impl Db {
                 last = Some(key);
             }
         }
+        let mut fk_idx: HashMap<(String, String), usize> = HashMap::new();
         for r in fks {
             let name = s(&r[0]);
             let table = s(&r[1]);
-            if let Some(fk) = schema
-                .fks
-                .iter_mut()
-                .find(|f| f.name == name && f.table == table)
-            {
+            if let Some(&i) = fk_idx.get(&(table.clone(), name.clone())) {
+                let fk = &mut schema.fks[i];
                 fk.columns.push(s(&r[2]));
                 fk.ref_columns.push(s(&r[4]));
             } else {
+                fk_idx.insert((table.clone(), name.clone()), schema.fks.len());
                 schema.fks.push(ForeignKey {
                     name,
                     table,
@@ -874,6 +954,7 @@ mod tests {
                 ForeignKey { table: "schueler".into(), ref_table: "klasse".into(), ..Default::default() },
             ],
             unique_keys: vec![],
+            ..Default::default()
         };
         assert_eq!(s.ordered_tables(), vec!["klasse", "schueler", "note"]);
     }
@@ -914,6 +995,7 @@ mod tests {
                 uk("kurs", &["id"]),
                 uk("belegung", &["kurs_id", "schueler_id"]),
             ],
+            ..Default::default()
         };
         assert_eq!(s.rel_kind(&s.fks[0]), RelKind::OneToMany);
         assert!(s.rel_optional(&s.fks[0]));

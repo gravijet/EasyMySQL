@@ -1060,7 +1060,7 @@ pub struct BuilderTab {
     id: String,
     pub db: String,
     query: Query,
-    schema: Option<Schema>,
+    schema: Option<std::sync::Arc<Schema>>,
     loaded_for: String,
     result: Option<ResultSet>,
     error: Option<String>,
@@ -1319,7 +1319,7 @@ impl TabView for BuilderTab {
             });
 
         let tables: Vec<String> = self.schema.as_ref().map(|s| s.tables.iter().map(|t| t.name.clone()).collect()).unwrap_or_default();
-        let env = Env { schema: self.schema.as_ref(), tables, ctes: Vec::new(), scope: Vec::new(), depth: 0 };
+        let env = Env { schema: self.schema.as_deref(), tables, ctes: Vec::new(), scope: Vec::new(), depth: 0 };
         egui::ScrollArea::both().id_salt(("builder-edit", &self.id)).auto_shrink([false, false]).show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 5.0;
             query_ui(ui, &mut self.query, &env, egui::Id::new(("bq", &self.id)));

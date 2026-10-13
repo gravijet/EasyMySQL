@@ -32,6 +32,10 @@ impl Rng {
 
 /// Strecken p1-p2 und p3-p4 schneiden sich echt (gemeinsame Endpunkte zaehlen nicht)
 fn crosses(p1: (f32, f32), p2: (f32, f32), p3: (f32, f32), p4: (f32, f32)) -> bool {
+    // Bounding-Boxen ohne Ueberlappung: schnell ausscheiden (der haeufigste Fall)
+    if p1.0.max(p2.0) < p3.0.min(p4.0) || p3.0.max(p4.0) < p1.0.min(p2.0) || p1.1.max(p2.1) < p3.1.min(p4.1) || p3.1.max(p4.1) < p1.1.min(p2.1) {
+        return false;
+    }
     let d = |a: (f32, f32), b: (f32, f32), c: (f32, f32)| (b.0 - a.0) * (c.1 - a.1) - (b.1 - a.1) * (c.0 - a.0);
     let d1 = d(p3, p4, p1);
     let d2 = d(p3, p4, p2);
@@ -42,6 +46,9 @@ fn crosses(p1: (f32, f32), p2: (f32, f32), p3: (f32, f32), p4: (f32, f32)) -> bo
 
 /// Laeuft die Strecke a-b durch das Quadrat um c (Halbbreite h)?
 fn through(a: (f32, f32), b: (f32, f32), c: (f32, f32), h: f32) -> bool {
+    if c.0 < a.0.min(b.0) - h || c.0 > a.0.max(b.0) + h || c.1 < a.1.min(b.1) - h || c.1 > a.1.max(b.1) + h {
+        return false;
+    }
     let (dx, dy) = (b.0 - a.0, b.1 - a.1);
     let len2 = dx * dx + dy * dy;
     if len2 < 1e-6 {
@@ -50,6 +57,33 @@ fn through(a: (f32, f32), b: (f32, f32), c: (f32, f32), h: f32) -> bool {
     let t = (((c.0 - a.0) * dx + (c.1 - a.1) * dy) / len2).clamp(0.0, 1.0);
     let (px, py) = (a.0 + dx * t, a.1 + dy * t);
     (px - c.0).abs() < h && (py - c.1).abs() < h && t > 0.02 && t < 0.98
+}
+
+/// Felder auf dem Rand des Quadrats mit Radius `ring` um (mc, mr), soweit sie im Raster liegen
+fn ring_cells(mc: usize, mr: usize, ring: usize, cols: usize, rows: usize) -> Vec<(usize, usize)> {
+    if ring == 0 {
+        return vec![(mc, mr)];
+    }
+    let mut out = Vec::with_capacity(8 * ring);
+    let (c_lo, c_hi) = (mc.saturating_sub(ring), (mc + ring).min(cols - 1));
+    let (r_lo, r_hi) = (mr.saturating_sub(ring), (mr + ring).min(rows - 1));
+    for c in c_lo..=c_hi {
+        if mr >= ring {
+            out.push((c, mr - ring));
+        }
+        if mr + ring < rows {
+            out.push((c, mr + ring));
+        }
+    }
+    for r in r_lo.max(mr.saturating_sub(ring - 1))..=r_hi.min(mr + ring - 1) {
+        if mc >= ring {
+            out.push((mc - ring, r));
+        }
+        if mc + ring < cols {
+            out.push((mc + ring, r));
+        }
+    }
+    out
 }
 
 struct Grid<'a> {
@@ -67,6 +101,16 @@ impl Grid<'_> {
     fn pt(&self, n: usize) -> (f32, f32) {
         let (c, r) = self.cell[n];
         (c as f32, r as f32 * self.ry)
+    }
+
+    /// Tabellen auf Feldern, die zu einer Strecke in Frage kommen (Rechteck um die Strecke)
+    fn nodes_near(&self, pa: (f32, f32), pb: (f32, f32)) -> impl Iterator<Item = usize> + '_ {
+        const H: f32 = 0.38;
+        let c0 = (pa.0.min(pb.0) - H).ceil().max(0.0) as usize;
+        let c1 = ((pa.0.max(pb.0) + H).floor().max(-1.0) + 1.0) as usize;
+        let r0 = ((pa.1.min(pb.1) - H) / self.ry).ceil().max(0.0) as usize;
+        let r1 = (((pa.1.max(pb.1) + H) / self.ry).floor().max(-1.0) + 1.0) as usize;
+        (c0..c1.min(self.cols)).flat_map(move |c| (r0..r1.min(self.rows)).filter_map(move |r| self.occ.get(&(c, r)).copied()))
     }
 
     /// Kosten einer Kante (ohne Kreuzungen)
@@ -108,8 +152,8 @@ impl Grid<'_> {
                     cost += 30.0;
                 }
             }
-            // durch fremde Tabellen
-            for n in 0..self.cell.len() {
+            // durch fremde Tabellen: nur die Felder neben der Linie pruefen
+            for n in self.nodes_near(pa, pb) {
                 if n != a && n != b && through(pa, pb, self.pt(n), 0.38) {
                     cost += 20.0;
                 }
@@ -159,7 +203,9 @@ impl Grid<'_> {
         let mut order: Vec<usize> = Vec::new();
         let mut seen = vec![false; n];
         let mut starts: Vec<usize> = (0..n).collect();
-        starts.sort_by_key(|&i| std::cmp::Reverse(self.adj[i].len() * 10 + rng.below(3)));
+        // Schluessel einmal ziehen: ein Zufallswert im Vergleich waere keine Ordnung (Absturz bei grossen Listen)
+        let keys: Vec<usize> = (0..n).map(|i| self.adj[i].len() * 10 + rng.below(3)).collect();
+        starts.sort_by_key(|&i| std::cmp::Reverse(keys[i]));
         for s in starts {
             if seen[s] {
                 continue;
@@ -181,27 +227,75 @@ impl Grid<'_> {
         self.occ.clear();
         let center = (self.cols as f32 / 2.0, self.rows as f32 / 2.0);
         let mut placed = vec![false; n];
+        // Kleine Diagramme: alle freien Felder bewerten. Grosse: nur ringfoermig um den Schwerpunkt
+        // der schon gesetzten Nachbarn suchen, sonst waere die Rechenzeit quadratisch.
+        let exhaustive = n * self.cols * self.rows <= 300_000;
         for v in order {
-            let mut best = (f32::MAX, (0, 0));
-            for c in 0..self.cols {
-                for r in 0..self.rows {
-                    if self.occ.contains_key(&(c, r)) {
-                        continue;
+            let score = |this: &Self, placed: &[bool], c: usize, r: usize| -> f32 {
+                let mut s = 0.0;
+                let mut k = 0;
+                for &x in &this.adj[v] {
+                    if placed[x] {
+                        let (xc, xr) = this.cell[x];
+                        s += (xc as f32 - c as f32).abs() + (xr as f32 - r as f32).abs() * 1.3;
+                        k += 1;
                     }
-                    let mut s = 0.0;
-                    let mut k = 0;
-                    for &x in &self.adj[v] {
-                        if placed[x] {
-                            let (xc, xr) = self.cell[x];
-                            s += (xc as f32 - c as f32).abs() + (xr as f32 - r as f32).abs() * 1.3;
-                            k += 1;
+                }
+                if k == 0 {
+                    s = (c as f32 - center.0).abs() + (r as f32 - center.1).abs();
+                }
+                s
+            };
+            let mut best = (f32::MAX, (0, 0));
+            if exhaustive {
+                for c in 0..self.cols {
+                    for r in 0..self.rows {
+                        if self.occ.contains_key(&(c, r)) {
+                            continue;
+                        }
+                        let s = score(self, &placed, c, r);
+                        if s < best.0 {
+                            best = (s, (c, r));
                         }
                     }
-                    if k == 0 {
-                        s = (c as f32 - center.0).abs() + (r as f32 - center.1).abs();
+                }
+            } else {
+                let (mut sx, mut sy, mut k) = (0.0f32, 0.0f32, 0);
+                for &x in &self.adj[v] {
+                    if placed[x] {
+                        sx += self.cell[x].0 as f32;
+                        sy += self.cell[x].1 as f32;
+                        k += 1;
                     }
-                    if s < best.0 {
-                        best = (s, (c, r));
+                }
+                let (mx, my) = if k > 0 { (sx / k as f32, sy / k as f32) } else { center };
+                let (mc, mr) = ((mx.round().max(0.0) as usize).min(self.cols - 1), (my.round().max(0.0) as usize).min(self.rows - 1));
+                let max_ring = self.cols.max(self.rows);
+                let mut found_at = None;
+                for ring in 0..=max_ring {
+                    if found_at.is_some_and(|f| ring > f + 1) {
+                        break;
+                    }
+                    for (c, r) in ring_cells(mc, mr, ring, self.cols, self.rows) {
+                        if self.occ.contains_key(&(c, r)) {
+                            continue;
+                        }
+                        found_at.get_or_insert(ring);
+                        let s = score(self, &placed, c, r);
+                        if s < best.0 {
+                            best = (s, (c, r));
+                        }
+                    }
+                }
+                if found_at.is_none() {
+                    // Umgebung voll (sollte nicht vorkommen): erstes freies Feld
+                    'any: for c in 0..self.cols {
+                        for r in 0..self.rows {
+                            if !self.occ.contains_key(&(c, r)) {
+                                best = (0.0, (c, r));
+                                break 'any;
+                            }
+                        }
                     }
                 }
             }
@@ -269,6 +363,22 @@ impl Grid<'_> {
     }
 }
 
+/// Zahl der Abkuehlungsschritte. Ein Schritt kostet etwa (betroffene Kanten) x (alle Kanten) und
+/// ist damit bei grossen Datenbanken sehr teuer; die Gesamtarbeit wird deshalb gedeckelt, damit die
+/// Oberflaeche auch bei tausenden Tabellen nicht einfriert. Kleine Diagramme bekommen wie bisher
+/// bis zu 60 000 Schritte. Sind es weniger als ein paar Schritte je Tabelle, lohnt sich das Abkuehlen
+/// nicht mehr: dann bleibt es bei der Anfangsbelegung.
+fn anneal_steps(n: usize, edges: usize, seeds: usize) -> usize {
+    const BUDGET: f64 = 12_000_000.0;
+    let wanted = (n * 900).clamp(2000, 60_000);
+    let avg_deg = 2.0 * edges as f64 / n.max(1) as f64;
+    let touched = 2.0 * avg_deg + 2.0;
+    let per_step = 2.0 * (touched * (edges as f64 + 12.0) + 2.0 * edges as f64 + n as f64);
+    let affordable = (BUDGET / (per_step.max(1.0) * seeds as f64)) as usize;
+    let steps = wanted.min(affordable);
+    if steps < n * 4 { 0 } else { steps }
+}
+
 /// Anordnung berechnen. `sizes`: Name und Groesse jeder Tabelle, `edges`: Beziehungen (Namen).
 /// Liefert die linke obere Ecke jeder Tabelle.
 pub fn layout(sizes: &[(String, Vec2)], edges: &[(String, String)]) -> HashMap<String, Pos2> {
@@ -281,7 +391,12 @@ pub fn layout(sizes: &[(String, Vec2)], edges: &[(String, String)]) -> HashMap<S
         .collect();
     e_all.sort();
     e_all.dedup();
-    let connected: Vec<usize> = (0..sizes.len()).filter(|i| e_all.iter().any(|(a, b)| a == i || b == i)).collect();
+    let mut has_edge = vec![false; sizes.len()];
+    for &(a, b) in &e_all {
+        has_edge[a] = true;
+        has_edge[b] = true;
+    }
+    let connected: Vec<usize> = (0..sizes.len()).filter(|&i| has_edge[i]).collect();
     let local_of: HashMap<usize, usize> = connected.iter().enumerate().map(|(k, &i)| (i, k)).collect();
     let edges_l: Vec<(usize, usize)> = e_all.iter().map(|(a, b)| (local_of[a], local_of[b])).collect();
     let n = connected.len();
@@ -301,47 +416,47 @@ pub fn layout(sizes: &[(String, Vec2)], edges: &[(String, String)]) -> HashMap<S
             adj[a].push(b);
             adj[b].push(a);
         }
-        let steps = (n * 900).clamp(2000, 60_000);
+        let seeds = if n > 40 { 1u64 } else { 3 };
+        let steps = anneal_steps(n, edges_l.len(), seeds as usize);
         let mut best: Option<(f32, Vec<(usize, usize)>)> = None;
-        for seed in 1..=if n > 40 { 1u64 } else { 3 } {
+        for seed in 1..=seeds {
             let mut rng = Rng(0x9E37_79B9_7F4A_7C15 ^ seed.wrapping_mul(0xD1B5_4A32_D192_ED03));
             let mut g = Grid { cols, rows, cell: vec![(0, 0); n], occ: HashMap::new(), edges: &edges_l, adj: adj.clone(), ry };
             g.initial(&mut rng);
             g.anneal(&mut rng, steps);
-            let cost = g.total();
+            // Die Gesamtkosten sind nur zum Vergleichen mehrerer Versuche noetig und teuer
+            let cost = if seeds > 1 { g.total() } else { 0.0 };
             if best.as_ref().is_none_or(|b| cost < b.0) {
                 best = Some((cost, g.cell.clone()));
             }
         }
         let cells = best.map(|b| b.1).unwrap_or_default();
         // leere Zeilen/Spalten entfernen
-        let mut used_c: Vec<usize> = cells.iter().map(|c| c.0).collect();
-        let mut used_r: Vec<usize> = cells.iter().map(|c| c.1).collect();
-        used_c.sort();
-        used_c.dedup();
-        used_r.sort();
-        used_r.dedup();
-        let col_w: Vec<f32> = used_c
-            .iter()
-            .map(|&c| cells.iter().enumerate().filter(|(_, x)| x.0 == c).map(|(k, _)| sizes[connected[k]].1.x).fold(0.0, f32::max))
-            .collect();
-        let row_h: Vec<f32> = used_r
-            .iter()
-            .map(|&r| cells.iter().enumerate().filter(|(_, x)| x.1 == r).map(|(k, _)| sizes[connected[k]].1.y).fold(0.0, f32::max))
-            .collect();
-        let col_x: Vec<f32> = col_w.iter().scan(0.0, |x, w| {
-            let v = *x;
-            *x += w + GAP_X;
-            Some(v)
-        }).collect();
-        let row_y: Vec<f32> = row_h.iter().scan(0.0, |y, h| {
-            let v = *y;
-            *y += h + GAP_Y;
-            Some(v)
-        }).collect();
+        let mut col_w = vec![f32::NAN; cols];
+        let mut row_h = vec![f32::NAN; rows];
         for (k, &(c, r)) in cells.iter().enumerate() {
-            let ci = used_c.binary_search(&c).unwrap_or(0);
-            let ri = used_r.binary_search(&r).unwrap_or(0);
+            let sz = sizes[connected[k]].1;
+            col_w[c] = if col_w[c].is_nan() { sz.x } else { col_w[c].max(sz.x) };
+            row_h[r] = if row_h[r].is_nan() { sz.y } else { row_h[r].max(sz.y) };
+        }
+        // Position (Index unter den benutzten Spalten/Zeilen) -> Koordinate
+        let place = |extent: &[f32], gap: f32| -> Vec<f32> {
+            let mut at = 0.0;
+            extent
+                .iter()
+                .map(|&w| {
+                    let v = at;
+                    if !w.is_nan() {
+                        at += w + gap;
+                    }
+                    v
+                })
+                .collect()
+        };
+        let col_x = place(&col_w, GAP_X);
+        let row_y = place(&row_h, GAP_Y);
+        for (k, &(c, r)) in cells.iter().enumerate() {
+            let (ci, ri) = (c, r);
             let s = sizes[connected[k]].1;
             // in der Zelle waagerecht mittig, senkrecht oben
             let x = col_x[ci] + (col_w[ci] - s.x) / 2.0;
@@ -354,7 +469,7 @@ pub fn layout(sizes: &[(String, Vec2)], edges: &[(String, String)]) -> HashMap<S
 
     // Tabellen ohne Beziehungen: Raster darunter, alphabetisch
     let mut rest: Vec<usize> = (0..sizes.len()).filter(|i| !local_of.contains_key(i)).collect();
-    rest.sort_by_key(|&i| sizes[i].0.to_lowercase());
+    rest.sort_by_cached_key(|&i| sizes[i].0.to_lowercase());
     if !rest.is_empty() {
         let width = if n > 0 { right.max(700.0) } else { (rest.len() as f32).sqrt().ceil() * 260.0 };
         let (mut x, mut y, mut line_h) = (0.0f32, if n > 0 { bottom + GAP_Y * 1.6 } else { 0.0 }, 0.0f32);
@@ -483,5 +598,55 @@ mod tests {
         let ys: std::collections::BTreeSet<i32> = pos.values().map(|p| p.y as i32).collect();
         assert!(xs.len() >= 3 && ys.len() >= 3, "{xs:?} {ys:?}");
         assert_eq!(crossings(&pos, &sizes, &edges), 0);
+    }
+
+    /// Datenbank mit vielen Tabellen: Baum-/Netzstruktur wie in grossen Anwendungen.
+    fn big(n: usize) -> (Vec<(String, Vec2)>, Vec<(String, String)>) {
+        let sizes: Vec<(String, Vec2)> = (0..n).map(|i| (format!("t{i}"), vec2(170.0, 28.0 + 17.0 * (2 + i % 9) as f32))).collect();
+        let mut edges = Vec::new();
+        let mut seed = 12345u64;
+        let mut next = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
+        // etwa jede zehnte Tabelle ohne Beziehung, sonst 1-3 Verweise auf frueher angelegte Tabellen
+        for i in 1..n {
+            if i % 10 == 0 {
+                continue;
+            }
+            for _ in 0..1 + next() % 3 {
+                let to = (next() % i as u64) as usize;
+                edges.push((format!("t{i}"), format!("t{to}")));
+            }
+        }
+        (sizes, edges)
+    }
+
+    #[test]
+    fn many_tables_are_placed_without_overlap() {
+        let (sizes, edges) = big(700);
+        let pos = layout(&sizes, &edges);
+        assert_eq!(pos.len(), sizes.len());
+        let mut rects: Vec<eframe::egui::Rect> = sizes.iter().map(|(n, s)| eframe::egui::Rect::from_min_size(pos[n], *s)).collect();
+        rects.sort_by(|a, b| a.min.x.total_cmp(&b.min.x));
+        for (i, a) in rects.iter().enumerate() {
+            for b in rects[i + 1..].iter().take_while(|b| b.min.x < a.max.x) {
+                assert!(!a.intersects(*b), "{a:?} / {b:?}");
+            }
+        }
+    }
+
+    /// Handmessung: `cargo test --release layout_timing -- --ignored --nocapture`
+    #[test]
+    #[ignore = "manual benchmark"]
+    fn layout_timing() {
+        for n in [30, 100, 300, 1000, 3000, 10_000] {
+            let (sizes, edges) = big(n);
+            let t = std::time::Instant::now();
+            let pos = layout(&sizes, &edges);
+            println!("{n} Tabellen, {} Beziehungen: {:?} ({} platziert)", edges.len(), t.elapsed(), pos.len());
+        }
     }
 }

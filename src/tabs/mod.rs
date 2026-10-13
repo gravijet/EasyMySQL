@@ -17,6 +17,7 @@ use crate::db::{Db, Schema};
 use crate::keymap::Cmd;
 use eframe::egui;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 /// Aktionen, die eine Registerkarte beim Hauptfenster anfordert.
 pub enum Action {
@@ -63,17 +64,22 @@ pub enum Action {
 
 #[derive(Default)]
 pub struct SchemaCache {
-    map: HashMap<String, Schema>,
+    map: HashMap<String, Arc<Schema>>,
     errors: HashMap<String, String>,
 }
 
 impl SchemaCache {
     pub fn get(&mut self, db: Option<&Db>, name: &str) -> Option<&Schema> {
+        self.get_arc(db, name).map(|s| &**s)
+    }
+
+    /// Geteilter Zugriff ohne Kopie (Strukturen grosser Datenbanken sind gross).
+    pub fn get_arc(&mut self, db: Option<&Db>, name: &str) -> Option<&Arc<Schema>> {
         if !self.map.contains_key(name) && !self.errors.contains_key(name) {
             let db = db?;
             match db.schema(name) {
                 Ok(s) => {
-                    self.map.insert(name.to_string(), s);
+                    self.map.insert(name.to_string(), Arc::new(s));
                 }
                 Err(e) => {
                     self.errors.insert(name.to_string(), e);
@@ -106,8 +112,8 @@ pub struct Ctx<'a> {
 }
 
 impl Ctx<'_> {
-    pub fn schema(&mut self, name: &str) -> Option<Schema> {
-        self.schemas.get(self.db, name).cloned()
+    pub fn schema(&mut self, name: &str) -> Option<Arc<Schema>> {
+        self.schemas.get_arc(self.db, name).cloned()
     }
     pub fn error(&mut self, e: impl Into<String>) {
         self.actions.push(Action::Error(e.into()));
