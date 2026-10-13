@@ -41,6 +41,23 @@ struct ColDlg {
     after: Option<String>,
 }
 
+/// Kennzahlen und haeufigste Werte einer Spalte
+struct Stats {
+    rows: u64,
+    filled: u64,
+    distinct: u64,
+    min: Option<String>,
+    max: Option<String>,
+    avg: Option<String>,
+    top: Vec<(Option<String>, u64)>,
+}
+
+struct Analysis {
+    column: String,
+    rx: Option<std::sync::mpsc::Receiver<Result<Stats, String>>>,
+    result: Option<Result<Stats, String>>,
+}
+
 pub struct DataTab {
     pub db: String,
     pub table: String,
@@ -64,9 +81,12 @@ pub struct DataTab {
     insert: Option<Vec<(String, String, bool)>>,
     undo: Vec<Undo>,
     col_dlg: Option<ColDlg>,
+    analysis: Option<Analysis>,
     /// Nach dem Einfuegen zur letzten Zeile springen
     go_last: bool,
     select_last: bool,
+    /// Filter wurde gesetzt: im naechsten Bild neu laden
+    pending_reload: bool,
 }
 
 impl DataTab {
@@ -92,8 +112,10 @@ impl DataTab {
             insert: None,
             undo: Vec::new(),
             col_dlg: None,
+            analysis: None,
             go_last: false,
             select_last: false,
+            pending_reload: false,
         }
     }
 
@@ -283,6 +305,7 @@ impl DataTab {
         let Some(col) = info.columns.iter().find(|c| c.name == name).cloned() else { return };
         let full = self.full_name();
         match action {
+            ColumnAction::Analyze => self.start_analysis(cx, name, &col),
             ColumnAction::Sort(desc) => {
                 self.order = name;
                 self.desc = desc;
@@ -307,6 +330,118 @@ impl DataTab {
                 db: None,
                 sql: format!("ALTER TABLE {full} DROP COLUMN {}", q(&name)),
             }),
+        }
+    }
+
+    /// Kennzahlen im Hintergrund berechnen (bei grossen Tabellen dauert das)
+    fn start_analysis(&mut self, cx: &mut Ctx, name: String, col: &db::ColumnInfo) {
+        let Some(dbc) = cx.db else { return };
+        let (dbc, full, c) = (dbc.clone(), self.full_name(), q(&name));
+        let numeric = {
+            let t = col.col_type.to_lowercase();
+            ["int", "decimal", "numeric", "float", "double", "real", "bit"].iter().any(|k| t.contains(k))
+        };
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let run = || -> Result<Stats, String> {
+                let avg = if numeric { format!("CAST(AVG({c}) AS CHAR)") } else { "NULL".into() };
+                let r = dbc.rows(&format!("SELECT COUNT(*), COUNT({c}), COUNT(DISTINCT {c}), CAST(MIN({c}) AS CHAR), CAST(MAX({c}) AS CHAR), {avg} FROM {full}"), ())?;
+                let r = r.into_iter().next().ok_or("keine Daten")?;
+                let n = |i: usize| r[i].as_deref().and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
+                let top = dbc.rows(&format!("SELECT CAST({c} AS CHAR), COUNT(*) AS n FROM {full} GROUP BY {c} ORDER BY n DESC LIMIT 8"), ())?;
+                Ok(Stats {
+                    rows: n(0),
+                    filled: n(1),
+                    distinct: n(2),
+                    min: r[3].clone(),
+                    max: r[4].clone(),
+                    avg: r[5].clone(),
+                    top: top.into_iter().map(|t| (t[0].clone(), t[1].as_deref().and_then(|v| v.parse().ok()).unwrap_or(0))).collect(),
+                })
+            };
+            let _ = tx.send(run());
+        });
+        self.analysis = Some(Analysis { column: name, rx: Some(rx), result: None });
+    }
+
+    fn analysis_ui(&mut self, ctx: &egui::Context) {
+        let Some(a) = self.analysis.as_mut() else { return };
+        if let Some(rx) = &a.rx {
+            match rx.try_recv() {
+                Ok(r) => {
+                    a.result = Some(r);
+                    a.rx = None;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => ctx.request_repaint_after(std::time::Duration::from_millis(80)),
+                Err(_) => a.rx = None,
+            }
+        }
+        let pal = style::pal();
+        let t = crate::i18n::tr;
+        let mut open = true;
+        let mut filter: Option<String> = None;
+        egui::Window::new(crate::tr_format!("Spalte {}", "Column {}", a.column)).open(&mut open).collapsible(false).resizable(false).anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]).show(ctx, |ui| {
+            match &a.result {
+                None => {
+                    ui.horizontal(|ui| {
+                        ui.spinner();
+                        ui.label(crate::i18n::text("Wird gelesen …"));
+                    });
+                }
+                Some(Err(e)) => {
+                    ui.label(RichText::new(e).color(pal.error_text));
+                }
+                Some(Ok(s)) => {
+                    let pct = |n: u64| if s.rows == 0 { 0.0 } else { n as f64 * 100.0 / s.rows as f64 };
+                    egui::Grid::new("stats").num_columns(2).spacing([18.0, 4.0]).show(ui, |ui| {
+                        let mut row = |k: &str, v: String| {
+                            ui.label(RichText::new(k).color(pal.text_weak));
+                            ui.label(v);
+                            ui.end_row();
+                        };
+                        row(t("Zeilen", "Rows"), s.rows.to_string());
+                        row(t("Leer (NULL)", "Empty (NULL)"), format!("{} ({:.1} %)", s.rows - s.filled, pct(s.rows - s.filled)));
+                        row(t("Verschiedene Werte", "Distinct values"), s.distinct.to_string());
+                        row(t("Doppelt vorkommend", "Repeated"), (s.filled - s.distinct).to_string());
+                        if let Some(v) = &s.min {
+                            row(t("Kleinster Wert", "Smallest"), v.chars().take(60).collect());
+                        }
+                        if let Some(v) = &s.max {
+                            row(t("Größter Wert", "Largest"), v.chars().take(60).collect());
+                        }
+                        if let Some(v) = &s.avg {
+                            row(t("Durchschnitt", "Average"), v.chars().take(20).collect());
+                        }
+                    });
+                    if !s.top.is_empty() {
+                        ui.add_space(8.0);
+                        ui.label(RichText::new(t("Häufigste Werte", "Most frequent values")).strong());
+                        let most = s.top.first().map(|x| x.1).unwrap_or(1).max(1);
+                        for (v, n) in &s.top {
+                            let (r, resp) = ui.allocate_exact_size(egui::vec2(380.0, 22.0), egui::Sense::click());
+                            let w = (r.width() * *n as f32 / most as f32).max(2.0);
+                            ui.painter().rect_filled(egui::Rect::from_min_size(r.min, egui::vec2(w, r.height())), 3.0, pal.accent.gamma_multiply(if resp.hovered() { 0.55 } else { 0.35 }));
+                            let label = v.clone().map(|x| x.chars().take(40).collect::<String>()).unwrap_or_else(|| "NULL".into());
+                            ui.painter().text(egui::pos2(r.left() + 6.0, r.center().y), egui::Align2::LEFT_CENTER, label, egui::FontId::proportional(13.0), pal.text);
+                            ui.painter().text(egui::pos2(r.right() - 6.0, r.center().y), egui::Align2::RIGHT_CENTER, n.to_string(), egui::FontId::proportional(12.0), pal.text);
+                            if resp.on_hover_text(t("Klick zeigt diese Zeilen", "Click to show these rows")).clicked() {
+                                filter = Some(match v {
+                                    Some(x) => format!("{} = {}", q(&a.column), db::lit(x)),
+                                    None => format!("{} IS NULL", q(&a.column)),
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        });
+        if let Some(f) = filter {
+            self.filter = f;
+            self.offset = 0;
+            self.analysis = None;
+            self.pending_reload = true;
+        } else if !open {
+            self.analysis = None;
         }
     }
 
@@ -627,6 +762,10 @@ impl TabView for DataTab {
             }
         }
         let ctx = ui.ctx().clone();
+        self.analysis_ui(&ctx);
+        if std::mem::take(&mut self.pending_reload) {
+            self.reload(cx);
+        }
         self.col_dlg_ui(&ctx, cx);
         self.insert_ui(ui, cx);
     }

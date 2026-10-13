@@ -36,6 +36,7 @@ pub enum ColumnAction {
     Move(crate::db::Move),
     Duplicate,
     AddAfter,
+    Analyze,
     Sort(bool),
     Delete,
 }
@@ -147,6 +148,8 @@ pub fn show(
                         ui.separator();
                         item(ui, t("Spalte kopieren", "Duplicate column"), ColumnAction::Duplicate);
                         item(ui, t("Neue Spalte danach …", "New column after …"), ColumnAction::AddAfter);
+                        ui.separator();
+                        item(ui, t("Spalte analysieren …", "Analyze column …"), ColumnAction::Analyze);
                         ui.separator();
                         item(ui, t("Aufsteigend sortieren", "Sort ascending"), ColumnAction::Sort(false));
                         item(ui, t("Absteigend sortieren", "Sort descending"), ColumnAction::Sort(true));
