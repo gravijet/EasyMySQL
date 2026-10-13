@@ -287,6 +287,21 @@ pub const CHAPTERS: &[Chapter] = &[
                 ],
             },
             Section {
+                id: "sql-pruefen",
+                title: "Fehler erkennen und korrigieren",
+                blocks: &[
+                    P("Beim Tippen prüft der Editor die Anweisung. Fehler sind rot, Hinweise gelb unterkringelt, am Zeilenrand steht ein Punkt. Fährt man mit der Maus darüber, erscheint die Erklärung und, falls möglich, ein Vorschlag."),
+                    List(&[
+                        "Erkannt werden Tippfehler in Schlüsselwörtern (SELCT, FORM, WEHRE), fehlende Klammern, Anführungszeichen, Kommas und Semikolons, == statt = und = NULL statt IS NULL.",
+                        "Ist eine Datenbank gewählt, findet die Prüfung auch unbekannte Tabellen und Spalten und schlägt ähnliche Namen vor („Meinten Sie vorname?“).",
+                        "Der Knopf „Korrigieren“ oder das Tastenkürzel bessert alle Fehler mit Vorschlag selbst aus. Danach kurz prüfen, ob die Anweisung noch das Gewünschte tut.",
+                        "Prozeduren und Trigger werden nicht geprüft. Unter Einstellungen → Editor lässt sich die Prüfung ausschalten.",
+                    ]),
+                    Keys(&[Cmd::FixAll]),
+                    Open("Einstellungen zum Editor", Settings("editor")),
+                ],
+            },
+            Section {
                 id: "maus",
                 title: "Scrollen mit der Maus",
                 blocks: &[
@@ -810,6 +825,7 @@ pub const CHAPTERS: &[Chapter] = &[
                         Cmd::QueryBuilder,
                         Cmd::Backups,
                         Cmd::Format,
+                        Cmd::FixAll,
                         Cmd::CopyJava,
                         Cmd::FontLarger,
                         Cmd::FontSmaller,
