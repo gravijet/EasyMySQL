@@ -266,13 +266,13 @@ impl ErTab {
         };
         if let Some((pos, routes)) = keep {
             // Aktualisierung: Anordnung behalten, nur neue Tabellen platzieren
-            self.set_schema(Some(s.clone()));
+            self.set_schema(Some(s));
             self.pos = pos;
             self.routes = routes;
-            if let Some(raw) = self.raw.clone() {
+            if let (Some(raw), Some(view)) = (self.raw.clone(), self.schema.clone()) {
                 self.pos.retain(|k, _| raw.table(k).is_some());
+                self.place_new_tables(&view);
             }
-            self.place_new_tables(&s);
             return;
         }
         self.set_schema(Some(s));
@@ -464,8 +464,7 @@ impl TabView for ErTab {
             // noch nie (erfolgreich) geladen
             self.loaded_for.clear();
         } else {
-            cx.schemas.invalidate(db);
-            self.waiting = Some(Some((std::mem::take(&mut self.pos), std::mem::take(&mut self.routes))));
+            self.waiting = Some(Some((self.pos.clone(), self.routes.clone())));
             self.finish_load(cx);
         }
     }
@@ -482,6 +481,7 @@ impl TabView for ErTab {
                 self.db = d;
             }
             if crate::icons::button(ui, crate::icons::Icon::Refresh, crate::i18n::text("Neu einlesen")).clicked() {
+                cx.schemas.invalidate(&self.db);
                 self.schema_changed(&self.db.clone(), cx);
             }
             ui.separator();

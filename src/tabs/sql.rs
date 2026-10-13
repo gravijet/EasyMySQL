@@ -614,7 +614,7 @@ impl TabView for SqlTab {
                 ui.ctx().request_repaint_after(Duration::from_millis(300));
             }
         }
-        // Aenderungen von aussen (z. B. VS Code) uebernehmen
+        // Aenderungen von aussen (anderer Editor) uebernehmen
         if let (Some(f), false) = (&self.file, self.dirty()) {
             if self.file_check.is_none_or(|last| last.elapsed() >= Duration::from_secs(2)) {
                 self.file_check = Some(Instant::now());
