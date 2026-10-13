@@ -192,16 +192,20 @@ impl EasyApp {
         }
         if let Some((d, with_data)) = export {
             if let Some(p) = rfd::FileDialog::new().add_filter(crate::i18n::text("SQL-Datei"), &["sql"]).set_file_name(format!("{d}.sql")).save_file() {
-                match self.db.as_ref().map(|dbc| dbc.dump(&d, with_data)) {
-                    Some(Ok(text)) => match std::fs::write(&p, text) {
-                        Ok(_) => {
-                            self.toast(crate::tr_format!("Gespeichert: {}", "Saved: {}", p.display()));
-                            self.dialogs.pop();
-                        }
-                        Err(e) => self.error(e.to_string()),
-                    },
-                    Some(Err(e)) => self.error(e),
-                    None => {}
+                if let Some(dbc) = self.db.clone() {
+                    let (tx, rx) = std::sync::mpsc::channel();
+                    std::thread::spawn(move || {
+                        let r = std::fs::File::create(&p).map_err(|e| e.to_string()).and_then(|f| {
+                            let mut w = std::io::BufWriter::new(f);
+                            dbc.dump_to(&d, with_data, &mut w)?;
+                            std::io::Write::flush(&mut w).map_err(|e| e.to_string())?;
+                            Ok(p)
+                        });
+                        let _ = tx.send(r);
+                    });
+                    self.export_job = Some(rx);
+                    self.dialogs.pop();
+                    self.toast(crate::i18n::text("Export läuft …"));
                 }
             }
         }

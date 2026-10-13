@@ -70,6 +70,7 @@ pub struct EasyApp {
     quitting: bool,
     last_state: State,
     backup_job: Option<Receiver<Result<String, String>>>,
+    export_job: Option<Receiver<Result<PathBuf, String>>>,
     backup_last_check: Option<Instant>,
     check_job: Option<Receiver<Result<crate::repair::CheckResult, String>>>,
     myisam_hint_done: bool,
@@ -163,6 +164,7 @@ impl EasyApp {
             quitting: false,
             last_state: State::Stopped,
             backup_job: None,
+            export_job: None,
             backup_last_check: None,
             check_job: None,
             myisam_hint_done: false,
@@ -300,6 +302,16 @@ impl EasyApp {
                 match r {
                     Ok(m) => self.server.log(m),
                     Err(e) => self.toast_error(crate::tr_format!("Automatische Sicherung fehlgeschlagen: {e}", "Automatic backup failed: {e}")),
+                }
+            }
+        }
+        if let Some(rx) = &self.export_job {
+            ctx.request_repaint_after(Duration::from_millis(300));
+            if let Ok(r) = rx.try_recv() {
+                self.export_job = None;
+                match r {
+                    Ok(p) => self.toast(crate::tr_format!("Gespeichert: {}", "Saved: {}", p.display())),
+                    Err(e) => self.toast_error(e),
                 }
             }
         }

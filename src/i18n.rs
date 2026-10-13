@@ -878,6 +878,7 @@ impl Language {
             "kein Primärschlüssel" => "no primary key",
             "kein Zugriff" => "no access",
             "Wird gelesen …" => "Loading …",
+            "Export läuft …" => "Exporting …",
             "keine Treffer" => "no matches",
             "kleinster Wert" => "smallest value",
             "kleinster der Werte" => "least value",

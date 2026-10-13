@@ -181,13 +181,6 @@ pub fn smart_lit(s: &str) -> String {
     }
 }
 
-pub fn opt_lit(v: &Option<String>) -> String {
-    match v {
-        None => "NULL".into(),
-        Some(s) => lit(s),
-    }
-}
-
 #[derive(Clone)]
 pub struct Db {
     pub pool: Pool,
@@ -291,62 +284,75 @@ impl Db {
             .unwrap_or_default())
     }
 
-    /// Erzeugt ein SQL-Skript der Datenbank (Struktur, optional mit Daten).
+    /// SQL-Export als Text (nur sinnvoll ohne Daten, z. B. fuer CREATE TABLE).
     pub fn dump(&self, db: &str, with_data: bool) -> Result<String, String> {
+        let mut out = Vec::new();
+        self.dump_to(db, with_data, &mut out)?;
+        Ok(String::from_utf8_lossy(&out).into_owned())
+    }
+
+    /// SQL-Export Zeile fuer Zeile in `out` schreiben: auch riesige Tabellen belegen nur den
+    /// Speicher eines Einfuege-Blocks (200 Zeilen).
+    pub fn dump_to(&self, db: &str, with_data: bool, out: &mut dyn std::io::Write) -> Result<(), String> {
+        const BATCH: usize = 200;
+        let w = |e: std::io::Error| e.to_string();
         let schema = self.schema(db)?;
-        let mut out = String::new();
-        out.push_str(&format!(
-            "-- EasyMySQL SQL-Export\n-- Datenbank: {db}\n-- Server: {}\n\n",
-            self.version
-        ));
-        out.push_str("SET FOREIGN_KEY_CHECKS = 0;\n\n");
-        out.push_str(&format!(
-            "CREATE DATABASE IF NOT EXISTS {};\nUSE {};\n\n",
-            q(db),
-            q(db)
-        ));
+        write!(out, "-- EasyMySQL SQL-Export\n-- Datenbank: {db}\n-- Server: {}\n\n", self.version).map_err(w)?;
+        write!(out, "SET FOREIGN_KEY_CHECKS = 0;\n\nCREATE DATABASE IF NOT EXISTS {};\nUSE {};\n\n", q(db), q(db)).map_err(w)?;
         for t in schema.ordered_tables() {
             let info = schema.table(&t).unwrap();
             let create = self.create_statement(db, &t)?;
-            out.push_str(&format!("-- {}: {}\n", if info.is_view { crate::i18n::text("Sicht") } else { crate::i18n::text("Tabelle") }, t));
+            let kind = if info.is_view { "VIEW" } else { "TABLE" };
+            writeln!(out, "-- {}: {t}", if info.is_view { crate::i18n::text("Sicht") } else { crate::i18n::text("Tabelle") }).map_err(w)?;
             // Nur bei einer vollstaendigen Sicherung vorhandene Tabellen ersetzen
             if with_data {
-                if info.is_view {
-                    out.push_str(&format!("DROP VIEW IF EXISTS {};\n", q(&t)));
-                } else {
-                    out.push_str(&format!("DROP TABLE IF EXISTS {};\n", q(&t)));
+                writeln!(out, "DROP {kind} IF EXISTS {};", q(&t)).map_err(w)?;
+            }
+            write!(out, "{create};\n\n").map_err(w)?;
+            if !with_data || info.is_view {
+                continue;
+            }
+            let mut conn = self.conn()?;
+            let mut res = conn.query_iter(format!("SELECT * FROM {}.{}", q(db), q(&t))).map_err(err_text)?;
+            let cols: Vec<String> = res.columns().as_ref().iter().map(|c| q(&c.name_str())).collect();
+            let mut batch = String::new();
+            let mut n = 0usize;
+            while let Some(row) = res.next() {
+                let row = row.map_err(err_text)?;
+                batch.push_str(if n == 0 { "" } else { ",\n" });
+                if n == 0 {
+                    batch.push_str(&format!("INSERT INTO {} ({}) VALUES\n", q(&t), cols.join(", ")));
+                }
+                let vals: Vec<String> = row.unwrap().iter().map(dump_literal).collect();
+                batch.push_str(&format!("  ({})", vals.join(", ")));
+                n += 1;
+                if n == BATCH {
+                    batch.push_str(";\n");
+                    out.write_all(batch.as_bytes()).map_err(w)?;
+                    batch.clear();
+                    n = 0;
                 }
             }
-            out.push_str(&create);
-            out.push_str(";\n\n");
-            if with_data && !info.is_view {
-                let rs = self.query(&format!("SELECT * FROM {}.{}", q(db), q(&t)))?;
-                if !rs.rows.is_empty() {
-                    let cols: Vec<String> = rs.columns.iter().map(|c| q(c)).collect();
-                    for chunk in rs.rows.chunks(200) {
-                        out.push_str(&format!(
-                            "INSERT INTO {} ({}) VALUES\n",
-                            q(&t),
-                            cols.join(", ")
-                        ));
-                        let vals: Vec<String> = chunk
-                            .iter()
-                            .map(|r| {
-                                format!(
-                                    "  ({})",
-                                    r.iter().map(opt_lit).collect::<Vec<_>>().join(", ")
-                                )
-                            })
-                            .collect();
-                        out.push_str(&vals.join(",\n"));
-                        out.push_str(";\n");
-                    }
-                    out.push('\n');
-                }
+            if n > 0 {
+                batch.push_str(";\n");
+                out.write_all(batch.as_bytes()).map_err(w)?;
             }
+            out.write_all(b"\n").map_err(w)?;
         }
-        out.push_str("SET FOREIGN_KEY_CHECKS = 1;\n");
-        Ok(out)
+        out.write_all(b"SET FOREIGN_KEY_CHECKS = 1;\n").map_err(w)?;
+        Ok(())
+    }
+}
+
+/// SQL-Wert fuer den Export; Binaerdaten (kein gueltiges UTF-8) als Hex, damit nichts verfaelscht wird.
+fn dump_literal(v: &Value) -> String {
+    match v {
+        Value::NULL => "NULL".into(),
+        Value::Bytes(b) if std::str::from_utf8(b).is_err() => {
+            let hex: String = b.iter().map(|x| format!("{x:02X}")).collect();
+            format!("X'{hex}'")
+        }
+        _ => lit(&value_to_string(v).unwrap_or_default()),
     }
 }
 
@@ -361,6 +367,14 @@ mod tests {
         let e = err_text("MySqlError { ERROR 1146 (42S02): Table 'a.b' doesn't exist }");
         assert!(e.starts_with("ERROR 1146 (42S02): Table 'a.b' doesn't exist\nHint: "), "{e}");
         assert_eq!(err_text("anderer Fehler"), "anderer Fehler");
+    }
+
+    #[test]
+    fn dump_literals() {
+        assert_eq!(dump_literal(&Value::NULL), "NULL");
+        assert_eq!(dump_literal(&Value::Bytes(b"O'Neil".to_vec())), "'O''Neil'");
+        assert_eq!(dump_literal(&Value::Bytes(vec![0xFF, 0x00, 0x1A])), "X'FF001A'");
+        assert_eq!(dump_literal(&Value::Int(-5)), "'-5'");
     }
 
     #[test]
