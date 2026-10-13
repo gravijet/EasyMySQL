@@ -63,7 +63,6 @@ impl ConnInfo {
     }
 }
 
-
 pub fn value_to_string(v: &Value) -> Option<String> {
     match v {
         Value::NULL => None,
@@ -189,15 +188,12 @@ pub fn opt_lit(v: &Option<String>) -> String {
     }
 }
 
-
 #[derive(Clone)]
 pub struct Db {
     pub pool: Pool,
     pub info: ConnInfo,
     pub version: String,
 }
-
-
 
 fn s(v: &Option<String>) -> String {
     v.clone().unwrap_or_default()
@@ -263,7 +259,6 @@ impl Db {
             .map(|r| s(&r[0]))
             .collect())
     }
-
 
     pub fn indexes(&self, db: &str, table: &str) -> Result<Vec<IndexInfo>, String> {
         let rows = self.rows(
@@ -355,9 +350,7 @@ impl Db {
     }
 }
 
-
 pub const SYSTEM_DATABASES: &[&str] = &["information_schema", "performance_schema", "mysql", "sys"];
-
 
 #[cfg(test)]
 mod tests {

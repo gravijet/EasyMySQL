@@ -7,6 +7,24 @@ use crate::style;
 use eframe::egui::{self, RichText};
 use mysql::{Params, Value};
 
+/// Laufende Seitenabfrage mit eigener Verbindung, damit sie sich bei Bedarf abbrechen laesst.
+struct PageJob {
+    rx: std::sync::mpsc::Receiver<Result<db::ResultSet, String>>,
+    conn_id: std::sync::Arc<std::sync::atomic::AtomicU32>,
+    info: db::ConnInfo,
+}
+
+impl Drop for PageJob {
+    /// Schliessen oder Neuladen bricht eine noch laufende Abfrage auf dem Server ab.
+    fn drop(&mut self) {
+        let id = self.conn_id.load(std::sync::atomic::Ordering::Relaxed);
+        if id != 0 && matches!(self.rx.try_recv(), Err(std::sync::mpsc::TryRecvError::Empty)) {
+            let info = self.info.clone();
+            std::thread::spawn(move || db::kill_query(&info, id));
+        }
+    }
+}
+
 pub struct DataTab {
     pub db: String,
     pub table: String,
@@ -20,6 +38,8 @@ pub struct DataTab {
     total: Option<u64>,
     /// Zaehlen laeuft im Hintergrund: COUNT(*) auf einer riesigen Tabelle dauert Sekunden
     count_job: Option<std::sync::mpsc::Receiver<Option<u64>>>,
+    /// Die Zeilen werden im Hintergrund gelesen (Sortieren einer riesigen Tabelle dauert)
+    page_job: Option<PageJob>,
     info: Option<TableInfo>,
     loaded: bool,
     info_wait: bool,
@@ -42,6 +62,7 @@ impl DataTab {
             rows: Vec::new(),
             total: None,
             count_job: None,
+            page_job: None,
             info: None,
             loaded: false,
             info_wait: false,
@@ -89,16 +110,21 @@ impl DataTab {
             sql.push_str(&format!(" ORDER BY {}{}", q(&self.order), if self.desc { " DESC" } else { "" }));
         }
         sql.push_str(&format!(" LIMIT {}, {}", self.offset, self.limit));
-        match dbc.query(&sql) {
-            Ok(rs) => {
-                self.columns = rs.columns;
-                self.rows = rs.rows;
-            }
-            Err(e) => {
-                self.error = Some(e);
-                self.rows.clear();
-            }
-        }
+        let (tx, rx) = std::sync::mpsc::channel();
+        let conn_id = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let (db, id) = (dbc.clone(), conn_id.clone());
+        std::thread::spawn(move || {
+            let r = db.new_conn().and_then(|mut conn| {
+                id.store(conn.connection_id(), std::sync::atomic::Ordering::Relaxed);
+                let mut out = db::run_script(&mut conn, &sql);
+                match out.error.take() {
+                    Some(e) => Err(e),
+                    None => Ok(out.sets.into_iter().next().unwrap_or_default()),
+                }
+            });
+            let _ = tx.send(r);
+        });
+        self.page_job = Some(PageJob { rx, conn_id, info: dbc.info.clone() });
         self.total = None;
         let pool = dbc.pool.clone();
         let sql = format!("SELECT COUNT(*) FROM {}{}", self.full_name(), self.where_clause());
@@ -299,6 +325,25 @@ impl TabView for DataTab {
         } else if self.info_wait {
             self.update_info(cx);
         }
+        if let Some(job) = &self.page_job {
+            match job.rx.try_recv() {
+                Ok(r) => {
+                    match r {
+                        Ok(rs) => {
+                            self.columns = rs.columns;
+                            self.rows = rs.rows;
+                        }
+                        Err(e) => {
+                            self.error = Some(e);
+                            self.rows.clear();
+                        }
+                    }
+                    self.page_job = None;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => ui.ctx().request_repaint_after(std::time::Duration::from_millis(50)),
+                Err(_) => self.page_job = None,
+            }
+        }
         if let Some(rx) = &self.count_job {
             match rx.try_recv() {
                 Ok(n) => {
@@ -381,6 +426,10 @@ impl TabView for DataTab {
         });
         if let Some(e) = &self.error {
             ui.label(RichText::new(crate::tr_format!("Fehler: {e}", "Error: {e}")).color(style::pal().error_text));
+        }
+        if self.page_job.is_some() {
+            ui.label(RichText::new(crate::i18n::text("Wird gelesen …")).color(style::pal().text_weak));
+            return;
         }
         let editable = !self.info.as_ref().map(|i| i.is_view).unwrap_or(false);
         let events = grid::show(ui, ("datagrid", &self.db, &self.table), &self.columns, &self.rows, editable, &mut self.grid);

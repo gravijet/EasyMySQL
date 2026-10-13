@@ -4,9 +4,7 @@
 // - Export als SVG, SQL-Skript (DDL)
 
 use super::{Action, Ctx, TabView};
-
 use crate::db::{ForeignKey, Schema, TableInfo, q};
-
 use crate::style;
 
 use eframe::egui::{
@@ -14,9 +12,7 @@ use eframe::egui::{
 };
 
 use std::collections::HashMap;
-
 use std::fmt::Write as _;
-
 use std::sync::Arc;
 
 mod draw;
@@ -30,20 +26,12 @@ use link::*;
 use notation::*;
 use routes::*;
 
-
 const HEADER_H: f32 = 22.0;
-
 const ROW_H: f32 = 17.0;
-
 const CHAR_W: f32 = 6.8;
-
-
 const LINE_HI: Color32 = Color32::from_rgb(0xE0, 0x6C, 0x00);
-
 const PK_COLOR: Color32 = Color32::from_rgb(0xB0, 0x80, 0x00);
-
 const FK_COLOR: Color32 = Color32::from_rgb(0x20, 0x60, 0xC0);
-
 
 #[derive(Clone, PartialEq)]
 enum Drag {
@@ -54,7 +42,6 @@ enum Drag {
     Link(String, String),
 }
 
-
 #[derive(Clone)]
 enum Menu {
     Table(String),
@@ -62,11 +49,9 @@ enum Menu {
     Background,
 }
 
-
 fn view_file() -> std::path::PathBuf {
     crate::workspace::internal_dir().join("layouts").join("ansicht.txt")
 }
-
 
 pub struct ErTab {
     pub db: String,
@@ -98,7 +83,6 @@ pub struct ErTab {
     route_cache: Option<RouteCache>,
     box_cache: Option<BoxCache>,
 }
-
 
 fn layout_file(db: &str) -> std::path::PathBuf {
     let safe: String = db
