@@ -896,15 +896,22 @@ impl SqlEditor {
                 .fixed_pos(pos)
                 .show(&ctx, |ui| {
                     egui::Frame::popup(&ctx.global_style()).inner_margin(egui::Margin::same(2)).show(ui, |ui| {
-                        ui.set_min_width(240.0);
-                        egui::ScrollArea::vertical().max_height(220.0).show(ui, |ui| {
+                        // Groesse selbst bestimmen: egui kennt die Inhaltshoehe erst im naechsten Bild
+                        let row = 24.0;
+                        let height = (p.items.len() as f32 * row).min(9.5 * row);
+                        let chars = p.items.iter().map(|i| i.label.chars().count()).max().unwrap_or(10) as f32;
+                        let detail = p.items.iter().map(|i| i.detail.chars().count() + i.kind.chars().count() + 5).max().unwrap_or(10) as f32;
+                        let width = (chars * font_size() * 0.62 + detail * 6.2 + 36.0).clamp(260.0, 640.0);
+                        ui.set_min_width(width);
+                        egui::ScrollArea::vertical().max_height(height).min_scrolled_height(height).auto_shrink([false, true]).show(ui, |ui| {
                             for (i, it) in p.items.iter().enumerate() {
                                 let sel = i == p.selected;
                                 let right = if it.detail.is_empty() { it.kind.to_string() } else { format!("{}  ·  {}", it.detail, it.kind) };
                                 let r = ui.add(
                                     egui::Button::selectable(sel, RichText::new(it.label.as_str()).monospace())
                                         .right_text(RichText::new(right).small().color(pal.text_weak))
-                                        .min_size(egui::vec2(236.0, 0.0)),
+                                        .wrap_mode(egui::TextWrapMode::Extend)
+                                        .min_size(egui::vec2(width - 8.0, row - 4.0)),
                                 );
                                 if sel {
                                     r.scroll_to_me(None);

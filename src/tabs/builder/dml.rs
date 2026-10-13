@@ -120,7 +120,16 @@ fn warn(ui: &mut egui::Ui, text: String) {
 
 /// Eingabe fuer INSERT, UPDATE und DELETE
 pub fn ui(ui: &mut egui::Ui, dml: &mut Dml, mode: Mode, query: &mut Query, env: &Env, id: egui::Id) {
-    // Zieltabelle
+    // Zieltabelle: zunaechst die der Abfrage, sonst die erste
+    if dml.table.is_empty() {
+        let first = match query.parts.first().and_then(|p| p.select.sources.first()).map(|s| &s.from) {
+            Some(super::model::From::Table(t)) if env.tables.contains(t) => Some(t.clone()),
+            _ => env.tables.first().cloned(),
+        };
+        if let Some(t) = first {
+            dml.set_table(&t, env);
+        }
+    }
     ui.horizontal(|ui| {
         super::keyword(ui, match mode {
             Mode::Insert => "INSERT INTO",
@@ -176,7 +185,7 @@ pub fn ui(ui: &mut egui::Ui, dml: &mut Dml, mode: Mode, query: &mut Query, env: 
                         for (ri, row) in dml.rows.iter_mut().enumerate() {
                             row.resize(n, String::new());
                             for (ci, v) in row.iter_mut().enumerate() {
-                                ui.add(egui::TextEdit::singleline(v).desired_width(110.0).hint_text(crate::i18n::text("leer = DEFAULT")).id_salt((id, ri, ci)));
+                                ui.add_sized([130.0, 22.0], egui::TextEdit::singleline(v).hint_text(crate::i18n::text("leer = DEFAULT")).id_salt((id, ri, ci)));
                             }
                             if super::remove_button(ui) {
                                 remove = Some(ri);

@@ -16,9 +16,13 @@ Closing the window leaves the server running in the system tray. Use **File → 
 
 ## Usage
 
-- Write and run SQL, inspect execution plans, and export results as CSV, JSON or SQL.
+- Write and run SQL with context-aware suggestions, typo and name checking (`Ctrl+.` fixes everything it can), formatting, and execution plans; export results as CSV, JSON or SQL.
 - Browse and edit tables, import SQL, and manage database structure.
+- Build queries visually, including INSERT, UPDATE and DELETE, with undo and a live preview.
 - Arrange ER diagrams and export them as SVG or SQL.
+- Open an integrated terminal (`Ctrl+\``) with several tabs; PowerShell, Command Prompt or the MariaDB console.
+- Preview images, PDF files and binary files directly from the project explorer.
+- Copy a table or a query as ready-to-run Java (JDBC) code.
 - Manage automatic backups and restores under **Server → Backups & repair**.
 - Open the searchable manual with `F1`.
 

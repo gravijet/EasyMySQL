@@ -313,7 +313,11 @@ mod tests {
     /// Erzeugter Code muss mit javac uebersetzbar sein (nur wenn javac vorhanden ist).
     #[test]
     fn generated_code_compiles() {
-        if std::process::Command::new("javac").arg("-version").output().is_err() {
+        // Records und Textbloecke brauchen mindestens Java 17
+        let Ok(version) = std::process::Command::new("javac").arg("-version").output() else { return };
+        let text = format!("{}{}", String::from_utf8_lossy(&version.stdout), String::from_utf8_lossy(&version.stderr));
+        let major: u32 = text.split_whitespace().nth(1).and_then(|v| v.split('.').next()).and_then(|v| v.parse().ok()).unwrap_or(0);
+        if major < 17 {
             return;
         }
         let dir = std::env::temp_dir().join(format!("easymysql-java-{}", std::process::id()));

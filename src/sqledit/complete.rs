@@ -468,19 +468,21 @@ pub fn suggest(text: &str, cursor: usize, env: &Env, force: bool) -> Option<Sugg
 /// Filtern, ordnen, Doppelte entfernen. None, wenn nichts (Sinnvolles) uebrig bleibt.
 fn rank_items(items: Vec<(u8, Item)>, word: &str, qualified: bool, force: bool) -> Option<Vec<Item>> {
     let name_like = |k: &str| k == crate::i18n::text("Tabelle") || k == crate::i18n::text("Spalte") || k == crate::i18n::text("Datenbank") || k == crate::i18n::text("Alias");
-    let mut ranked: Vec<(u8, u8, String, Item)> = items
+    let mut ranked: Vec<(u8, u8, u8, String, Item)> = items
         .into_iter()
         .filter_map(|(prio, item)| {
             let r = rank(&item.label, word).or_else(|| (!qualified).then(|| rank(&item.label.replace('`', ""), word)).flatten())?;
             let order = if name_like(item.kind) { item.label.to_lowercase() } else { String::new() };
-            Some((prio, r, order, item))
+            // Genau das getippte Wort (ohne Beachtung der Schreibweise) steht ganz oben
+            let exact = u8::from(word.is_empty() || !item.insert.trim_end_matches("()").eq_ignore_ascii_case(word));
+            Some((exact, prio, r, order, item))
         })
         .collect();
     // Stabil: Schluesselwoerter und Vorlagen behalten ihre Reihenfolge, Namen sind alphabetisch
-    ranked.sort_by(|a, b| (a.0, a.1, &a.2).cmp(&(b.0, b.1, &b.2)));
+    ranked.sort_by(|a, b| (a.0, a.1, a.2, &a.3).cmp(&(b.0, b.1, b.2, &b.3)));
     let mut seen = std::collections::HashSet::new();
     let mut out: Vec<Item> = Vec::new();
-    for (_, _, _, it) in ranked {
+    for (_, _, _, _, it) in ranked {
         if seen.insert((it.label.clone(), it.kind)) {
             out.push(it);
         }
