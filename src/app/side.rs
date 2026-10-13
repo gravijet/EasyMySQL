@@ -495,7 +495,7 @@ impl EasyApp {
                     continue;
                 }
                 let title = if *d == self.current_db { RichText::new(d).strong() } else { RichText::new(d) };
-                let resp = egui::CollapsingHeader::new(title).id_salt(("db", d)).show(ui, |ui| {
+                let (hr, _) = tree_node(ui, ui.make_persistent_id(("db", d)), Icon::Database, pal.accent, title, |ui| {
                     let schema = self.schemas.get_arc(Some(dbc), d).cloned();
                     let loading = self.schemas.is_loading(d);
                     match schema {
@@ -515,26 +515,24 @@ impl EasyApp {
                                     }
                                 }
                                 let label = if t.is_view { RichText::new(&t.name).italics() } else { RichText::new(&t.name) };
-                                let h = egui::CollapsingHeader::new(label).id_salt(("t", d, &t.name)).show(ui, |ui| {
+                                let (icon, tint) = if t.is_view { (Icon::Layers, pal.syn_type) } else { (Icon::Table, pal.text_weak) };
+                                let (hr, body) = tree_node(ui, ui.make_persistent_id(("t", d, &t.name)), icon, tint, label, |ui| {
                                     for c in &t.columns {
                                         ui.horizontal(|ui| {
-                                            let (tag, color) = if c.is_pk() {
-                                                ("PK", Color32::from_rgb(0xC0, 0x90, 0x10))
+                                            let (r, _) = ui.allocate_exact_size(vec2(14.0, 14.0), Sense::hover());
+                                            if c.is_pk() {
+                                                icons::paint(ui.painter(), r, Icon::Key, Color32::from_rgb(0xD9, 0xA4, 0x1E));
                                             } else if schema.is_fk_column(&t.name, &c.name) {
-                                                ("FK", Color32::from_rgb(0x40, 0x80, 0xD0))
-                                            } else {
-                                                ("", pal.text_weak)
-                                            };
-                                            ui.add_sized([18.0, 14.0], egui::Label::new(RichText::new(tag).small().color(color)));
+                                                icons::paint(ui.painter(), r, Icon::Link, Color32::from_rgb(0x4F, 0x8F, 0xE0));
+                                            }
                                             ui.label(RichText::new(&c.name).small());
                                             ui.label(RichText::new(&c.col_type).small().color(pal.text_weak));
                                         });
                                     }
                                 });
-                                if h.body_response.is_none() {
-                                    closed_h = Some(h.header_response.rect.height());
+                                if body.is_none() {
+                                    closed_h = Some(TREE_ROW + ui.spacing().item_spacing.y);
                                 }
-                                let hr = h.header_response;
                                 if hr.clicked() {
                                     self.current_db = d.clone();
                                 }
@@ -591,7 +589,6 @@ impl EasyApp {
                         }
                     }
                 });
-                let hr = resp.header_response;
                 if hr.clicked() {
                     self.current_db = d.clone();
                 }
@@ -651,8 +648,7 @@ impl EasyApp {
             ui.add_space(6.0);
             match dlg {
                 ExplorerDlg::NewFile { name, .. } | ExplorerDlg::NewFolder { name, .. } | ExplorerDlg::Rename { name, .. } | ExplorerDlg::NewProject { name } => {
-                    let r = ui.add(egui::TextEdit::singleline(name).desired_width(300.0));
-                    r.request_focus();
+                    crate::tabs::name_field(ui, egui::Id::new("explorer-dlg-name"), name, 300.0, true);
                     if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                         ok = true;
                     }
@@ -729,6 +725,35 @@ impl EasyApp {
     }
 }
 
+/// Hoehe einer Baumzeile
+const TREE_ROW: f32 = 20.0;
+
+/// Knoten eines Baums: Pfeil, Symbol und Text. Liefert die Zeile zum Klicken (und fuer das Kontextmenue)
+/// und den Inhalt, wenn der Knoten aufgeklappt ist.
+fn tree_node<R>(ui: &mut egui::Ui, id: egui::Id, icon: Icon, tint: Color32, label: RichText, add_body: impl FnOnce(&mut egui::Ui) -> R) -> (egui::Response, Option<R>) {
+    let pal = style::pal();
+    let mut state = egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, false);
+    let weak = pal.text_weak;
+    let row = ui.horizontal(|ui| {
+        ui.set_min_height(TREE_ROW);
+        ui.spacing_mut().item_spacing.x = 4.0;
+        state.show_toggle_button(ui, move |ui, openness, resp| {
+            let r = Rect::from_center_size(resp.rect.center(), vec2(14.0, 14.0));
+            icons::paint(ui.painter(), r, if openness > 0.5 { Icon::ChevronDown } else { Icon::ChevronRight }, weak);
+        });
+        let (r, _) = ui.allocate_exact_size(vec2(16.0, 16.0), Sense::hover());
+        icons::paint(ui.painter(), r, icon, tint);
+        ui.add(egui::Label::new(label).sense(Sense::click()).selectable(false))
+    });
+    let label_resp = row.inner;
+    if label_resp.clicked() {
+        state.toggle(ui);
+        state.store(ui.ctx());
+    }
+    let body = state.show_body_indented(&row.response, ui, add_body);
+    (label_resp, body.map(|b| b.inner))
+}
+
 fn collapse_all(ctx: &egui::Context, n: &Node) {
     for c in n.children.iter().filter(|c| c.is_dir) {
         let id = egui::Id::new(("dir", &c.path));
@@ -739,20 +764,17 @@ fn collapse_all(ctx: &egui::Context, n: &Node) {
     }
 }
 
-/// Kleines Dateisymbol vor Eintraegen im Explorer
-fn file_icon(p: &egui::Painter, r: Rect, name: &str) {
+/// Symbol und Farbe einer Datei im Explorer
+fn file_icon(name: &str) -> (Icon, Color32) {
     let ext = name.rsplit('.').next().unwrap_or("").to_lowercase();
-    let color = match ext.as_str() {
-        "sql" => Color32::from_rgb(0xE3, 0x8C, 0x3B),
-        "md" | "txt" => Color32::from_rgb(0x51, 0x9A, 0xBA),
-        "csv" | "json" => Color32::from_rgb(0x89, 0xD1, 0x85),
-        _ => style::pal().text_weak,
-    };
-    let body = Rect::from_center_size(r.center(), vec2(9.0, 12.0));
-    p.rect_stroke(body, 1.0, egui::Stroke::new(1.2, color), egui::StrokeKind::Middle);
-    for k in 0..3 {
-        let y = body.top() + 4.0 + k as f32 * 2.5;
-        p.line_segment([pos2(body.left() + 2.0, y), pos2(body.right() - 2.0, y)], egui::Stroke::new(1.0, color));
+    match ext.as_str() {
+        "sql" => (Icon::FileCode, Color32::from_rgb(0xE3, 0x8C, 0x3B)),
+        "md" | "txt" | "log" => (Icon::FileText, Color32::from_rgb(0x51, 0x9A, 0xBA)),
+        "csv" | "tsv" | "xlsx" | "xls" => (Icon::FileSheet, Color32::from_rgb(0x6C, 0xBE, 0x6A)),
+        "json" | "xml" | "yml" | "yaml" => (Icon::FileJson, Color32::from_rgb(0xD6, 0xB8, 0x4E)),
+        "png" | "jpg" | "jpeg" | "jfif" | "gif" | "bmp" | "webp" | "ico" | "svg" => (Icon::FileImage, Color32::from_rgb(0xA0, 0x7C, 0xD6)),
+        "pdf" => (Icon::FileText, Color32::from_rgb(0xE0, 0x5A, 0x52)),
+        _ => (Icon::File, style::pal().text_weak),
     }
 }
 
@@ -769,7 +791,9 @@ fn draw_node(ui: &mut egui::Ui, n: &Node, depth: usize, active: Option<&Path>, o
         }
         let chev = Rect::from_center_size(pos2(r.left() + indent + 6.0, r.center().y), vec2(14.0, 14.0));
         icons::paint(ui.painter(), chev, if state.is_open() { Icon::ChevronDown } else { Icon::ChevronRight }, pal.text_weak);
-        ui.painter().text(pos2(r.left() + indent + 18.0, r.center().y), egui::Align2::LEFT_CENTER, &n.name, egui::FontId::proportional(13.0), pal.text);
+        let folder = Rect::from_center_size(pos2(r.left() + indent + 26.0, r.center().y), vec2(16.0, 16.0));
+        icons::paint(ui.painter(), folder, if state.is_open() { Icon::FolderOpen } else { Icon::Folder }, Color32::from_rgb(0xDC, 0xB6, 0x7A));
+        ui.painter().text(pos2(r.left() + indent + 40.0, r.center().y), egui::Align2::LEFT_CENTER, &n.name, egui::FontId::proportional(13.0), pal.text);
         if resp.clicked() {
             state.toggle(ui);
         }
@@ -787,8 +811,9 @@ fn draw_node(ui: &mut egui::Ui, n: &Node, depth: usize, active: Option<&Path>, o
         } else if resp.hovered() {
             ui.painter().rect_filled(r, 0.0, pal.hover);
         }
-        file_icon(ui.painter(), Rect::from_center_size(pos2(r.left() + indent + 24.0, r.center().y), vec2(14.0, 16.0)), &n.name);
-        ui.painter().text(pos2(r.left() + indent + 34.0, r.center().y), egui::Align2::LEFT_CENTER, &n.name, egui::FontId::proportional(13.0), pal.text);
+        let (icon, tint) = file_icon(&n.name);
+        icons::paint(ui.painter(), Rect::from_center_size(pos2(r.left() + indent + 26.0, r.center().y), vec2(16.0, 16.0)), icon, tint);
+        ui.painter().text(pos2(r.left() + indent + 40.0, r.center().y), egui::Align2::LEFT_CENTER, &n.name, egui::FontId::proportional(13.0), pal.text);
         if resp.clicked() {
             *open = Some(n.path.clone());
         }

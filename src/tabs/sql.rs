@@ -433,8 +433,7 @@ impl SqlTab {
                     .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
                     .show(ctx, |ui| {
                         ui.label(crate::tr_format!("Im Projekt „{}“:", "In project “{}”:", workspace::dir_name(project)));
-                        let r = ui.add(egui::TextEdit::singleline(name).desired_width(260.0));
-                        r.request_focus();
+                        let r = super::name_field(ui, egui::Id::new("save-as-name"), name, 260.0, true);
                         if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                             ok = true;
                         }

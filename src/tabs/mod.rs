@@ -170,6 +170,21 @@ impl Ctx<'_> {
     }
 }
 
+/// Einzeiliges Namensfeld: beim Oeffnen ist der Name markiert (bei `keep_extension` ohne Endung),
+/// sodass man sofort lostippen kann.
+pub fn name_field(ui: &mut egui::Ui, id: egui::Id, text: &mut String, width: f32, keep_extension: bool) -> egui::Response {
+    use egui::text::{CCursor, CCursorRange};
+    let ctx = ui.ctx().clone();
+    if !ctx.memory(|m| m.has_focus(id)) {
+        let end = if keep_extension { text.rfind('.').filter(|&i| i > 0).unwrap_or(text.len()) } else { text.len() };
+        let mut state = egui::TextEdit::load_state(&ctx, id).unwrap_or_default();
+        state.cursor.set_char_range(Some(CCursorRange::two(CCursor::new(0), CCursor::new(text[..end].chars().count()))));
+        state.store(&ctx, id);
+        ctx.memory_mut(|m| m.request_focus(id));
+    }
+    ui.add(egui::TextEdit::singleline(text).id(id).desired_width(width))
+}
+
 pub trait TabView {
     fn title(&self) -> String;
     fn ui(&mut self, ui: &mut egui::Ui, cx: &mut Ctx);
