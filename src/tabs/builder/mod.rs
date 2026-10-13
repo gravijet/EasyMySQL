@@ -213,7 +213,7 @@ fn convert(e: &Expr, k: Kind, env: &Env) -> Expr {
 
 fn column_picker(ui: &mut egui::Ui, id: egui::Id, src: &mut String, col: &mut String, env: &Env, stars: bool) {
     let text = if src.is_empty() { col.clone() } else { format!("{src}.{col}") };
-    egui::ComboBox::from_id_salt(id).selected_text(RichText::new(text).monospace()).width(150.0).height(400.0).show_ui(ui, |ui| {
+    crate::widgets::combo(id).selected_text(RichText::new(text).monospace()).width(150.0).height(400.0).show_ui(ui, |ui| {
         for (s, cols) in &env.scope {
             ui.label(RichText::new(s).small().strong().color(style::pal().text_weak));
             if stars && ui.selectable_label(src == s && col == "*", format!("  {s}.*")).clicked() {
@@ -269,7 +269,7 @@ fn expr_ui(ui: &mut egui::Ui, e: &mut Expr, env: &Env, id: egui::Id) {
     ui.horizontal_wrapped(|ui| {
         let k = kind_of(e);
         let mut nk = k;
-        egui::ComboBox::from_id_salt(id.with("kind"))
+        crate::widgets::combo(id.with("kind"))
             .selected_text(RichText::new(KINDS.iter().find(|x| x.0 == k).map(|x| crate::i18n::text(x.1)).unwrap_or("")).small())
             .width(78.0)
             .show_ui(ui, |ui| {
@@ -336,7 +336,7 @@ fn expr_ui(ui: &mut egui::Ui, e: &mut Expr, env: &Env, id: egui::Id) {
             Expr::Op { op, left, right } => {
                 ui.label("(");
                 expr_ui(ui, left, env, id.with("l"));
-                egui::ComboBox::from_id_salt(id.with("op")).selected_text(RichText::new(op.as_str()).monospace()).width(46.0).show_ui(ui, |ui| {
+                crate::widgets::combo(id.with("op")).selected_text(RichText::new(op.as_str()).monospace()).width(46.0).show_ui(ui, |ui| {
                     for o in OPS {
                         ui.selectable_value(op, o.to_string(), *o);
                     }
@@ -442,7 +442,7 @@ fn order_list_ui(ui: &mut egui::Ui, list: &mut Vec<OrderItem>, env: &Env, id: eg
     for (i, o) in list.iter_mut().enumerate() {
         ui.push_id(i, |ui| {
             expr_ui(ui, &mut o.expr, env, id.with(i));
-            egui::ComboBox::from_id_salt(id.with(("dir", i))).selected_text(if o.desc { crate::i18n::text("absteigend") } else { crate::i18n::text("aufsteigend") }).width(92.0).show_ui(ui, |ui| {
+            crate::widgets::combo(id.with(("dir", i))).selected_text(if o.desc { crate::i18n::text("absteigend") } else { crate::i18n::text("aufsteigend") }).width(92.0).show_ui(ui, |ui| {
                 ui.selectable_value(&mut o.desc, false, crate::i18n::text("aufsteigend (ASC)"));
                 ui.selectable_value(&mut o.desc, true, crate::i18n::text("absteigend (DESC)"));
             });
@@ -478,7 +478,7 @@ fn cond_item_ui(ui: &mut egui::Ui, c: &mut Cond, env: &Env, id: egui::Id) {
         Cond::Exists { not, query } => {
             ui.vertical(|ui| {
                 ui.horizontal(|ui| {
-                    egui::ComboBox::from_id_salt(id.with("ex")).selected_text(if *not { "NOT EXISTS" } else { "EXISTS" }).width(100.0).show_ui(ui, |ui| {
+                    crate::widgets::combo(id.with("ex")).selected_text(if *not { "NOT EXISTS" } else { "EXISTS" }).width(100.0).show_ui(ui, |ui| {
                         ui.selectable_value(not, false, "EXISTS");
                         ui.selectable_value(not, true, "NOT EXISTS");
                     });
@@ -490,7 +490,7 @@ fn cond_item_ui(ui: &mut egui::Ui, c: &mut Cond, env: &Env, id: egui::Id) {
             ui.horizontal_wrapped(|ui| {
                 expr_ui(ui, left, env, id.with("left"));
                 let before = *op;
-                egui::ComboBox::from_id_salt(id.with("op")).selected_text(RichText::new(op.sql()).monospace()).width(96.0).height(420.0).show_ui(ui, |ui| {
+                crate::widgets::combo(id.with("op")).selected_text(RichText::new(op.sql()).monospace()).width(96.0).height(420.0).show_ui(ui, |ui| {
                     for o in CmpOp::ALL {
                         ui.selectable_value(op, o, o.sql());
                     }
@@ -517,7 +517,7 @@ fn cond_item_ui(ui: &mut egui::Ui, c: &mut Cond, env: &Env, id: egui::Id) {
                 match (op.arity(), sub.is_some()) {
                     (_, true) => {
                         if !matches!(op, CmpOp::In | CmpOp::NotIn) {
-                            egui::ComboBox::from_id_salt(id.with("q"))
+                            crate::widgets::combo(id.with("q"))
                                 .selected_text(match quant {
                                     Quant::None => "–",
                                     Quant::Any => "ANY",
@@ -576,7 +576,7 @@ fn cond_group_ui(ui: &mut egui::Ui, c: &mut Cond, env: &Env, id: egui::Id) {
     let Cond::Group { any, not, items } = c else { return };
     if items.len() > 1 || *not {
         ui.horizontal(|ui| {
-            egui::ComboBox::from_id_salt(id.with("any")).selected_text(if *any { crate::i18n::text("ODER – eine muss gelten") } else { crate::i18n::text("UND – alle müssen gelten") }).width(190.0).show_ui(ui, |ui| {
+            crate::widgets::combo(id.with("any")).selected_text(if *any { crate::i18n::text("ODER – eine muss gelten") } else { crate::i18n::text("UND – alle müssen gelten") }).width(190.0).show_ui(ui, |ui| {
                 ui.selectable_value(any, false, crate::i18n::text("UND – alle müssen gelten"));
                 ui.selectable_value(any, true, crate::i18n::text("ODER – eine muss gelten"));
             });
@@ -673,7 +673,7 @@ fn sources_ui(ui: &mut egui::Ui, s: &mut Select, env: &Env, id: egui::Id) {
                 if i == 0 {
                     keyword(ui, "FROM");
                 } else {
-                    egui::ComboBox::from_id_salt(id.with(("join", i))).selected_text(RichText::new(src.join.sql()).monospace().color(style::pal().syn_keyword)).width(150.0).show_ui(ui, |ui| {
+                    crate::widgets::combo(id.with(("join", i))).selected_text(RichText::new(src.join.sql()).monospace().color(style::pal().syn_keyword)).width(150.0).show_ui(ui, |ui| {
                         for j in JoinKind::ALL {
                             ui.selectable_value(&mut src.join, j, j.sql()).on_hover_text(j.hint());
                         }
@@ -686,7 +686,7 @@ fn sources_ui(ui: &mut egui::Ui, s: &mut Select, env: &Env, id: egui::Id) {
                     From::Sub(_) => 2,
                 };
                 let mut nk = kind;
-                egui::ComboBox::from_id_salt(id.with(("kind", i)))
+                crate::widgets::combo(id.with(("kind", i)))
                     .selected_text([crate::i18n::text("Tabelle"), "WITH", crate::i18n::text("Unterabfrage")][kind])
                     .width(96.0)
                     .show_ui(ui, |ui| {
@@ -981,7 +981,7 @@ fn query_ui(ui: &mut egui::Ui, qr: &mut Query, env: &Env, id: egui::Id) {
         ui.push_id(("part", i), |ui| {
             if i > 0 {
                 ui.horizontal(|ui| {
-                    egui::ComboBox::from_id_salt(id.with(("setop", i))).selected_text(RichText::new(part.op.sql()).monospace().strong().color(style::pal().syn_keyword)).width(130.0).show_ui(ui, |ui| {
+                    crate::widgets::combo(id.with(("setop", i))).selected_text(RichText::new(part.op.sql()).monospace().strong().color(style::pal().syn_keyword)).width(130.0).show_ui(ui, |ui| {
                         for op in SetOp::ALL {
                             ui.selectable_value(&mut part.op, op, op.sql()).on_hover_text(op.hint());
                         }

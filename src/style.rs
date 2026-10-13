@@ -207,8 +207,13 @@ pub fn set_theme(ctx: &egui::Context, dark: bool) {
         .into();
         let sp = &mut style.spacing;
         sp.item_spacing = egui::vec2(6.0, 4.0);
-        sp.button_padding = egui::vec2(11.0, 3.0);
-        sp.interact_size.y = 22.0;
+        sp.button_padding = egui::vec2(12.0, 4.0);
+        sp.interact_size.y = 24.0;
+        sp.icon_width = 16.0;
+        sp.icon_width_inner = 8.0;
+        sp.icon_spacing = 8.0;
+        sp.slider_width = 200.0;
+        sp.slider_rail_height = 4.0;
         sp.window_margin = Margin::same(10);
         sp.menu_margin = Margin::same(4);
         // Schlanke Bildlaufleisten wie in Visual Studio Code: dezent, ueber dem Inhalt, beim Darueberfahren breiter
@@ -235,9 +240,11 @@ pub fn set_theme(ctx: &egui::Context, dark: bool) {
 
 fn visuals(p: &Pal) -> Visuals {
     let mut v = if p.dark { Visuals::dark() } else { Visuals::light() };
-    let r = CornerRadius::same(3);
-    v.window_corner_radius = CornerRadius::same(6);
-    v.menu_corner_radius = CornerRadius::same(5);
+    let r = CornerRadius::same(4);
+    v.window_corner_radius = CornerRadius::same(8);
+    v.menu_corner_radius = CornerRadius::same(6);
+    v.slider_trailing_fill = true;
+    v.handle_shape = egui::style::HandleShape::Circle;
     v.window_shadow = Shadow { offset: [0, 4], blur: 12, spread: 0, color: Color32::from_black_alpha(if p.dark { 120 } else { 50 }) };
     v.popup_shadow = Shadow { offset: [0, 2], blur: 8, spread: 0, color: Color32::from_black_alpha(if p.dark { 110 } else { 40 }) };
     v.window_fill = p.face;
@@ -252,7 +259,7 @@ fn visuals(p: &Pal) -> Visuals {
     // Fokusrahmen von Eingabefeldern und Schaltflaechen
     v.selection.stroke = Stroke::new(1.0, p.accent);
     v.window_highlight_topmost = false;
-    v.striped = true;
+    v.striped = false;
     v.override_text_color = Some(p.text);
 
     let w = &mut v.widgets;
@@ -263,7 +270,7 @@ fn visuals(p: &Pal) -> Visuals {
         (rgb(0xE6, 0xE6, 0xE6), rgb(0xD8, 0xD8, 0xD8), rgb(0xBF, 0xDC, 0xF5))
     };
     // Rand der Eingabefelder und Haken: im hellen Design sichtbar, im dunklen unauffaellig
-    let edge = if p.dark { Stroke::NONE } else { Stroke::new(1.0, rgb(0xC8, 0xC8, 0xC8)) };
+    let edge = if p.dark { Stroke::new(1.0, rgb(0x4B, 0x4E, 0x52)) } else { Stroke::new(1.0, rgb(0xC8, 0xC8, 0xC8)) };
     w.noninteractive.bg_fill = p.face;
     w.noninteractive.weak_bg_fill = p.face;
     w.noninteractive.bg_stroke = Stroke::new(1.0, p.border);

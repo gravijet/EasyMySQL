@@ -19,7 +19,7 @@ pub fn type_field(ui: &mut egui::Ui, id: impl std::hash::Hash + std::fmt::Debug,
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
         ui.add(egui::TextEdit::singleline(value).desired_width(110.0));
-        egui::ComboBox::from_id_salt(id)
+        crate::widgets::combo(id)
             .selected_text("")
             .width(18.0)
             .show_ui(ui, |ui| {
@@ -34,7 +34,7 @@ pub fn type_field(ui: &mut egui::Ui, id: impl std::hash::Hash + std::fmt::Debug,
 
 /// Auswahl eines Fremdschluessel-Ziels ("tabelle.spalte").
 pub fn ref_field(ui: &mut egui::Ui, id: impl std::hash::Hash + std::fmt::Debug, targets: &[String], value: &mut String) {
-    egui::ComboBox::from_id_salt(id)
+    crate::widgets::combo(id)
         .selected_text(if value.is_empty() { "–" } else { value.as_str() })
         .width(150.0)
         .show_ui(ui, |ui| {

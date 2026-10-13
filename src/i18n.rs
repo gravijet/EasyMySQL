@@ -1170,6 +1170,12 @@ impl Language {
             "Abgebrochen." => "Cancelled.",
             "Diese Datei kann nicht angezeigt werden." => "This file cannot be displayed.",
             "Benutzer & Rechte" => "Users & privileges",
+            "Der SSH-Tunnel konnte nicht aufgebaut werden." => "The SSH tunnel could not be set up.",
+            "Kein SSH-Server angegeben." => "No SSH server specified.",
+            "ssh wurde nicht gefunden. Der OpenSSH-Client muss installiert sein." => "ssh was not found. The OpenSSH client must be installed.",
+            "Zeitüberschreitung beim Aufbau des SSH-Tunnels." => "Timed out while setting up the SSH tunnel.",
+            "Installierte Version" => "Installed version",
+            "Updates" => "Updates",
             _ => source,
         }
     }

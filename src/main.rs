@@ -23,6 +23,7 @@ mod updates;
 mod tabs;
 mod terminal;
 mod transfer;
+mod widgets;
 mod workspace;
 
 use eframe::egui;

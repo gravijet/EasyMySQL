@@ -69,6 +69,7 @@ pub enum Icon {
     ArrowUp,
     ArrowDown,
     Lock,
+    Copy,
 }
 
 impl Icon {
@@ -132,6 +133,7 @@ impl Icon {
             Icon::ArrowUp => "arrow-up",
             Icon::ArrowDown => "arrow-down",
             Icon::Lock => "lock",
+            Icon::Copy => "copy",
         }
     }
 
@@ -246,7 +248,7 @@ mod tests {
             Files, Search, Database, History, Diagram, Wizard, Close, Plus, Refresh, NewFile, NewFolder, ChevronDown, ChevronRight, ChevronLeft, Play,
             More, Trash, Up, Down, Collapse, ZoomIn, ZoomOut, Fit, External, Folder, FolderOpen, File, FileText, FileCode, FileImage, FileSheet,
             FileJson, Table, Columns, Key, Link, Settings, Book, Terminal, Shield, Save, Download, Alert, Check, Info,
-            Sparkles, Layers, ArrowLeft, ArrowRight, Undo, Redo, Explain, Code, Upload, Users, ArrowUp, ArrowDown, Lock,
+            Sparkles, Layers, ArrowLeft, ArrowRight, Undo, Redo, Explain, Code, Upload, Users, ArrowUp, ArrowDown, Lock, Copy,
         ] {
             let polys = shapes(icon);
             assert!(!polys.is_empty(), "{icon:?}");
@@ -270,7 +272,7 @@ mod tests {
             Files, Search, Database, History, Diagram, Wizard, Close, Plus, Refresh, NewFile, NewFolder, ChevronDown, ChevronRight, ChevronLeft, Play,
             More, Trash, Up, Down, Collapse, ZoomIn, ZoomOut, Fit, External, Folder, FolderOpen, File, FileText, FileCode, FileImage, FileSheet,
             FileJson, Table, Columns, Key, Link, Settings, Book, Terminal, Shield, Save, Download, Alert, Check, Info,
-            Sparkles, Layers, ArrowLeft, ArrowRight, Undo, Redo, Explain, Code, Upload, Users, ArrowUp, ArrowDown, Lock,
+            Sparkles, Layers, ArrowLeft, ArrowRight, Undo, Redo, Explain, Code, Upload, Users, ArrowUp, ArrowDown, Lock, Copy,
         ];
         const CELL: usize = 96;
         const COLS: usize = 10;

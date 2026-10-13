@@ -237,7 +237,7 @@ impl UsersTab {
             ui.label(tr("Gilt für", "Applies to"));
             let mut d = self.db.clone();
             let label = if d.is_empty() { tr("Alle Datenbanken (global)", "All databases (global)").to_string() } else { d.clone() };
-            egui::ComboBox::from_id_salt("users-db").selected_text(label).width(220.0).show_ui(ui, |ui| {
+            crate::widgets::combo("users-db").selected_text(label).width(220.0).show_ui(ui, |ui| {
                 for x in &dbs {
                     let l = if x.is_empty() { tr("Alle Datenbanken (global)", "All databases (global)").to_string() } else { x.clone() };
                     if ui.selectable_label(&d == x, l).clicked() {
@@ -255,7 +255,7 @@ impl UsersTab {
                     tables.extend(s.tables.iter().filter(|t| !t.is_view).map(|t| t.name.clone()));
                 }
                 let label = if self.table.is_empty() { tr("Alle Tabellen", "All tables").to_string() } else { self.table.clone() };
-                egui::ComboBox::from_id_salt("users-table").selected_text(label).width(200.0).show_ui(ui, |ui| {
+                crate::widgets::combo("users-table").selected_text(label).width(200.0).show_ui(ui, |ui| {
                     for t in &tables {
                         let l = if t.is_empty() { tr("Alle Tabellen", "All tables").to_string() } else { t.clone() };
                         if ui.selectable_label(&self.table == t, l).clicked() {

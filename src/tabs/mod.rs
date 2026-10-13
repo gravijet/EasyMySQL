@@ -317,7 +317,7 @@ pub trait TabView {
 /// Auswahlfeld fuer eine Datenbank. Liefert true bei Aenderung.
 pub fn db_combo(ui: &mut egui::Ui, id: &str, dbs: &[String], value: &mut String) -> bool {
     let mut changed = false;
-    egui::ComboBox::from_id_salt(id)
+    crate::widgets::combo(id)
         .selected_text(if value.is_empty() { crate::i18n::text("(keine)") } else { value.as_str() })
         .width(170.0)
         .show_ui(ui, |ui| {
@@ -334,7 +334,7 @@ pub fn db_combo(ui: &mut egui::Ui, id: &str, dbs: &[String], value: &mut String)
 /// Einfaches Auswahlfeld fuer eine Liste von Strings.
 pub fn str_combo(ui: &mut egui::Ui, id: impl std::hash::Hash + std::fmt::Debug, items: &[String], value: &mut String, width: f32) -> bool {
     let mut changed = false;
-    egui::ComboBox::from_id_salt(id)
+    crate::widgets::combo(id)
         .selected_text(if value.is_empty() { "–" } else { value.as_str() })
         .width(width)
         .show_ui(ui, |ui| {

@@ -56,37 +56,87 @@ fn section_text(s: &Section) -> String {
 /// Aufzaehlungspunkt mit umbrechendem Text (haengender Einzug)
 fn hanging(ui: &mut egui::Ui, marker: RichText, text: &str) {
     ui.horizontal_top(|ui| {
-        ui.add_sized([14.0, 16.0], egui::Label::new(marker));
+        ui.add_sized([20.0, 19.0], egui::Label::new(marker));
         ui.vertical(|ui| {
             ui.set_max_width(ui.available_width());
-            ui.label(text);
+            ui.label(body(text));
         });
     });
 }
 
+/// Fliesstext mit etwas mehr Zeilenabstand
+fn body(text: &str) -> RichText {
+    RichText::new(text).line_height(Some(19.5))
+}
+
+/// Kleiner Knopf mit Symbol und Text (Kopieren, Oeffnen)
+fn small_action(ui: &mut egui::Ui, icon: crate::icons::Icon, text: &str) -> egui::Response {
+    crate::icons::text_button(ui, icon, text)
+}
+
 fn shortcut_chip(ui: &mut egui::Ui, text: &str) {
-    egui::Frame::new()
-        .fill(style::pal().face_light)
-        .stroke(egui::Stroke::new(1.0, style::pal().border))
-        .corner_radius(3)
-        .inner_margin(egui::Margin::symmetric(5, 1))
-        .show(ui, |ui| {
-            ui.label(RichText::new(text).monospace().size(12.0));
+    crate::widgets::keycap(ui, text, crate::widgets::Keycap::Normal);
+}
+
+/// Linksbuendiger Text in fester Breite
+fn left_cell(ui: &mut egui::Ui, width: f32, text: RichText) {
+    ui.allocate_ui_with_layout(egui::vec2(width, 20.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+        ui.add(egui::Label::new(text).truncate());
+    });
+}
+
+/// Zeilen mit feiner Trennlinie (Tabellen und Kuerzel)
+fn rows(ui: &mut egui::Ui, n: usize, mut row: impl FnMut(&mut egui::Ui, usize)) {
+    let line = style::pal().border.gamma_multiply(0.5);
+    for i in 0..n {
+        ui.horizontal(|ui| {
+            ui.set_min_height(30.0);
+            row(ui, i);
         });
+        if i + 1 < n {
+            let y = ui.cursor().top();
+            ui.painter().hline(ui.max_rect().x_range(), y - 2.0, egui::Stroke::new(1.0, line));
+        }
+    }
+}
+
+/// Rahmen fuer Codebloecke
+fn code_frame() -> egui::Frame {
+    let p = style::pal();
+    egui::Frame::new().fill(if p.dark { rgb_dark() } else { p.face_light }).stroke(egui::Stroke::new(1.0, p.border.gamma_multiply(0.7))).corner_radius(6)
+}
+
+fn rgb_dark() -> egui::Color32 {
+    egui::Color32::from_rgb(0x1A, 0x1A, 0x1B)
+}
+
+/// Kapitel im Inhaltsverzeichnis: Pfeil, fett wenn aufgeklappt
+fn toc_chapter(ui: &mut egui::Ui, title: &str, open: bool) -> egui::Response {
+    let p = style::pal();
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 30.0), egui::Sense::click());
+    if resp.hovered() {
+        ui.painter().rect_filled(rect, 4.0, p.hover);
+    }
+    let icon = if open { crate::icons::Icon::ChevronDown } else { crate::icons::Icon::ChevronRight };
+    crate::icons::paint(ui.painter(), egui::Rect::from_center_size(egui::pos2(rect.left() + 14.0, rect.center().y), egui::vec2(14.0, 14.0)), icon, p.text_weak);
+    let font = egui::FontId::proportional(13.5);
+    ui.painter().text(egui::pos2(rect.left() + 28.0, rect.center().y), egui::Align2::LEFT_CENTER, title, font, if open { p.text } else { p.text.gamma_multiply(0.85) });
+    resp
 }
 
 fn section_ui(ui: &mut egui::Ui, s: &Section, cx: &mut Ctx, goto: &mut Option<String>) {
     let pal = style::pal();
-    let r = ui.label(RichText::new(crate::i18n::text(s.title)).size(18.0).strong());
+    ui.add_space(10.0);
+    let r = ui.label(RichText::new(crate::i18n::text(s.title)).size(20.0).strong());
     if goto.as_deref() == Some(s.id) {
         r.scroll_to_me_animation(Some(egui::Align::TOP), egui::style::ScrollAnimation::none());
         *goto = None;
     }
-    ui.add_space(2.0);
-    for (bi, b) in s.blocks.iter().enumerate() {
+    ui.add_space(6.0);
+    for b in s.blocks.iter() {
         match b {
             B::P(t) => {
-                ui.label(crate::i18n::text(t));
+                ui.label(body(crate::i18n::text(t)));
             }
             B::List(items) => {
                 for it in items.iter() {
@@ -100,76 +150,70 @@ fn section_ui(ui: &mut egui::Ui, s: &Section, cx: &mut Ctx, goto: &mut Option<St
             }
             B::Shell(cmd) => {
                 ui.horizontal(|ui| {
-                    style::sunken_frame().inner_margin(egui::Margin::symmetric(8, 4)).show(ui, |ui| {
+                    code_frame().inner_margin(egui::Margin::symmetric(10, 5)).show(ui, |ui| {
                         ui.label(RichText::new(*cmd).monospace());
                     });
-                    if ui.small_button(crate::i18n::text("Kopieren")).clicked() {
+                    if crate::icons::button(ui, crate::icons::Icon::Copy, crate::i18n::text("Kopieren")).clicked() {
                         ui.ctx().copy_text(cmd.to_string());
                     }
                 });
             }
             B::Table(rows) => {
-                egui::Grid::new((s.id, bi)).num_columns(2).striped(true).spacing([18.0, 5.0]).show(ui, |ui| {
-                    for (a, b) in rows.iter() {
-                        ui.label(RichText::new(crate::i18n::text(a)).strong());
-                        ui.label(crate::i18n::text(b));
-                        ui.end_row();
-                    }
+                let list: Vec<(&str, &str)> = rows.iter().copied().collect();
+                self::rows(ui, list.len(), |ui, i| {
+                    left_cell(ui, 150.0, RichText::new(crate::i18n::text(list[i].0)).strong());
+                    ui.label(crate::i18n::text(list[i].1));
                 });
             }
             B::Keys(cmds) => {
                 let km = keymap::current();
-                egui::Grid::new((s.id, bi, "k")).num_columns(2).striped(true).spacing([18.0, 4.0]).show(ui, |ui| {
-                    for c in cmds.iter() {
-                        ui.label(c.label());
-                        ui.horizontal(|ui| {
-                            let bs = km.get(*c);
-                            if bs.is_empty() {
-                                ui.label(RichText::new(crate::i18n::text("kein Kürzel")).color(pal.text_weak));
-                            }
-                            for b in bs {
-                                shortcut_chip(ui, &b.text());
-                            }
-                        });
-                        ui.end_row();
+                self::rows(ui, cmds.len(), |ui, i| {
+                    let c = cmds[i];
+                    left_cell(ui, 230.0, RichText::new(c.label()));
+                    let bs = km.get(c);
+                    if bs.is_empty() {
+                        ui.label(RichText::new(crate::i18n::text("kein Kürzel")).color(pal.text_weak));
+                    }
+                    for b in bs {
+                        shortcut_chip(ui, &b.text());
                     }
                 });
             }
             B::Tip(t) => {
-                let r = egui::Frame::new().fill(pal.face_light).inner_margin(egui::Margin { left: 34, right: 8, top: 6, bottom: 6 }).show(ui, |ui| {
+                let r = egui::Frame::new().fill(pal.face_light).corner_radius(6).inner_margin(egui::Margin { left: 38, right: 12, top: 9, bottom: 9 }).show(ui, |ui| {
                     ui.set_width(ui.available_width());
-                    ui.label(crate::i18n::text(t));
+                    ui.label(body(crate::i18n::text(t)));
                 });
                 crate::icons::paint(ui.painter(), egui::Rect::from_center_size(egui::pos2(r.response.rect.left() + 18.0, r.response.rect.top() + 16.0), egui::vec2(16.0, 16.0)), crate::icons::Icon::Info, pal.accent);
-                ui.painter().rect_filled(egui::Rect::from_min_size(r.response.rect.min, egui::vec2(3.0, r.response.rect.height())), 0.0, pal.accent);
+                ui.painter().rect_filled(egui::Rect::from_min_size(r.response.rect.min + egui::vec2(0.0, 5.0), egui::vec2(3.0, r.response.rect.height() - 10.0)), 1.5, pal.accent);
             }
             B::Code(code) => {
-                style::sunken_frame().inner_margin(egui::Margin::same(8)).show(ui, |ui| {
+                code_frame().inner_margin(egui::Margin::same(12)).show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     let mut job = crate::sqledit::highlight(code, egui::FontId::monospace(13.0));
                     job.wrap.max_width = f32::INFINITY;
                     ui.add(egui::Label::new(job).selectable(true));
                 });
                 ui.horizontal(|ui| {
-                    if ui.small_button(crate::i18n::text("In neuer Abfrage öffnen")).clicked() {
+                    if small_action(ui, crate::icons::Icon::Play, crate::i18n::text("In neuer Abfrage öffnen")).clicked() {
                         cx.actions.push(Action::OpenSql { db: None, sql: format!("{code}\n"), run: false });
                     }
-                    if ui.small_button(crate::i18n::text("Kopieren")).clicked() {
+                    if small_action(ui, crate::icons::Icon::Copy, crate::i18n::text("Kopieren")).clicked() {
                         ui.ctx().copy_text(code.to_string());
                     }
                 });
             }
             B::Source(code) => {
-                style::sunken_frame().inner_margin(egui::Margin::same(8)).show(ui, |ui| {
+                code_frame().inner_margin(egui::Margin::same(12)).show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     ui.add(egui::Label::new(RichText::new(*code).monospace().color(pal.text)).selectable(true));
                 });
-                if ui.small_button(crate::i18n::text("Kopieren")).clicked() {
+                if small_action(ui, crate::icons::Icon::Copy, crate::i18n::text("Kopieren")).clicked() {
                     ui.ctx().copy_text(code.to_string());
                 }
             }
             B::Open(label, target) => {
-                if ui.button(crate::i18n::text(label)).clicked() {
+                if crate::icons::text_button_right(ui, crate::icons::Icon::ArrowRight, crate::i18n::text(label)).clicked() {
                     match target {
                         Target::Cmd(c) => cx.actions.push(Action::Run(*c)),
                         Target::Settings(id) => cx.actions.push(Action::OpenSettings(Some(id.to_string()))),
@@ -237,8 +281,7 @@ impl TabView for HelpTab {
             egui::ScrollArea::vertical().id_salt("help-toc-scroll").auto_shrink([false, false]).show(ui, |ui| {
                 for (ci, c) in CHAPTERS.iter().enumerate() {
                     let sel = self.chapter == ci && query.is_empty();
-                    let title = RichText::new(crate::i18n::text(c.title)).strong();
-                    if ui.selectable_label(sel, if sel { title.color(if pal.dark { pal.text } else { pal.accent }) } else { title }).clicked() {
+                    if toc_chapter(ui, crate::i18n::text(c.title), sel).clicked() {
                         self.chapter = ci;
                         self.search.clear();
                         self.goto = Some(c.sections[0].id.into());
