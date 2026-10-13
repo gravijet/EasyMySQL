@@ -6,7 +6,7 @@ mod icon;
 use std::io::Write;
 
 fn write_ico(path: &std::path::Path) {
-    let sizes = [16u32, 24, 32, 48, 64, 128];
+    let sizes = [16u32, 24, 32, 48, 64, 128, 256];
     let mut images = Vec::new();
     for &s in &sizes {
         let rgba = icon::icon_rgba(s);
