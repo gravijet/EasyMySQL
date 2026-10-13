@@ -247,6 +247,8 @@ pub struct StmtResult {
     pub preview: String,
     pub sets: Vec<ResultSet>,
     pub affected: u64,
+    /// Gelieferte Zeilen (bleibt, auch wenn ein Ergebnis weggeklickt wird)
+    pub returned: Option<usize>,
     pub error: Option<String>,
     /// Zeile des Fehlers im Skript (0-basiert), falls bekannt
     pub error_line: Option<usize>,
@@ -259,11 +261,14 @@ pub fn run_statements<C: Queryable>(conn: &mut C, stmts: &[Stmt], abort: Option<
     for st in stmts {
         let start = Instant::now();
         let mut r = run_script_with(conn, &st.sql, abort);
+        let affected = r.sets.iter().filter(|s| !s.has_table()).map(|s| s.affected).sum();
+        let sets: Vec<ResultSet> = std::mem::take(&mut r.sets).into_iter().filter(|s| s.has_table()).collect();
         let mut res = StmtResult {
             line: st.line,
             preview: st.sql.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(90).collect(),
-            affected: r.sets.iter().filter(|s| !s.has_table()).map(|s| s.affected).sum(),
-            sets: std::mem::take(&mut r.sets).into_iter().filter(|s| s.has_table()).collect(),
+            affected,
+            returned: (!sets.is_empty()).then(|| sets.iter().map(|s| s.rows.len()).sum()),
+            sets,
             error: r.error.take(),
             error_line: None,
             elapsed: start.elapsed(),

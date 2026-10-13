@@ -287,19 +287,19 @@ impl Db {
     /// SQL-Export als Text (nur sinnvoll ohne Daten, z. B. fuer CREATE TABLE).
     pub fn dump(&self, db: &str, with_data: bool) -> Result<String, String> {
         let mut out = Vec::new();
-        self.dump_to(db, with_data, &mut out)?;
+        self.dump_to(db, None, with_data, &mut out)?;
         Ok(String::from_utf8_lossy(&out).into_owned())
     }
 
     /// SQL-Export Zeile fuer Zeile in `out` schreiben: auch riesige Tabellen belegen nur den
     /// Speicher eines Einfuege-Blocks (200 Zeilen).
-    pub fn dump_to(&self, db: &str, with_data: bool, out: &mut dyn std::io::Write) -> Result<(), String> {
+    pub fn dump_to(&self, db: &str, only: Option<&[String]>, with_data: bool, out: &mut dyn std::io::Write) -> Result<(), String> {
         const BATCH: usize = 200;
         let w = |e: std::io::Error| e.to_string();
         let schema = self.schema(db)?;
         write!(out, "-- EasyMySQL SQL-Export\n-- Datenbank: {db}\n-- Server: {}\n\n", self.version).map_err(w)?;
         write!(out, "SET FOREIGN_KEY_CHECKS = 0;\n\nCREATE DATABASE IF NOT EXISTS {};\nUSE {};\n\n", q(db), q(db)).map_err(w)?;
-        for t in schema.ordered_tables() {
+        for t in schema.ordered_tables().into_iter().filter(|t| only.is_none_or(|o| o.contains(t))) {
             let info = schema.table(&t).unwrap();
             let create = self.create_statement(db, &t)?;
             let kind = if info.is_view { "VIEW" } else { "TABLE" };

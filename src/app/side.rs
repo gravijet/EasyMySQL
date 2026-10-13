@@ -579,6 +579,10 @@ impl EasyApp {
                                         actions.push(Action::Status(crate::i18n::text("Java-Code kopiert.").into()));
                                         ui.close();
                                     }
+                                    if ui.button(crate::i18n::text("Exportieren …")).clicked() {
+                                        dialogs.push(Dialog::Export { db: d.clone(), only: Some(vec![t.name.clone()]), with_data: true, format: crate::transfer::export::Format::Csv });
+                                        ui.close();
+                                    }
                                     ui.separator();
                                     if !t.is_view && ui.button(crate::i18n::text("Leeren …")).clicked() {
                                         actions.push(Action::Confirm {
@@ -629,7 +633,7 @@ impl EasyApp {
                     }
                     ui.separator();
                     if ui.button(crate::i18n::text("Exportieren …")).clicked() {
-                        dialogs.push(Dialog::Export { db: d.clone(), with_data: true });
+                        dialogs.push(Dialog::Export { db: d.clone(), only: None, with_data: true, format: crate::transfer::export::Format::Sql });
                         ui.close();
                     }
                     if !sys && ui.button(crate::i18n::text("Löschen …")).clicked() {

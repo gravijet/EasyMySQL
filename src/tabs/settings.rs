@@ -518,6 +518,7 @@ mod tests {
                                 server: &server,
                                 project: None,
                                 settings: &mut settings,
+                                history: &[],
                                 actions: &mut actions,
                             },
                         );

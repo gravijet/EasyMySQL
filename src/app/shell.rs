@@ -161,7 +161,7 @@ impl EasyApp {
                     ui.separator();
                     if ui.add_enabled(connected, egui::Button::new(crate::i18n::text("Exportieren …"))).clicked() {
                         if let Some(d) = self.need_db() {
-                            self.dialogs.push(Dialog::Export { db: d, with_data: true });
+                            self.dialogs.push(Dialog::Export { db: d, only: None, with_data: true, format: crate::transfer::export::Format::Sql });
                         }
                         ui.close();
                     }

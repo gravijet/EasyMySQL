@@ -21,6 +21,7 @@ mod style;
 mod updates;
 mod tabs;
 mod terminal;
+mod transfer;
 mod workspace;
 
 use eframe::egui;

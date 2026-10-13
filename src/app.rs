@@ -39,6 +39,7 @@ macro_rules! cx {
             server: &$s.server,
             project: $s.project.as_deref(),
             settings: &mut $s.settings,
+            history: &$s.history,
             actions: $actions,
         }
     };

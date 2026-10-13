@@ -2,13 +2,15 @@
 
 use super::*;
 use crate::db::q;
+use crate::transfer::export::{self, Format};
 use eframe::egui::{Key, RichText};
 
 pub enum Dialog {
     Message { title: String, text: String, error: bool },
     Confirm { text: String, db: Option<String>, sql: String },
     NewDatabase { name: String, collation: String },
-    Export { db: String, with_data: bool },
+    /// `only`: ausgewaehlte Tabellen (None = alle)
+    Export { db: String, only: Option<Vec<String>>, with_data: bool, format: Format },
     About,
     Myisam(Vec<(String, String)>),
     /// Verbindung fehlgeschlagen
@@ -30,7 +32,7 @@ impl EasyApp {
         let Some(dlg) = self.dialogs.last_mut() else { return };
         let mut close = false;
         let mut run_sql: Option<(Option<String>, String)> = None;
-        let mut export: Option<(String, bool)> = None;
+        let mut export: Option<export::Job> = None;
         let mut create_db: Option<(String, String)> = None;
         let mut convert: Option<Vec<(String, String)>> = None;
         let mut open_settings = false;
@@ -96,18 +98,66 @@ impl EasyApp {
                         }
                     });
                 }
-                Dialog::Export { db, with_data } => {
+                Dialog::Export { db, only, with_data, format } => {
                     ui.label(RichText::new(crate::i18n::text("Exportieren")).strong());
                     ui.add_space(4.0);
-                    ui.horizontal(|ui| {
+                    let schema = self.db.as_ref().and_then(|d| self.schemas.get_arc(Some(d), db).cloned());
+                    egui::Grid::new("exp").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
                         ui.label(crate::i18n::text("Datenbank"));
-                        crate::tabs::db_combo(ui, "expdb", &self.databases, db);
+                        if crate::tabs::db_combo(ui, "expdb", &self.databases, db) {
+                            *only = None;
+                        }
+                        ui.end_row();
+                        ui.label(crate::i18n::text("Format"));
+                        ui.horizontal(|ui| {
+                            for f in Format::ALL {
+                                ui.selectable_value(format, f, f.label());
+                            }
+                        });
+                        ui.end_row();
+                        ui.label(crate::i18n::text("Tabellen"));
+                        ui.horizontal(|ui| {
+                            if ui.selectable_label(only.is_none(), crate::i18n::text("Alle")).clicked() {
+                                *only = None;
+                            }
+                            if ui.selectable_label(only.is_some(), crate::i18n::text("Auswahl")).clicked() && only.is_none() {
+                                *only = Some(Vec::new());
+                            }
+                        });
+                        ui.end_row();
                     });
-                    ui.checkbox(with_data, crate::i18n::text("Mit Daten"));
+                    if let (Some(sel), Some(schema)) = (only.as_mut(), &schema) {
+                        egui::ScrollArea::vertical().max_height(180.0).show(ui, |ui| {
+                            for t in schema.tables.iter().filter(|t| *format == Format::Sql || !t.is_view) {
+                                let mut on = sel.contains(&t.name);
+                                if ui.checkbox(&mut on, &t.name).changed() {
+                                    if on {
+                                        sel.push(t.name.clone());
+                                    } else {
+                                        sel.retain(|n| n != &t.name);
+                                    }
+                                }
+                            }
+                        });
+                    }
+                    if *format == Format::Sql {
+                        ui.checkbox(with_data, crate::i18n::text("Mit Daten"));
+                    }
                     ui.add_space(6.0);
                     ui.horizontal(|ui| {
-                        if ui.button(crate::i18n::text("Speichern unter …")).clicked() {
-                            export = Some((db.clone(), *with_data));
+                        let none_chosen = only.as_ref().is_some_and(|s| s.is_empty());
+                        if ui.add_enabled(!none_chosen, egui::Button::new(crate::i18n::text("Speichern unter …"))).clicked() {
+                            let tables = only.clone().unwrap_or_default();
+                            let count = if tables.is_empty() { schema.as_ref().map(|s| s.tables.iter().filter(|t| !t.is_view).count()).unwrap_or(0) } else { tables.len() };
+                            let name = if let [one] = tables.as_slice() { one.clone() } else { db.clone() };
+                            let target = if format.folder(count) {
+                                rfd::FileDialog::new().pick_folder().map(|f| f.join(&name))
+                            } else {
+                                rfd::FileDialog::new().add_filter(format.label(), &[format.ext()]).set_file_name(format!("{name}.{}", format.ext())).save_file()
+                            };
+                            if let Some(target) = target {
+                                export = Some(export::Job { db: db.clone(), tables, with_data: *with_data || *format != Format::Sql, format: *format, target });
+                            }
                         }
                         if ui.button(crate::i18n::text("Abbrechen")).clicked() {
                             close = true;
@@ -228,23 +278,16 @@ impl EasyApp {
                     Err(e) => self.error(e),
                 }
             }
-        if let Some((d, with_data)) = export
-            && let Some(p) = rfd::FileDialog::new().add_filter(crate::i18n::text("SQL-Datei"), &["sql"]).set_file_name(format!("{d}.sql")).save_file()
-                && let Some(dbc) = self.db.clone() {
-                    let (tx, rx) = std::sync::mpsc::channel();
-                    std::thread::spawn(move || {
-                        let r = std::fs::File::create(&p).map_err(|e| e.to_string()).and_then(|f| {
-                            let mut w = std::io::BufWriter::new(f);
-                            dbc.dump_to(&d, with_data, &mut w)?;
-                            std::io::Write::flush(&mut w).map_err(|e| e.to_string())?;
-                            Ok(p)
-                        });
-                        let _ = tx.send(r);
-                    });
-                    self.export_job = Some(rx);
-                    self.dialogs.pop();
-                    self.toast(crate::i18n::text("Export läuft …"));
-                }
+        if let Some(job) = export
+            && let Some(dbc) = self.db.clone() {
+                let (tx, rx) = std::sync::mpsc::channel();
+                std::thread::spawn(move || {
+                    let _ = tx.send(export::run(&dbc, &job));
+                });
+                self.export_job = Some(rx);
+                self.dialogs.pop();
+                self.toast(crate::i18n::text("Export läuft …"));
+            }
     }
 
     /// Antwort auf die Rueckfrage zu ungespeicherten Dateien: speichern oder verwerfen, dann fortfahren.

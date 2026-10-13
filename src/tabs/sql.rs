@@ -22,6 +22,20 @@ const RESULTS_HEADER: f32 = 34.0;
 /// Dateien kurz nach der letzten Aenderung speichern (Einstellungen)
 pub static AUTOSAVE: AtomicBool = AtomicBool::new(true);
 
+/// Was im Ergebnisbereich gerade gezeigt wird
+#[derive(Clone, Copy, PartialEq)]
+enum Pane {
+    Set(usize),
+    Messages,
+    History,
+}
+
+/// Wunsch aus dem Verlauf-Reiter
+enum HistoryAct {
+    Insert(String),
+    Run(String),
+}
+
 type JobResult = (Option<Conn>, Vec<StmtResult>, Option<String>, Option<String>);
 
 pub struct SqlTab {
@@ -44,7 +58,11 @@ pub struct SqlTab {
     running: Vec<Stmt>,
     results: Vec<StmtResult>,
     note: Option<String>,
-    res_tab: usize,
+    pane: Pane,
+    /// Meldungen und Verlauf wurden weggeklickt
+    hide_messages: bool,
+    show_history: bool,
+    history_filter: String,
     grid: GridState,
     editor: SqlEditor,
     selection: Option<String>,
@@ -97,7 +115,10 @@ impl SqlTab {
             running: Vec::new(),
             results: Vec::new(),
             note: None,
-            res_tab: 0,
+            pane: Pane::Messages,
+            hide_messages: false,
+            show_history: false,
+            history_filter: String::new(),
             grid: GridState::default(),
             editor: SqlEditor::new(egui::Id::new(("sql-editor", next_scratch_id() + 100000))),
             selection: None,
@@ -352,37 +373,66 @@ impl SqlTab {
         }
         let n_sets: usize = results.iter().map(|r| r.sets.len()).sum();
         // Ergebnis zeigen, sonst Meldungen
-        self.res_tab = if n_sets > 0 && !results.iter().any(|r| r.error.is_some()) { n_sets - 1 } else { n_sets };
+        self.hide_messages = false;
+        self.pane = if n_sets > 0 && !results.iter().any(|r| r.error.is_some()) { Pane::Set(n_sets - 1) } else { Pane::Messages };
         self.results = results;
         self.note = note;
     }
 
-    fn results_ui(&mut self, ui: &mut egui::Ui, row_h: f32) {
+    fn results_ui(&mut self, ui: &mut egui::Ui, row_h: f32, history: &[crate::qhistory::Entry]) -> Option<HistoryAct> {
         let collapsed = self.results_collapsed;
         let mut toggle = false;
+        let mut act = None;
         let pal = style::pal();
-        let sets: Vec<(usize, usize, &db::ResultSet)> = self
+        let sets: Vec<(usize, usize, usize)> = self
             .results
             .iter()
             .enumerate()
-            .flat_map(|(ri, r)| r.sets.iter().enumerate().map(move |(si, s)| (ri, si, s)))
+            .flat_map(|(ri, r)| (0..r.sets.len()).map(move |si| (ri, si, r.sets[si].rows.len())))
             .collect();
         let n_sets = sets.len();
-        let mut tab = self.res_tab.min(n_sets);
+        let mut pane = match self.pane {
+            Pane::Set(i) if i >= n_sets => Pane::Messages,
+            Pane::Messages if self.hide_messages => if self.show_history { Pane::History } else { Pane::Set(n_sets.saturating_sub(1)) },
+            p => p,
+        };
+        let mut close_set = None;
         // Reiter
         ui.horizontal(|ui| {
-            for (i, (ri, _, s)) in sets.iter().enumerate() {
-                let r = &self.results[*ri];
-                let label = crate::tr_format!("Ergebnis {} · Z. {} ({})", "Result {} · Ln {} ({})", i + 1, r.line + 1, s.rows.len());
-                if ui.selectable_label(tab == i, label).clicked() {
-                    tab = i;
+            ui.spacing_mut().item_spacing.x = 2.0;
+            for (i, &(ri, _, rows)) in sets.iter().enumerate() {
+                let label = crate::tr_format!("Ergebnis {} · Z. {} ({})", "Result {} · Ln {} ({})", i + 1, self.results[ri].line + 1, rows);
+                let c = super::chip(ui, &label, None, pane == Pane::Set(i));
+                if c.clicked {
+                    pane = Pane::Set(i);
+                }
+                if c.closed {
+                    close_set = Some(i);
                 }
             }
-            let errs = self.results.iter().filter(|r| r.error.is_some()).count();
-            let label = if errs > 0 { crate::tr_format!("Meldungen ({errs} Fehler)", "Messages ({errs} errors)") } else { crate::tr_format!("Meldungen ({})", "Messages ({})", self.results.len()) };
-            let txt = if errs > 0 { RichText::new(label).color(pal.error_text) } else { RichText::new(label) };
-            if ui.selectable_label(tab == n_sets, txt).clicked() {
-                tab = n_sets;
+            if !self.hide_messages {
+                let errs = self.results.iter().filter(|r| r.error.is_some()).count();
+                let label = if errs > 0 { crate::tr_format!("Meldungen ({errs} Fehler)", "Messages ({errs} errors)") } else { crate::tr_format!("Meldungen ({})", "Messages ({})", self.results.len()) };
+                let c = super::chip(ui, &label, (errs > 0).then_some(pal.error_text), pane == Pane::Messages);
+                if c.clicked {
+                    pane = Pane::Messages;
+                }
+                if c.closed && (n_sets > 0 || self.show_history) {
+                    self.hide_messages = true;
+                }
+            }
+            if self.show_history {
+                let c = super::chip(ui, &crate::i18n::text("Verlauf"), None, pane == Pane::History);
+                if c.clicked {
+                    pane = Pane::History;
+                }
+                if c.closed {
+                    self.show_history = false;
+                    pane = if n_sets > 0 && self.hide_messages { Pane::Set(n_sets - 1) } else { Pane::Messages };
+                    if n_sets == 0 {
+                        self.hide_messages = false;
+                    }
+                }
             }
             if self.job.is_some() {
                 ui.spinner();
@@ -392,60 +442,122 @@ impl SqlTab {
                 if icons::button(ui, icon, tip).clicked() {
                     toggle = true;
                 }
+                if icons::button(ui, Icon::History, crate::i18n::text("Verlauf")).clicked() {
+                    self.show_history = true;
+                    pane = Pane::History;
+                    self.results_collapsed = false;
+                }
             });
         });
+        if let Some(i) = close_set {
+            let (ri, si, _) = sets[i];
+            self.results[ri].sets.remove(si);
+            self.grid.reset();
+            pane = match pane {
+                Pane::Set(p) if p > i => Pane::Set(p - 1),
+                Pane::Set(p) if p == i && n_sets > 1 => Pane::Set(i.min(n_sets - 2)),
+                Pane::Set(p) if p == i => Pane::Messages,
+                other => other,
+            };
+            if n_sets == 1 && !self.show_history {
+                self.hide_messages = false;
+            }
+        }
         if toggle {
             self.results_collapsed = !self.results_collapsed;
         }
-        if tab != self.res_tab {
+        if pane != self.pane {
             self.grid.reset();
         }
-        self.res_tab = tab;
+        self.pane = pane;
         // Nur noch die Kopfzeile sichtbar: der Rest hat keinen Platz
         if collapsed || ui.available_height() < 30.0 {
-            return;
+            return None;
         }
-        if let Some(n) = &self.note {
-            ui.label(RichText::new(n).small().color(pal.text_weak));
-        }
-        if tab < n_sets {
-            let (_, _, set) = sets[tab];
-            ui.horizontal(|ui| {
-                let mut info = crate::tr_format!("{} Zeile(n)", "{} row(s)", set.rows.len());
-                if set.truncated {
-                    info.push_str(&crate::tr_format!(" (die ersten {})", " (first {})", db::MAX_ROWS));
+        match pane {
+            Pane::Set(_) if n_sets == 0 => {}
+            Pane::Set(tab) => {
+                let (ri, si, _) = sets[tab.min(n_sets - 1)];
+                let set = &self.results[ri].sets[si];
+                ui.horizontal(|ui| {
+                    let mut info = crate::tr_format!("{} Zeile(n)", "{} row(s)", set.rows.len());
+                    if set.truncated {
+                        info.push_str(&crate::tr_format!(" (die ersten {})", " (first {})", db::MAX_ROWS));
+                    }
+                    ui.label(RichText::new(info).color(pal.ok_text));
+                    grid::export_menu(ui, "ergebnis", &set.columns, &set.rows);
+                });
+                grid::show(ui, ("sqlgrid", self.editor.id, tab), &set.columns, &set.rows, false, &mut self.grid);
+            }
+            Pane::Messages => {
+                if let Some(n) = &self.note {
+                    ui.label(RichText::new(n).small().color(pal.text_weak));
                 }
-                ui.label(RichText::new(info).color(pal.ok_text));
-                grid::export_menu(ui, "ergebnis", &set.columns, &set.rows);
-            });
-            grid::show(ui, ("sqlgrid", self.editor.id, tab), &set.columns, &set.rows, false, &mut self.grid);
-        } else {
-            let mut jump = None;
-            egui::ScrollArea::vertical().id_salt(self.editor.id.with("msgs")).auto_shrink([false, false]).show(ui, |ui| {
-                for r in &self.results {
-                    let (ok, msg) = match &r.error {
-                        Some(e) => (false, e.clone()),
-                        None if !r.sets.is_empty() => (true, crate::tr_format!("{} Zeile(n) geliefert", "{} row(s) returned", r.sets.iter().map(|s| s.rows.len()).sum::<usize>())),
-                        None => (true, crate::tr_format!("{} Zeile(n) betroffen", "{} row(s) affected", r.affected)),
-                    };
-                    let color = if ok { pal.ok_text } else { pal.error_text };
-                    ui.horizontal(|ui| {
-                        let (rect, _) = ui.allocate_exact_size(egui::vec2(10.0, 14.0), egui::Sense::hover());
-                        ui.painter().circle_filled(rect.center(), 3.5, color);
-                        if ui.link(crate::tr_format!("Zeile {}", "Line {}", r.line + 1)).clicked() {
-                            jump = Some(r.error_line.unwrap_or(r.line));
+                let mut jump = None;
+                egui::ScrollArea::vertical().id_salt(self.editor.id.with("msgs")).auto_shrink([false, false]).show(ui, |ui| {
+                    for r in &self.results {
+                        let (ok, msg) = match &r.error {
+                            Some(e) => (false, e.clone()),
+                            None if r.returned.is_some() => (true, crate::tr_format!("{} Zeile(n) geliefert", "{} row(s) returned", r.returned.unwrap_or(0))),
+                            None => (true, crate::tr_format!("{} Zeile(n) betroffen", "{} row(s) affected", r.affected)),
+                        };
+                        let color = if ok { pal.ok_text } else { pal.error_text };
+                        ui.horizontal(|ui| {
+                            let (rect, _) = ui.allocate_exact_size(egui::vec2(10.0, 14.0), egui::Sense::hover());
+                            ui.painter().circle_filled(rect.center(), 3.5, color);
+                            if ui.link(crate::tr_format!("Zeile {}", "Line {}", r.line + 1)).clicked() {
+                                jump = Some(r.error_line.unwrap_or(r.line));
+                            }
+                            ui.label(RichText::new(format!("{:.3} s", r.elapsed.as_secs_f64())).small().color(pal.text_weak));
+                            ui.label(RichText::new(&r.preview).monospace().small());
+                        });
+                        ui.label(RichText::new(format!("    {msg}")).color(color));
+                    }
+                });
+                if let Some(l) = jump {
+                    let ctx = ui.ctx().clone();
+                    self.editor.goto_line(&ctx, &self.text, l, row_h);
+                }
+            }
+            Pane::History => {
+                ui.add(egui::TextEdit::singleline(&mut self.history_filter).hint_text(crate::i18n::text("Filtern")).desired_width(240.0));
+                let f = self.history_filter.to_lowercase();
+                let items: Vec<&crate::qhistory::Entry> = history.iter().filter(|e| f.is_empty() || e.sql.to_lowercase().contains(&f)).collect();
+                let h = 20.0;
+                egui::ScrollArea::vertical().id_salt(self.editor.id.with("hist")).auto_shrink([false, false]).show_rows(ui, h, items.len(), |ui, range| {
+                    for e in &items[range] {
+                        let (r, resp) = ui.allocate_exact_size(egui::vec2(ui.available_width(), h), egui::Sense::click());
+                        if resp.hovered() {
+                            ui.painter().rect_filled(r, 2.0, pal.hover);
                         }
-                        ui.label(RichText::new(format!("{:.3} s", r.elapsed.as_secs_f64())).small().color(pal.text_weak));
-                        ui.label(RichText::new(&r.preview).monospace().small());
-                    });
-                    ui.label(RichText::new(format!("    {msg}")).color(color));
-                }
-            });
-            if let Some(l) = jump {
-                let ctx = ui.ctx().clone();
-                self.editor.goto_line(&ctx, &self.text, l, row_h);
+                        let p = ui.painter_at(r);
+                        let meta = format!("{}  {} ms", e.short_time(), e.millis);
+                        p.text(egui::pos2(r.left() + 6.0, r.center().y), egui::Align2::LEFT_CENTER, meta, egui::FontId::proportional(11.5), pal.text_weak);
+                        let sql: String = e.sql.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(200).collect();
+                        p.text(egui::pos2(r.left() + 150.0, r.center().y), egui::Align2::LEFT_CENTER, sql, egui::FontId::monospace(12.0), if e.error { pal.error_text } else { pal.text });
+                        let resp = resp.on_hover_text(e.sql.chars().take(1500).collect::<String>());
+                        if resp.double_clicked() {
+                            act = Some(HistoryAct::Insert(e.sql.clone()));
+                        }
+                        resp.context_menu(|ui| {
+                            if ui.button(crate::i18n::text("In Editor einfügen")).clicked() {
+                                act = Some(HistoryAct::Insert(e.sql.clone()));
+                                ui.close();
+                            }
+                            if ui.button(crate::i18n::text("Erneut ausführen")).clicked() {
+                                act = Some(HistoryAct::Run(e.sql.clone()));
+                                ui.close();
+                            }
+                            if ui.button(crate::i18n::text("Kopieren")).clicked() {
+                                ui.ctx().copy_text(e.sql.clone());
+                                ui.close();
+                            }
+                        });
+                    }
+                });
             }
         }
+        act
     }
 
     fn dialogs(&mut self, ctx: &egui::Context, cx: &mut Ctx) {
@@ -774,9 +886,22 @@ impl TabView for SqlTab {
                 .min_size(RESULTS_HEADER)
                 .max_size((total - 90.0).max(RESULTS_HEADER))
         };
+        let mut hist_act = None;
         panel.frame(egui::Frame::new().fill(pal.face).inner_margin(egui::Margin::symmetric(4, 4))).show(ui, |ui| {
-            self.results_ui(ui, font_row);
+            hist_act = self.results_ui(ui, font_row, cx.history);
         });
+        match hist_act {
+            Some(HistoryAct::Insert(sql)) => {
+                if !self.text.is_empty() && !self.text.ends_with('\n') {
+                    self.text.push('\n');
+                }
+                self.text.push_str(sql.trim_end_matches(';'));
+                self.text.push_str(";\n");
+                self.last_edit = Instant::now();
+            }
+            Some(HistoryAct::Run(sql)) => self.run(cx, sql, 0),
+            None => {}
+        }
         let h = (ui.available_height() - 4.0).max(100.0);
         let out = self.editor.show(ui, &mut self.text, h);
         self.selection = out.selection.clone();
@@ -803,7 +928,7 @@ mod performance_tests {
         let mut tab = SqlTab::empty();
         tab.results = vec![StmtResult {
             line: 0, preview: "SELECT".into(), affected: 0, error: None,
-            error_line: None, elapsed: Duration::ZERO,
+            error_line: None, elapsed: Duration::ZERO, returned: None,
             sets: vec![db::ResultSet {
                 columns: (0..12).map(|i| format!("column_{i}")).collect(),
                 rows: (0..50_000).map(|r| (0..12).map(|c| Some(format!("value_{r}_{c}"))).collect()).collect(),
@@ -814,7 +939,7 @@ mod performance_tests {
             let _ = ctx.run_ui(egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 760.0))),
                 ..Default::default()
-            }, |ui| tab.results_ui(ui, 18.0));
+            }, |ui| { tab.results_ui(ui, 18.0, &[]); });
         };
         for _ in 0..5 { render(); }
         let start = Instant::now();
