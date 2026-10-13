@@ -496,7 +496,20 @@ impl EasyApp {
                 let title = if *d == self.current_db { RichText::new(d).strong() } else { RichText::new(d) };
                 let resp = egui::CollapsingHeader::new(title).id_salt(("db", d)).show(ui, |ui| match self.schemas.get(Some(dbc), d) {
                     Some(schema) => {
+                        // Bei tausenden Tabellen nur die sichtbaren Zeilen aufbauen: zugeklappte Zeilen
+                        // ausserhalb des Fensters werden durch gleich hohen Leerraum ersetzt.
+                        let clip = ui.clip_rect();
+                        let mut closed_h: Option<f32> = None;
                         for t in &schema.tables {
+                            if let Some(h) = closed_h {
+                                let id = ui.make_persistent_id(("t", d, &t.name));
+                                let open = egui::collapsing_header::CollapsingState::load(ui.ctx(), id).is_some_and(|s| s.is_open());
+                                let top = ui.cursor().min.y;
+                                if !open && (top + h < clip.top() || top > clip.bottom()) {
+                                    ui.add_space(h);
+                                    continue;
+                                }
+                            }
                             let label = if t.is_view { RichText::new(&t.name).italics() } else { RichText::new(&t.name) };
                             let h = egui::CollapsingHeader::new(label).id_salt(("t", d, &t.name)).show(ui, |ui| {
                                 for c in &t.columns {
@@ -514,6 +527,9 @@ impl EasyApp {
                                     });
                                 }
                             });
+                            if h.body_response.is_none() {
+                                closed_h = Some(h.header_response.rect.height());
+                            }
                             let hr = h.header_response;
                             if hr.clicked() {
                                 self.current_db = d.clone();

@@ -1139,6 +1139,7 @@ impl BuilderTab {
         };
         let sql = self.query.sql();
         let db = self.db.clone();
+        let info = dbc.info.clone();
         let (tx, rx) = channel();
         std::thread::spawn(move || {
             use mysql::prelude::*;
@@ -1147,7 +1148,8 @@ impl BuilderTab {
                 if !db.is_empty() {
                     conn.query_drop(format!("USE {}", db::q(&db))).map_err(db::err_text)?;
                 }
-                let mut out = db::run_script(&mut conn, &sql);
+                let id = conn.connection_id();
+                let mut out = db::run_script_with(&mut conn, &sql, Some(&|| db::kill_query(&info, id)));
                 if let Some(e) = out.error.take() {
                     return Err(e);
                 }

@@ -73,7 +73,7 @@ pub fn show(
             let mut chars = c.chars().count();
             for r in rows.iter().take(100) {
                 if let Some(Some(v)) = r.get(ci) {
-                    chars = chars.max(v.lines().next().unwrap_or("").chars().count().min(40));
+                    chars = chars.max(v.lines().next().unwrap_or("").chars().take(40).count());
                 }
             }
             let w = (chars as f32 * 7.5 + 20.0).clamp(50.0, 320.0);

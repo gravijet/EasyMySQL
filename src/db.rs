@@ -26,6 +26,14 @@ impl Default for ConnInfo {
     }
 }
 
+/// Beendet die laufende Abfrage einer Verbindung auf dem Server (`KILL QUERY`) ueber eine
+/// zweite, kurzlebige Verbindung.
+pub fn kill_query(info: &ConnInfo, connection_id: u32) {
+    if let Ok(mut c) = Conn::new(info.opts()) {
+        let _ = c.query_drop(format!("KILL QUERY {connection_id}"));
+    }
+}
+
 impl ConnInfo {
     pub fn opts(&self) -> Opts {
         OptsBuilder::new()
@@ -1163,11 +1171,11 @@ pub struct StmtResult {
 }
 
 /// Fuehrt die Anweisungen nacheinander aus; bricht beim ersten Fehler ab.
-pub fn run_statements<C: Queryable>(conn: &mut C, stmts: &[Stmt]) -> Vec<StmtResult> {
+pub fn run_statements<C: Queryable>(conn: &mut C, stmts: &[Stmt], abort: Option<&dyn Fn()>) -> Vec<StmtResult> {
     let mut out = Vec::new();
     for st in stmts {
         let start = Instant::now();
-        let mut r = run_script(conn, &st.sql);
+        let mut r = run_script_with(conn, &st.sql, abort);
         let mut res = StmtResult {
             line: st.line,
             preview: st.sql.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(90).collect(),

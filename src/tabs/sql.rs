@@ -199,6 +199,7 @@ impl SqlTab {
             },
         };
         let database = self.database.clone();
+        let info = dbc.info.clone();
         let (tx, rx) = channel();
         self.running = stmts.clone();
         std::thread::spawn(move || {
@@ -227,7 +228,9 @@ impl SqlTab {
                     }
                 }
             }
-            let results = db::run_statements(&mut conn, &stmts);
+            // Liefert eine Leseabfrage mehr Zeilen als gespeichert werden, wird sie auf dem Server beendet
+            let (info, id) = (info, conn.connection_id());
+            let results = db::run_statements(&mut conn, &stmts, Some(&|| db::kill_query(&info, id)));
             let lost = results.iter().any(|r| {
                 r.error.as_ref().is_some_and(|e| e.contains("IoError") || e.contains("broken pipe") || e.contains("gone away"))
             });
