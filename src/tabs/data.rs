@@ -18,6 +18,8 @@ pub struct DataTab {
     columns: Vec<String>,
     rows: Vec<Row>,
     total: Option<u64>,
+    /// Zaehlen laeuft im Hintergrund: COUNT(*) auf einer riesigen Tabelle dauert Sekunden
+    count_job: Option<std::sync::mpsc::Receiver<Option<u64>>>,
     info: Option<TableInfo>,
     loaded: bool,
     error: Option<String>,
@@ -38,6 +40,7 @@ impl DataTab {
             columns: Vec::new(),
             rows: Vec::new(),
             total: None,
+            count_job: None,
             info: None,
             loaded: false,
             error: None,
@@ -84,11 +87,16 @@ impl DataTab {
                 self.rows.clear();
             }
         }
-        self.total = dbc
-            .rows(&format!("SELECT COUNT(*) FROM {}{}", self.full_name(), self.where_clause()), ())
-            .ok()
-            .and_then(|r| r.first().and_then(|r| r[0].clone()))
-            .and_then(|v| v.parse().ok());
+        self.total = None;
+        let pool = dbc.pool.clone();
+        let sql = format!("SELECT COUNT(*) FROM {}{}", self.full_name(), self.where_clause());
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            use mysql::prelude::Queryable;
+            let n = pool.get_conn().ok().and_then(|mut c| c.query_first::<u64, _>(sql).ok().flatten());
+            let _ = tx.send(n);
+        });
+        self.count_job = Some(rx);
     }
 
     /// WHERE-Bedingung, die genau eine Zeile trifft.
@@ -276,6 +284,16 @@ impl TabView for DataTab {
     fn ui(&mut self, ui: &mut egui::Ui, cx: &mut Ctx) {
         if !self.loaded {
             self.reload(cx);
+        }
+        if let Some(rx) = &self.count_job {
+            match rx.try_recv() {
+                Ok(n) => {
+                    self.total = n;
+                    self.count_job = None;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => ui.ctx().request_repaint_after(std::time::Duration::from_millis(100)),
+                Err(_) => self.count_job = None,
+            }
         }
         ui.horizontal(|ui| {
             ui.label(RichText::new(format!("{}.{}", self.db, self.table)).strong());
