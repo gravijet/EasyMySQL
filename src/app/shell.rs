@@ -121,7 +121,7 @@ impl EasyApp {
                     item(ui, crate::i18n::text("Einstellungen"), Cmd::Settings, &mut cmd);
                     if ui.button(crate::i18n::text("Beenden")).clicked() {
                         ui.close();
-                        self.quit();
+                        self.request_quit(&ctx);
                     }
                 });
                 ui.menu_button(crate::i18n::text("Ansicht"), |ui| {

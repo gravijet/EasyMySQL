@@ -400,7 +400,30 @@ impl EasyApp {
         self.active = self.tabs.len() - 1;
     }
 
+    /// Registerkarte schliessen; hat sie ungespeicherte Aenderungen (Autosave aus), wird vorher gefragt.
     fn close_tab(&mut self, i: usize) {
+        self.request_close(vec![i]);
+    }
+
+    fn request_close(&mut self, mut idx: Vec<usize>) {
+        idx.sort_unstable();
+        idx.dedup();
+        idx.retain(|&i| i < self.tabs.len());
+        let files: Vec<String> = idx.iter().filter_map(|&i| self.tabs[i].unsaved()).collect();
+        if files.is_empty() {
+            self.close_now(idx);
+        } else {
+            self.dialogs.push(Dialog::Unsaved { files, then: dialogs::Then::CloseTabs(idx) });
+        }
+    }
+
+    fn close_now(&mut self, idx: Vec<usize>) {
+        for i in idx.into_iter().rev() {
+            self.close_tab_now(i);
+        }
+    }
+
+    fn close_tab_now(&mut self, i: usize) {
         if i >= self.tabs.len() || !self.tabs[i].on_close() {
             return;
         }
@@ -419,12 +442,25 @@ impl EasyApp {
     }
 
     fn close_tabs_where(&mut self, keep: impl Fn(usize) -> bool) {
-        let mut i = self.tabs.len();
-        while i > 0 {
-            i -= 1;
-            if !keep(i) {
-                self.close_tab(i);
-            }
+        let idx: Vec<usize> = (0..self.tabs.len()).filter(|&i| !keep(i)).collect();
+        self.request_close(idx);
+    }
+
+    /// Alle Tabs mit ungespeicherten Dateien (nur bei ausgeschaltetem Autosave)
+    fn unsaved_files(&self) -> Vec<String> {
+        self.tabs.iter().filter_map(|t| t.unsaved()).collect()
+    }
+
+    /// Beenden; vorher nach ungespeicherten Aenderungen fragen.
+    pub(crate) fn request_quit(&mut self, ctx: &egui::Context) {
+        let files = self.unsaved_files();
+        if files.is_empty() {
+            self.quit();
+        } else {
+            // Das Fenster kann im Infobereich versteckt sein
+            ctx.send_viewport_cmd(ViewportCommand::Visible(true));
+            ctx.send_viewport_cmd(ViewportCommand::Focus);
+            self.dialogs.push(Dialog::Unsaved { files, then: dialogs::Then::Quit });
         }
     }
 
@@ -830,6 +866,15 @@ impl EasyApp {
     }
 
     pub(crate) fn switch_project(&mut self, dir: Option<PathBuf>) {
+        let files = self.unsaved_files();
+        if files.is_empty() {
+            self.switch_project_now(dir);
+        } else {
+            self.dialogs.push(Dialog::Unsaved { files, then: dialogs::Then::Project(dir) });
+        }
+    }
+
+    fn switch_project_now(&mut self, dir: Option<PathBuf>) {
         self.save_all();
         if let Some(d) = &dir {
             self.settings.add_recent(d);
@@ -862,6 +907,7 @@ fn apply_editor_prefs(s: &Settings) {
     crate::sqledit::set_font_size(s.editor_font);
     crate::sqledit::AUTO_SUGGEST.store(s.auto_suggest, Ordering::Relaxed);
     crate::sqledit::AUTO_CLOSE.store(s.auto_close, Ordering::Relaxed);
+    crate::tabs::sql::AUTOSAVE.store(s.autosave, Ordering::Relaxed);
 }
 
 /// egui-Kontext fuer Aktionen, die ihn brauchen (einmal je Bild gesetzt)
@@ -884,7 +930,7 @@ impl eframe::App for EasyApp {
             match c {
                 TrayCmd::Show => ctx.request_repaint(),
                 TrayCmd::RestartServer => self.restart_server(ctx),
-                TrayCmd::Quit => self.quit(),
+                TrayCmd::Quit => self.request_quit(ctx),
             }
         }
         self.check_server(ctx);

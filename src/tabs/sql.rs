@@ -1,4 +1,4 @@
-// SQL-Editor-Registerkarte: eine Datei (oder unbenannte Abfrage), automatisch gespeichert.
+// SQL-Editor-Registerkarte: eine Datei (oder unbenannte Abfrage), auf Wunsch automatisch gespeichert.
 
 use super::{Action, Ctx, TabView};
 use crate::db::{self, Stmt, StmtResult};
@@ -12,8 +12,12 @@ use eframe::egui::{self, RichText};
 use mysql::Conn;
 use mysql::prelude::*;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, channel};
 use std::time::{Duration, Instant};
+
+/// Dateien kurz nach der letzten Aenderung speichern (Einstellungen)
+pub static AUTOSAVE: AtomicBool = AtomicBool::new(true);
 
 type JobResult = (Option<Conn>, Vec<StmtResult>, Option<String>, Option<String>);
 
@@ -599,6 +603,15 @@ impl TabView for SqlTab {
         true
     }
 
+    fn unsaved(&self) -> Option<String> {
+        let f = self.file.as_ref()?;
+        (self.dirty() && !AUTOSAVE.load(Ordering::Relaxed)).then(|| workspace::dir_name(f))
+    }
+
+    fn discard_changes(&mut self) {
+        self.text = self.saved_text.clone();
+    }
+
     fn save_now_quiet(&mut self) {
         self.save();
     }
@@ -621,8 +634,9 @@ impl TabView for SqlTab {
         if self.job.is_some() {
             ui.ctx().request_repaint_after(Duration::from_millis(50));
         }
-        // Automatisch speichern 1 s nach der letzten Aenderung
-        if self.dirty() {
+        // Automatisch speichern 1 s nach der letzten Aenderung. Unbenannte Abfragen werden immer gesichert,
+        // Dateien nur mit der Einstellung "Automatisch speichern" (sonst Strg+S).
+        if self.dirty() && (self.file.is_none() || AUTOSAVE.load(Ordering::Relaxed)) {
             if self.last_edit.elapsed() > Duration::from_millis(1000) {
                 self.save();
             } else {
@@ -757,5 +771,31 @@ mod performance_tests {
         let start = Instant::now();
         for _ in 0..30 { render(); }
         println!("50,000 rows × 12 columns: {:.3} ms/frame", start.elapsed().as_secs_f64() * 1000.0 / 30.0);
+    }
+}
+
+#[cfg(test)]
+mod autosave_tests {
+    use super::*;
+
+    #[test]
+    fn unsaved_changes_are_reported_without_autosave_and_can_be_discarded() {
+        let dir = std::env::temp_dir().join(format!("easymysql-autosave-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("a.sql");
+        std::fs::write(&file, "SELECT 1;").unwrap();
+        let mut tab = SqlTab::open_file(&file, "", None).unwrap();
+        tab.text = "SELECT 2;".into();
+        AUTOSAVE.store(false, Ordering::Relaxed);
+        assert_eq!(tab.unsaved().as_deref(), Some("a.sql"));
+        tab.discard_changes();
+        assert_eq!(tab.unsaved(), None);
+        assert_eq!(tab.text, "SELECT 1;");
+        // Mit Autosave gibt es nichts nachzufragen
+        tab.text = "SELECT 3;".into();
+        AUTOSAVE.store(true, Ordering::Relaxed);
+        assert_eq!(tab.unsaved(), None);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

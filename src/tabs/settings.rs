@@ -254,6 +254,10 @@ impl TabView for SettingsTab {
                     ui.checkbox(&mut s.auto_suggest, crate::i18n::text("Automatisch Vorschläge zeigen"))
                         .on_hover_text(crate::tr_format!("sonst nur mit {}", "otherwise only with {}", keymap::text(Cmd::Suggest)));
                     ui.end_row();
+                    ui.label(crate::i18n::text("Speichern"));
+                    ui.checkbox(&mut s.autosave, crate::i18n::text("Dateien automatisch speichern"))
+                        .on_hover_text(crate::tr_format!("sonst nur mit {}; beim Schließen wird dann nachgefragt", "otherwise only with {}; closing then asks first", keymap::text(Cmd::Save)));
+                    ui.end_row();
                     ui.label(crate::i18n::text("Klammern schließen"));
                     ui.checkbox(&mut s.auto_close, crate::i18n::text("( [ { ' \" ` automatisch schließen"));
                     ui.end_row();

@@ -207,6 +207,12 @@ pub trait TabView {
         true
     }
     fn save_now(&mut self) {}
+    /// Name der Datei, wenn sie Aenderungen hat, die ohne Autosave noch nicht gespeichert sind
+    fn unsaved(&self) -> Option<String> {
+        None
+    }
+    /// Nicht gespeicherte Aenderungen verwerfen (nach der Rueckfrage)
+    fn discard_changes(&mut self) {}
     /// Speichern ohne Rueckfrage (beim Beenden, Projektwechsel)
     fn save_now_quiet(&mut self) {
         self.save_now();

@@ -13,6 +13,16 @@ pub enum Dialog {
     Myisam(Vec<(String, String)>),
     /// Verbindung fehlgeschlagen
     ConnectFailed(String),
+    /// Ungespeicherte Dateien (Autosave aus) vor dem Schliessen, Beenden oder Projektwechsel
+    Unsaved { files: Vec<String>, then: Then },
+}
+
+/// Was nach der Rueckfrage zu ungespeicherten Dateien geschieht
+#[derive(Clone)]
+pub enum Then {
+    CloseTabs(Vec<usize>),
+    Quit,
+    Project(Option<PathBuf>),
 }
 
 impl EasyApp {
@@ -25,6 +35,7 @@ impl EasyApp {
         let mut convert: Option<Vec<(String, String)>> = None;
         let mut open_settings = false;
         let mut retry = false;
+        let mut unsaved: Option<(bool, Then)> = None;
         let pal = style::pal();
 
         let frame = egui::Frame::window(&ctx.global_style()).inner_margin(egui::Margin::same(14));
@@ -132,6 +143,31 @@ impl EasyApp {
                         }
                     });
                 }
+                Dialog::Unsaved { files, then } => {
+                    ui.label(RichText::new(crate::i18n::text("Ungespeicherte Änderungen")).strong());
+                    ui.add_space(4.0);
+                    ui.label(crate::i18n::text("Diese Dateien wurden geändert und noch nicht gespeichert:"));
+                    for f in files.iter().take(8) {
+                        ui.label(RichText::new(f.as_str()).monospace());
+                    }
+                    if files.len() > 8 {
+                        ui.label(RichText::new(format!("… +{}", files.len() - 8)).color(pal.text_weak));
+                    }
+                    ui.add_space(6.0);
+                    ui.horizontal(|ui| {
+                        if ui.button(crate::i18n::text("Speichern")).clicked() || ui.input(|i| i.key_pressed(Key::Enter)) {
+                            unsaved = Some((true, then.clone()));
+                            close = true;
+                        }
+                        if ui.button(crate::i18n::text("Nicht speichern")).clicked() {
+                            unsaved = Some((false, then.clone()));
+                            close = true;
+                        }
+                        if ui.button(crate::i18n::text("Abbrechen")).clicked() || ui.input(|i| i.key_pressed(Key::Escape)) {
+                            close = true;
+                        }
+                    });
+                }
                 Dialog::ConnectFailed(e) => {
                     ui.label(RichText::new(crate::i18n::text("Verbindung fehlgeschlagen")).strong());
                     ui.add_space(4.0);
@@ -160,6 +196,9 @@ impl EasyApp {
             self.dialogs.pop();
         }
 
+        if let Some((save, then)) = unsaved {
+            self.finish_unsaved(save, then);
+        }
         if let Some((db, sql)) = run_sql {
             self.run_confirmed(db, sql);
         }
@@ -206,6 +245,28 @@ impl EasyApp {
                     self.dialogs.pop();
                     self.toast(crate::i18n::text("Export läuft …"));
                 }
+    }
+
+    /// Antwort auf die Rueckfrage zu ungespeicherten Dateien: speichern oder verwerfen, dann fortfahren.
+    fn finish_unsaved(&mut self, save: bool, then: Then) {
+        let idx: Vec<usize> = match &then {
+            Then::CloseTabs(v) => v.clone(),
+            _ => (0..self.tabs.len()).collect(),
+        };
+        for i in idx {
+            if let Some(t) = self.tabs.get_mut(i) {
+                if save {
+                    t.save_now_quiet();
+                } else {
+                    t.discard_changes();
+                }
+            }
+        }
+        match then {
+            Then::CloseTabs(v) => self.close_now(v),
+            Then::Quit => self.quit(),
+            Then::Project(dir) => self.switch_project_now(dir),
+        }
     }
 
     /// Bestaetigtes SQL ausfuehren (vorher bei Loeschen automatisch sichern)
