@@ -504,10 +504,10 @@ impl SqlEditor {
                 ui.horizontal(|ui| {
                     ui.label(crate::i18n::text("Ersetzen:"));
                     ui.add(egui::TextEdit::singleline(&mut f.replace).desired_width(200.0));
-                    if ui.small_button(crate::i18n::text("Ersetzen")).clicked() {
+                    if ui.button(crate::i18n::text("Ersetzen")).clicked() {
                         replace_one = true;
                     }
-                    if ui.small_button(crate::i18n::text("Alle ersetzen")).clicked() {
+                    if ui.button(crate::i18n::text("Alle ersetzen")).clicked() {
                         replace_all = true;
                     }
                 });

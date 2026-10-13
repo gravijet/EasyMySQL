@@ -136,7 +136,7 @@ impl SafetyTab {
         });
         let old = self.cfg.clone();
         ui.horizontal_wrapped(|ui| {
-            ui.checkbox(&mut self.cfg.auto, crate::i18n::text("Automatisch sichern, alle"));
+            crate::widgets::check(ui, &mut self.cfg.auto, crate::i18n::text("Automatisch sichern, alle"));
             ui.add(egui::DragValue::new(&mut self.cfg.interval_hours).range(1..=168).suffix(" h"));
             ui.label(crate::i18n::text("· behalten: die letzten"));
             ui.add(egui::DragValue::new(&mut self.cfg.keep_count).range(1..=200));
@@ -146,11 +146,11 @@ impl SafetyTab {
         ui.horizontal(|ui| {
             ui.label(crate::i18n::text("Ordner:"));
             ui.label(RichText::new(self.cfg.dir().display().to_string()).monospace().small());
-            if ui.small_button(crate::i18n::text("Ändern …")).clicked()
+            if ui.button(crate::i18n::text("Ändern …")).clicked()
                 && let Some(p) = rfd::FileDialog::new().pick_folder() {
                     self.cfg.dir = p.display().to_string();
                 }
-            if !self.cfg.dir.is_empty() && ui.small_button(crate::i18n::text("Standard")).clicked() {
+            if !self.cfg.dir.is_empty() && ui.button(crate::i18n::text("Standard")).clicked() {
                 self.cfg.dir.clear();
             }
         });

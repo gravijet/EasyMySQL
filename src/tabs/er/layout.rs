@@ -83,8 +83,7 @@ impl Lg {
         let width = self.layers[l + 1].len();
         let mut tree = vec![0u32; width + 1];
         let mut count = 0usize;
-        let mut seen = 0usize;
-        for &(_, low) in &edges {
+        for (seen, &(_, low)) in edges.iter().enumerate() {
             // schon eingefuegte Kanten mit groesserer unterer Position kreuzen diese Kante
             let mut i = low + 1;
             let mut le = 0usize;
@@ -98,7 +97,6 @@ impl Lg {
                 tree[i] += 1;
                 i += i & i.wrapping_neg();
             }
-            seen += 1;
         }
         count
     }
@@ -213,6 +211,87 @@ impl Lg {
         }
         out
     }
+}
+
+
+/// Anfangshoehen: die Tabellen jeder Ebene untereinander, Ebenen mittig zueinander
+fn stack_layers(lg: &Lg, y: &mut [f32]) {
+    let mut heights = Vec::with_capacity(lg.layers.len());
+    for layer_v in &lg.layers {
+        let mut at = 0.0;
+        for (i, &v) in layer_v.iter().enumerate() {
+            if i > 0 {
+                at += lg.gap(layer_v[i - 1], v);
+            }
+            y[v] = at;
+            at += lg.h[v];
+        }
+        heights.push(at);
+    }
+    let tallest = heights.iter().copied().fold(0.0, f32::max);
+    for (l, layer_v) in lg.layers.iter().enumerate() {
+        let shift = (tallest - heights[l]) / 2.0;
+        for &v in layer_v {
+            y[v] += shift;
+        }
+    }
+}
+
+/// Hoehen so setzen, dass jede Tabelle moeglichst auf gleicher Hoehe wie die Spalten liegt, mit denen
+/// sie verbunden ist (abwechselnd von links nach rechts und zurueck)
+fn assign_heights(lg: &Lg, y: &mut [f32], passes: usize) {
+    let n_layers = lg.layers.len();
+    let mut desired = Vec::new();
+    for pass in 0..passes {
+        let order: Vec<usize> = if pass % 2 == 0 { (0..n_layers).collect() } else { (0..n_layers).rev().collect() };
+        for l in order {
+            desired.clear();
+            for &v in &lg.layers[l] {
+                let (mut sum, mut wsum) = (0.0f32, 0.0f32);
+                for &(nb, mine, theirs, wt) in lg.left[v].iter().chain(lg.right[v].iter()) {
+                    sum += (y[nb] + theirs - mine) * wt;
+                    wsum += wt;
+                }
+                desired.push(if wsum > 0.0 { sum / wsum } else { y[v] });
+            }
+            let placed = lg.place_layer(l, &desired);
+            for (&v, p) in lg.layers[l].iter().zip(placed) {
+                y[v] = p;
+            }
+        }
+    }
+}
+
+/// Benachbarte Tabellen vertauschen, wenn sich dadurch Linien weniger kreuzen – gemessen an den
+/// echten Ansatzpunkten (Spaltenzeilen), nicht nur an der Reihenfolge der Tabellen.
+fn refine_ports(lg: &mut Lg, y: &[f32]) -> bool {
+    // Kreuzungen, wenn `a` ueber `b` steht
+    let cost = |lg: &Lg, a: usize, b: usize| -> usize {
+        let mut c = 0;
+        for (sa, sb) in [(&lg.left[a], &lg.left[b]), (&lg.right[a], &lg.right[b])] {
+            for &(x, _, px, _) in sa {
+                for &(w, _, pw, _) in sb {
+                    if y[x] + px > y[w] + pw + 0.01 {
+                        c += 1;
+                    }
+                }
+            }
+        }
+        c
+    };
+    let mut changed = false;
+    for l in 0..lg.layers.len() {
+        for i in 0..lg.layers[l].len().saturating_sub(1) {
+            let (u, v) = (lg.layers[l][i], lg.layers[l][i + 1]);
+            if cost(lg, v, u) < cost(lg, u, v) {
+                lg.layers[l].swap(i, i + 1);
+                lg.pos[u] = i + 1;
+                lg.pos[v] = i;
+                changed = true;
+            }
+        }
+    }
+    changed
 }
 
 fn layer_component(nodes: &[usize], sizes: &[Vec2], pairs: &[Pair], ids: &[usize]) -> Comp {
@@ -367,10 +446,8 @@ fn layer_component(nodes: &[usize], sizes: &[Vec2], pairs: &[Pair], ids: &[usize
             }
         }
     }
-    for v in 0..total {
-        if visit[v] == f32::MAX {
-            visit[v] = 0.0;
-        }
+    for v in visit.iter_mut().filter(|v| **v == f32::MAX) {
+        *v = 0.0;
     }
     let mut order: Vec<usize> = (0..total).collect();
     order.sort_by(|&a, &b| visit[a].total_cmp(&visit[b]).then(a.cmp(&b)));
@@ -416,46 +493,18 @@ fn layer_component(nodes: &[usize], sizes: &[Vec2], pairs: &[Pair], ids: &[usize
     }
     let crossings = best.0;
 
-    // --- 3. Hoehen
+    // --- 3. Hoehen; danach Reihenfolge nach den tatsaechlichen Ansatzpunkten der Linien verfeinern
     let mut y = vec![0.0f32; total];
-    let mut heights = Vec::with_capacity(n_layers);
-    for l in 0..n_layers {
-        let layer_v = &lg.layers[l];
-        let mut at = 0.0;
-        for (i, &v) in layer_v.iter().enumerate() {
-            if i > 0 {
-                at += lg.gap(layer_v[i - 1], v);
-            }
-            y[v] = at;
-            at += lg.h[v];
-        }
-        heights.push(at);
-    }
-    let tallest = heights.iter().copied().fold(0.0, f32::max);
-    for l in 0..n_layers {
-        let shift = (tallest - heights[l]) / 2.0;
-        for &v in &lg.layers[l] {
-            y[v] += shift;
-        }
-    }
     let passes = if total > 20_000 { 4 } else { 14 };
-    let mut desired = Vec::new();
-    for pass in 0..passes {
-        let ls: Vec<usize> = if pass % 2 == 0 { (0..n_layers).collect() } else { (0..n_layers).rev().collect() };
-        for l in ls {
-            desired.clear();
-            for &v in &lg.layers[l] {
-                let (mut sum, mut wsum) = (0.0f32, 0.0f32);
-                for &(nb, mine, theirs, wt) in lg.left[v].iter().chain(lg.right[v].iter()) {
-                    sum += (y[nb] + theirs - mine) * wt;
-                    wsum += wt;
-                }
-                desired.push(if wsum > 0.0 { sum / wsum } else { y[v] });
+    stack_layers(&lg, &mut y);
+    assign_heights(&lg, &mut y, passes);
+    if total <= 12_000 {
+        for _ in 0..3 {
+            if !refine_ports(&mut lg, &y) {
+                break;
             }
-            let placed = lg.place_layer(l, &desired);
-            for (&v, p) in lg.layers[l].iter().zip(placed) {
-                y[v] = p;
-            }
+            stack_layers(&lg, &mut y);
+            assign_heights(&lg, &mut y, passes);
         }
     }
     let min_y = y.iter().copied().fold(f32::MAX, f32::min);

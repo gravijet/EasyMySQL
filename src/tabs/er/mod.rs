@@ -540,11 +540,11 @@ impl TabView for ErTab {
                     ui.radio_value(&mut self.notation, n, n.label());
                 }
                 ui.separator();
-                ui.checkbox(&mut self.show_types, crate::i18n::text("Datentypen"));
+                crate::widgets::check(ui, &mut self.show_types, crate::i18n::text("Datentypen"));
                 if self.notation == Notation::Crow {
-                    ui.checkbox(&mut self.rel_labels, crate::i18n::text("1:n / 1:1 / n:m an den Linien"));
+                    crate::widgets::check(ui, &mut self.rel_labels, crate::i18n::text("1:n / 1:1 / n:m an den Linien"));
                 }
-                ui.checkbox(&mut self.collapse_nm, crate::i18n::text("Zwischentabellen als n:m-Linie"));
+                crate::widgets::check(ui, &mut self.collapse_nm, crate::i18n::text("Zwischentabellen als n:m-Linie"));
             });
             if before != (self.notation, self.collapse_nm, self.rel_labels) {
                 if before.1 != self.collapse_nm {

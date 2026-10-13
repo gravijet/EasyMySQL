@@ -122,7 +122,7 @@ impl UsersTab {
     fn list_ui(&mut self, ui: &mut egui::Ui, cx: &mut Ctx) {
         let pal = style::pal();
         ui.horizontal(|ui| {
-            ui.add_sized([ui.available_width() - 56.0, 22.0], egui::TextEdit::singleline(&mut self.filter).hint_text(tr("Filtern", "Filter")));
+            ui.add_sized([ui.available_width() - 56.0, 22.0], egui::TextEdit::singleline(&mut self.filter).vertical_align(egui::Align::Center).hint_text(tr("Filtern", "Filter")));
             if icons::button(ui, Icon::Plus, tr("Neuer Benutzer", "New user")).clicked() {
                 self.new_user = Some(NewUser { name: String::new(), host: "localhost".into(), password: String::new(), own_db: true });
             }
@@ -182,7 +182,7 @@ impl UsersTab {
         if let Some(pw) = self.password.as_mut() {
             let mut apply = false;
             ui.horizontal(|ui| {
-                let r = ui.add_sized([220.0, 22.0], egui::TextEdit::singleline(pw).password(true).hint_text(tr("Neues Passwort", "New password")));
+                let r = ui.add_sized([220.0, 22.0], egui::TextEdit::singleline(pw).vertical_align(egui::Align::Center).password(true).hint_text(tr("Neues Passwort", "New password")));
                 if (r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))) || ui.button("OK").clicked() {
                     apply = true;
                 }
@@ -281,17 +281,19 @@ impl UsersTab {
         ui.add_space(4.0);
         style::group_frame().show(ui, |ui| {
             ui.set_min_width(ui.available_width());
-            egui::Grid::new("users-privs").num_columns(3).striped(false).spacing([24.0, 4.0]).show(ui, |ui| {
+            // Spaltenzahl nach der Breite: etwa 230 Pixel je Recht
+            let cols = ((ui.available_width() / 230.0) as usize).clamp(1, 3);
+            egui::Grid::new(("users-privs", cols)).num_columns(cols).striped(false).spacing([20.0, 4.0]).show(ui, |ui| {
                 for (i, p) in scope.privileges().iter().enumerate() {
                     let mut on = self.wanted.iter().any(|w| w == p);
-                    if ui.checkbox(&mut on, *p).changed() {
+                    if crate::widgets::check(ui, &mut on, *p).changed() {
                         if on {
                             self.wanted.push(p.to_string());
                         } else {
                             self.wanted.retain(|w| w != p);
                         }
                     }
-                    if i % 3 == 2 {
+                    if i % cols == cols - 1 {
                         ui.end_row();
                     }
                 }
@@ -318,16 +320,16 @@ impl UsersTab {
         egui::Window::new(tr("Neuer Benutzer", "New user")).collapsible(false).resizable(false).anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]).show(ctx, |ui| {
             egui::Grid::new("newuser").num_columns(2).spacing([10.0, 8.0]).show(ui, |ui| {
                 ui.label(tr("Name", "Name"));
-                ui.add_sized([220.0, 22.0], egui::TextEdit::singleline(&mut n.name));
+                ui.add_sized([220.0, 22.0], egui::TextEdit::singleline(&mut n.name).vertical_align(egui::Align::Center));
                 ui.end_row();
                 ui.label("Host");
-                ui.add_sized([220.0, 22.0], egui::TextEdit::singleline(&mut n.host)).on_hover_text(tr("localhost = nur dieser Computer, % = von überall", "localhost = this computer only, % = from anywhere"));
+                ui.add_sized([220.0, 22.0], egui::TextEdit::singleline(&mut n.host).vertical_align(egui::Align::Center)).on_hover_text(tr("localhost = nur dieser Computer, % = von überall", "localhost = this computer only, % = from anywhere"));
                 ui.end_row();
                 ui.label(tr("Passwort", "Password"));
-                ui.add_sized([220.0, 22.0], egui::TextEdit::singleline(&mut n.password).password(true));
+                ui.add_sized([220.0, 22.0], egui::TextEdit::singleline(&mut n.password).vertical_align(egui::Align::Center).password(true));
                 ui.end_row();
             });
-            ui.checkbox(&mut n.own_db, tr("Eigene Datenbank mit allen Rechten anlegen", "Create a database of its own with full access"));
+            crate::widgets::check(ui, &mut n.own_db, tr("Eigene Datenbank mit allen Rechten anlegen", "Create a database of its own with full access"));
             ui.add_space(6.0);
             ui.horizontal(|ui| {
                 create = ui.add_enabled(!n.name.trim().is_empty() && !n.host.trim().is_empty(), egui::Button::new(tr("Anlegen", "Create"))).clicked();

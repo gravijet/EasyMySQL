@@ -398,7 +398,7 @@ impl ErTab {
         if schema.tables.is_empty() {
             painter.text(rect.center(), Align2::CENTER_CENTER, crate::i18n::text("Diese Datenbank enthält noch keine Tabellen."), FontId::proportional(14.0), style::pal().text_weak);
         }
-        painter.rect_stroke(rect, 0.0, Stroke::new(1.0, style::pal().border), StrokeKind::Inside);
+        painter.rect_stroke(rect, style::RADIUS + 3, Stroke::new(1.0, style::pal().border), StrokeKind::Inside);
 
         // Kontextmenue
         let menu = self.menu.clone();

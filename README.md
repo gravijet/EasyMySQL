@@ -12,7 +12,7 @@ The default connection uses port `3306`, user `root` and an empty password. The 
 mysql -u root
 ```
 
-Closing the window leaves the server running in the system tray. Use **File → Quit** or the tray menu to stop it.
+Closing the window quits EasyMySQL and shuts the server down cleanly. If you prefer it to keep running, turn on *Settings → Start → Keep running in the tray*.
 
 ## Usage
 

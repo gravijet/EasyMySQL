@@ -230,6 +230,7 @@ impl Updater {
             .open(&mut open)
             .collapsible(false)
             .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .default_width(460.0)
             .show(ctx, |ui| {
                 ui.label(crate::tr_format!("Installierte Version: {}", "Installed version: {}", env!("CARGO_PKG_VERSION")));

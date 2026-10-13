@@ -130,7 +130,9 @@ impl SettingsTab {
                     let top = ui.cursor().top();
                     ui.horizontal(|ui| {
                         ui.set_min_height(34.0);
-                        ui.add_sized([250.0, 22.0], egui::Label::new(cmd.label()).truncate());
+                        ui.allocate_ui_with_layout(egui::vec2(210.0, 22.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                            ui.add(egui::Label::new(cmd.label()).truncate());
+                        });
                         let list = self.keymap.get(cmd).to_vec();
                         for (i, b) in list.iter().enumerate() {
                             let rec = self.record == Some((cmd, Some(i)));

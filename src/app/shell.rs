@@ -111,7 +111,22 @@ impl EasyApp {
             }
         };
         ui.horizontal(|ui| {
+            ui.set_min_height(34.0);
+            ui.spacing_mut().item_spacing.x = 2.0;
+            ui.spacing_mut().button_padding = vec2(11.0, 6.0);
+            // Zeichen und Name des Programms
+            {
+                let pal = style::pal();
+                let (r, _) = ui.allocate_exact_size(vec2(26.0, 26.0), Sense::hover());
+                ui.painter().rect_filled(r, 8.0, pal.accent);
+                icons::paint(ui.painter(), Rect::from_center_size(r.center(), vec2(16.0, 16.0)), Icon::Database, egui::Color32::WHITE);
+                ui.add_space(6.0);
+                ui.label(egui::RichText::new("EasyMySQL").strong().color(pal.text));
+                ui.add_space(14.0);
+            }
             egui::MenuBar::new().ui(ui, |ui| {
+                ui.spacing_mut().button_padding = vec2(12.0, 6.0);
+                ui.spacing_mut().item_spacing.x = 4.0;
                 ui.menu_button(crate::i18n::text("Datei"), |ui| {
                     item(ui, crate::i18n::text("Neue Abfrage"), Cmd::NewQuery, &mut cmd);
                     item(ui, crate::i18n::text("Datei öffnen …"), Cmd::OpenFile, &mut cmd);
@@ -208,9 +223,9 @@ impl EasyApp {
                     }
                 });
             });
-            // Werkzeuge, die eine Registerkarte oeffnen
+            // Rechts: Neue Abfrage, Werkzeuge und der Serverzustand
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.spacing_mut().item_spacing.x = 2.0;
+                ui.spacing_mut().item_spacing.x = 4.0;
                 let st = self.server.state();
                 let pal = style::pal();
                 let color = if st.is_running() {
@@ -218,13 +233,18 @@ impl EasyApp {
                 } else if matches!(st, State::Failed(_) | State::NotFound) {
                     pal.error_text
                 } else {
-                    style::pal().syn_function
+                    pal.warn_text
                 };
-                let (r, resp) = ui.allocate_exact_size(vec2(22.0, 22.0), Sense::click());
-                if resp.hovered() {
-                    ui.painter().rect_filled(r, 3.0, pal.hover);
-                }
-                ui.painter().circle_filled(r.center(), 4.5, color);
+                // Zustandsanzeige: Punkt und kurzer Text
+                let text = match &self.db {
+                    Some(d) => d.info.label(),
+                    None => st.text().to_string(),
+                };
+                let galley = ui.painter().layout_no_wrap(text, egui::FontId::proportional(12.5), pal.text_weak);
+                let (r, resp) = ui.allocate_exact_size(vec2(galley.size().x + 36.0, 28.0), Sense::click());
+                ui.painter().rect(r, 14.0, if resp.hovered() { pal.hover } else { pal.face_light }, egui::Stroke::new(1.0, pal.border), egui::StrokeKind::Inside);
+                ui.painter().circle_filled(pos2(r.left() + 15.0, r.center().y), 4.0, color);
+                ui.painter().galley(pos2(r.left() + 26.0, r.center().y - galley.size().y / 2.0), galley, pal.text_weak);
                 let tip = match &self.db {
                     Some(d) => format!("Server {} – {} (MariaDB {})", st.text(), d.info.label(), d.version.split('-').next().unwrap_or("")),
                     None => format!("Server {}", st.text()),
@@ -232,6 +252,7 @@ impl EasyApp {
                 if resp.on_hover_text(tip).clicked() {
                     cmd = Some(Cmd::ServerLog);
                 }
+                ui.add_space(6.0);
                 for (icon, c) in [(Icon::Wizard, Cmd::QueryBuilder), (Icon::Diagram, Cmd::ErDiagram)] {
                     let tip = match keymap::text(c) {
                         k if k.is_empty() => c.label().to_string(),
@@ -240,6 +261,14 @@ impl EasyApp {
                     if icons::button(ui, icon, &tip).clicked() {
                         cmd = Some(c);
                     }
+                }
+                ui.add_space(6.0);
+                let tip = match keymap::text(Cmd::NewQuery) {
+                    k if k.is_empty() => Cmd::NewQuery.label().to_string(),
+                    k => format!("{} ({k})", Cmd::NewQuery.label()),
+                };
+                if icons::primary_button(ui, Icon::Plus, crate::i18n::tr("Abfrage", "Query")).on_hover_text(tip).clicked() {
+                    cmd = Some(Cmd::NewQuery);
                 }
             });
         });
@@ -371,7 +400,7 @@ impl EasyApp {
                 {
                     dropped = Some((i, p.x));
                 }
-                let over_close = ui.input(|i| i.pointer.hover_pos()).is_some_and(|p| tab_close_rect(r).contains(p));
+                let over_close = r.width() >= 100.0 && ui.input(|i| i.pointer.hover_pos()).is_some_and(|p| tab_close_rect(r).contains(p));
                 paint_tab(ui.painter(), r, look, sel, resp.hovered(), over_close, time, &font);
                 if look.busy {
                     ui.ctx().request_repaint();
@@ -386,7 +415,9 @@ impl EasyApp {
                 if resp.middle_clicked() {
                     close = Some(i);
                 }
-                resp.on_hover_text_at_pointer(&look.title).context_menu(|ui| {
+                let cut = widths[i] < 100.0 || widths[i] + 1.0 < desired[i];
+                let resp = if cut { resp.on_hover_text_at_pointer(&look.title) } else { resp };
+                resp.context_menu(|ui| {
                     if ui.button(crate::i18n::text("Schließen")).clicked() {
                         close = Some(i);
                         ui.close();

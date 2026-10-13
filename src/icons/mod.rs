@@ -63,12 +63,12 @@ pub enum Icon {
     Undo,
     Redo,
     Explain,
-    Code,
     Upload,
     Users,
     ArrowUp,
     ArrowDown,
     Lock,
+    Edit,
     Copy,
 }
 
@@ -127,12 +127,12 @@ impl Icon {
             Icon::Undo => "undo-2",
             Icon::Redo => "redo-2",
             Icon::Explain => "scan-search",
-            Icon::Code => "code-xml",
             Icon::Upload => "upload",
             Icon::Users => "users",
             Icon::ArrowUp => "arrow-up",
             Icon::ArrowDown => "arrow-down",
             Icon::Lock => "lock",
+            Icon::Edit => "pencil",
             Icon::Copy => "copy",
         }
     }
@@ -248,7 +248,7 @@ mod tests {
             Files, Search, Database, History, Diagram, Wizard, Close, Plus, Refresh, NewFile, NewFolder, ChevronDown, ChevronRight, ChevronLeft, Play,
             More, Trash, Up, Down, Collapse, ZoomIn, ZoomOut, Fit, External, Folder, FolderOpen, File, FileText, FileCode, FileImage, FileSheet,
             FileJson, Table, Columns, Key, Link, Settings, Book, Terminal, Shield, Save, Download, Alert, Check, Info,
-            Sparkles, Layers, ArrowLeft, ArrowRight, Undo, Redo, Explain, Code, Upload, Users, ArrowUp, ArrowDown, Lock, Copy,
+            Sparkles, Layers, ArrowLeft, ArrowRight, Undo, Redo, Explain, Upload, Users, ArrowUp, ArrowDown, Lock, Edit, Copy,
         ] {
             let polys = shapes(icon);
             assert!(!polys.is_empty(), "{icon:?}");
@@ -272,7 +272,7 @@ mod tests {
             Files, Search, Database, History, Diagram, Wizard, Close, Plus, Refresh, NewFile, NewFolder, ChevronDown, ChevronRight, ChevronLeft, Play,
             More, Trash, Up, Down, Collapse, ZoomIn, ZoomOut, Fit, External, Folder, FolderOpen, File, FileText, FileCode, FileImage, FileSheet,
             FileJson, Table, Columns, Key, Link, Settings, Book, Terminal, Shield, Save, Download, Alert, Check, Info,
-            Sparkles, Layers, ArrowLeft, ArrowRight, Undo, Redo, Explain, Code, Upload, Users, ArrowUp, ArrowDown, Lock, Copy,
+            Sparkles, Layers, ArrowLeft, ArrowRight, Undo, Redo, Explain, Upload, Users, ArrowUp, ArrowDown, Lock, Edit, Copy,
         ];
         const CELL: usize = 96;
         const COLS: usize = 10;

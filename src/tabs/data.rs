@@ -455,7 +455,7 @@ impl DataTab {
         egui::Window::new(title).collapsible(false).resizable(false).anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]).show(ctx, |ui| {
             egui::Grid::new("coldlg").num_columns(2).spacing([10.0, 8.0]).show(ui, |ui| {
                 ui.label("Name");
-                let r = ui.add_sized([220.0, 22.0], egui::TextEdit::singleline(&mut d.def.name));
+                let r = ui.add_sized([220.0, 22.0], egui::TextEdit::singleline(&mut d.def.name).vertical_align(egui::Align::Center));
                 if d.orig.is_none() && !r.has_focus() && d.def.name.is_empty() {
                     r.request_focus();
                 }
@@ -464,10 +464,10 @@ impl DataTab {
                 super::designer::type_field(ui, "coldlg-type", &mut d.def.col_type);
                 ui.end_row();
                 ui.label("");
-                ui.checkbox(&mut d.def.not_null, crate::i18n::text("Nicht NULL"));
+                crate::widgets::check(ui, &mut d.def.not_null, crate::i18n::text("Nicht NULL"));
                 ui.end_row();
                 ui.label(crate::i18n::text("Standardwert:"));
-                ui.add_sized([220.0, 22.0], egui::TextEdit::singleline(&mut d.def.default));
+                ui.add_sized([220.0, 22.0], egui::TextEdit::singleline(&mut d.def.default).vertical_align(egui::Align::Center));
                 ui.end_row();
             });
             ui.add_space(6.0);
@@ -547,8 +547,8 @@ impl DataTab {
                                 .map(|c| c.col_type.clone())
                                 .unwrap_or_default();
                             ui.label(name.as_str()).on_hover_text(&ty);
-                            ui.add_enabled_ui(!*def, |ui| ui.add_sized([240.0, 20.0], egui::TextEdit::singleline(val).hint_text(ty)));
-                            ui.checkbox(def, crate::i18n::text("Standard"));
+                            ui.add_enabled_ui(!*def, |ui| ui.add_sized([240.0, 20.0], egui::TextEdit::singleline(val).vertical_align(egui::Align::Center).hint_text(ty)));
+                            crate::widgets::check(ui, def, crate::i18n::text("Standard"));
                             ui.end_row();
                         }
                     });
@@ -686,8 +686,9 @@ impl TabView for DataTab {
         }
         ui.horizontal(|ui| {
             ui.label(RichText::new(format!("{}.{}", self.db, self.table)).strong());
-            ui.separator();
-            let r = ui.add_sized([260.0, 22.0], egui::TextEdit::singleline(&mut self.filter).hint_text(crate::i18n::tr("WHERE-Bedingung", "WHERE condition")));
+            ui.add_space(6.0);
+            let w = (ui.available_width() - 46.0 - if self.order.is_empty() { 0.0 } else { 150.0 }).clamp(160.0, 560.0);
+            let r = ui.add_sized([w, 28.0], egui::TextEdit::singleline(&mut self.filter).vertical_align(egui::Align::Center).hint_text(crate::i18n::tr("WHERE-Bedingung", "WHERE condition")));
             if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                 self.offset = 0;
                 self.reload(cx);
@@ -728,21 +729,23 @@ impl TabView for DataTab {
                 cx.actions.push(Action::OpenStructure { db: self.db.clone(), table: self.table.clone() });
             }
             grid::export_menu(ui, &self.table, &self.columns, &self.rows);
-            ui.separator();
-            let total = self.total.unwrap_or(self.rows.len() as u64);
-            if ui.add_enabled_ui(self.offset > 0, |ui| icons::button(ui, Icon::ChevronLeft, crate::i18n::text("Vorherige Seite"))).inner.clicked() {
-                self.offset = self.offset.saturating_sub(self.limit);
-                self.reload(cx);
-            }
-            let to = self.offset + self.rows.len();
-            ui.label(crate::tr_format!("Zeilen {}–{} von {}", "Rows {}–{} of {}", if self.rows.is_empty() { 0 } else { self.offset + 1 }, to, total));
-            if ui.add_enabled_ui((to as u64) < total, |ui| icons::button(ui, Icon::ChevronRight, crate::i18n::text("Nächste Seite"))).inner.clicked() {
-                self.offset += self.limit;
-                self.reload(cx);
-            }
             if !self.has_pk() && !is_view && self.info.is_some() {
                 ui.label(RichText::new(crate::i18n::text("kein Primärschlüssel")).color(pal.error_text));
             }
+            // Seitenwahl rechts
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let total = self.total.unwrap_or(self.rows.len() as u64);
+                let to = self.offset + self.rows.len();
+                if ui.add_enabled_ui((to as u64) < total, |ui| icons::button(ui, Icon::ChevronRight, crate::i18n::text("Nächste Seite"))).inner.clicked() {
+                    self.offset += self.limit;
+                    self.reload(cx);
+                }
+                ui.label(RichText::new(crate::tr_format!("Zeilen {}–{} von {}", "Rows {}–{} of {}", if self.rows.is_empty() { 0 } else { self.offset + 1 }, to, total)).color(pal.text_weak));
+                if ui.add_enabled_ui(self.offset > 0, |ui| icons::button(ui, Icon::ChevronLeft, crate::i18n::text("Vorherige Seite"))).inner.clicked() {
+                    self.offset = self.offset.saturating_sub(self.limit);
+                    self.reload(cx);
+                }
+            });
         });
         if let Some(e) = &self.error {
             ui.label(RichText::new(crate::tr_format!("Fehler: {e}", "Error: {e}")).color(pal.error_text));

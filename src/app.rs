@@ -218,6 +218,8 @@ impl EasyApp {
         }
         let ctx = cc.egui_ctx.clone();
         platform::install_open_hook(Box::new(move || ctx.request_repaint()));
+        // Hat eine zweite Instanz schon Dateien hinterlassen, waehrend dieses Fenster startete?
+        platform::check_queue();
         app
     }
 
@@ -1015,6 +1017,7 @@ fn apply_editor_prefs(s: &Settings) {
     crate::sqledit::AUTO_CLOSE.store(s.auto_close, Ordering::Relaxed);
     crate::tabs::sql::AUTOSAVE.store(s.autosave, Ordering::Relaxed);
     crate::sqledit::LINT.store(s.lint, Ordering::Relaxed);
+    crate::tabs::SHOW_SYSTEM_DBS.store(s.show_system_dbs, Ordering::Relaxed);
 }
 
 /// egui-Kontext fuer Aktionen, die ihn brauchen (einmal je Bild gesetzt)
@@ -1083,7 +1086,7 @@ impl eframe::App for EasyApp {
         crate::terminal::set_focused(false);
         let pal = style::pal();
         let chrome = |l: i8, r: i8, t: i8, b: i8| egui::Frame::new().fill(pal.face).inner_margin(egui::Margin { left: l, right: r, top: t, bottom: b });
-        egui::Panel::top("menu").frame(chrome(10, 10, 4, 2)).show(ui, |ui| {
+        egui::Panel::top("menu").frame(chrome(12, 12, 6, 4)).show(ui, |ui| {
             self.menu_bar(ui, &mut actions);
         });
         egui::Panel::left("activity").exact_size(54.0).resizable(false).frame(chrome(6, 0, 4, 0)).show(ui, |ui| {
@@ -1091,14 +1094,7 @@ impl eframe::App for EasyApp {
         });
         if self.sidebar {
             egui::Panel::left("sidebar").resizable(true).default_size(268.0).min_size(190.0).frame(chrome(0, 4, 0, 8)).show(ui, |ui| {
-                let frame = egui::Frame::new()
-                    .fill(pal.sidebar_bg)
-                    .stroke(egui::Stroke::new(1.0, pal.border))
-                    .corner_radius(egui::CornerRadius::same(style::PANEL_RADIUS))
-                    .inner_margin(egui::Margin::symmetric(2, 6));
-                let size = ui.available_size() - frame.total_margin().sum();
-                frame.show(ui, |ui| {
-                    ui.set_min_size(size);
+                style::panel_card(ui, pal.sidebar_bg, egui::Margin::symmetric(2, 6), |ui| {
                     self.side_panel(ui, &mut actions);
                 });
             });
@@ -1106,19 +1102,12 @@ impl eframe::App for EasyApp {
         if self.terminal.open {
             self.terminal_panel(ui);
         }
-        egui::CentralPanel::default().frame(chrome(0, 8, 0, 8)).show(ui, |ui| {
+        egui::CentralPanel::default().frame(chrome(if self.sidebar { 0 } else { 4 }, 8, 0, 8)).show(ui, |ui| {
             if !self.tabs.is_empty() {
                 self.tab_bar(ui);
             }
             // Inhalt als abgerundete Flaeche unter den Reitern
-            let frame = egui::Frame::new()
-                .fill(pal.bg)
-                .stroke(egui::Stroke::new(1.0, pal.border))
-                .corner_radius(egui::CornerRadius::same(style::PANEL_RADIUS))
-                .inner_margin(egui::Margin::symmetric(14, 10));
-            let size = ui.available_size() - frame.total_margin().sum();
-            frame.show(ui, |ui| {
-                ui.set_min_size(size);
+            style::panel_card(ui, pal.bg, egui::Margin::symmetric(14, 10), |ui| {
                 // Nach dem Schliessen der letzten Registerkarte bleibt die Flaeche einfach leer
                 if self.tabs.is_empty() {
                     self.empty_area(ui);

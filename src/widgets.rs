@@ -10,6 +10,39 @@ pub fn card() -> Frame {
     Frame::new().fill(if p.dark { Color32::from_rgb(0x22, 0x25, 0x2C) } else { Color32::from_rgb(0xF7, 0xF8, 0xFB) }).stroke(Stroke::new(1.0, p.border)).corner_radius(style::PANEL_RADIUS - 2).inner_margin(Margin::symmetric(18, 14))
 }
 
+/// Ankreuzfeld: abgerundetes Quadrat, bei Haken in Akzentfarbe. Beschriftung rechts, mittig zur Zeile.
+pub fn check(ui: &mut egui::Ui, on: &mut bool, label: impl Into<egui::WidgetText>) -> Response {
+    let p = style::pal();
+    let label: egui::WidgetText = label.into();
+    let galley = label.into_galley(ui, Some(egui::TextWrapMode::Extend), f32::INFINITY, egui::TextStyle::Body);
+    let (box_s, gap) = (16.0, 8.0);
+    let has_label = !galley.text().is_empty();
+    let size = vec2(box_s + if has_label { gap + galley.size().x } else { 0.0 }, ui.spacing().interact_size.y.min(26.0).max(box_s + 4.0));
+    let (rect, mut resp) = ui.allocate_exact_size(size, Sense::click());
+    if resp.clicked() {
+        *on = !*on;
+        resp.mark_changed();
+    }
+    let b = Rect::from_min_size(pos2(rect.left(), rect.center().y - box_s / 2.0), vec2(box_s, box_s));
+    let painter = ui.painter();
+    if *on {
+        painter.rect_filled(b, 5.0, if resp.hovered() { p.accent.lerp_to_gamma(Color32::WHITE, 0.12) } else { p.accent });
+        icons::paint(painter, b.shrink(2.5), Icon::Check, Color32::WHITE);
+    } else {
+        let edge = if resp.hovered() { p.text_weak } else if p.dark { Color32::from_gray(0x55) } else { Color32::from_gray(0xB0) };
+        painter.rect(b, 5.0, if p.dark { Color32::from_rgb(0x14, 0x16, 0x1A) } else { Color32::WHITE }, Stroke::new(1.2, edge), StrokeKind::Inside);
+    }
+    if has_label {
+        let color = if ui.is_enabled() { p.text } else { p.text_weak };
+        ui.painter().galley(pos2(b.right() + gap, rect.center().y - galley.size().y / 2.0), galley, color);
+    }
+    if resp.has_focus() {
+        ui.painter().rect_stroke(b.expand(2.0), 6.0, Stroke::new(1.0, p.accent), StrokeKind::Outside);
+    }
+    resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Checkbox, ui.is_enabled(), *on, ""));
+    resp
+}
+
 /// Ein-/Ausschalter mit Beschriftung
 pub fn switch(ui: &mut egui::Ui, on: &mut bool, label: &str) -> Response {
     let p = style::pal();

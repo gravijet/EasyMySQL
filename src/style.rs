@@ -27,8 +27,6 @@ pub struct Pal {
     pub activity_fg: Color32,
     pub activity_active: Color32,
     pub sidebar_bg: Color32,
-    pub tab_bar_bg: Color32,
-    pub tab_active: Color32,
     pub current_line: Color32,
     pub selection: Color32,
     pub find_match: Color32,
@@ -77,8 +75,6 @@ pub static DARK_PAL: Pal = Pal {
     activity_fg: rgb(0x82, 0x89, 0x97),
     activity_active: rgb(0xF0, 0xF2, 0xF6),
     sidebar_bg: rgb(0x1A, 0x1D, 0x22),
-    tab_bar_bg: rgb(0x15, 0x17, 0x1B),
-    tab_active: rgb(0x1D, 0x20, 0x26),
     current_line: rgb(0x22, 0x26, 0x2D),
     selection: rgb(0x2B, 0x4A, 0x7E),
     find_match: rgb(0x61, 0x51, 0x1E),
@@ -121,8 +117,6 @@ pub static LIGHT_PAL: Pal = Pal {
     activity_fg: rgb(0x63, 0x6B, 0x7A),
     activity_active: rgb(0x2B, 0x6C, 0xE6),
     sidebar_bg: rgb(0xF5, 0xF7, 0xFA),
-    tab_bar_bg: rgb(0xE8, 0xEB, 0xF0),
-    tab_active: rgb(0xFF, 0xFF, 0xFF),
     current_line: rgb(0xF3, 0xF6, 0xFC),
     selection: rgb(0xB9, 0xD3, 0xFB),
     find_match: rgb(0xFF, 0xE0, 0x80),
@@ -291,6 +285,21 @@ fn visuals(p: &Pal) -> Visuals {
 /// Umrandeter Inhaltsbereich (wie ein Listenfeld).
 pub fn sunken_frame() -> egui::Frame {
     egui::Frame::new().fill(pal().bg).stroke(Stroke::new(1.0, pal().border)).corner_radius(CornerRadius::same(RADIUS + 3)).inner_margin(Margin::same(3))
+}
+
+/// Abgerundete Flaeche, die genau den freien Platz fuellt – unabhaengig davon, wie gross der Inhalt
+/// ist (zu breiter Inhalt wird abgeschnitten statt die Flaeche zu verbreitern).
+pub fn panel_card(ui: &mut egui::Ui, fill: Color32, margin: Margin, add: impl FnOnce(&mut egui::Ui)) {
+    let outer = ui.available_rect_before_wrap();
+    ui.painter().rect(outer, CornerRadius::same(PANEL_RADIUS), fill, Stroke::new(1.0, pal().border), egui::StrokeKind::Inside);
+    let inner = egui::Rect::from_min_max(
+        outer.min + egui::vec2(margin.left as f32 + 1.0, margin.top as f32 + 1.0),
+        outer.max - egui::vec2(margin.right as f32 + 1.0, margin.bottom as f32 + 1.0),
+    );
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner).layout(egui::Layout::top_down(egui::Align::Min)));
+    child.set_clip_rect(outer.shrink(1.0).intersect(ui.clip_rect()));
+    add(&mut child);
+    ui.advance_cursor_after_rect(outer);
 }
 
 /// Gruppenrahmen (Karte).

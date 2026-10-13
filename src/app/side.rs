@@ -442,7 +442,7 @@ impl EasyApp {
                     for (line, text) in hits {
                         let r = ui.add(egui::Label::new(RichText::new(format!("{:>4}  {text}", line + 1)).monospace().small()).truncate().sense(Sense::click()));
                         if r.hovered() {
-                            ui.painter().rect_filled(r.rect, 0.0, pal.hover.gamma_multiply(0.5));
+                            ui.painter().rect_filled(r.rect.expand2(vec2(3.0, 1.0)), 5.0, pal.hover.gamma_multiply(0.5));
                         }
                         if r.clicked() {
                             actions.push(Action::OpenFileAt { path: f.clone(), line: *line });
@@ -483,7 +483,7 @@ impl EasyApp {
             for e in &items[range] {
                 let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), row_h), Sense::click());
                 if resp.hovered() {
-                    ui.painter().rect_filled(r, 0.0, pal.hover);
+                    ui.painter().rect_filled(r.shrink2(vec2(4.0, 1.0)), 6.0, pal.hover);
                 }
                 let first: String = e.sql.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(120).collect();
                 let color = if e.error { pal.error_text } else { pal.text };
@@ -932,7 +932,7 @@ fn draw_node(ui: &mut egui::Ui, n: &Node, depth: usize, io: &mut TreeIo) {
         let id = egui::Id::new(("dir", &n.path));
         let mut state = egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, false);
         if resp.hovered() {
-            ui.painter().rect_filled(r, 0.0, pal.hover);
+            ui.painter().rect_filled(r.shrink2(vec2(4.0, 0.0)), 5.0, pal.hover);
         }
         let chev = Rect::from_center_size(pos2(r.left() + indent + 6.0, r.center().y), vec2(14.0, 14.0));
         icons::paint(ui.painter(), chev, if state.is_open() { Icon::ChevronDown } else { Icon::ChevronRight }, pal.text_weak);
@@ -952,9 +952,9 @@ fn draw_node(ui: &mut egui::Ui, n: &Node, depth: usize, io: &mut TreeIo) {
     } else {
         let sel = io.active.is_some_and(|a| a == n.path);
         if sel {
-            ui.painter().rect_filled(r, 0.0, if pal.dark { Color32::from_rgb(0x37, 0x37, 0x3D) } else { Color32::from_rgb(0xE4, 0xE6, 0xF1) });
+            ui.painter().rect_filled(r.shrink2(vec2(4.0, 0.0)), 5.0, pal.selection.gamma_multiply(if pal.dark { 0.7 } else { 0.8 }));
         } else if resp.hovered() {
-            ui.painter().rect_filled(r, 0.0, pal.hover);
+            ui.painter().rect_filled(r.shrink2(vec2(4.0, 0.0)), 5.0, pal.hover);
         }
         let (icon, tint) = file_icon(&n.name);
         icons::paint(ui.painter(), Rect::from_center_size(pos2(r.left() + indent + 26.0, r.center().y), vec2(16.0, 16.0)), icon, tint);

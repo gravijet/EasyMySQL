@@ -51,8 +51,7 @@ pub const CHAPTERS: &[Chapter] = &[
                 title: "Was EasyMySQL macht",
                 blocks: &[
                     P("EasyMySQL enthält einen vollständigen MariaDB-Datenbankserver und eine Oberfläche, um damit zu arbeiten. \
-                       Beim Start von EasyMySQL startet der Server automatisch auf Port 3306. Er läuft, solange EasyMySQL läuft – \
-                       auch wenn das Fenster geschlossen ist."),
+                       Beim Start von EasyMySQL startet der Server automatisch auf Port 3306. Er läuft, solange EasyMySQL läuft."),
                     P("Solange der Server läuft, funktioniert in der Eingabeaufforderung (cmd):"),
                     Shell("mysql -u root"),
                     Table(&[
@@ -69,7 +68,7 @@ pub const CHAPTERS: &[Chapter] = &[
                 title: "Aufbau des Fensters",
                 blocks: &[
                     List(&[
-                        "Menüleiste oben: alle Befehle. Rechts daneben die Werkzeuge ER-Diagramm, Abfrage-Assistent, Sicherungen und Server-Log sowie ein farbiger Punkt für den Server (grün = läuft, gelb = startet/stoppt, rot = Fehler). Ein Klick auf den Punkt öffnet das Server-Log.",
+                        "Menüleiste oben: alle Befehle. Rechts daneben die Werkzeuge ER-Diagramm und Abfrage-Assistent sowie ein farbiger Punkt für den Server (grün = läuft, gelb = startet/stoppt, rot = Fehler). Ein Klick auf den Punkt öffnet das Server-Log.",
                         "Aktivitätsleiste ganz links: schaltet die Seitenleiste um – Explorer, Suchen, Datenbanken, Verlauf. Ein zweiter Klick auf das aktive Symbol blendet die Seitenleiste aus.",
                         "Seitenleiste: Breite mit der Maus an der rechten Kante ziehen.",
                         "Registerkarten in der Mitte: SQL-Dateien, Daten, Struktur, Diagramme, Einstellungen und so weiter.",
@@ -120,14 +119,25 @@ pub const CHAPTERS: &[Chapter] = &[
             },
             Section {
                 id: "beenden",
-                title: "Schließen, Infobereich, Beenden",
+                title: "Schließen und Beenden",
                 blocks: &[
-                    P("Das Kreuz oben rechts am Fenster beendet EasyMySQL nicht: das Fenster verschwindet, der Server läuft weiter und das Symbol bleibt im \
-                       Infobereich neben der Uhr. Ein Klick auf das Symbol holt das Fenster zurück."),
+                    P("Das Kreuz oben rechts am Fenster beendet EasyMySQL vollständig und fährt den Server sauber herunter. Ungespeicherte Dateien werden vorher abgefragt."),
                     List(&[
-                        "Richtig beenden: Rechtsklick auf das Symbol im Infobereich → Beenden, oder Datei → Beenden. Dabei wird der Server sauber heruntergefahren.",
+                        "Wer EasyMySQL im Hintergrund laufen lassen möchte (Server bleibt an), schaltet unter Einstellungen → Start „Im Infobereich weiterlaufen“ ein. Dann versteckt das Kreuz nur das Fenster; ein Klick auf das Symbol neben der Uhr holt es zurück, Rechtsklick → Beenden beendet alles.",
                         "Beim Herunterfahren oder Abmelden von Windows fährt EasyMySQL den Server vorher sauber herunter.",
-                        "Es läuft immer nur ein EasyMySQL. Ein zweiter Start holt das vorhandene Fenster nach vorne.",
+                        "Es läuft immer nur ein EasyMySQL. Ein zweiter Start (auch ein Doppelklick auf eine .sql-Datei) holt das vorhandene Fenster nach vorne.",
+                        "Einstellungen → Start → „Beim Start wieder öffnen“ stellt alle Registerkarten beim nächsten Start so wieder her, wie sie waren. Ungespeicherte Abfragen bleiben immer erhalten.",
+                    ]),
+                ],
+            },
+            Section {
+                id: "dateien-ziehen",
+                title: "Dateien ziehen",
+                blocks: &[
+                    List(&[
+                        "Eine Datei aus dem Windows-Explorer auf das Fenster ziehen öffnet sie im Editor; ein Ordner wird zum Projekt.",
+                        "Auf einen Ordner im Dateibaum gezogen, wird die Datei dorthin kopiert. Dateien und Ordner lassen sich auch innerhalb des Dateibaums auf einen Ordner ziehen, um sie zu verschieben.",
+                        "Registerkarten lassen sich mit der Maus umsortieren. Sind viele offen, schrumpfen die inaktiven auf ihr Symbol (Name im Tooltip); der Pfeil rechts listet alle.",
                     ]),
                 ],
             },
@@ -591,8 +601,8 @@ pub const CHAPTERS: &[Chapter] = &[
                         "Optionale Beziehungen (Fremdschlüssel darf NULL sein) haben einen Kreis.",
                         "Maus über einer Linie erklärt die Beziehung, Maus über einer Tabelle hebt ihre Linien hervor.",
                     ]),
-                    P("Unter „Ansicht“: Notation Krähenfuß (mit 1:n / 1:1 / n:m an der Linie), Chen (1, n, m) oder (min,max); Datentypen ein/aus; \
-                       Zwischentabellen als direkte n:m-Linie zusammenfassen."),
+                    P("Unter „Ansicht“: Notation Chen (1, n, m) – Standard –, Krähenfuß (mit 1:n / 1:1 / n:m an der Linie) oder (min,max); Datentypen ein/aus; \
+                       Zwischentabellen als direkte n:m-Linie zusammenfassen. Lange Aufzählungen (ENUM, SET) erscheinen gekürzt als enum(7); der volle Typ steht im Tooltip der Spalte."),
                     Tip("Namen von Tabellen und Datenbanken zeigt EasyMySQL so, wie sie beim Erstellen geschrieben wurden (z. B. Spielleitung). \
                          Eine Tabelle, die schon klein gespeichert ist, ändert man mit RENAME TABLE schueler TO Schueler;"),
                     Keys(&[Cmd::ErDiagram]),
@@ -606,9 +616,9 @@ pub const CHAPTERS: &[Chapter] = &[
                     List(&[
                         "Tabelle ziehen: verschieben. Die Anordnung wird je Datenbank gespeichert.",
                         "Hintergrund oder mittlere Maustaste ziehen: Ansicht verschieben. Mausrad: Zoom um die Mausposition.",
-                        "Der Prozentknopf zeigt den Zoom; ein Klick passt das ganze Diagramm ein.",
+                        "Der Prozentknopf zeigt den Zoom; ein Klick passt das ganze Diagramm ein. Auch sehr große Diagramme lassen sich weit herauszoomen; die Namen der wichtigsten Tabellen bleiben dabei lesbar.",
                         "Doppelklick auf eine Tabelle öffnet ihre Struktur, Rechtsklick bietet Daten, Struktur, SELECT und neue Beziehung.",
-                        "„Anordnen“ berechnet eine neue Anordnung: verbundene Tabellen nebeneinander, möglichst wenige Kreuzungen, keine Linie durch fremde Tabellen, ungefähr Bildschirmformat. Tabellen ohne Beziehungen stehen gesammelt darunter.",
+                        "„Anordnen“ berechnet eine neue Anordnung: Eltern links, Kinder rechts, in Ebenen mit möglichst wenigen Kreuzungen; lange Linien laufen auf eigenen Spuren zwischen den Tabellen, nie durch fremde. Getrennte Gruppen stehen nebeneinander, Tabellen ohne Beziehungen gesammelt darunter.",
                         "Export: als SVG-Grafik speichern oder das SQL-Skript (CREATE TABLE für alle Tabellen) öffnen.",
                     ]),
                 ],

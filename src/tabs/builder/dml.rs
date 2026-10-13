@@ -148,12 +148,12 @@ pub fn ui(ui: &mut egui::Ui, dml: &mut Dml, mode: Mode, query: &mut Query, env: 
     let inner = env.inside(&dml.target);
     match mode {
         Mode::Insert => {
-            ui.checkbox(&mut dml.from_query, crate::i18n::text("Werte aus einer Abfrage holen (INSERT … SELECT)"));
+            crate::widgets::check(ui, &mut dml.from_query, crate::i18n::text("Werte aus einer Abfrage holen (INSERT … SELECT)"));
             section(ui, id.with("cols"), "", crate::i18n::text("Spalten"), true, |ui| {
                 ui.horizontal_wrapped(|ui| {
                     for (name, ty) in &cols {
                         let mut on = dml.cols.contains(name);
-                        if ui.checkbox(&mut on, name).on_hover_text(ty).changed() {
+                        if crate::widgets::check(ui, &mut on, name).on_hover_text(ty).changed() {
                             if on {
                                 // Reihenfolge wie in der Tabelle
                                 let mut next: Vec<String> = cols.iter().map(|c| c.0.clone()).filter(|c| dml.cols.contains(c) || c == name).collect();
@@ -185,7 +185,7 @@ pub fn ui(ui: &mut egui::Ui, dml: &mut Dml, mode: Mode, query: &mut Query, env: 
                         for (ri, row) in dml.rows.iter_mut().enumerate() {
                             row.resize(n, String::new());
                             for (ci, v) in row.iter_mut().enumerate() {
-                                ui.add_sized([130.0, 22.0], egui::TextEdit::singleline(v).hint_text(crate::i18n::text("leer = DEFAULT")).id_salt((id, ri, ci)));
+                                ui.add_sized([130.0, 22.0], egui::TextEdit::singleline(v).vertical_align(egui::Align::Center).hint_text(crate::i18n::text("leer = DEFAULT")).id_salt((id, ri, ci)));
                             }
                             if super::remove_button(ui) {
                                 remove = Some(ri);
@@ -198,7 +198,7 @@ pub fn ui(ui: &mut egui::Ui, dml: &mut Dml, mode: Mode, query: &mut Query, env: 
                     {
                         dml.rows.remove(i);
                     }
-                    if ui.small_button(crate::i18n::text("+ Zeile")).clicked() {
+                    if ui.button(crate::i18n::text("+ Zeile")).clicked() {
                         dml.rows.push(vec![String::new(); n]);
                     }
                     ui.label(RichText::new(crate::i18n::text("Text wird automatisch in Anführungszeichen gesetzt; Zahlen, NULL und DEFAULT bleiben, wie sie sind.")).small().color(crate::style::pal().text_weak));
@@ -222,7 +222,7 @@ pub fn ui(ui: &mut egui::Ui, dml: &mut Dml, mode: Mode, query: &mut Query, env: 
                 if let Some(i) = remove {
                     dml.sets.remove(i);
                 }
-                if ui.small_button(crate::i18n::text("+ Zuweisung")).clicked() {
+                if ui.button(crate::i18n::text("+ Zuweisung")).clicked() {
                     dml.sets.push((cols.first().map(|c| c.0.clone()).unwrap_or_default(), String::new()));
                 }
             });

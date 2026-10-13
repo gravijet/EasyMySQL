@@ -111,13 +111,13 @@ pub fn show(
         }
         tb.header(30.0, |mut header| {
             header.col(|ui| {
-                ui.painter().rect_filled(ui.max_rect().expand2(egui::vec2(3.0, 2.0)), 0.0, style::pal().face_light);
+                ui.painter().rect_filled(ui.max_rect().expand2(egui::vec2(4.0, 2.0)), 0.0, style::pal().face_light);
                 ui.add_space(PAD);
                 ui.label(RichText::new("#").color(style::pal().text_weak));
             });
             for (ci, c) in columns.iter().enumerate() {
                 header.col(|ui| {
-                    ui.painter().rect_filled(ui.max_rect().expand2(egui::vec2(3.0, 2.0)), 0.0, style::pal().face_light);
+                    ui.painter().rect_filled(ui.max_rect().expand2(egui::vec2(4.0, 2.0)), 0.0, style::pal().face_light);
                     header_divider(ui);
                     ui.add_space(PAD);
                     if edit != Edit::CellsAndColumns {
