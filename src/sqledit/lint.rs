@@ -256,6 +256,7 @@ fn distance(a: &str, b: &str) -> usize {
     for (i, row) in d.iter_mut().enumerate() {
         row[0] = i;
     }
+    #[allow(clippy::needless_range_loop)]
     for j in 0..=b.len() {
         d[0][j] = j;
     }
@@ -367,7 +368,7 @@ fn replace(t: &Tok, with: &str) -> Fix {
     Fix { start: t.start, end: t.end, text: with.to_string() }
 }
 
-fn check_statement<'a>(stmt: &[Tok], env: &Env, tables: &HashMap<String, &'a TableInfo>, fw: &str, out: &mut Vec<Problem>) {
+fn check_statement(stmt: &[Tok], env: &Env, tables: &HashMap<String, &TableInfo>, fw: &str, out: &mut Vec<Problem>) {
     let schema_known = env.schema.is_some();
     // Erstes Wort muss ein Befehl sein
     if let Some(first) = stmt.first()
@@ -400,8 +401,8 @@ fn check_syntax(stmt: &[Tok], fw: &str, out: &mut Vec<Problem>) {
     for t in stmt {
         match t.kind {
             Kind::Open => stack.push(t),
-            Kind::Close => {
-                if stack.pop().is_none() {
+            Kind::Close
+                if stack.pop().is_none() => {
                     out.push(problem(
                         t,
                         Severity::Error,
@@ -409,7 +410,6 @@ fn check_syntax(stmt: &[Tok], fw: &str, out: &mut Vec<Problem>) {
                         Some(Fix { start: t.start, end: t.end, text: String::new() }),
                     ));
                 }
-            }
             _ => {}
         }
     }
@@ -727,8 +727,6 @@ fn alias_after<'a>(stmt: &[Tok], mut j: usize, table: Option<(&str, Option<&'a T
 
 /// Woerter pruefen: Tippfehler, unbekannte Spalten, qualifizierte Namen.
 fn check_words<'a>(stmt: &[Tok], names: Option<(&Scope<'a>, &HashMap<String, &'a TableInfo>, &Env)>, aliases: &HashSet<String>, dml: bool, out: &mut Vec<Problem>) {
-    let consumed_unused = ();
-    let _ = consumed_unused;
     // Namen, die in der Anweisung bekannt sind und nie als Tippfehler gelten
     let mut known: HashSet<String> = aliases.clone();
     if let Some((scope, tables, _)) = &names {
@@ -744,6 +742,7 @@ fn check_words<'a>(stmt: &[Tok], names: Option<(&Scope<'a>, &HashMap<String, &'a
     for (i, t) in stmt.iter().enumerate() {
         if t.kind == Kind::Word
             && !known_word(&t.upper())
+            && keyword_typo(&t.text, true).is_none()
             && i > 0
             && match stmt[i - 1].kind {
                 Kind::Close | Kind::Num | Kind::Str | Kind::Quoted => true,

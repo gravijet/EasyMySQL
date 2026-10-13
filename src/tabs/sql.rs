@@ -567,11 +567,11 @@ impl TabView for SqlTab {
     }
 
     fn title(&self) -> String {
-        let name = match &self.file {
+        
+        match &self.file {
             Some(f) => f.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
             None => crate::tr_format!("Unbenannt-{}", "Untitled-{}", self.scratch_id),
-        };
-        name
+        }
     }
 
     fn busy(&self) -> bool {

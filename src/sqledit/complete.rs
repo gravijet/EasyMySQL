@@ -128,6 +128,7 @@ fn scope<'a>(toks: &[Tok], env: &Env<'a>) -> Scope<'a> {
         let opens = matches!(w.as_str(), "FROM" | "JOIN" | "UPDATE") || (w == "INTO" && matches!(first.as_str(), "INSERT" | "REPLACE"));
         if opens {
             let mut j = i + 1;
+            #[allow(clippy::while_let_loop)]
             loop {
                 let Some(n) = toks.get(j).filter(|n| n.is_name()) else { break };
                 let mut name = n;

@@ -124,8 +124,8 @@ fn arc(out: &mut Vec<Pos2>, from: Pos2, mut rx: f32, mut ry: f32, rot_deg: f32, 
     let cx = cos * cx1 - sin * cy1 + (from.x + to.x) / 2.0;
     let cy = sin * cx1 + cos * cy1 + (from.y + to.y) / 2.0;
     let angle = |ux: f32, uy: f32, vx: f32, vy: f32| {
-        let a = (ux * vy - uy * vx).atan2(ux * vx + uy * vy);
-        a
+        
+        (ux * vy - uy * vx).atan2(ux * vx + uy * vy)
     };
     let start = angle(1.0, 0.0, (x1 - cx1) / rx, (y1 - cy1) / ry);
     let mut delta = angle((x1 - cx1) / rx, (y1 - cy1) / ry, (-x1 - cx1) / rx, (-y1 - cy1) / ry);
