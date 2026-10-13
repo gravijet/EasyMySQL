@@ -103,7 +103,10 @@ fn file_safe(name: &str) -> String {
 }
 
 /// Liest eine Tabelle Zeile fuer Zeile. `f` bekommt einmal die Spalten (ohne Zeile) und dann jede Zeile.
-fn stream(dbc: &Db, db: &str, table: &str, f: &mut dyn FnMut(&[Column], Option<&[Value]>) -> Result<(), String>) -> Result<(), String> {
+/// Wird einmal mit den Spalten (ohne Zeile) und dann je Zeile aufgerufen
+type RowSink<'a> = &'a mut dyn FnMut(&[Column], Option<&[Value]>) -> Result<(), String>;
+
+fn stream(dbc: &Db, db: &str, table: &str, f: RowSink) -> Result<(), String> {
     let mut conn = dbc.pool.get_conn().map_err(err_text)?;
     let res = conn.query_iter(format!("SELECT * FROM {}.{}", q(db), q(table))).map_err(err_text)?;
     let cols: Vec<Column> = res.columns().as_ref().to_vec();

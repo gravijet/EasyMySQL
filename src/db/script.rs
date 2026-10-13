@@ -22,7 +22,6 @@ pub struct QueryOutput {
     pub sets: Vec<ResultSet>,
     pub error: Option<String>,
     pub elapsed: Duration,
-    pub database: Option<String>,
 }
 
 pub const MAX_ROWS: usize = 50_000;
@@ -112,11 +111,6 @@ pub fn run_script_with<C: Queryable>(conn: &mut C, sql: &str, abort: Option<&dyn
         Err(e) => out.error = Some(err_text(e)),
     }
     out.elapsed = start.elapsed();
-    out.database = conn
-        .query_first::<Option<String>, _>("SELECT DATABASE()")
-        .ok()
-        .flatten()
-        .flatten();
     out
 }
 
@@ -296,4 +290,29 @@ pub fn statement_at(stmts: &[Stmt], cursor: usize) -> Option<&Stmt> {
         .iter()
         .find(|s| cursor >= s.start && cursor <= s.end + 1)
         .or_else(|| stmts.iter().rev().find(|s| s.end <= cursor))
+}
+
+#[cfg(test)]
+mod bench {
+    use super::*;
+
+    /// Braucht einen Server auf 127.0.0.1:3306: `cargo test bench_select -- --ignored --nocapture`
+    #[test]
+    #[ignore = "manuelle Messung"]
+    fn bench_select() {
+        let db = Db::connect(&ConnInfo::default()).unwrap();
+        let mut c = db.new_conn().unwrap();
+        run_script(&mut c, "DROP DATABASE IF EXISTS bench; CREATE DATABASE bench; USE bench; CREATE TABLE t (id INT PRIMARY KEY AUTO_INCREMENT, a VARCHAR(40), b DOUBLE, c DATETIME, d TEXT);");
+        c.query_drop("SET @n := 0").unwrap();
+        c.query_drop("INSERT INTO t (a, b, c, d) SELECT CONCAT('name', seq), seq / 7, NOW(), REPEAT('x', 50) FROM seq_1_to_200000").unwrap();
+        for sql in ["SELECT * FROM t", "SELECT id FROM t", "SELECT COUNT(*) FROM t"] {
+            let t = Instant::now();
+            let out = run_script(&mut c, sql);
+            println!("{sql}: {} rows in {:.0} ms", out.sets[0].rows.len(), t.elapsed().as_secs_f64() * 1000.0);
+        }
+        let t = Instant::now();
+        let n: usize = c.query_iter("SELECT * FROM t LIMIT 50000").unwrap().count();
+        println!("raw iteration: {n} rows in {:.0} ms", t.elapsed().as_secs_f64() * 1000.0);
+        c.query_drop("DROP DATABASE bench").unwrap();
+    }
 }

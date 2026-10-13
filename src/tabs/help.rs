@@ -159,7 +159,7 @@ fn section_ui(ui: &mut egui::Ui, s: &Section, cx: &mut Ctx, goto: &mut Option<St
                 });
             }
             B::Table(rows) => {
-                let list: Vec<(&str, &str)> = rows.iter().copied().collect();
+                let list: Vec<(&str, &str)> = rows.to_vec();
                 self::rows(ui, list.len(), |ui, i| {
                     left_cell(ui, 150.0, RichText::new(crate::i18n::text(list[i].0)).strong());
                     ui.label(crate::i18n::text(list[i].1));

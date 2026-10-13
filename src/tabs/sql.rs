@@ -422,7 +422,7 @@ impl SqlTab {
                 }
             }
             if self.show_history {
-                let c = super::chip(ui, &crate::i18n::text("Verlauf"), None, pane == Pane::History);
+                let c = super::chip(ui, crate::i18n::text("Verlauf"), None, pane == Pane::History);
                 if c.clicked {
                     pane = Pane::History;
                 }
@@ -801,7 +801,8 @@ impl TabView for SqlTab {
             ui.ctx().request_repaint_after(Duration::from_secs(2));
         }
         // Struktur fuer die Pruefung der Tabellen- und Spaltennamen
-        self.editor.schema = cx.schema(&self.database);
+        // Ohne gewaehlte Datenbank gibt es nichts zu pruefen
+        self.editor.schema = if self.database.is_empty() { None } else { cx.schema(&self.database) };
         if self.editor.databases.len() != cx.databases.len() {
             self.editor.databases = cx.databases.to_vec();
         }

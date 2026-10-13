@@ -29,6 +29,9 @@ use std::sync::Mutex;
 use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 
+/// Ergebnis eines Verbindungsaufbaus: Datenbank und (bei SSH) der Tunnel dazu
+type Connected = Result<(Db, Option<crate::ssh::Tunnel>), String>;
+
 /// Kontext fuer Registerkarten aus den Feldern der App (getrennte Ausleihe der Felder)
 macro_rules! cx {
     ($s:ident, $actions:expr) => {
@@ -78,7 +81,7 @@ pub struct EasyApp {
     backup_last_check: Option<Instant>,
     check_job: Option<Receiver<Result<crate::repair::CheckResult, String>>>,
     /// Verbindungsaufbau ueber SSH im Hintergrund (zweiter Wert: bei Fehler Dialog zeigen)
-    connect_job: Option<(Receiver<Result<(Db, Option<crate::ssh::Tunnel>), String>>, bool)>,
+    connect_job: Option<(Receiver<Connected>, bool)>,
     tunnel: Option<crate::ssh::Tunnel>,
     myisam_hint_done: bool,
     /// Geoeffneter Projektordner (None = keiner)
@@ -265,7 +268,7 @@ impl EasyApp {
         self.toast(crate::i18n::tr("Verbinde über SSH …", "Connecting via SSH …"));
     }
 
-    fn finish_connect(&mut self, result: Result<(Db, Option<crate::ssh::Tunnel>), String>, show_dialog_on_error: bool) {
+    fn finish_connect(&mut self, result: Connected, show_dialog_on_error: bool) {
         match result {
             Ok((db, tunnel)) => {
                 self.tunnel = tunnel;

@@ -17,11 +17,16 @@ Closing the window leaves the server running in the system tray. Use **File → 
 ## Usage
 
 - Write and run SQL with context-aware suggestions, typo and name checking (`Ctrl+.` fixes everything it can), formatting, and execution plans; export results as CSV, JSON or SQL.
-- Browse and edit tables, import SQL, and manage database structure.
+- Edit values and structure right in the table: rename, retype, move, copy and delete columns from the header menu, add rows with one click, undo with `Ctrl+Z`.
+- Copy, rename and merge tables (rows below each other or joined on matching values).
+- Export a database or selected tables as SQL, JSON, CSV, XML or a SQLite file; import SQLite files, MongoDB exports (JSON, BSON), CSV files and Redis data.
+- Manage users and privileges per database or table under **Server → Users & privileges**.
+- Reach a database on another machine through an SSH tunnel (**Settings → Connection**).
+- Rerun earlier statements from the history tab next to the results.
 - Build queries visually, including INSERT, UPDATE and DELETE, with undo and a live preview.
 - Arrange ER diagrams and export them as SVG or SQL.
 - Open an integrated terminal (`Ctrl+\``) with several tabs; PowerShell, Command Prompt or the MariaDB console.
-- Preview images, PDF files and binary files directly from the project explorer.
+- Preview images and PDF files directly from the project explorer.
 - Copy a table or a query as ready-to-run Java (JDBC) code.
 - Manage automatic backups and restores under **Server → Backups & repair**.
 - Open the searchable manual with `F1`.

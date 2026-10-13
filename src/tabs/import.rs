@@ -204,15 +204,11 @@ impl ImportTab {
 
     fn source_ui(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
-        ui.horizontal(|ui| {
-            for k in [Kind::Sqlite, Kind::Mongo, Kind::Csv, Kind::Redis] {
-                if ui.selectable_label(self.kind == k, k.label()).clicked() && self.kind != k {
-                    self.kind = k;
-                    self.files.clear();
-                    self.reset_result();
-                }
-            }
-        });
+        let items: Vec<(Kind, &str)> = [Kind::Sqlite, Kind::Mongo, Kind::Csv, Kind::Redis].into_iter().map(|k| (k, k.label())).collect();
+        if crate::widgets::segmented(ui, &mut self.kind, &items) {
+            self.files.clear();
+            self.reset_result();
+        }
         ui.add_space(6.0);
         if self.kind == Kind::Redis {
             egui::Grid::new("redis").num_columns(4).spacing([8.0, 6.0]).show(ui, |ui| {
@@ -337,7 +333,7 @@ impl TabView for ImportTab {
                     ui.checkbox(&mut self.replace, crate::i18n::text("Vorhandene Tabellen gleichen Namens ersetzen"));
                     ui.add_space(4.0);
                     let any = self.entries.iter().any(|e| e.on);
-                    if ui.add_enabled(any && cx.db.is_some(), egui::Button::new(RichText::new(crate::i18n::text("Importieren")).strong())).clicked() {
+                    if ui.add_enabled_ui(any && cx.db.is_some(), |ui| icons::primary_button(ui, Icon::Upload, crate::i18n::text("Importieren"))).inner.clicked() {
                         start = true;
                     }
                 }));

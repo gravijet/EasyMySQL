@@ -52,7 +52,7 @@ pub fn scan(path: &Path, cancel: &AtomicBool) -> Result<Vec<TableScan>, String> 
                     inf.add(&val(r.get_ref(i).map_err(|e| e.to_string())?));
                 }
                 rows += 1;
-                if rows % 50_000 == 0 && cancel.load(Ordering::Relaxed) {
+                if rows.is_multiple_of(50_000) && cancel.load(Ordering::Relaxed) {
                     return Err("abgebrochen".into());
                 }
             }

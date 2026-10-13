@@ -297,7 +297,7 @@ pub fn scan(files: &[PathBuf], cancel: &AtomicBool) -> Result<Vec<TableScan>, St
                 infer[i].add(&cell(v));
             }
             rows += 1;
-            Ok(rows % 50_000 != 0 || !cancel.load(Ordering::Relaxed))
+            Ok(!rows.is_multiple_of(50_000) || !cancel.load(Ordering::Relaxed))
         })?;
         // `_id` zuerst
         let mut order: Vec<usize> = (0..names.len()).collect();

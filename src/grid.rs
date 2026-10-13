@@ -126,6 +126,10 @@ pub fn show(
                     let resp = ui.add(egui::Label::new(RichText::new(c).strong()).selectable(false).truncate().sense(Sense::click()));
                     let tip = crate::i18n::tr("Klicken für Spaltenmenü", "Click for column menu");
                     let resp = resp.on_hover_text(tip).on_hover_cursor(egui::CursorIcon::PointingHand);
+                    if resp.hovered() || resp.is_pointer_button_down_on() {
+                        let r = ui.max_rect();
+                        crate::icons::paint(ui.painter(), egui::Rect::from_center_size(egui::pos2(r.right() - 4.0, r.center().y), egui::vec2(12.0, 12.0)), crate::icons::Icon::ChevronDown, style::pal().text_weak);
+                    }
                     let mut menu = |ui: &mut egui::Ui| {
                         use crate::db::Move;
                         let t = crate::i18n::tr;

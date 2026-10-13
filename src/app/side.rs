@@ -652,6 +652,10 @@ impl EasyApp {
                         dialogs.push(Dialog::Export { db: d.clone(), only: None, with_data: true, format: crate::transfer::export::Format::Sql });
                         ui.close();
                     }
+                    if ui.button(crate::i18n::text("Importieren …")).clicked() {
+                        actions.push(Action::OpenImport);
+                        ui.close();
+                    }
                     if !sys && ui.button(crate::i18n::text("Löschen …")).clicked() {
                         actions.push(Action::Confirm {
                             text: crate::tr_format!("Datenbank „{d}“ mit allen Tabellen und Daten löschen?", "Delete database “{d}” and all its tables and data?"),

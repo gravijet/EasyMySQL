@@ -97,7 +97,7 @@ pub struct TableScan {
 }
 
 /// Sammelt Eigenschaften einer Spalte und bestimmt daraus den Typ.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Infer {
     seen: u64,
     ints: u64,
@@ -110,12 +110,6 @@ pub struct Infer {
     datetimes: u64,
     big: bool,
     max_len: usize,
-}
-
-impl Default for Infer {
-    fn default() -> Self {
-        Infer { seen: 0, ints: 0, bools: 0, reals: 0, texts: 0, jsons: 0, bytes: 0, dates: 0, datetimes: 0, big: false, max_len: 0 }
-    }
 }
 
 /// "2024-05-17" -> Date, "2024-05-17 12:30:00(.123)" oder mit T und Z -> DateTime

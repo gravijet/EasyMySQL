@@ -297,9 +297,9 @@ pub fn sunken_frame() -> egui::Frame {
     egui::Frame::new().fill(pal().bg).stroke(Stroke::new(1.0, pal().border)).inner_margin(Margin::same(2))
 }
 
-/// Gruppenrahmen.
+/// Gruppenrahmen (Karte).
 pub fn group_frame() -> egui::Frame {
-    egui::Frame::new().stroke(Stroke::new(1.0, pal().border)).inner_margin(Margin::same(6))
+    crate::widgets::card()
 }
 
 /// Navigation mit einheitlichem Einzug, Hover-Feedback und aktiver Kategorie.
