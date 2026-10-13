@@ -6,6 +6,7 @@ pub mod designer;
 pub mod er;
 pub mod help;
 mod help_content;
+pub mod import;
 pub mod log;
 pub mod preview;
 pub mod safety;
@@ -41,6 +42,8 @@ pub enum Action {
     /// Verbindung trennen (z. B. vor der Server-Rettung)
     Disconnect,
     OpenSafety,
+    OpenImport,
+    OpenUsers,
     /// Dateien im Projekt haben sich geaendert (Explorer neu einlesen)
     FilesChanged,
     /// Datei oeffnen und zu einer Zeile (0-basiert) springen

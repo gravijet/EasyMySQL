@@ -859,6 +859,7 @@ pub const CHAPTERS: &[Chapter] = &[
                         Cmd::ErDiagram,
                         Cmd::QueryBuilder,
                         Cmd::Backups,
+                        Cmd::Import,
                         Cmd::Format,
                         Cmd::FixAll,
                         Cmd::CopyJava,

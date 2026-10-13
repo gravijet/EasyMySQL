@@ -27,6 +27,7 @@ impl EasyApp {
             ["builder", db] => Box::new(BuilderTab::new(Some(db.to_string()).filter(|d| !d.is_empty()))),
             ["builder", id, db] => Box::new(BuilderTab::restore(id, db)),
             ["safety"] => Box::new(SafetyTab::new()),
+            ["import"] => Box::new(crate::tabs::import::ImportTab::new()),
             ["log"] => Box::new(LogTab::new()),
             ["settings"] => Box::new(SettingsTab::new()),
             ["help"] => Box::new(HelpTab::new()),
@@ -165,6 +166,7 @@ impl EasyApp {
                         }
                         ui.close();
                     }
+                    item(ui, crate::i18n::text("Importieren …"), Cmd::Import, &mut cmd);
                     if ui.add_enabled(connected, egui::Button::new(crate::i18n::text("SQL-Datei importieren …"))).clicked() {
                         ui.close();
                         self.open_sql_file(true);

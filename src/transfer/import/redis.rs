@@ -308,13 +308,6 @@ pub fn read(c: &RedisConf, t: &TableScan, f: &mut dyn FnMut(Vec<Val>) -> Result<
     Ok(())
 }
 
-/// Pruefen, ob der Server erreichbar ist (fuer "Verbinden")
-pub fn ping(c: &RedisConf) -> Result<String, String> {
-    let mut cl = Client::connect(c)?;
-    let n = cl.cmd(&[b"DBSIZE"])?.int();
-    Ok(crate::tr_format!("{n} Schlüssel", "{n} keys"))
-}
-
 /// Befehl ausfuehren (nur fuer Tests, die Daten anlegen)
 #[cfg(test)]
 pub fn exec(c: &RedisConf, args: &[&str]) {

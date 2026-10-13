@@ -64,6 +64,14 @@ pub enum Icon {
     Redo,
     Explain,
     Code,
+    Upload,
+    Users,
+    ArrowUp,
+    ArrowDown,
+    Merge,
+    Copy,
+    Pencil,
+    Lock,
 }
 
 impl Icon {
@@ -122,6 +130,14 @@ impl Icon {
             Icon::Redo => "redo-2",
             Icon::Explain => "scan-search",
             Icon::Code => "code-xml",
+            Icon::Upload => "upload",
+            Icon::Users => "users",
+            Icon::ArrowUp => "arrow-up",
+            Icon::ArrowDown => "arrow-down",
+            Icon::Merge => "git-merge",
+            Icon::Copy => "copy",
+            Icon::Pencil => "pencil",
+            Icon::Lock => "lock",
         }
     }
 
@@ -236,7 +252,7 @@ mod tests {
             Files, Search, Database, History, Diagram, Wizard, Close, Plus, Refresh, NewFile, NewFolder, ChevronDown, ChevronRight, ChevronLeft, Play,
             More, Trash, Up, Down, Collapse, ZoomIn, ZoomOut, Fit, External, Folder, FolderOpen, File, FileText, FileCode, FileImage, FileSheet,
             FileJson, Table, Columns, Key, Link, Settings, Book, Terminal, Shield, Save, Download, Alert, Check, Info,
-            Sparkles, Layers, ArrowLeft, ArrowRight, Undo, Redo, Explain, Code,
+            Sparkles, Layers, ArrowLeft, ArrowRight, Undo, Redo, Explain, Code, Upload, Users, ArrowUp, ArrowDown, Merge, Copy, Pencil, Lock,
         ] {
             let polys = shapes(icon);
             assert!(!polys.is_empty(), "{icon:?}");
@@ -260,7 +276,7 @@ mod tests {
             Files, Search, Database, History, Diagram, Wizard, Close, Plus, Refresh, NewFile, NewFolder, ChevronDown, ChevronRight, ChevronLeft, Play,
             More, Trash, Up, Down, Collapse, ZoomIn, ZoomOut, Fit, External, Folder, FolderOpen, File, FileText, FileCode, FileImage, FileSheet,
             FileJson, Table, Columns, Key, Link, Settings, Book, Terminal, Shield, Save, Download, Alert, Check, Info,
-            Sparkles, Layers, ArrowLeft, ArrowRight, Undo, Redo, Explain, Code,
+            Sparkles, Layers, ArrowLeft, ArrowRight, Undo, Redo, Explain, Code, Upload, Users, ArrowUp, ArrowDown, Merge, Copy, Pencil, Lock,
         ];
         const CELL: usize = 96;
         const COLS: usize = 10;

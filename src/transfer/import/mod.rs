@@ -8,7 +8,7 @@ mod redis;
 mod sqlite;
 pub mod write;
 
-pub use redis::{RedisConf, ping as redis_ping};
+pub use redis::RedisConf;
 use std::path::PathBuf;
 
 #[derive(Clone, Debug)]
