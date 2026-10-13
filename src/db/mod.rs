@@ -8,10 +8,12 @@ use std::time::{Duration, Instant};
 mod ddl;
 mod schema;
 mod script;
+mod users;
 
 pub use ddl::*;
 pub use schema::*;
 pub use script::*;
+pub use users::*;
 
 pub type Row = Vec<Option<String>>;
 

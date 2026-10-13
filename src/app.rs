@@ -546,7 +546,7 @@ impl EasyApp {
                 }
                 Action::OpenSafety => self.open_tab(Box::new(SafetyTab::new())),
                 Action::OpenImport => self.open_tab(Box::new(crate::tabs::import::ImportTab::new())),
-                Action::OpenUsers => {}
+                Action::OpenUsers => self.open_tab(Box::new(crate::tabs::users::UsersTab::new())),
                 Action::FilesChanged => self.tree_scan = None,
                 Action::OpenFileAt { path, line } => {
                     self.open_file(&path);
@@ -696,6 +696,7 @@ impl EasyApp {
             Cmd::QueryBuilder => self.handle_actions(vec![Action::OpenBuilder(Some(self.current_db.clone()))]),
             Cmd::Backups => self.handle_actions(vec![Action::OpenSafety]),
             Cmd::Import => self.handle_actions(vec![Action::OpenImport]),
+            Cmd::Users => self.handle_actions(vec![Action::OpenUsers]),
             _ => {}
         }
         let _ = ctx;
@@ -762,6 +763,7 @@ impl EasyApp {
             Cmd::QueryBuilder,
             Cmd::Backups,
             Cmd::Import,
+            Cmd::Users,
         ];
         // Waehrend ein Kuerzel in den Einstellungen aufgezeichnet wird, nichts ausloesen
         if crate::tabs::settings::recording() {

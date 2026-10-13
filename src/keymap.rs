@@ -43,6 +43,7 @@ pub enum Cmd {
     QueryBuilder,
     Backups,
     Import,
+    Users,
     // Editor
     Format,
     FixAll,
@@ -71,7 +72,7 @@ pub const GROUPS: &[(&str, &[Cmd])] = &[
     ("Dateien und Registerkarten", &[NewQuery, NewFile, OpenFile, OpenFolder, Save, SaveAll, CloseTab, CloseAllTabs, ReopenTab, NextTab, PrevTab]),
     (
         "Ansicht",
-        &[CommandPalette, QuickOpen, ToggleSidebar, ToggleTerminal, NewTerminal, FontLarger, FontSmaller, FontReset, ShowExplorer, ShowSearch, ShowDatabases, ShowHistory, Settings, Help, CheckUpdates, ServerLog, ErDiagram, QueryBuilder, Backups, Import],
+        &[CommandPalette, QuickOpen, ToggleSidebar, ToggleTerminal, NewTerminal, FontLarger, FontSmaller, FontReset, ShowExplorer, ShowSearch, ShowDatabases, ShowHistory, Settings, Help, CheckUpdates, ServerLog, ErDiagram, QueryBuilder, Backups, Import, Users],
     ),
     (
         "Editor",
@@ -124,6 +125,7 @@ impl Cmd {
             QueryBuilder => "abfrage_assistent",
             Backups => "sicherungen",
             Import => "importieren",
+            Users => "benutzer",
             Format => "formatieren",
             FixAll => "fehler_korrigieren",
             CopyJava => "java_kopieren",
@@ -181,6 +183,7 @@ impl Cmd {
             QueryBuilder => crate::i18n::text("Abfrage-Assistent"),
             Backups => crate::i18n::text("Sicherungen & Reparatur"),
             Import => crate::i18n::text("Importieren …"),
+            Users => crate::i18n::text("Benutzer & Rechte"),
             Format => crate::i18n::text("SQL formatieren"),
             FixAll => crate::i18n::text("Fehler automatisch korrigieren"),
             CopyJava => crate::i18n::text("Als Java-Code kopieren"),
@@ -243,7 +246,7 @@ impl Cmd {
             ServerLog => vec![cs(Key::L)],
             ErDiagram => vec![cs(Key::R)],
             QueryBuilder => vec![cs(Key::Q)],
-            Backups | Import => vec![],
+            Backups | Import | Users => vec![],
             Format => vec![ca(Key::L), sa(Key::F)],
             FixAll => vec![c(Key::Period)],
             CopyJava => vec![],

@@ -13,6 +13,7 @@ pub mod safety;
 pub mod settings;
 pub mod sql;
 pub mod structure;
+pub mod users;
 
 use crate::db::{Db, Schema};
 use crate::keymap::Cmd;

@@ -860,6 +860,7 @@ pub const CHAPTERS: &[Chapter] = &[
                         Cmd::QueryBuilder,
                         Cmd::Backups,
                         Cmd::Import,
+                        Cmd::Users,
                         Cmd::Format,
                         Cmd::FixAll,
                         Cmd::CopyJava,

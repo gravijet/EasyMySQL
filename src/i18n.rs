@@ -1168,6 +1168,8 @@ impl Language {
             "Keine Objekte in der JSON-Datei." => "No objects in the JSON file.",
             "Redis hat die Verbindung beendet." => "Redis closed the connection.",
             "Abgebrochen." => "Cancelled.",
+            "Diese Datei kann nicht angezeigt werden." => "This file cannot be displayed.",
+            "Benutzer & Rechte" => "Users & privileges",
             _ => source,
         }
     }
@@ -1182,6 +1184,8 @@ pub fn current() -> Language {
     if is_english() { Language::English } else { Language::German }
 }
 pub fn text(source: &str) -> &str { current().text(source) }
+/// Text in beiden Sprachen direkt an der Stelle der Verwendung (fuer neue Oberflaeche)
+pub fn tr<'a>(de: &'a str, en: &'a str) -> &'a str { if is_english() { en } else { de } }
 
 // Both format strings remain literal, so Rust checks placeholders and format specifications.
 #[macro_export]

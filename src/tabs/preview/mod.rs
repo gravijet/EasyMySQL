@@ -1,8 +1,8 @@
-// Vorschau fuer Dateien, die kein Text sind: Bilder, PDF-Dokumente und andere Binaerdateien (Hexdarstellung).
+// Vorschau fuer Dateien, die kein Text sind: Bilder, PDF-Dokumente und andere Dateien (nur ein Hinweis).
 
-mod hex;
 mod image_view;
 mod pdf;
+mod unsupported;
 
 use super::{Ctx, TabView};
 use crate::icons::{self, Icon};
@@ -51,7 +51,7 @@ pub fn previewable_name(name: &str) -> bool {
 enum Body {
     Image(image_view::ImageView),
     Pdf(pdf::PdfView),
-    Hex(hex::HexView),
+    Other(unsupported::Unsupported),
 }
 
 pub struct PreviewTab {
@@ -66,7 +66,7 @@ impl PreviewTab {
         let body = match kind {
             Kind::Image => Body::Image(image_view::ImageView::new(ctx, path)),
             Kind::Pdf => Body::Pdf(pdf::PdfView::new(ctx, path)),
-            _ => Body::Hex(hex::HexView::load(path)?),
+            _ => Body::Other(unsupported::Unsupported::load(path)?),
         };
         Ok(Self { path: path.to_path_buf(), body, size })
     }
@@ -109,7 +109,7 @@ impl TabView for PreviewTab {
         Some(match self.body {
             Body::Image(_) => Icon::FileImage,
             Body::Pdf(_) => Icon::FileText,
-            Body::Hex(_) => Icon::File,
+            Body::Other(_) => Icon::File,
         })
     }
 
@@ -130,7 +130,7 @@ impl TabView for PreviewTab {
         match &mut self.body {
             Body::Image(v) => v.zoom_by(factor),
             Body::Pdf(v) => v.zoom_by(factor),
-            Body::Hex(_) => return false,
+            Body::Other(_) => return false,
         }
         true
     }
@@ -142,7 +142,7 @@ impl TabView for PreviewTab {
             let info = match &self.body {
                 Body::Image(v) => v.info(),
                 Body::Pdf(v) => v.info(),
-                Body::Hex(v) => v.info(),
+                Body::Other(v) => v.info(),
             };
             ui.label(RichText::new(format!("{}  ·  {info}", human_size(self.size))).color(pal.text_weak));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -158,7 +158,7 @@ impl TabView for PreviewTab {
                 match &mut self.body {
                     Body::Image(v) => v.toolbar(ui),
                     Body::Pdf(v) => v.toolbar(ui),
-                    Body::Hex(_) => {}
+                    Body::Other(_) => {}
                 }
             });
         });
@@ -166,7 +166,7 @@ impl TabView for PreviewTab {
         match &mut self.body {
             Body::Image(v) => v.ui(ui),
             Body::Pdf(v) => v.ui(ui),
-            Body::Hex(v) => v.ui(ui, &self.path),
+            Body::Other(v) => v.ui(ui, &self.path),
         }
     }
 }

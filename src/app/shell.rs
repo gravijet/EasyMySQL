@@ -27,6 +27,7 @@ impl EasyApp {
             ["builder", db] => Box::new(BuilderTab::new(Some(db.to_string()).filter(|d| !d.is_empty()))),
             ["builder", id, db] => Box::new(BuilderTab::restore(id, db)),
             ["safety"] => Box::new(SafetyTab::new()),
+            ["users"] => Box::new(crate::tabs::users::UsersTab::new()),
             ["import"] => Box::new(crate::tabs::import::ImportTab::new()),
             ["log"] => Box::new(LogTab::new()),
             ["settings"] => Box::new(SettingsTab::new()),
@@ -189,6 +190,7 @@ impl EasyApp {
                     ui.separator();
                     item(ui, crate::i18n::text("Server-Log"), Cmd::ServerLog, &mut cmd);
                     item(ui, crate::i18n::text("Sicherungen & Reparatur"), Cmd::Backups, &mut cmd);
+                    item(ui, crate::i18n::text("Benutzer & Rechte"), Cmd::Users, &mut cmd);
                     ui.separator();
                     if ui.button(crate::i18n::text("Verbindung …")).clicked() {
                         actions.push(Action::OpenSettings(Some("verbindung".into())));
