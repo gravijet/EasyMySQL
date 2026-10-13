@@ -494,88 +494,95 @@ impl EasyApp {
                     continue;
                 }
                 let title = if *d == self.current_db { RichText::new(d).strong() } else { RichText::new(d) };
-                let resp = egui::CollapsingHeader::new(title).id_salt(("db", d)).show(ui, |ui| match self.schemas.get(Some(dbc), d) {
-                    Some(schema) => {
-                        // Bei tausenden Tabellen nur die sichtbaren Zeilen aufbauen: zugeklappte Zeilen
-                        // ausserhalb des Fensters werden durch gleich hohen Leerraum ersetzt.
-                        let clip = ui.clip_rect();
-                        let mut closed_h: Option<f32> = None;
-                        for t in &schema.tables {
-                            if let Some(h) = closed_h {
-                                let id = ui.make_persistent_id(("t", d, &t.name));
-                                let open = egui::collapsing_header::CollapsingState::load(ui.ctx(), id).is_some_and(|s| s.is_open());
-                                let top = ui.cursor().min.y;
-                                if !open && (top + h < clip.top() || top > clip.bottom()) {
-                                    ui.add_space(h);
-                                    continue;
+                let resp = egui::CollapsingHeader::new(title).id_salt(("db", d)).show(ui, |ui| {
+                    let schema = self.schemas.get_arc(Some(dbc), d).cloned();
+                    let loading = self.schemas.is_loading(d);
+                    match schema {
+                        Some(schema) => {
+                            // Bei tausenden Tabellen nur die sichtbaren Zeilen aufbauen: zugeklappte Zeilen
+                            // ausserhalb des Fensters werden durch gleich hohen Leerraum ersetzt.
+                            let clip = ui.clip_rect();
+                            let mut closed_h: Option<f32> = None;
+                            for t in &schema.tables {
+                                if let Some(h) = closed_h {
+                                    let id = ui.make_persistent_id(("t", d, &t.name));
+                                    let open = egui::collapsing_header::CollapsingState::load(ui.ctx(), id).is_some_and(|s| s.is_open());
+                                    let top = ui.cursor().min.y;
+                                    if !open && (top + h < clip.top() || top > clip.bottom()) {
+                                        ui.add_space(h);
+                                        continue;
+                                    }
                                 }
-                            }
-                            let label = if t.is_view { RichText::new(&t.name).italics() } else { RichText::new(&t.name) };
-                            let h = egui::CollapsingHeader::new(label).id_salt(("t", d, &t.name)).show(ui, |ui| {
-                                for c in &t.columns {
-                                    ui.horizontal(|ui| {
-                                        let (tag, color) = if c.is_pk() {
-                                            ("PK", Color32::from_rgb(0xC0, 0x90, 0x10))
-                                        } else if schema.is_fk_column(&t.name, &c.name) {
-                                            ("FK", Color32::from_rgb(0x40, 0x80, 0xD0))
-                                        } else {
-                                            ("", pal.text_weak)
-                                        };
-                                        ui.add_sized([18.0, 14.0], egui::Label::new(RichText::new(tag).small().color(color)));
-                                        ui.label(RichText::new(&c.name).small());
-                                        ui.label(RichText::new(&c.col_type).small().color(pal.text_weak));
-                                    });
+                                let label = if t.is_view { RichText::new(&t.name).italics() } else { RichText::new(&t.name) };
+                                let h = egui::CollapsingHeader::new(label).id_salt(("t", d, &t.name)).show(ui, |ui| {
+                                    for c in &t.columns {
+                                        ui.horizontal(|ui| {
+                                            let (tag, color) = if c.is_pk() {
+                                                ("PK", Color32::from_rgb(0xC0, 0x90, 0x10))
+                                            } else if schema.is_fk_column(&t.name, &c.name) {
+                                                ("FK", Color32::from_rgb(0x40, 0x80, 0xD0))
+                                            } else {
+                                                ("", pal.text_weak)
+                                            };
+                                            ui.add_sized([18.0, 14.0], egui::Label::new(RichText::new(tag).small().color(color)));
+                                            ui.label(RichText::new(&c.name).small());
+                                            ui.label(RichText::new(&c.col_type).small().color(pal.text_weak));
+                                        });
+                                    }
+                                });
+                                if h.body_response.is_none() {
+                                    closed_h = Some(h.header_response.rect.height());
                                 }
-                            });
-                            if h.body_response.is_none() {
-                                closed_h = Some(h.header_response.rect.height());
-                            }
-                            let hr = h.header_response;
-                            if hr.clicked() {
-                                self.current_db = d.clone();
-                            }
-                            if hr.double_clicked() {
-                                actions.push(Action::OpenData { db: d.clone(), table: t.name.clone() });
-                            }
-                            hr.context_menu(|ui| {
-                                if ui.button(crate::i18n::text("Daten")).clicked() {
+                                let hr = h.header_response;
+                                if hr.clicked() {
+                                    self.current_db = d.clone();
+                                }
+                                if hr.double_clicked() {
                                     actions.push(Action::OpenData { db: d.clone(), table: t.name.clone() });
-                                    ui.close();
                                 }
-                                if ui.button(crate::i18n::text("Struktur")).clicked() {
-                                    actions.push(Action::OpenStructure { db: d.clone(), table: t.name.clone() });
-                                    ui.close();
-                                }
-                                if ui.button("SELECT").clicked() {
-                                    actions.push(Action::OpenSql { db: Some(d.clone()), sql: format!("SELECT * FROM {} LIMIT 100;", q(&t.name)), run: true });
-                                    ui.close();
-                                }
-                                if ui.button(crate::i18n::text("Name kopieren")).clicked() {
-                                    ui.ctx().copy_text(t.name.clone());
-                                    ui.close();
-                                }
-                                ui.separator();
-                                if !t.is_view && ui.button(crate::i18n::text("Leeren …")).clicked() {
-                                    actions.push(Action::Confirm {
-                                        text: crate::tr_format!("Alle Zeilen der Tabelle „{}“ löschen?", "Delete all rows in table “{}”?", t.name),
-                                        db: Some(d.clone()),
-                                        sql: format!("DELETE FROM {}", q(&t.name)),
-                                    });
-                                    ui.close();
-                                }
-                                if ui.button(crate::i18n::text("Löschen …")).clicked() {
-                                    actions.push(Action::Confirm {
-                                        text: crate::tr_format!("„{}“ mit allen Daten löschen?", "Delete “{}” and all its data?", t.name),
-                                        db: Some(d.clone()),
-                                        sql: format!("DROP {} {}", if t.is_view { "VIEW" } else { "TABLE" }, q(&t.name)),
-                                    });
-                                    ui.close();
-                                }
-                            });
+                                hr.context_menu(|ui| {
+                                    if ui.button(crate::i18n::text("Daten")).clicked() {
+                                        actions.push(Action::OpenData { db: d.clone(), table: t.name.clone() });
+                                        ui.close();
+                                    }
+                                    if ui.button(crate::i18n::text("Struktur")).clicked() {
+                                        actions.push(Action::OpenStructure { db: d.clone(), table: t.name.clone() });
+                                        ui.close();
+                                    }
+                                    if ui.button("SELECT").clicked() {
+                                        actions.push(Action::OpenSql { db: Some(d.clone()), sql: format!("SELECT * FROM {} LIMIT 100;", q(&t.name)), run: true });
+                                        ui.close();
+                                    }
+                                    if ui.button(crate::i18n::text("Name kopieren")).clicked() {
+                                        ui.ctx().copy_text(t.name.clone());
+                                        ui.close();
+                                    }
+                                    ui.separator();
+                                    if !t.is_view && ui.button(crate::i18n::text("Leeren …")).clicked() {
+                                        actions.push(Action::Confirm {
+                                            text: crate::tr_format!("Alle Zeilen der Tabelle „{}“ löschen?", "Delete all rows in table “{}”?", t.name),
+                                            db: Some(d.clone()),
+                                            sql: format!("DELETE FROM {}", q(&t.name)),
+                                        });
+                                        ui.close();
+                                    }
+                                    if ui.button(crate::i18n::text("Löschen …")).clicked() {
+                                        actions.push(Action::Confirm {
+                                            text: crate::tr_format!("„{}“ mit allen Daten löschen?", "Delete “{}” and all its data?", t.name),
+                                            db: Some(d.clone()),
+                                            sql: format!("DROP {} {}", if t.is_view { "VIEW" } else { "TABLE" }, q(&t.name)),
+                                        });
+                                        ui.close();
+                                    }
+                                });
+                            }
                         }
-                    }
-                    None => {
-                        ui.label(RichText::new(crate::i18n::text("kein Zugriff")).color(pal.error_text));
+                        None if loading => {
+                            ui.label(RichText::new(crate::i18n::text("Wird gelesen …")).color(pal.text_weak));
+                        }
+                        None => {
+                            ui.label(RichText::new(crate::i18n::text("kein Zugriff")).color(pal.error_text));
+                        }
                     }
                 });
                 let hr = resp.header_response;

@@ -22,6 +22,7 @@ pub struct StructureTab {
     fks_in: Vec<ForeignKey>,
     create: String,
     loaded: bool,
+    schema_wait: bool,
     selected: Option<usize>,
     dlg: Option<Dlg>,
     targets: Vec<String>,
@@ -40,6 +41,7 @@ impl StructureTab {
             fks_in: Vec::new(),
             create: String::new(),
             loaded: false,
+            schema_wait: false,
             selected: None,
             dlg: None,
             targets: Vec::new(),
@@ -53,7 +55,16 @@ impl StructureTab {
     fn reload(&mut self, cx: &mut Ctx) {
         self.loaded = true;
         let Some(dbc) = cx.db else { return };
+        self.schema_wait = true;
+        self.apply_schema(cx);
+        self.indexes = dbc.indexes(&self.db, &self.table).unwrap_or_default();
+        self.create = dbc.create_statement(&self.db, &self.table).unwrap_or_default();
+    }
+
+    /// Tabellen-, Fremdschluessel- und Spaltenlisten uebernehmen, sobald die Struktur gelesen ist.
+    fn apply_schema(&mut self, cx: &mut Ctx) {
         if let Some(s) = cx.schema(&self.db) {
+            self.schema_wait = false;
             self.info = s.table(&self.table).cloned();
             self.fks_out = s.fks.iter().filter(|f| f.table == self.table).cloned().collect();
             self.fks_in = s.fks.iter().filter(|f| f.ref_table == self.table).cloned().collect();
@@ -63,9 +74,9 @@ impl StructureTab {
                 .filter(|t| !t.is_view)
                 .flat_map(|t| t.columns.iter().map(move |c| format!("{}.{}", t.name, c.name)))
                 .collect();
+        } else if !cx.schema_loading(&self.db) {
+            self.schema_wait = false;
         }
-        self.indexes = dbc.indexes(&self.db, &self.table).unwrap_or_default();
-        self.create = dbc.create_statement(&self.db, &self.table).unwrap_or_default();
     }
 
     fn alter(&mut self, cx: &mut Ctx, sql: String) -> bool {
@@ -317,8 +328,14 @@ impl TabView for StructureTab {
     fn ui(&mut self, ui: &mut egui::Ui, cx: &mut Ctx) {
         if !self.loaded {
             self.reload(cx);
+        } else if self.schema_wait {
+            self.apply_schema(cx);
         }
         let Some(info) = self.info.clone() else {
+            if self.schema_wait {
+                ui.label(RichText::new(crate::i18n::text("Wird gelesen …")).color(style::pal().text_weak));
+                return;
+            }
             ui.label(RichText::new(crate::tr_format!("Tabelle {}.{} nicht gefunden.", "Table {}.{} was not found.", self.db, self.table)).color(style::pal().error_text));
             if ui.button(crate::i18n::text("Aktualisieren")).clicked() {
                 self.reload(cx);

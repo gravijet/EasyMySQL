@@ -235,7 +235,11 @@ impl EasyApp {
             db: None,
             auto_connect: true,
             databases: Vec::new(),
-            schemas: SchemaCache::default(),
+            schemas: {
+                let mut c = SchemaCache::default();
+                c.set_repaint(cc.egui_ctx.clone());
+                c
+            },
             tabs: Vec::new(),
             active: 0,
             closed: Vec::new(),

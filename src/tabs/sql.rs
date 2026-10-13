@@ -637,10 +637,11 @@ impl TabView for SqlTab {
         }
         // Woerter fuer die Autovervollstaendigung
         if self.words_for != self.database {
-            self.words_for = self.database.clone();
-            self.words = Words::default();
-            if let Some(s) = cx.schema(&self.database) {
-                for t in &s.tables {
+            let s = cx.schema(&self.database);
+            if s.is_some() || !cx.schema_loading(&self.database) {
+                self.words_for = self.database.clone();
+                self.words = Words::default();
+                for t in s.iter().flat_map(|s| &s.tables) {
                     self.words.tables.push(t.name.clone());
                     for c in &t.columns {
                         self.words.columns.push((t.name.clone(), c.name.clone()));

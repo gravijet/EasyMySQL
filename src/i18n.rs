@@ -877,6 +877,7 @@ impl Language {
             "kein Kürzel" => "no shortcut",
             "kein Primärschlüssel" => "no primary key",
             "kein Zugriff" => "no access",
+            "Wird gelesen …" => "Loading …",
             "keine Treffer" => "no matches",
             "kleinster Wert" => "smallest value",
             "kleinster der Werte" => "least value",

@@ -307,6 +307,8 @@ pub struct ErTab {
     drag: Drag,
     show_types: bool,
     loaded_for: String,
+    /// Struktur wird gelesen; `Some(pos, routes)` = Aktualisierung mit bisheriger Anordnung
+    waiting: Option<Option<(HashMap<String, Pos2>, HashMap<String, Vec<Pos2>>)>>,
     menu: Option<Menu>,
     link: Option<LinkDlg>,
     fit_pending: bool,
@@ -463,6 +465,7 @@ impl ErTab {
             drag: Drag::None,
             show_types: true,
             loaded_for: String::new(),
+            waiting: None,
             menu: None,
             link: None,
             fit_pending: false,
@@ -583,16 +586,38 @@ impl ErTab {
         )
     }
 
+    /// Struktur neu anfordern; `finish_load` uebernimmt sie, sobald sie da ist.
     fn load(&mut self, cx: &mut Ctx) {
         self.loaded_for = self.db.clone();
         self.error = None;
         cx.schemas.invalidate(&self.db);
-        let s = cx.schema(&self.db);
-        self.set_schema(s);
-        if self.schema.is_none() {
-            self.error = Some(crate::i18n::text("Struktur konnte nicht gelesen werden.").into());
+        self.set_schema(None);
+        self.waiting = Some(None);
+        self.finish_load(cx);
+    }
+
+    fn finish_load(&mut self, cx: &mut Ctx) {
+        let Some(keep) = self.waiting.take() else { return };
+        let Some(s) = cx.schema(&self.db) else {
+            if cx.schema_loading(&self.db) {
+                self.waiting = Some(keep);
+            } else {
+                self.error = Some(crate::i18n::text("Struktur konnte nicht gelesen werden.").into());
+            }
+            return;
+        };
+        if let Some((pos, routes)) = keep {
+            // Aktualisierung: Anordnung behalten, nur neue Tabellen platzieren
+            self.set_schema(Some(s.clone()));
+            self.pos = pos;
+            self.routes = routes;
+            if let Some(raw) = self.raw.clone() {
+                self.pos.retain(|k, _| raw.table(k).is_some());
+            }
+            self.place_new_tables(&s);
             return;
         }
+        self.set_schema(Some(s));
         self.pos.clear();
         self.routes.clear();
         if let Ok(text) = std::fs::read_to_string(layout_file(&self.db)) {
@@ -1644,27 +1669,24 @@ impl TabView for ErTab {
     }
 
     fn schema_changed(&mut self, db: &str, cx: &mut Ctx) {
-        if db == self.db && (self.pos.is_empty() || self.raw.is_none()) {
+        if db != self.db {
+            return;
+        }
+        if self.pos.is_empty() || self.raw.is_none() {
             // noch nie (erfolgreich) geladen
             self.loaded_for.clear();
-        } else if db == self.db {
-            let pos = self.pos.clone();
-            let routes = self.routes.clone();
-            cx.schemas.invalidate(&self.db);
-            let s = cx.schema(&self.db);
-            self.set_schema(s);
-            self.pos = pos;
-            self.routes = routes;
-            if let (Some(raw), Some(s)) = (self.raw.clone(), self.schema.clone()) {
-                self.pos.retain(|k, _| raw.table(k).is_some());
-                self.place_new_tables(&s);
-            }
+        } else {
+            cx.schemas.invalidate(db);
+            self.waiting = Some(Some((std::mem::take(&mut self.pos), std::mem::take(&mut self.routes))));
+            self.finish_load(cx);
         }
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, cx: &mut Ctx) {
         if self.loaded_for != self.db && cx.db.is_some() {
             self.load(cx);
+        } else if self.waiting.is_some() {
+            self.finish_load(cx);
         }
         ui.horizontal_wrapped(|ui| {
             let mut d = self.db.clone();
@@ -1733,6 +1755,10 @@ impl TabView for ErTab {
         });
         if let Some(e) = &self.error {
             ui.label(RichText::new(e).color(style::pal().error_text));
+        }
+        if self.waiting.is_some() && self.schema.is_none() {
+            ui.label(RichText::new(crate::i18n::text("Wird gelesen …")).color(style::pal().text_weak));
+            return;
         }
         self.draw(ui, cx);
         let ctx = ui.ctx().clone();

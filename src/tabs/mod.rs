@@ -17,6 +17,7 @@ use crate::db::{Db, Schema};
 use crate::keymap::Cmd;
 use eframe::egui;
 use std::collections::HashMap;
+use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
 
 /// Aktionen, die eine Registerkarte beim Hauptfenster anfordert.
@@ -61,41 +62,83 @@ pub enum Action {
     FilesMoved { from: std::path::PathBuf, to: std::path::PathBuf },
 }
 
-#[derive(Default)]
+/// Strukturen der Datenbanken. Gelesen wird im Hintergrund, die Oberflaeche bleibt bedienbar.
 pub struct SchemaCache {
     map: HashMap<String, Arc<Schema>>,
     errors: HashMap<String, String>,
+    /// Laufende Abfragen: Datenbank -> Nummer (veraltete Ergebnisse werden verworfen)
+    pending: HashMap<String, u64>,
+    counter: u64,
+    tx: Sender<(String, u64, Result<Schema, String>)>,
+    rx: Receiver<(String, u64, Result<Schema, String>)>,
+    repaint: Option<egui::Context>,
+}
+
+impl Default for SchemaCache {
+    fn default() -> Self {
+        let (tx, rx) = channel();
+        Self { map: HashMap::new(), errors: HashMap::new(), pending: HashMap::new(), counter: 0, tx, rx, repaint: None }
+    }
 }
 
 impl SchemaCache {
-    pub fn get(&mut self, db: Option<&Db>, name: &str) -> Option<&Schema> {
-        self.get_arc(db, name).map(|s| &**s)
+    pub fn set_repaint(&mut self, ctx: egui::Context) {
+        self.repaint = Some(ctx);
+    }
+
+    fn poll(&mut self) {
+        while let Ok((name, id, r)) = self.rx.try_recv() {
+            if self.pending.get(&name) != Some(&id) {
+                continue;
+            }
+            self.pending.remove(&name);
+            match r {
+                Ok(s) => {
+                    self.map.insert(name, Arc::new(s));
+                }
+                Err(e) => {
+                    self.errors.insert(name, e);
+                }
+            }
+        }
     }
 
     /// Geteilter Zugriff ohne Kopie (Strukturen grosser Datenbanken sind gross).
     pub fn get_arc(&mut self, db: Option<&Db>, name: &str) -> Option<&Arc<Schema>> {
-        if !self.map.contains_key(name) && !self.errors.contains_key(name) {
-            let db = db?;
-            match db.schema(name) {
-                Ok(s) => {
-                    self.map.insert(name.to_string(), Arc::new(s));
+        self.poll();
+        if !self.map.contains_key(name) && !self.errors.contains_key(name) && !self.pending.contains_key(name) {
+            let db = db?.clone();
+            self.counter += 1;
+            let id = self.counter;
+            self.pending.insert(name.to_string(), id);
+            let (tx, name, ctx) = (self.tx.clone(), name.to_string(), self.repaint.clone());
+            std::thread::spawn(move || {
+                let r = db.schema(&name);
+                let _ = tx.send((name, id, r));
+                if let Some(c) = ctx {
+                    c.request_repaint();
                 }
-                Err(e) => {
-                    self.errors.insert(name.to_string(), e);
-                }
-            }
+            });
         }
         self.map.get(name)
+    }
+
+    /// Wird die Struktur gerade gelesen?
+    pub fn is_loading(&mut self, name: &str) -> bool {
+        self.poll();
+        self.pending.contains_key(name)
     }
 
     pub fn invalidate(&mut self, name: &str) {
         self.map.remove(name);
         self.errors.remove(name);
+        self.pending.remove(name);
     }
 
     pub fn clear(&mut self) {
         self.map.clear();
         self.errors.clear();
+        self.pending.clear();
     }
 }
 
@@ -111,8 +154,12 @@ pub struct Ctx<'a> {
 }
 
 impl Ctx<'_> {
+    /// Struktur der Datenbank; `None` solange sie noch gelesen wird (siehe `schema_loading`).
     pub fn schema(&mut self, name: &str) -> Option<Arc<Schema>> {
         self.schemas.get_arc(self.db, name).cloned()
+    }
+    pub fn schema_loading(&mut self, name: &str) -> bool {
+        self.schemas.is_loading(name)
     }
     pub fn error(&mut self, e: impl Into<String>) {
         self.actions.push(Action::Error(e.into()));

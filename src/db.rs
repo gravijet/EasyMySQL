@@ -497,6 +497,7 @@ impl Schema {
     }
 }
 
+#[derive(Clone)]
 pub struct Db {
     pub pool: Pool,
     pub info: ConnInfo,

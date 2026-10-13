@@ -22,6 +22,7 @@ pub struct DataTab {
     count_job: Option<std::sync::mpsc::Receiver<Option<u64>>>,
     info: Option<TableInfo>,
     loaded: bool,
+    info_wait: bool,
     error: Option<String>,
     grid: GridState,
     insert: Option<Vec<(String, String, bool)>>,
@@ -43,6 +44,7 @@ impl DataTab {
             count_job: None,
             info: None,
             loaded: false,
+            info_wait: false,
             error: None,
             grid: GridState::default(),
             insert: None,
@@ -61,6 +63,16 @@ impl DataTab {
         }
     }
 
+    /// Tabelleninfo aus der Struktur holen, sobald sie gelesen ist.
+    fn update_info(&mut self, cx: &mut Ctx) {
+        if let Some(s) = cx.schema(&self.db) {
+            self.info = s.table(&self.table).cloned();
+            self.info_wait = false;
+        } else if !cx.schema_loading(&self.db) {
+            self.info_wait = false;
+        }
+    }
+
     pub fn reload(&mut self, cx: &mut Ctx) {
         self.loaded = true;
         self.error = None;
@@ -69,9 +81,9 @@ impl DataTab {
             self.error = Some(crate::i18n::text("Keine Verbindung.").into());
             return;
         };
-        self.info = cx
-            .schema(&self.db)
-            .and_then(|s| s.table(&self.table).cloned());
+        self.info = None;
+        self.info_wait = true;
+        self.update_info(cx);
         let mut sql = format!("SELECT * FROM {}{}", self.full_name(), self.where_clause());
         if !self.order.is_empty() {
             sql.push_str(&format!(" ORDER BY {}{}", q(&self.order), if self.desc { " DESC" } else { "" }));
@@ -284,6 +296,8 @@ impl TabView for DataTab {
     fn ui(&mut self, ui: &mut egui::Ui, cx: &mut Ctx) {
         if !self.loaded {
             self.reload(cx);
+        } else if self.info_wait {
+            self.update_info(cx);
         }
         if let Some(rx) = &self.count_job {
             match rx.try_recv() {
