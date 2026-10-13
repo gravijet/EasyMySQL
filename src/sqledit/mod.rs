@@ -8,6 +8,7 @@ use eframe::egui::{
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+mod complete;
 mod highlight;
 mod lint;
 mod text;
@@ -49,16 +50,8 @@ pub fn filter_input(ctx: &egui::Context, raw: &mut egui::RawInput) {
     }
 }
 
-/// Woerter fuer die Autovervollstaendigung.
-#[derive(Default, Clone)]
-pub struct Words {
-    pub tables: Vec<String>,
-    /// (Tabelle, Spalte)
-    pub columns: Vec<(String, String)>,
-}
-
 struct Popup {
-    items: Vec<(String, &'static str)>,
+    items: Vec<complete::Item>,
     selected: usize,
     word_start: usize,
     cursor: usize,
@@ -175,76 +168,17 @@ impl SqlEditor {
 
     fn accept(&mut self, ctx: &egui::Context, text: &mut String) {
         let Some(p) = self.popup.take() else { return };
-        let Some((item, _)) = p.items.get(p.selected) else { return };
+        let Some(item) = p.items.get(p.selected) else { return };
         let a = byte_of(text, p.word_start);
         let b = byte_of(text, p.cursor);
-        text.replace_range(a..b, item);
-        self.set_cursor(ctx, p.word_start + item.chars().count());
+        text.replace_range(a..b, &item.insert);
+        let end = p.word_start + item.insert.chars().count() - item.back;
+        self.set_cursor(ctx, end);
         self.prev_text = text.clone();
-    }
-
-    fn suggestions(text: &str, cursor: usize, words: &Words, force: bool) -> Option<Popup> {
-        let chars: Vec<char> = text.chars().collect();
-        if cursor > chars.len() || in_comment_or_string(&chars[..cursor]) {
-            return None;
+        // Nach "alias." gleich die Spalten anbieten
+        if item.insert.ends_with('.') {
+            self.popup = complete::suggest(text, end, &self.lint_env(), true).map(|s| Popup { items: s.items, selected: 0, word_start: s.word_start, cursor: end });
         }
-        let mut s = cursor;
-        while s > 0 && is_word_char(chars[s - 1]) {
-            s -= 1;
-        }
-        let word: String = chars[s..cursor].iter().collect();
-        // "tabelle." -> Spalten dieser Tabelle
-        let mut table_prefix: Option<String> = None;
-        if s > 0 && chars[s - 1] == '.' {
-            let mut t = s - 1;
-            while t > 0 && (is_word_char(chars[t - 1]) || chars[t - 1] == '`') {
-                t -= 1;
-            }
-            let name: String = chars[t..s - 1].iter().filter(|c| **c != '`').collect();
-            if !name.is_empty() {
-                table_prefix = Some(name);
-            }
-        }
-        if word.chars().count() < 2 && table_prefix.is_none() && !force {
-            return None;
-        }
-        let lw = word.to_lowercase();
-        let mut items: Vec<(String, &'static str)> = Vec::new();
-        let add = |w: &str, kind: &'static str, items: &mut Vec<(String, &'static str)>| {
-            if w.to_lowercase().starts_with(&lw) && !items.iter().any(|(x, _)| x == w) {
-                items.push((w.to_string(), kind));
-            }
-        };
-        match &table_prefix {
-            Some(t) => {
-                // Alias? Dann alle Spalten anbieten, deren Tabelle passt, sonst alle.
-                let known = words.tables.iter().any(|x| x.eq_ignore_ascii_case(t));
-                for (tab, c) in &words.columns {
-                    if !known || tab.eq_ignore_ascii_case(t) {
-                        add(c, crate::i18n::text("Spalte"), &mut items);
-                    }
-                }
-            }
-            None => {
-                for t in &words.tables {
-                    add(t, crate::i18n::text("Tabelle"), &mut items);
-                }
-                for (_, c) in &words.columns {
-                    add(c, crate::i18n::text("Spalte"), &mut items);
-                }
-                for f in FUNCTIONS {
-                    add(f, crate::i18n::text("Funktion"), &mut items);
-                }
-                for k in KEYWORDS {
-                    add(k, "SQL", &mut items);
-                }
-            }
-        }
-        if items.is_empty() || (items.len() == 1 && items[0].0 == word && !force) {
-            return None;
-        }
-        items.truncate(60);
-        Some(Popup { items, selected: 0, word_start: s, cursor })
     }
 
     fn lint_env(&self) -> Env<'_> {
@@ -611,7 +545,7 @@ impl SqlEditor {
     }
 
     /// Zeigt den Editor. `height` = gewuenschte Hoehe.
-    pub fn show(&mut self, ui: &mut egui::Ui, text: &mut String, words: &Words, height: f32) -> EditorOutput {
+    pub fn show(&mut self, ui: &mut egui::Ui, text: &mut String, height: f32) -> EditorOutput {
         let mut out = EditorOutput::default();
         let ctx = ui.ctx().clone();
         let focused = ctx.memory(|m| m.has_focus(self.id));
@@ -646,7 +580,7 @@ impl SqlEditor {
                 let typed_complete = self.popup.as_ref().is_some_and(|p| {
                     let a = byte_of(text, p.word_start);
                     let b = byte_of(text, p.cursor);
-                    p.items.get(p.selected).is_some_and(|(w, _)| text.get(a..b).is_some_and(|t| t.eq_ignore_ascii_case(w)))
+                    p.items.get(p.selected).is_some_and(|i| text.get(a..b).is_some_and(|t| t.eq_ignore_ascii_case(&i.insert)))
                 });
                 if enter && typed_complete {
                     self.popup = None;
@@ -932,7 +866,8 @@ impl SqlEditor {
         // Vorschlaege aktualisieren
         let auto = AUTO_SUGGEST.load(std::sync::atomic::Ordering::Relaxed);
         if (o.response.response.changed() && auto) || force {
-            self.popup = cursor.and_then(|c| Self::suggestions(text, c, words, force));
+            self.popup = cursor
+                .and_then(|c| complete::suggest(text, c, &self.lint_env(), force).map(|s| Popup { items: s.items, selected: 0, word_start: s.word_start, cursor: c }));
         } else if let (Some(p), Some(c)) = (&self.popup, cursor)
             && p.cursor != c {
                 self.popup = None;
@@ -963,11 +898,12 @@ impl SqlEditor {
                     egui::Frame::popup(&ctx.global_style()).inner_margin(egui::Margin::same(2)).show(ui, |ui| {
                         ui.set_min_width(240.0);
                         egui::ScrollArea::vertical().max_height(220.0).show(ui, |ui| {
-                            for (i, (w, kind)) in p.items.iter().enumerate() {
+                            for (i, it) in p.items.iter().enumerate() {
                                 let sel = i == p.selected;
+                                let right = if it.detail.is_empty() { it.kind.to_string() } else { format!("{}  ·  {}", it.detail, it.kind) };
                                 let r = ui.add(
-                                    egui::Button::selectable(sel, RichText::new(w.as_str()).monospace())
-                                        .right_text(RichText::new(*kind).small().color(pal.text_weak))
+                                    egui::Button::selectable(sel, RichText::new(it.label.as_str()).monospace())
+                                        .right_text(RichText::new(right).small().color(pal.text_weak))
                                         .min_size(egui::vec2(236.0, 0.0)),
                                 );
                                 if sel {
@@ -1031,25 +967,6 @@ mod tests {
     #[test]
     fn format_basic() {
         assert_eq!(format_sql("select a,b from t where x=1;"), "SELECT a, b\nFROM t\nWHERE x = 1;\n");
-    }
-
-    #[test]
-    fn completion() {
-        let w = Words {
-            tables: vec!["schueler".into(), "klasse".into()],
-            columns: vec![("schueler".into(), "vorname".into()), ("klasse".into(), "name".into())],
-        };
-        let p = SqlEditor::suggestions("SELECT * FROM sch", 17, &w, false).unwrap();
-        assert_eq!(p.items[0].0, "schueler");
-        let p = SqlEditor::suggestions("SELECT klasse.", 14, &w, false).unwrap();
-        assert_eq!(p.items.len(), 1);
-        assert_eq!(p.items[0].0, "name");
-        let p = SqlEditor::suggestions("sel", 3, &w, false).unwrap();
-        assert_eq!(p.items[0].0, "SELECT");
-        assert!(SqlEditor::suggestions("-- sel", 6, &w, false).is_none());
-        assert!(SqlEditor::suggestions("SELECT 'sch", 11, &w, false).is_none());
-        assert!(SqlEditor::suggestions("SELECT 'a' FROM sch", 19, &w, false).is_some());
-        assert!(SqlEditor::suggestions("s", 1, &w, false).is_none());
     }
 }
 
@@ -1131,12 +1048,11 @@ mod performance_tests {
         let ctx = egui::Context::default();
         let mut editor = SqlEditor::new(egui::Id::new("performance-editor"));
         let mut text = "SELECT id, name FROM customers WHERE id > 100;\n".repeat(5000);
-        let words = Words::default();
         let mut render = || {
             let _ = ctx.run_ui(egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 760.0))),
                 ..Default::default()
-            }, |ui| { editor.show(ui, &mut text, &words, 700.0); });
+            }, |ui| { editor.show(ui, &mut text, 700.0); });
         };
         for _ in 0..3 { render(); }
         let start = std::time::Instant::now();

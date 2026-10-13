@@ -5,7 +5,7 @@ use crate::db::{self, Stmt, StmtResult};
 use crate::grid::{self, GridState};
 use crate::icons::{self, Icon};
 use crate::keymap::Cmd;
-use crate::sqledit::{self, SqlEditor, Words};
+use crate::sqledit::{self, SqlEditor};
 use crate::style;
 use crate::workspace;
 use eframe::egui::{self, RichText};
@@ -43,8 +43,6 @@ pub struct SqlTab {
     grid: GridState,
     editor: SqlEditor,
     selection: Option<String>,
-    words: Words,
-    words_for: String,
     save_as: Option<String>,
     history: Option<Vec<(String, PathBuf)>>,
     save_error: Option<String>,
@@ -97,8 +95,6 @@ impl SqlTab {
             grid: GridState::default(),
             editor: SqlEditor::new(egui::Id::new(("sql-editor", next_scratch_id() + 100000))),
             selection: None,
-            words: Words::default(),
-            words_for: "\u{0}".into(),
             save_as: None,
             history: None,
             save_error: None,
@@ -571,12 +567,6 @@ impl TabView for SqlTab {
         true
     }
 
-    fn schema_changed(&mut self, db: &str, _cx: &mut Ctx) {
-        if db == self.database {
-            self.words_for = "\u{0}".into();
-        }
-    }
-
     fn key(&self) -> Option<String> {
         self.file.as_ref().map(|f| format!("file:{}", file_key(f)))
     }
@@ -674,20 +664,6 @@ impl TabView for SqlTab {
         if self.editor.databases.len() != cx.databases.len() {
             self.editor.databases = cx.databases.to_vec();
         }
-        // Woerter fuer die Autovervollstaendigung
-        if self.words_for != self.database {
-            let s = cx.schema(&self.database);
-            if s.is_some() || !cx.schema_loading(&self.database) {
-                self.words_for = self.database.clone();
-                self.words = Words::default();
-                for t in s.iter().flat_map(|s| &s.tables) {
-                    self.words.tables.push(t.name.clone());
-                    for c in &t.columns {
-                        self.words.columns.push((t.name.clone(), c.name.clone()));
-                    }
-                }
-            }
-        }
 
         // Kopfzeile: Datenbank, Aktionen, Position
         ui.horizontal(|ui| {
@@ -696,7 +672,6 @@ impl TabView for SqlTab {
             let mut d = self.database.clone();
             if super::str_combo(ui, self.editor.id.with("db"), &dbs, &mut d, 150.0) {
                 self.set_database(d);
-                self.words_for = "\u{0}".into();
             }
             ui.add_enabled_ui(self.job.is_none(), |ui| {
                 if icons::text_button(ui, Icon::Play, crate::i18n::text("Ausführen"))
@@ -762,7 +737,7 @@ impl TabView for SqlTab {
                 self.results_ui(ui, font_row);
             });
         let h = (ui.available_height() - 4.0).max(100.0);
-        let out = self.editor.show(ui, &mut self.text, &self.words, h);
+        let out = self.editor.show(ui, &mut self.text, h);
         self.selection = out.selection.clone();
         if out.changed {
             self.last_edit = Instant::now();

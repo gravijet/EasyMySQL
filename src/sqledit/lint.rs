@@ -37,7 +37,7 @@ pub const MAX_CHARS: usize = 300_000;
 // Zerlegung in Zeichen
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Kind {
+pub(super) enum Kind {
     Word,
     /// `Name` in Backticks
     Quoted,
@@ -53,24 +53,24 @@ enum Kind {
 }
 
 #[derive(Clone, Debug)]
-struct Tok {
-    kind: Kind,
-    start: usize,
-    end: usize,
+pub(super) struct Tok {
+    pub(super) kind: Kind,
+    pub(super) start: usize,
+    pub(super) end: usize,
     /// Wort bzw. Name ohne Backticks, Operator; sonst leer
-    text: String,
+    pub(super) text: String,
 }
 
 impl Tok {
-    fn upper(&self) -> String {
+    pub(super) fn upper(&self) -> String {
         self.text.to_ascii_uppercase()
     }
 
-    fn is_word(&self, w: &str) -> bool {
+    pub(super) fn is_word(&self, w: &str) -> bool {
         self.kind == Kind::Word && self.text.eq_ignore_ascii_case(w)
     }
 
-    fn is_name(&self) -> bool {
+    pub(super) fn is_name(&self) -> bool {
         matches!(self.kind, Kind::Word | Kind::Quoted)
     }
 }
@@ -79,12 +79,12 @@ fn is_word_char(c: char) -> bool {
     c.is_alphanumeric() || c == '_' || c == '$'
 }
 
-struct Lexed {
-    toks: Vec<Tok>,
-    problems: Vec<Problem>,
+pub(super) struct Lexed {
+    pub(super) toks: Vec<Tok>,
+    pub(super) problems: Vec<Problem>,
 }
 
-fn lex(chars: &[char]) -> Lexed {
+pub(super) fn lex(chars: &[char]) -> Lexed {
     let n = chars.len();
     let mut toks = Vec::new();
     let mut problems = Vec::new();
@@ -240,7 +240,7 @@ const TYPO_TARGETS: &[&str] = &[
     "DEFAULT", "PRIMARY", "FOREIGN", "REFERENCES", "TRUNCATE", "DATABASE", "INDEX", "UNIQUE", "CONSTRAINT", "AUTO_INCREMENT", "VARCHAR", "INTEGER",
 ];
 
-fn known_word(upper: &str) -> bool {
+pub(super) fn known_word(upper: &str) -> bool {
     KEYWORDS.binary_search(&upper).is_ok()
         || EXTRA.contains(&upper)
         || FUNCTIONS.binary_search(&upper).is_ok()
@@ -659,7 +659,22 @@ fn table_ref<'a>(
         });
         scope.lenient = true;
     }
+    if let Some(t) = table
+        && t.name != name_tok.text
+    {
+        out.push(spelling(name_tok, &t.name));
+    }
     alias_after(stmt, j + 1, Some((&lower, table)), scope, consumed)
+}
+
+/// Hinweis: der Name existiert, nur die Gross-/Kleinschreibung weicht ab
+fn spelling(t: &Tok, actual: &str) -> Problem {
+    problem(
+        t,
+        Severity::Warning,
+        crate::tr_format!("Schreibweise: Der Name lautet „{actual}“.", "Spelling: the name is “{actual}”."),
+        Some(replace(t, &if t.kind == Kind::Quoted { format!("`{actual}`") } else { quote_if_needed(actual) })),
+    )
 }
 
 /// Optionalen Alias lesen und die Tabelle im Geltungsbereich eintragen.
@@ -738,10 +753,15 @@ fn check_words<'a>(stmt: &[Tok], names: Option<(&Scope<'a>, &HashMap<String, &'a
                 if let Some((_, entry)) = scope.entries.iter().find(|(a, _)| *a == lower) {
                     if let (Some(table), Some(c)) = (entry, col)
                         && c.is_name()
-                        && !table.columns.iter().any(|x| x.name.eq_ignore_ascii_case(&c.text))
                     {
-                        let cols: Vec<&str> = table.columns.iter().map(|c| c.name.as_str()).collect();
-                        out.push(unknown_column(c, table, &cols));
+                        match table.columns.iter().find(|x| x.name.eq_ignore_ascii_case(&c.text)) {
+                            None => {
+                                let cols: Vec<&str> = table.columns.iter().map(|c| c.name.as_str()).collect();
+                                out.push(unknown_column(c, table, &cols));
+                            }
+                            Some(x) if x.name != c.text => out.push(spelling(c, &x.name)),
+                            Some(_) => {}
+                        }
                     }
                 } else if !scope.lenient
                     && dml
@@ -797,6 +817,14 @@ fn check_words<'a>(stmt: &[Tok], names: Option<(&Scope<'a>, &HashMap<String, &'a
             continue;
         }
         if known_word(&upper) || known.contains(&lower) {
+            // Spalte mit abweichender Schreibweise
+            if !known_word(&upper)
+                && dml
+                && let Some(col) = all_cols.iter().find(|c| c.eq_ignore_ascii_case(&t.text) && **c != t.text)
+                && !aliases.contains(&lower)
+            {
+                out.push(spelling(t, col));
+            }
             continue;
         }
         // Tippfehler in Schluesselwoertern
@@ -966,6 +994,19 @@ mod tests {
         let s = Schema { name: "d".into(), tables: vec![table("t", &["form", "ort"])], ..Default::default() };
         let env = Env { schema: Some(&s), databases: &[] };
         assert!(lint("SELECT form, ort FROM t WHERE form = 'x'", &env).is_empty());
+    }
+
+    #[test]
+    fn spelling_of_names_is_checked() {
+        let s = Schema { name: "d".into(), tables: vec![table("Spielleitung", &["SchiedsrichterNr", "Ort"])], ..Default::default() };
+        let env = Env { schema: Some(&s), databases: &[] };
+        let q = "SELECT schiedsrichternr, sp.ort FROM spielleitung sp WHERE ort = 'x'";
+        let p = lint(q, &env);
+        assert_eq!(p.len(), 4, "{:?}", p.iter().map(|p| &p.message).collect::<Vec<_>>());
+        assert!(p.iter().all(|p| p.severity == Severity::Warning));
+        assert_eq!(apply_fixes(q, &p).0, "SELECT SchiedsrichterNr, sp.Ort FROM Spielleitung sp WHERE Ort = 'x'");
+        // Richtig geschrieben: nichts
+        assert!(lint("SELECT SchiedsrichterNr FROM Spielleitung", &env).is_empty());
     }
 
     #[test]

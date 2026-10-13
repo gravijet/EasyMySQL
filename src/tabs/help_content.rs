@@ -219,8 +219,15 @@ pub const CHAPTERS: &[Chapter] = &[
                 id: "vorschlaege",
                 title: "Vorschläge beim Tippen",
                 blocks: &[
-                    P("Ab zwei Buchstaben schlägt der Editor Tabellen, Spalten, Funktionen und SQL-Wörter vor. Nach „tabelle.“ oder „alias.“ erscheinen die Spalten. \
-                       Pfeiltasten wählen, Enter oder Tab übernimmt, Esc schließt. Ist das Wort schon vollständig getippt, bleibt Enter ein Zeilenumbruch."),
+                    P("Beim Tippen erscheinen Vorschläge. Pfeiltasten wählen, Enter oder Tab übernimmt, Esc schließt. Ist das Wort schon vollständig getippt, bleibt Enter ein Zeilenumbruch."),
+                    P("Der Editor schlägt vor, was an der Stelle passt:"),
+                    List(&[
+                        "Nach FROM, JOIN, INTO und UPDATE kommen die Tabellen, nach SELECT, WHERE, ON und ORDER BY die Spalten der Tabellen aus der Anweisung (mit Datentyp). Nach „alias.“ oder „tabelle.“ erscheinen deren Spalten.",
+                        "Nach ON schlägt der Editor die fertige Join-Bedingung aus den Fremdschlüsseln vor, z. B. s.klasse_id = k.id.",
+                        "Nach einer Tabelle folgen passende Fortsetzungen (WHERE, LEFT JOIN, GROUP BY …). In CREATE TABLE werden Datentypen und Einschränkungen angeboten, nach USE die Datenbanken.",
+                        "Am Anfang einer Anweisung gibt es Vorlagen (SELECT * FROM, INSERT INTO … VALUES, CREATE TABLE …); der Cursor springt an die erste Stelle zum Ausfüllen.",
+                        "Namen behalten die Schreibweise der Datenbank, und gleiche Groß-/Kleinschreibung steht weiter oben. SQL-Wörter und Funktionen übernehmen deine Schreibweise: „sel“ ergibt select, „SEL“ ergibt SELECT. Funktionen werden mit Klammern eingefügt.",
+                    ]),
                     Keys(&[Cmd::Suggest]),
                     P("In den Einstellungen lassen sich die automatischen Vorschläge abschalten – dann nur noch per Tastenkürzel."),
                     Open("Editor-Einstellungen", Settings("editor")),
