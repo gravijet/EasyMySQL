@@ -313,11 +313,11 @@ impl Db {
                 continue;
             }
             let mut conn = self.conn()?;
-            let mut res = conn.query_iter(format!("SELECT * FROM {}.{}", q(db), q(&t))).map_err(err_text)?;
+            let res = conn.query_iter(format!("SELECT * FROM {}.{}", q(db), q(&t))).map_err(err_text)?;
             let cols: Vec<String> = res.columns().as_ref().iter().map(|c| q(&c.name_str())).collect();
             let mut batch = String::new();
             let mut n = 0usize;
-            while let Some(row) = res.next() {
+            for row in res {
                 let row = row.map_err(err_text)?;
                 batch.push_str(if n == 0 { "" } else { ",\n" });
                 if n == 0 {

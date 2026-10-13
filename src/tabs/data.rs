@@ -389,11 +389,9 @@ impl TabView for DataTab {
             if ui
                 .add_enabled(sel.is_some() && !is_view, egui::Button::new(crate::i18n::text("Zeile löschen")))
                 .clicked()
-            {
-                if let Some(r) = sel {
+                && let Some(r) = sel {
                     self.delete_row(cx, r);
                 }
-            }
             if ui.button(crate::i18n::text("Struktur")).clicked() {
                 cx.actions.push(Action::OpenStructure {
                     db: self.db.clone(),

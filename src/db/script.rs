@@ -82,12 +82,11 @@ pub fn run_script_with<C: Queryable>(conn: &mut C, sql: &str, abort: Option<&dyn
                             }
                             if rs.rows.len() >= MAX_ROWS || bytes >= MAX_RESULT_BYTES {
                                 rs.truncated = true;
-                                if read_only {
-                                    if let Some(abort) = abort {
+                                if read_only
+                                    && let Some(abort) = abort {
                                         abort();
                                         aborted = true;
                                     }
-                                }
                                 continue;
                             }
                             let r: Row = row.unwrap().into_iter().map(value_into_string).collect();

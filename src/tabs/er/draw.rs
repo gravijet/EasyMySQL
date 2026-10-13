@@ -115,11 +115,10 @@ impl ErTab {
                         let w = self.to_world(origin, p);
                         if let Some((rt, rc)) = self.column_at(&schema, w) {
                             let rc = rc.or_else(|| schema.table(&rt).and_then(|ti| ti.pk_columns().first().cloned()));
-                            if let Some(rc) = rc {
-                                if !(rt == t && rc == c) {
+                            if let Some(rc) = rc
+                                && !(rt == t && rc == c) {
                                     self.open_link(t, c, format!("{rt}.{rc}"));
                                 }
-                            }
                         }
                     }
                 }
@@ -131,19 +130,17 @@ impl ErTab {
         }
         // Entf: ausgewaehlte Beziehung loeschen
         let editing_text = ui.ctx().egui_wants_keyboard_input();
-        if !editing_text && self.link.is_none() && ui.input(|i| i.key_pressed(egui::Key::Delete)) {
-            if let Some(fk) = self.selected.as_ref().and_then(|k| schema.fks.iter().find(|f| fk_key(f) == *k)) {
+        if !editing_text && self.link.is_none() && ui.input(|i| i.key_pressed(egui::Key::Delete))
+            && let Some(fk) = self.selected.as_ref().and_then(|k| schema.fks.iter().find(|f| fk_key(f) == *k)) {
                 cx.actions.push(self.delete_action(fk));
             }
-        }
         if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
             self.selected = None;
         }
-        if resp.double_clicked() {
-            if let Some(t) = pointer.and_then(|p| hit_table(self, p)) {
+        if resp.double_clicked()
+            && let Some(t) = pointer.and_then(|p| hit_table(self, p)) {
                 cx.actions.push(Action::OpenStructure { db: self.db.clone(), table: t });
             }
-        }
         if resp.secondary_clicked() {
             self.menu = Some(match pointer {
                 Some(p) => {
@@ -328,8 +325,8 @@ impl ErTab {
         }
 
         // Neue Beziehung: gestrichelte Linie zur Maus
-        if let Drag::Link(t, c) = &self.drag {
-            if let (Some(ti), Some(p)) = (schema.table(t), hover.or(pointer)) {
+        if let Drag::Link(t, c) = &self.drag
+            && let (Some(ti), Some(p)) = (schema.table(t), hover.or(pointer)) {
                 let r = self.table_rect_world(ti);
                 let a = screen(pos2(r.right() - 7.0, r.top() + row_y(ti, c)));
                 painter.add(Shape::dashed_line(&[a, p], Stroke::new(2.0, LINE_HI), 6.0, 4.0));
@@ -342,7 +339,6 @@ impl ErTab {
                 };
                 painter.text(p + vec2(12.0, 12.0), Align2::LEFT_TOP, tip, FontId::proportional(12.0), LINE_HI);
             }
-        }
 
         // Tooltip fuer Linie
         if let (Some(i), Drag::None) = (hover_fk, &self.drag) {

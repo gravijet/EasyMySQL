@@ -153,11 +153,10 @@ impl ErTab {
                     ui.radio_value(&mut dlg.kind, LinkKind::OneToOne, "1:1");
                     ui.radio_value(&mut dlg.kind, LinkKind::ManyToMany, "n:m");
                     // Beim Wechsel zu n:m die Zieltabelle als zweite Tabelle uebernehmen
-                    if dlg.kind == LinkKind::ManyToMany && before != LinkKind::ManyToMany && dlg.other.is_empty() {
-                        if let Some((rt, _)) = dlg.target.split_once('.') {
+                    if dlg.kind == LinkKind::ManyToMany && before != LinkKind::ManyToMany && dlg.other.is_empty()
+                        && let Some((rt, _)) = dlg.target.split_once('.') {
                             dlg.other = rt.to_string();
                         }
-                    }
                 });
                 ui.add_space(4.0);
                 egui::Grid::new("erlinkgrid").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
@@ -198,13 +197,11 @@ impl ErTab {
                     let ty = |t: &str, c: &str| {
                         schema.table(t).and_then(|ti| ti.columns.iter().find(|x| x.name == c)).map(|x| x.col_type.clone())
                     };
-                    if let (Some(a), Some((rt, rc))) = (ty(&dlg.table, &dlg.column), dlg.target.split_once('.')) {
-                        if let Some(b) = ty(rt, rc) {
-                            if a != b {
+                    if let (Some(a), Some((rt, rc))) = (ty(&dlg.table, &dlg.column), dlg.target.split_once('.'))
+                        && let Some(b) = ty(rt, rc)
+                            && a != b {
                                 ui.label(RichText::new(crate::tr_format!("Hinweis: Datentypen unterscheiden sich ({a} / {b}).", "Hint: Data types differ ({a} / {b}).")).color(style::pal().error_text).small());
                             }
-                        }
-                    }
                 }
                 let sql = link_sql(&db, &schema, dlg);
                 ui.separator();

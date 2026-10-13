@@ -1225,11 +1225,10 @@ impl TabView for BuilderTab {
         if self.job.is_some() {
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(50));
         }
-        if self.db.is_empty() {
-            if let Some(d) = cx.databases.iter().find(|d| !db::SYSTEM_DATABASES.contains(&d.as_str())) {
+        if self.db.is_empty()
+            && let Some(d) = cx.databases.iter().find(|d| !db::SYSTEM_DATABASES.contains(&d.as_str())) {
                 self.db = d.clone();
             }
-        }
         if self.loaded_for != self.db {
             if self.loaded_for != "\u{0}" {
                 // andere Datenbank: neu anfangen
@@ -1244,14 +1243,13 @@ impl TabView for BuilderTab {
             self.schema = cx.schema(&self.db);
         }
         // Neue Abfrage: mit der ersten Tabelle beginnen
-        if !self.initialized {
-            if let Some(t) = self.schema.as_ref().and_then(|s| s.tables.first()) {
+        if !self.initialized
+            && let Some(t) = self.schema.as_ref().and_then(|s| s.tables.first()) {
                 if self.query == Query::default() {
                     self.query.parts[0].select.sources = vec![Source::table(&t.name)];
                 }
                 self.initialized = true;
             }
-        }
         if self.last_save.elapsed().as_secs() >= 1 {
             self.save();
         }
@@ -1334,8 +1332,8 @@ impl TabView for BuilderTab {
                 r.request_focus();
                 ui.horizontal(|ui| {
                     let ok = ui.button(crate::i18n::text("Speichern")).clicked() || (r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)));
-                    if ok && !name.trim().is_empty() {
-                        if let Some(dbc) = cx.db {
+                    if ok && !name.trim().is_empty()
+                        && let Some(dbc) = cx.db {
                             let create = format!("CREATE OR REPLACE VIEW {} AS {}", db::q(name.trim()), self.query.sql());
                             match dbc.exec_in(&self.db, &create) {
                                 Ok(_) => {
@@ -1346,7 +1344,6 @@ impl TabView for BuilderTab {
                                 Err(e) => cx.error(e),
                             }
                         }
-                    }
                     if ui.button(crate::i18n::text("Abbrechen")).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
                         close = true;
                     }

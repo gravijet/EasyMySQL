@@ -15,6 +15,9 @@ use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::sync::Arc;
 
+/// Positionen und Fahrspuren, die eine Aktualisierung der Struktur behalten soll.
+type SavedLayout = (HashMap<String, Pos2>, HashMap<String, Vec<Pos2>>);
+
 mod draw;
 mod layout;
 mod link;
@@ -73,7 +76,7 @@ pub struct ErTab {
     show_types: bool,
     loaded_for: String,
     /// Struktur wird gelesen; `Some(pos, routes)` = Aktualisierung mit bisheriger Anordnung
-    waiting: Option<Option<(HashMap<String, Pos2>, HashMap<String, Vec<Pos2>>)>>,
+    waiting: Option<Option<SavedLayout>>,
     menu: Option<Menu>,
     link: Option<LinkDlg>,
     fit_pending: bool,
@@ -517,11 +520,10 @@ impl TabView for ErTab {
             ui.menu_button("Export", |ui| {
                 if ui.button(crate::i18n::text("Als SVG speichern …")).clicked() {
                     ui.close();
-                    if let Some(p) = rfd::FileDialog::new().add_filter(crate::i18n::text("SVG-Grafik"), &["svg"]).set_file_name(format!("{}-er-diagramm.svg", self.db)).save_file() {
-                        if let Err(e) = std::fs::write(&p, self.to_svg()) {
+                    if let Some(p) = rfd::FileDialog::new().add_filter(crate::i18n::text("SVG-Grafik"), &["svg"]).set_file_name(format!("{}-er-diagramm.svg", self.db)).save_file()
+                        && let Err(e) = std::fs::write(&p, self.to_svg()) {
                             cx.error(e.to_string());
                         }
-                    }
                 }
                 if ui.button(crate::i18n::text("SQL-Skript (CREATE TABLE)")).clicked() {
                     ui.close();

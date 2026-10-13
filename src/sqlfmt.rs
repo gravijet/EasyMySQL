@@ -323,13 +323,12 @@ impl Fmt {
             _ => {}
         }
         // Join-Klausel: ON-Bedingung auf eigene Zeile
-        if kw.ends_with("JOIN") {
-            if let Some(pos) = body.iter().position(|n| word_of(n).as_deref() == Some("ON")) {
+        if kw.ends_with("JOIN")
+            && let Some(pos) = body.iter().position(|n| word_of(n).as_deref() == Some("ON")) {
                 let table = self.inline(&body[..pos], indent + 2);
                 let on = self.clause("ON", &body[pos + 1..], indent + 2);
                 return format!("{head}{table}{cont}{on}");
             }
-        }
         // Kommalisten fortlaufend fuellen
         let items = split_commas(body);
         if items.len() > 1 {

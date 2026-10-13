@@ -173,11 +173,10 @@ impl SqlLayoutCache {
     pub fn layout(&mut self, ui: &egui::Ui, text: &str, font: &FontId) -> Arc<egui::Galley> {
         let dark = crate::style::pal().dark;
         let scale = ui.ctx().pixels_per_point();
-        if let Some(entry) = &self.entry {
-            if entry.text == text && entry.font == *font && entry.dark == dark && entry.scale == scale {
+        if let Some(entry) = &self.entry
+            && entry.text == text && entry.font == *font && entry.dark == dark && entry.scale == scale {
                 return Arc::clone(&entry.galley);
             }
-        }
         let mut job = highlight(text, font.clone());
         job.wrap.max_width = f32::INFINITY;
         let galley = ui.fonts_mut(|fonts| fonts.layout_job(job));

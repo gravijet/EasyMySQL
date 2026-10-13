@@ -116,8 +116,8 @@ impl SafetyTab {
         let busy = self.job.is_some();
         let connected = cx.db.is_some();
         ui.horizontal_wrapped(|ui| {
-            if ui.add_enabled(!busy && connected, egui::Button::new(crate::i18n::text("Jetzt sichern"))).clicked() {
-                if let Some(env) = self.env(cx) {
+            if ui.add_enabled(!busy && connected, egui::Button::new(crate::i18n::text("Jetzt sichern"))).clicked()
+                && let Some(env) = self.env(cx) {
                     let cfg = self.cfg.clone();
                     self.start(ui.ctx(), crate::i18n::text("Sicherung"), false, move |log| {
                         let dir = backup::create(&env, None, crate::i18n::text("manuell"), log)?;
@@ -125,7 +125,6 @@ impl SafetyTab {
                         Ok(crate::tr_format!("Sicherung erstellt: {}", "Backup created: {}", dir.display()))
                     });
                 }
-            }
             if ui.button(crate::i18n::text("Ordner öffnen")).clicked() {
                 let d = self.cfg.dir();
                 let _ = std::fs::create_dir_all(&d);
@@ -147,11 +146,10 @@ impl SafetyTab {
         ui.horizontal(|ui| {
             ui.label(crate::i18n::text("Ordner:"));
             ui.label(RichText::new(self.cfg.dir().display().to_string()).monospace().small());
-            if ui.small_button(crate::i18n::text("Ändern …")).clicked() {
-                if let Some(p) = rfd::FileDialog::new().pick_folder() {
+            if ui.small_button(crate::i18n::text("Ändern …")).clicked()
+                && let Some(p) = rfd::FileDialog::new().pick_folder() {
                     self.cfg.dir = p.display().to_string();
                 }
-            }
             if !self.cfg.dir.is_empty() && ui.small_button(crate::i18n::text("Standard")).clicked() {
                 self.cfg.dir.clear();
             }
@@ -247,8 +245,8 @@ impl SafetyTab {
                     Ok(msg)
                 });
             }
-            if let Some(list) = self.myisam.clone().filter(|l| !l.is_empty()) {
-                if ui
+            if let Some(list) = self.myisam.clone().filter(|l| !l.is_empty())
+                && ui
                     .add_enabled(!busy, egui::Button::new(crate::tr_format!("{} MyISAM-Tabellen → InnoDB", "{} MyISAM tables → InnoDB", list.len())))
                     .clicked()
                 {
@@ -258,7 +256,6 @@ impl SafetyTab {
                         Ok(crate::tr_format!("{n} Tabellen in InnoDB umgewandelt.", "{n} tables converted to InnoDB."))
                     });
                 }
-            }
             if ui
                 .add_enabled(!busy && !st.is_busy() && cx.server.paths.is_some(), egui::Button::new(crate::i18n::text("Server retten …")))
                 .clicked()

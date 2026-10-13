@@ -239,11 +239,10 @@ impl EasyApp {
                 }
                 if !self.myisam_hint_done {
                     self.myisam_hint_done = true;
-                    if let Ok(list) = crate::repair::myisam_tables(&info) {
-                        if !list.is_empty() {
+                    if let Ok(list) = crate::repair::myisam_tables(&info)
+                        && !list.is_empty() {
                             self.dialogs.push(Dialog::Myisam(list));
                         }
-                    }
                 }
             }
             Err(e) => {
@@ -296,15 +295,14 @@ impl EasyApp {
 
     /// Automatische Sicherung (alle x Stunden) und Pruefergebnisse abholen.
     fn background_tasks(&mut self, ctx: &egui::Context) {
-        if let Some(rx) = &self.backup_job {
-            if let Ok(r) = rx.try_recv() {
+        if let Some(rx) = &self.backup_job
+            && let Ok(r) = rx.try_recv() {
                 self.backup_job = None;
                 match r {
                     Ok(m) => self.server.log(m),
                     Err(e) => self.toast_error(crate::tr_format!("Automatische Sicherung fehlgeschlagen: {e}", "Automatic backup failed: {e}")),
                 }
             }
-        }
         if let Some(rx) = &self.export_job {
             ctx.request_repaint_after(Duration::from_millis(300));
             if let Ok(r) = rx.try_recv() {
@@ -315,8 +313,8 @@ impl EasyApp {
                 }
             }
         }
-        if let Some(rx) = &self.check_job {
-            if let Ok(r) = rx.try_recv() {
+        if let Some(rx) = &self.check_job
+            && let Ok(r) = rx.try_recv() {
                 self.check_job = None;
                 match r {
                     Ok(res) if res.problems.is_empty() => {
@@ -334,7 +332,6 @@ impl EasyApp {
                     Err(e) => self.toast_error(crate::tr_format!("Prüfung fehlgeschlagen: {e}", "Check failed: {e}")),
                 }
             }
-        }
         // Regelmaessige Sicherung
         let now = Instant::now();
         let check = self.backup_last_check.is_none_or(|t| now.duration_since(t).as_secs() >= 60);
@@ -392,12 +389,11 @@ impl EasyApp {
     // Registerkarten
 
     fn open_tab(&mut self, tab: Box<dyn TabView>) {
-        if let Some(k) = tab.key() {
-            if let Some(i) = self.tabs.iter().position(|t| t.key().as_deref() == Some(&k)) {
+        if let Some(k) = tab.key()
+            && let Some(i) = self.tabs.iter().position(|t| t.key().as_deref() == Some(&k)) {
                 self.active = i;
                 return;
             }
-        }
         self.tabs.push(tab);
         self.active = self.tabs.len() - 1;
     }
@@ -609,11 +605,10 @@ impl EasyApp {
                 self.save_session();
             }
             Cmd::ReopenTab => {
-                if let Some(s) = self.closed.pop() {
-                    if let Some(t) = self.tab_from_session(&s) {
+                if let Some(s) = self.closed.pop()
+                    && let Some(t) = self.tab_from_session(&s) {
                         self.open_tab(t);
                     }
-                }
             }
             Cmd::NextTab if !self.tabs.is_empty() => self.active = (self.active + 1) % self.tabs.len(),
             Cmd::PrevTab if !self.tabs.is_empty() => self.active = (self.active + self.tabs.len() - 1) % self.tabs.len(),
@@ -873,12 +868,11 @@ impl eframe::App for EasyApp {
         self.background_tasks(ctx);
 
         // Fenster schliessen = im Hintergrund weiterlaufen
-        if ctx.input(|i| i.viewport().close_requested()) && !self.quitting {
-            if let (Some(h), Some(_)) = (self.hwnd, &self.tray) {
+        if ctx.input(|i| i.viewport().close_requested()) && !self.quitting
+            && let (Some(h), Some(_)) = (self.hwnd, &self.tray) {
                 ctx.send_viewport_cmd(ViewportCommand::CancelClose);
                 platform::hide_window(h);
             }
-        }
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
@@ -959,11 +953,10 @@ impl eframe::App for EasyApp {
         let f = self.settings.scroll_speed;
         if (f - 1.0).abs() > 0.01 {
             for e in raw_input.events.iter_mut() {
-                if let egui::Event::MouseWheel { delta, modifiers, .. } = e {
-                    if !modifiers.ctrl && !modifiers.command {
+                if let egui::Event::MouseWheel { delta, modifiers, .. } = e
+                    && !modifiers.ctrl && !modifiers.command {
                         *delta *= f;
                     }
-                }
             }
         }
         if self.settings.autoscroll {

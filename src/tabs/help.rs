@@ -289,11 +289,10 @@ impl TabView for HelpTab {
             && (i.smooth_scroll_delta != egui::Vec2::ZERO || i.pointer.any_down())) {
             self.pinned_section = false;
         }
-        if !jumping && !self.pinned_section && query.is_empty() && self.scroll_offset != Some(offset) {
-            if let Some((id, _)) = headings.iter().rev().find(|(_, y)| *y <= body.inner_rect.top() + 36.0).or(headings.first()) {
+        if !jumping && !self.pinned_section && query.is_empty() && self.scroll_offset != Some(offset)
+            && let Some((id, _)) = headings.iter().rev().find(|(_, y)| *y <= body.inner_rect.top() + 36.0).or(headings.first()) {
                 self.active_section = (*id).into();
             }
-        }
         self.scroll_offset = Some(offset);
         self.pinned_section |= jumping;
     }

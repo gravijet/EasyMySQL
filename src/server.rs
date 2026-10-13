@@ -474,14 +474,12 @@ impl Server {
     pub fn state(&self) -> State {
         let mut sh = self.shared.lock().unwrap();
         // Unerwartet beendet?
-        if matches!(sh.state, State::Running { own: true }) {
-            if let Some(child) = sh.child.as_mut() {
-                if let Ok(Some(status)) = child.try_wait() {
+        if matches!(sh.state, State::Running { own: true })
+            && let Some(child) = sh.child.as_mut()
+                && let Ok(Some(status)) = child.try_wait() {
                     sh.child = None;
                     sh.state = State::Failed(crate::tr_format!("Server unerwartet beendet ({status})", "Server stopped unexpectedly ({status})"));
                 }
-            }
-        }
         sh.state.clone()
     }
 
@@ -684,15 +682,14 @@ impl Server {
         loop {
             {
                 let mut sh = self.shared.lock().unwrap();
-                if let Some(c) = sh.child.as_mut() {
-                    if let Ok(Some(status)) = c.try_wait() {
+                if let Some(c) = sh.child.as_mut()
+                    && let Ok(Some(status)) = c.try_wait() {
                         sh.child = None;
                         drop(sh);
                         return Err(crate::tr_format!("Server hat sich sofort beendet ({status}). Siehe Server-Log. \
                              Falls die Datenbank beschädigt ist: Server → Reparieren.", "Server exited immediately ({status}). See the server log. If the database is damaged, open Server → Repair."
                         ));
                     }
-                }
             }
             if port_open(port) {
                 return Ok(());

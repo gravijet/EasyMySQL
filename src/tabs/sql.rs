@@ -207,18 +207,17 @@ impl SqlTab {
             let fail = |conn: Conn, msg: String| (Some(conn), vec![StmtResult { error: Some(msg), ..Default::default() }], None, None);
             if !database.is_empty() {
                 let cur: Option<String> = conn.query_first::<Option<String>, _>("SELECT DATABASE()").ok().flatten().flatten();
-                if cur.as_deref() != Some(database.as_str()) {
-                    if let Err(e) = conn.query_drop(format!("USE {}", db::q(&database))) {
+                if cur.as_deref() != Some(database.as_str())
+                    && let Err(e) = conn.query_drop(format!("USE {}", db::q(&database))) {
                         let _ = tx.send(fail(conn, db::err_text(e)));
                         return;
                     }
-                }
             }
             // Vor DROP/TRUNCATE/DELETE ohne WHERE automatisch sichern
             let targets = crate::backup::destructive_targets(&sql, Some(&database));
             let mut note = None;
-            if !targets.is_empty() {
-                if let Some(env) = crate::backup::env() {
+            if !targets.is_empty()
+                && let Some(env) = crate::backup::env() {
                     match crate::backup::create(&env, Some(targets.clone()), "vor-loeschen", &|_| {}) {
                         Ok(_) => note = Some(crate::tr_format!("Vorher gesichert: {}", "Backup created: {}", targets.join(", "))),
                         Err(e) => {
@@ -227,7 +226,6 @@ impl SqlTab {
                         }
                     }
                 }
-            }
             // Liefert eine Leseabfrage mehr Zeilen als gespeichert werden, wird sie auf dem Server beendet
             let (info, id) = (info, conn.connection_id());
             let results = db::run_statements(&mut conn, &stmts, Some(&|| db::kill_query(&info, id)));
@@ -494,13 +492,12 @@ impl SqlTab {
                                     .take(50)
                                     .collect();
                                 ui.label(RichText::new(preview).monospace().small().color(style::pal().text_weak));
-                                if ui.small_button(crate::i18n::text("Wiederherstellen")).clicked() {
-                                    if let Ok(t) = std::fs::read_to_string(path) {
+                                if ui.small_button(crate::i18n::text("Wiederherstellen")).clicked()
+                                    && let Ok(t) = std::fs::read_to_string(path) {
                                         self.text = t;
                                         self.last_edit = Instant::now();
                                         close = true;
                                     }
-                                }
                             });
                         }
                     });
@@ -566,18 +563,16 @@ impl TabView for SqlTab {
     }
 
     fn file_renamed(&mut self, old: &Path, new: &Path) {
-        if let Some(f) = &self.file {
-            if f == old || f.starts_with(old) {
+        if let Some(f) = &self.file
+            && (f == old || f.starts_with(old)) {
                 let rel = f.strip_prefix(old).unwrap_or(Path::new(""));
                 let n = if rel.as_os_str().is_empty() { new.to_path_buf() } else { new.join(rel) };
                 self.file = Some(n.clone());
-                if let Some(p) = &self.project {
-                    if !n.starts_with(p) {
+                if let Some(p) = &self.project
+                    && !n.starts_with(p) {
                         self.project = None;
                     }
-                }
             }
-        }
     }
 
     fn on_close(&mut self) -> bool {
@@ -623,15 +618,14 @@ impl TabView for SqlTab {
         if let (Some(f), false) = (&self.file, self.dirty()) {
             if self.file_check.is_none_or(|last| last.elapsed() >= Duration::from_secs(2)) {
                 self.file_check = Some(Instant::now());
-                if let Ok(m) = std::fs::metadata(f).and_then(|m| m.modified()) {
-                    if self.file_mtime.is_some_and(|old| old != m) {
+                if let Ok(m) = std::fs::metadata(f).and_then(|m| m.modified())
+                    && self.file_mtime.is_some_and(|old| old != m) {
                         if let Ok(b) = std::fs::read(f) {
                             self.text = String::from_utf8_lossy(&b).into_owned();
                             self.saved_text = self.text.clone();
                         }
                         self.file_mtime = Some(m);
                     }
-                }
             }
             ui.ctx().request_repaint_after(Duration::from_secs(2));
         }
@@ -676,12 +670,11 @@ impl TabView for SqlTab {
                     self.save_as = Some(self.file.as_ref().and_then(|f| f.file_stem()).map(|s| s.to_string_lossy().into_owned()).unwrap_or(crate::i18n::text("Neue Abfrage").into()));
                     ui.close();
                 }
-                if let Some(f) = self.file.clone() {
-                    if ui.button(crate::i18n::text("Frühere Fassungen …")).clicked() {
+                if let Some(f) = self.file.clone()
+                    && ui.button(crate::i18n::text("Frühere Fassungen …")).clicked() {
                         self.history = Some(workspace::history(&f));
                         ui.close();
                     }
-                }
             });
             if let Some(e) = &self.save_error {
                 ui.label(RichText::new(e).color(pal.error_text));

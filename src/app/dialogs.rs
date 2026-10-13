@@ -175,8 +175,8 @@ impl EasyApp {
                 Err(e) => self.error(e),
             }
         }
-        if let Some((name, coll)) = create_db {
-            if let Some(dbc) = &self.db {
+        if let Some((name, coll)) = create_db
+            && let Some(dbc) = &self.db {
                 let charset = coll.split('_').next().unwrap_or("utf8mb4").to_string();
                 let sql = format!("CREATE DATABASE {} CHARACTER SET {} COLLATE {}", q(&name), charset, coll);
                 match dbc.exec(&sql, ()) {
@@ -189,10 +189,9 @@ impl EasyApp {
                     Err(e) => self.error(e),
                 }
             }
-        }
-        if let Some((d, with_data)) = export {
-            if let Some(p) = rfd::FileDialog::new().add_filter(crate::i18n::text("SQL-Datei"), &["sql"]).set_file_name(format!("{d}.sql")).save_file() {
-                if let Some(dbc) = self.db.clone() {
+        if let Some((d, with_data)) = export
+            && let Some(p) = rfd::FileDialog::new().add_filter(crate::i18n::text("SQL-Datei"), &["sql"]).set_file_name(format!("{d}.sql")).save_file()
+                && let Some(dbc) = self.db.clone() {
                     let (tx, rx) = std::sync::mpsc::channel();
                     std::thread::spawn(move || {
                         let r = std::fs::File::create(&p).map_err(|e| e.to_string()).and_then(|f| {
@@ -207,8 +206,6 @@ impl EasyApp {
                     self.dialogs.pop();
                     self.toast(crate::i18n::text("Export läuft …"));
                 }
-            }
-        }
     }
 
     /// Bestaetigtes SQL ausfuehren (vorher bei Loeschen automatisch sichern)
@@ -216,12 +213,11 @@ impl EasyApp {
         let targets = crate::backup::destructive_targets(&sql, db.as_deref());
         if !targets.is_empty() {
             self.update_backup_env();
-            if let Some(env) = crate::backup::env() {
-                if let Err(e) = crate::backup::create(&env, Some(targets), "vor-loeschen", &|_| {}) {
+            if let Some(env) = crate::backup::env()
+                && let Err(e) = crate::backup::create(&env, Some(targets), "vor-loeschen", &|_| {}) {
                     self.error(crate::tr_format!("Die Sicherung vor dem Löschen ist fehlgeschlagen – nichts wurde gelöscht.\n\n{e}", "The backup before deletion failed — nothing was deleted.\n\n{e}"));
                     return;
                 }
-            }
         }
         let Some(dbc) = &self.db else { return };
         let res = match &db {

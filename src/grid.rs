@@ -115,8 +115,8 @@ pub fn show(
                 for (c, val) in data.iter().enumerate() {
                     row.col(|ui| {
                         cell_lines(ui);
-                        if let Some((er, ec, text, focused)) = state.editing.as_mut() {
-                            if *er == r && *ec == c {
+                        if let Some((er, ec, text, focused)) = state.editing.as_mut()
+                            && *er == r && *ec == c {
                                 let resp = ui.add(
                                     egui::TextEdit::singleline(text)
                                         .desired_width(f32::INFINITY)
@@ -133,7 +133,6 @@ pub fn show(
                                 }
                                 return;
                             }
-                        }
                         let resp = match val {
                             None => ui.add(
                                 egui::Label::new(RichText::new("NULL").italics().color(style::pal().null_text))
@@ -158,11 +157,10 @@ pub fn show(
                                 events.push(GridEvent::Activate);
                             }
                         }
-                        if let Some(v) = val {
-                            if v.len() > 40 || v.contains('\n') {
+                        if let Some(v) = val
+                            && (v.len() > 40 || v.contains('\n')) {
                                 resp.clone().on_hover_text(v.chars().take(2000).collect::<String>());
                             }
-                        }
                         resp.context_menu(|ui| {
                             state.selected = Some(r);
                             if ui.button(crate::i18n::text("Wert kopieren")).clicked() {

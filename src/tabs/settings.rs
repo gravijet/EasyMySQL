@@ -295,12 +295,11 @@ impl TabView for SettingsTab {
                     ui.vertical(|ui| {
                         ui.label(RichText::new(self.backup.dir().display().to_string()).monospace());
                         ui.horizontal(|ui| {
-                            if ui.button(crate::i18n::text("Ändern …")).clicked() {
-                                if let Some(p) = rfd::FileDialog::new().pick_folder() {
+                            if ui.button(crate::i18n::text("Ändern …")).clicked()
+                                && let Some(p) = rfd::FileDialog::new().pick_folder() {
                                     self.backup.dir = p.display().to_string();
                                     self.backup.save();
                                 }
-                            }
                             if !self.backup.dir.is_empty() && ui.button(crate::i18n::text("Standard")).clicked() {
                                 self.backup.dir.clear();
                                 self.backup.save();
@@ -333,13 +332,11 @@ impl TabView for SettingsTab {
                     });
                     ui.end_row();
                 });
-                if pick_root {
-                    if let Some(p) = rfd::FileDialog::new().set_directory(&root).pick_folder() {
-                        if p != root {
+                if pick_root
+                    && let Some(p) = rfd::FileDialog::new().set_directory(&root).pick_folder()
+                        && p != root {
                             self.pending_root = Some(p);
                         }
-                    }
-                }
                 if reset_root && workspace::default_root() != root {
                     self.pending_root = Some(workspace::default_root());
                 }
@@ -445,11 +442,10 @@ impl TabView for SettingsTab {
             && (i.smooth_scroll_delta != egui::Vec2::ZERO || i.pointer.any_down())) {
             self.pinned_section = false;
         }
-        if !jumping && !self.pinned_section && self.scroll_offset != Some(offset) {
-            if let Some((id, _)) = self.headings.iter().rev().find(|(_, y)| *y <= body.inner_rect.top() + 36.0).or(self.headings.first()) {
+        if !jumping && !self.pinned_section && self.scroll_offset != Some(offset)
+            && let Some((id, _)) = self.headings.iter().rev().find(|(_, y)| *y <= body.inner_rect.top() + 36.0).or(self.headings.first()) {
                 self.active_section = id.clone();
             }
-        }
         self.scroll_offset = Some(offset);
         self.pinned_section |= jumping;
         if *cx.settings != before {

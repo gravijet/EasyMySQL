@@ -249,8 +249,8 @@ impl Updater {
                         crate::i18n::text("Zum Installieren werden Ihre Dateien gespeichert und der Datenbankserver sauber beendet. Anschließend öffnet sich das Windows-Setup."),
                     );
                     install = ui.button(crate::i18n::text("Update installieren")).clicked();
-                } else if let Some(release) = self.available.clone() {
-                    if cfg!(windows) {
+                } else if let Some(release) = self.available.clone()
+                    && cfg!(windows) {
                         match release.setup() {
                             Ok(_) => {
                                 if ui.button(crate::i18n::text("Update herunterladen")).clicked() {
@@ -268,7 +268,6 @@ impl Updater {
                             }
                         }
                     }
-                }
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
                     if ui

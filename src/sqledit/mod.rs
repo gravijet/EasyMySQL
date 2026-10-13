@@ -285,14 +285,13 @@ impl SqlEditor {
         }
         for (up, mv, cp) in [(true, Cmd::MoveLineUp, Cmd::CopyLineUp), (false, Cmd::MoveLineDown, Cmd::CopyLineDown)] {
             let dir = if up { -1 } else { 1 };
-            if take(ui, mv) {
-                if let Some((t, nf)) = move_lines(text, first, last, dir) {
+            if take(ui, mv)
+                && let Some((t, nf)) = move_lines(text, first, last, dir) {
                     *text = t;
                     let span = last - first;
                     self.set_selection(&ctx, line_start(text, nf), line_start(text, nf + span + 1).saturating_sub(1).max(line_start(text, nf)));
                     changed(self, text, out);
                 }
-            }
             if take(ui, cp) {
                 *text = duplicate_lines(text, first, last);
                 if !up {
@@ -312,7 +311,7 @@ impl SqlEditor {
         if take(ui, Cmd::Outdent) {
             *text = map_lines(text, first, last, |l| {
                 let n = l.chars().take(2).take_while(|c| *c == ' ').count();
-                if l.starts_with('\t') { l[1..].to_string() } else { l[n..].to_string() }
+                l.strip_prefix('\t').unwrap_or(&l[n..]).to_string()
             });
             self.set_selection(&ctx, line_start(text, first), line_start(text, last + 1).saturating_sub(1).max(line_start(text, first)));
             changed(self, text, out);
@@ -347,13 +346,12 @@ impl SqlEditor {
                     return;
                 }
             }
-            if let Some(cl) = close {
-                if next.is_none_or(|n| n.is_whitespace() || matches!(n, ')' | ']' | '}' | ',' | ';')) {
+            if let Some(cl) = close
+                && next.is_none_or(|n| n.is_whitespace() || matches!(n, ')' | ']' | '}' | ',' | ';')) {
                     let bi = byte_of(text, cursor);
                     text.insert(bi, cl);
                     self.set_cursor(ctx, cursor);
                 }
-            }
         } else if new_n + 1 == old_n {
             // Rueckschritt zwischen leerem Paar "()" -> beide loeschen
             let old: Vec<char> = self.prev_text.chars().collect();
@@ -632,15 +630,14 @@ impl SqlEditor {
                             // Klammerpaar
                             let chars: Vec<char> = text.chars().collect();
                             let at = if c > 0 && matching_bracket(&chars, c - 1).is_some() { Some(c - 1) } else if matching_bracket(&chars, c).is_some() { Some(c) } else { None };
-                            if let Some(i) = at {
-                                if let Some(j) = matching_bracket(&chars, i) {
+                            if let Some(i) = at
+                                && let Some(j) = matching_bracket(&chars, i) {
                                     for k in [i, j] {
                                         let a = pos_of(k);
                                         let b = pos_of(k + 1);
                                         bg.push(egui::Shape::rect_filled(egui::Rect::from_min_max(a.left_top(), egui::pos2(b.left(), a.bottom())), 2.0, pal.bracket));
                                     }
                                 }
-                            }
                         }
                         if let Some((q, case)) = &find_q {
                             for (a, b) in find_all(text, q, *case) {
@@ -725,11 +722,10 @@ impl SqlEditor {
 
         if o.response.response.changed() {
             out.changed = true;
-            if let Some(c) = cursor {
-                if AUTO_CLOSE.load(std::sync::atomic::Ordering::Relaxed) {
+            if let Some(c) = cursor
+                && AUTO_CLOSE.load(std::sync::atomic::Ordering::Relaxed) {
                     self.auto_close(&ctx, text, c);
                 }
-            }
             self.error_line = None;
         }
         if out.changed {
@@ -740,11 +736,10 @@ impl SqlEditor {
         let auto = AUTO_SUGGEST.load(std::sync::atomic::Ordering::Relaxed);
         if (o.response.response.changed() && auto) || force {
             self.popup = cursor.and_then(|c| Self::suggestions(text, c, words, force));
-        } else if let (Some(p), Some(c)) = (&self.popup, cursor) {
-            if p.cursor != c {
+        } else if let (Some(p), Some(c)) = (&self.popup, cursor)
+            && p.cursor != c {
                 self.popup = None;
             }
-        }
         if !ctx.memory(|m| m.has_focus(self.id)) && !force {
             // Fokus verloren (ausser durch Klick ins Vorschlagsfenster)
             let pressed_outside = ctx.input(|i| {

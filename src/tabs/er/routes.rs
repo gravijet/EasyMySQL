@@ -2,6 +2,12 @@
 
 use super::*;
 
+/// Anfang, Richtung am Anfang, Ende, Richtung am Ende und ggf. gespeicherte Fahrspur einer Beziehung.
+pub(super) type Ends<'a> = (Pos2, f32, Pos2, f32, Option<&'a Vec<Pos2>>);
+
+/// Anschlusspunkt (x, y als Bitmuster) und Richtung: Linien mit gleichem Schluessel werden aufgefaechert.
+type PortKey = (u32, u32, i32);
+
 /// Alles, was sich nur mit Struktur, Positionen oder Notation aendert (nicht mit Zoom/Versatz):
 /// wird einmal berechnet und dann in jedem Bild nur noch gezeichnet.
 pub(super) struct RouteGeometry {
@@ -63,13 +69,11 @@ pub(super) fn row_y(t: &TableInfo, col: &str) -> f32 {
 impl ErTab {
     /// Groesse der Tabellenkarte, aus dem Zwischenspeicher (siehe `ensure_boxes`)
     pub(super) fn box_of(&self, t: &TableInfo) -> Vec2 {
-        if let (Some(c), Some(s)) = (&self.box_cache, &self.schema) {
-            if c.show_types == self.show_types && Arc::ptr_eq(&c.schema, s) {
-                if let Some(v) = c.sizes.get(&t.name) {
+        if let (Some(c), Some(s)) = (&self.box_cache, &self.schema)
+            && c.show_types == self.show_types && Arc::ptr_eq(&c.schema, s)
+                && let Some(v) = c.sizes.get(&t.name) {
                     return *v;
                 }
-            }
-        }
         box_size(t, self.show_types)
     }
 
@@ -89,7 +93,7 @@ impl ErTab {
 
     /// Endpunkte einer Beziehung: (Anfang am Kind, Richtung, Ende am Elternteil, Richtung, Fahrspuren).
     /// Richtung = +1 nach rechts aus der Tabelle heraus, -1 nach links.
-    pub(super) fn endpoints(&self, schema: &Schema, fk: &ForeignKey) -> Option<(Pos2, f32, Pos2, f32, Option<&Vec<Pos2>>)> {
+    pub(super) fn endpoints(&self, schema: &Schema, fk: &ForeignKey) -> Option<Ends<'_>> {
         let src = schema.table(&fk.table)?;
         let dst = schema.table(&fk.ref_table)?;
         let sr = self.table_rect_world(src);
@@ -100,11 +104,10 @@ impl ErTab {
             return Some((pos2(sr.right(), sy), 1.0, pos2(dr.right(), dy), 1.0, None));
         }
         // Mit Fahrspuren, wenn die Anordnung noch passt (Kind rechts vom Elternteil)
-        if let Some(lanes) = self.routes.get(&fk_key(fk)) {
-            if !lanes.is_empty() && dr.right() < lanes.last()?.x + 1.0 && sr.left() > lanes[0].x - 1.0 {
+        if let Some(lanes) = self.routes.get(&fk_key(fk))
+            && !lanes.is_empty() && dr.right() < lanes.last()?.x + 1.0 && sr.left() > lanes[0].x - 1.0 {
                 return Some((pos2(sr.left(), sy), -1.0, pos2(dr.right(), dy), 1.0, Some(lanes)));
             }
-        }
         // Direkt: passende Seiten waehlen
         Some(if sr.left() > dr.right() + 20.0 {
             (pos2(sr.left(), sy), -1.0, pos2(dr.right(), dy), 1.0, None)
@@ -126,7 +129,7 @@ impl ErTab {
     pub(super) fn all_paths(&self, schema: &Schema) -> Vec<Option<Path>> {
         let ends: Vec<_> = schema.fks.iter().map(|fk| self.endpoints(schema, fk)).collect();
         // Gruppe = gleicher Punkt und gleiche Richtung
-        let mut groups: HashMap<(u32, u32, i32), Vec<(f32, usize, bool)>> = HashMap::new();
+        let mut groups: HashMap<PortKey, Vec<(f32, usize, bool)>> = HashMap::new();
         let group_key = |p: Pos2, d: f32| (p.x.to_bits(), p.y.to_bits(), d as i32);
         for (i, e) in ends.iter().enumerate() {
             let Some((a, da, b, db, lanes)) = e else { continue };
@@ -188,13 +191,12 @@ impl ErTab {
     }
 
     pub(super) fn geometry(&mut self, schema: &Arc<Schema>) -> Arc<RouteGeometry> {
-        if let Some(cache) = &self.route_cache {
-            if Arc::ptr_eq(schema, &cache.schema) && cache.positions == self.pos
+        if let Some(cache) = &self.route_cache
+            && Arc::ptr_eq(schema, &cache.schema) && cache.positions == self.pos
                 && cache.routes == self.routes && cache.show_types == self.show_types
                 && cache.notation == self.notation && cache.rel_labels == self.rel_labels {
                 return Arc::clone(&cache.geometry);
             }
-        }
         self.ensure_boxes();
         let paths = self.all_paths(schema);
         let polylines: Vec<Vec<Pos2>> = paths.iter().map(|path| path.as_ref().map(|segments| {

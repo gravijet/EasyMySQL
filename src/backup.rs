@@ -409,11 +409,10 @@ pub fn destructive_targets(sql: &str, current: Option<&str>) -> Vec<String> {
     let risky = ["DROP TABLE", "DROP VIEW", "TRUNCATE"].iter().any(|k| upper.contains(k))
         || (upper.contains("ALTER TABLE") && upper.contains("DROP"))
         || (no_where && (upper.contains("DELETE ") || upper.contains("UPDATE ")));
-    if risky {
-        if let Some(c) = current.filter(|c| !c.is_empty()) {
+    if risky
+        && let Some(c) = current.filter(|c| !c.is_empty()) {
             out.push(c.to_string());
         }
-    }
     out.retain(|d| !SYSTEM_DATABASES.contains(&d.to_lowercase().as_str()));
     out.sort();
     out.dedup();

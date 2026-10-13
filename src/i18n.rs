@@ -15,7 +15,7 @@ impl Language {
     pub fn from_id(id: &str) -> Self {
         match id { "de" => Self::German, _ => Self::English }
     }
-    pub fn text<'a>(self, source: &'a str) -> &'a str {
+    pub fn text(self, source: &str) -> &str {
         if self == Self::German { return source; }
         match source {
             "Automatisch Vorschläge zeigen" => "Show suggestions automatically",
