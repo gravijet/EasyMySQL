@@ -501,11 +501,29 @@ fn resolve_tables<'a>(
             {
                 aliases.insert(n.text.to_lowercase());
             }
-            if let (Some(p), Some(o)) = (i.checked_sub(1).and_then(|k| stmt.get(k)), stmt.get(i + 1))
-                && p.is_name()
-                && o.kind == Kind::Open
-            {
-                ctes.insert(p.text.to_lowercase());
+            if stmt.get(i + 1).is_some_and(|o| o.kind == Kind::Open) {
+                // "name AS (" und "name (spalten) AS ("
+                let before = i.checked_sub(1).and_then(|k| stmt.get(k));
+                if let Some(p) = before.filter(|p| p.is_name()) {
+                    ctes.insert(p.text.to_lowercase());
+                } else if before.is_some_and(|p| p.kind == Kind::Close) {
+                    let mut depth = 0i32;
+                    for k in (0..i).rev() {
+                        match stmt[k].kind {
+                            Kind::Close => depth += 1,
+                            Kind::Open => {
+                                depth -= 1;
+                                if depth == 0 {
+                                    if let Some(n) = k.checked_sub(1).and_then(|j| stmt.get(j)).filter(|n| n.is_name()) {
+                                        ctes.insert(n.text.to_lowercase());
+                                    }
+                                    break;
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
             }
         }
     }
@@ -720,6 +738,20 @@ fn check_words<'a>(stmt: &[Tok], names: Option<(&Scope<'a>, &HashMap<String, &'a
             if let Some(t) = t {
                 known.extend(t.columns.iter().map(|c| c.name.to_lowercase()));
             }
+        }
+    }
+    // Namen, die direkt hinter einem Ausdruck stehen, koennen ein Alias ohne AS sein (SELECT preis*menge summe ... ORDER BY summe)
+    for (i, t) in stmt.iter().enumerate() {
+        if t.kind == Kind::Word
+            && !known_word(&t.upper())
+            && i > 0
+            && match stmt[i - 1].kind {
+                Kind::Close | Kind::Num | Kind::Str | Kind::Quoted => true,
+                Kind::Word => !known_word(&stmt[i - 1].upper()),
+                _ => false,
+            }
+        {
+            known.insert(t.text.to_lowercase());
         }
     }
     // Spalten aller Tabellen im Geltungsbereich
@@ -994,6 +1026,18 @@ mod tests {
         let s = Schema { name: "d".into(), tables: vec![table("t", &["form", "ort"])], ..Default::default() };
         let env = Env { schema: Some(&s), databases: &[] };
         assert!(lint("SELECT form, ort FROM t WHERE form = 'x'", &env).is_empty());
+    }
+
+    #[test]
+    fn recursive_and_listed_ctes_and_implicit_aliases() {
+        for q in [
+            "WITH RECURSIVE zahlen (n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM zahlen WHERE n < 5) SELECT n FROM zahlen",
+            "WITH a AS (SELECT id FROM klasse), b (x) AS (SELECT id FROM a) SELECT x FROM b",
+            "SELECT id * 2 doppelt FROM klasse ORDER BY doppelt",
+            "SELECT k.name gruppe, COUNT(*) anzahl FROM klasse k JOIN schueler s ON s.klasse_id = k.id GROUP BY gruppe ORDER BY anzahl DESC",
+        ] {
+            assert!(check(q).is_empty(), "{q}: {:?}", messages(q));
+        }
     }
 
     #[test]
