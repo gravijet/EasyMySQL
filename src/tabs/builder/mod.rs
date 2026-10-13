@@ -1,6 +1,7 @@
 // Abfrage-Assistent: beliebige SELECT-Abfragen grafisch zusammenstellen – mit Verknuepfungen,
 // Unterabfragen, WITH, UNION/EXCEPT/INTERSECT, Gruppierung, Fensterfunktionen usw.
 
+mod dml;
 pub mod model;
 
 use super::{Action, Ctx, TabView};
@@ -9,6 +10,7 @@ use crate::grid::{self, GridState};
 use crate::icons::{self, Icon};
 use crate::style;
 use eframe::egui::{self, Color32, RichText};
+use dml::{Dml, Mode};
 use model::*;
 use std::sync::mpsc::{Receiver, channel};
 
@@ -1041,7 +1043,14 @@ fn query_ui(ui: &mut egui::Ui, qr: &mut Query, env: &Env, id: egui::Id) {
 struct Saved {
     db: String,
     query: Query,
+    #[serde(default)]
+    mode: Mode,
+    #[serde(default)]
+    dml: Dml,
 }
+
+/// Stand der Eingaben fuer Rueckgaengig/Wiederholen
+type Snap = (Query, Mode, Dml);
 
 fn saved_path(id: &str) -> std::path::PathBuf {
     crate::workspace::internal_dir().join("assistent").join(format!("{id}.json"))
@@ -1070,9 +1079,20 @@ pub struct BuilderTab {
     view_name: Option<String>,
     initialized: bool,
     running: Option<Running>,
-    pretty_for: Option<Query>,
+    pretty_for: Option<Snap>,
     pretty_sql: String,
     layout_cache: crate::sqledit::SqlLayoutCache,
+    mode: Mode,
+    dml: Dml,
+    undo: Vec<Snap>,
+    redo: Vec<Snap>,
+    /// Letzter Stand und Zeitpunkt der letzten Sicherung fuer Rueckgaengig
+    last_snap: Snap,
+    snap_at: std::time::Instant,
+    /// Ergebnis waehrend der Eingabe automatisch zeigen (nur Abfragen, auf wenige Zeilen begrenzt)
+    live: bool,
+    live_done: Option<Snap>,
+    live_changed: std::time::Instant,
 }
 
 impl BuilderTab {
@@ -1098,6 +1118,15 @@ impl BuilderTab {
             pretty_for: None,
             pretty_sql: String::new(),
             layout_cache: crate::sqledit::SqlLayoutCache::default(),
+            mode: Mode::Select,
+            dml: Dml::default(),
+            undo: Vec::new(),
+            redo: Vec::new(),
+            last_snap: (Query::default(), Mode::Select, Dml::default()),
+            snap_at: std::time::Instant::now(),
+            live: false,
+            live_done: None,
+            live_changed: std::time::Instant::now(),
         }
     }
 
@@ -1108,15 +1137,69 @@ impl BuilderTab {
         if let Some(s) = std::fs::read_to_string(saved_path(id)).ok().and_then(|j| serde_json::from_str::<Saved>(&j).ok()) {
             t.db = s.db;
             t.query = s.query;
+            t.mode = s.mode;
+            t.dml = s.dml;
             t.loaded_for = t.db.clone();
             t.initialized = true;
         }
-        t.saved_json = serde_json::to_string(&Saved { db: t.db.clone(), query: t.query.clone() }).unwrap_or_default();
+        t.saved_json = serde_json::to_string(&Saved { db: t.db.clone(), query: t.query.clone(), mode: t.mode, dml: t.dml.clone() }).unwrap_or_default();
+        t.last_snap = t.snapshot();
         t
     }
 
+    fn snapshot(&self) -> Snap {
+        (self.query.clone(), self.mode, self.dml.clone())
+    }
+
+    fn restore_snap(&mut self, s: Snap) {
+        (self.query, self.mode, self.dml) = s;
+    }
+
+    /// Einzeiliges SQL der aktuellen Eingabe (je nach Betriebsart)
+    fn current_sql(&self) -> String {
+        match self.mode {
+            Mode::Select => self.query.sql(),
+            m => self.dml.sql(m, &self.query),
+        }
+    }
+
+    /// Aenderungen merken (zusammengehoerende Eingaben innerhalb einer knappen Zeit gelten als ein Schritt)
+    fn track_changes(&mut self) {
+        let now = self.snapshot();
+        if now != self.last_snap {
+            if self.snap_at.elapsed().as_millis() > 700 {
+                self.undo.push(self.last_snap.clone());
+                if self.undo.len() > 100 {
+                    self.undo.remove(0);
+                }
+                self.snap_at = std::time::Instant::now();
+            }
+            self.redo.clear();
+            self.last_snap = now;
+            self.live_changed = std::time::Instant::now();
+        }
+    }
+
+    fn undo(&mut self) {
+        if let Some(prev) = self.undo.pop() {
+            self.redo.push(self.snapshot());
+            self.restore_snap(prev);
+            self.last_snap = self.snapshot();
+            self.snap_at = std::time::Instant::now();
+        }
+    }
+
+    fn redo(&mut self) {
+        if let Some(next) = self.redo.pop() {
+            self.undo.push(self.snapshot());
+            self.restore_snap(next);
+            self.last_snap = self.snapshot();
+            self.snap_at = std::time::Instant::now();
+        }
+    }
+
     fn save(&mut self) {
-        let j = serde_json::to_string(&Saved { db: self.db.clone(), query: self.query.clone() }).unwrap_or_default();
+        let j = serde_json::to_string(&Saved { db: self.db.clone(), query: self.query.clone(), mode: self.mode, dml: self.dml.clone() }).unwrap_or_default();
         if j != self.saved_json {
             let _ = crate::workspace::atomic_write(&saved_path(&self.id), &j);
             self.saved_json = j;
@@ -1124,7 +1207,45 @@ impl BuilderTab {
         self.last_save = std::time::Instant::now();
     }
 
+    /// Ausfuehren: Abfragen laufen sofort, Aenderungen der Daten erst nach Rueckfrage
     fn run(&mut self, cx: &mut Ctx) {
+        if self.mode == Mode::Select {
+            let sql = self.query.sql();
+            let history = self.query.pretty();
+            self.run_sql(cx, sql, Some(history));
+            return;
+        }
+        let sql = self.dml.sql(self.mode, &self.query);
+        if sql.is_empty() {
+            self.error = Some(crate::i18n::text("Es fehlen noch Angaben, z. B. die Spalten oder Werte.").into());
+            return;
+        }
+        self.error = None;
+        cx.actions.push(Action::Confirm { text: self.dml.question(self.mode), db: Some(self.db.clone()), sql });
+    }
+
+    /// Ausfuehrungsplan der Abfrage
+    fn explain(&mut self, cx: &mut Ctx) {
+        let sql = format!("EXPLAIN {}", self.query.sql());
+        let history = format!("EXPLAIN {}", self.query.pretty());
+        self.run_sql(cx, sql, Some(history));
+    }
+
+    /// Anzeige waehrend der Eingabe: hoechstens 200 Zeilen, nicht im Verlauf
+    fn preview(&mut self, cx: &mut Ctx) {
+        let mut q = self.query.clone();
+        if q.limit.trim().is_empty() && q.parts.len() > 1 || q.parts.len() == 1 && q.parts[0].select.limit.trim().is_empty() {
+            if q.parts.len() > 1 {
+                q.limit = "200".into();
+            } else {
+                q.parts[0].select.limit = "200".into();
+            }
+        }
+        self.live_done = Some(self.snapshot());
+        self.run_sql(cx, q.sql(), None);
+    }
+
+    fn run_sql(&mut self, cx: &mut Ctx, sql: String, history: Option<String>) {
         if self.job.is_some() {
             return;
         }
@@ -1136,7 +1257,6 @@ impl BuilderTab {
                 return;
             }
         };
-        let sql = self.query.sql();
         let db = self.db.clone();
         let info = dbc.info.clone();
         let (tx, rx) = channel();
@@ -1157,7 +1277,7 @@ impl BuilderTab {
             let _ = tx.send(res);
         });
         self.job = Some(rx);
-        self.running = Some(Running { start: std::time::Instant::now(), sql: self.query.pretty() });
+        self.running = history.map(|sql| Running { start: std::time::Instant::now(), sql });
     }
 
     fn poll(&mut self, cx: &mut Ctx) {
@@ -1258,33 +1378,72 @@ impl TabView for BuilderTab {
             self.save();
         }
         let pal = style::pal();
-        if self.pretty_for.as_ref() != Some(&self.query) {
-            self.pretty_sql = self.query.pretty();
-            self.pretty_for = Some(self.query.clone());
+        let snap = self.snapshot();
+        if self.pretty_for.as_ref() != Some(&snap) {
+            self.pretty_sql = crate::sqlfmt::format_sql(&self.current_sql()).trim_end().to_string();
+            self.pretty_for = Some(snap);
         }
         let sql = self.pretty_sql.clone();
+        // Strg+Z / Strg+Y, solange kein Textfeld getippt wird
+        if !ui.ctx().egui_wants_keyboard_input() {
+            let (z, y) = ui.ctx().input_mut(|i| (i.consume_key(egui::Modifiers::COMMAND, egui::Key::Z), i.consume_key(egui::Modifiers::COMMAND, egui::Key::Y) || i.consume_key(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, egui::Key::Z)));
+            if z {
+                self.undo();
+            } else if y {
+                self.redo();
+            }
+        }
 
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             let mut d = self.db.clone();
             if super::db_combo(ui, "bdb", cx.databases, &mut d) {
                 self.db = d;
             }
+            for m in Mode::ALL {
+                if ui.selectable_label(self.mode == m, m.label()).clicked() {
+                    self.mode = m;
+                    self.result = None;
+                    self.error = None;
+                }
+            }
+            ui.separator();
             ui.add_enabled_ui(self.job.is_none(), |ui| {
-                if icons::text_button(ui, Icon::Play, crate::i18n::text("Ausführen")).on_hover_text(crate::keymap::text(crate::keymap::Cmd::RunAll)).clicked() {
+                if icons::primary_button(ui, Icon::Play, crate::i18n::text("Ausführen")).on_hover_text(crate::keymap::text(crate::keymap::Cmd::RunAll)).clicked() {
                     self.run(cx);
                 }
             });
-            if ui.button(crate::i18n::text("Im Editor öffnen")).clicked() {
+            if self.mode == Mode::Select
+                && ui.add_enabled_ui(self.job.is_none(), |ui| icons::button(ui, Icon::Explain, crate::i18n::text("Ausführungsplan (EXPLAIN)"))).inner.clicked()
+            {
+                self.explain(cx);
+            }
+            if ui.add_enabled_ui(!self.undo.is_empty(), |ui| icons::button(ui, Icon::Undo, crate::i18n::text("Rückgängig (Strg+Z)"))).inner.clicked() {
+                self.undo();
+            }
+            if ui.add_enabled_ui(!self.redo.is_empty(), |ui| icons::button(ui, Icon::Redo, crate::i18n::text("Wiederholen (Strg+Y)"))).inner.clicked() {
+                self.redo();
+            }
+            ui.separator();
+            if ui.button(crate::i18n::text("Im Editor öffnen")).clicked() && !sql.is_empty() {
                 cx.actions.push(Action::OpenSql { db: Some(self.db.clone()), sql: format!("{sql};\n"), run: false });
             }
             if ui.button(crate::i18n::text("Kopieren")).clicked() {
                 ui.ctx().copy_text(sql.clone());
             }
-            if ui.button(crate::i18n::text("Als Sicht speichern …")).clicked() {
-                self.view_name = Some(String::new());
+            if icons::button(ui, Icon::Code, crate::i18n::text("Als Java-Code kopieren")).clicked() && !sql.is_empty() {
+                let target = crate::javagen::Target::new(&cx.settings.conn, &self.db);
+                ui.ctx().copy_text(crate::javagen::query_class(&self.current_sql(), &target));
+                cx.status(crate::i18n::text("Java-Code kopiert."));
+            }
+            if self.mode == Mode::Select {
+                if ui.button(crate::i18n::text("Als Sicht speichern …")).clicked() {
+                    self.view_name = Some(String::new());
+                }
+                ui.checkbox(&mut self.live, crate::i18n::text("Live-Vorschau")).on_hover_text(crate::i18n::text("Zeigt das Ergebnis (höchstens 200 Zeilen) schon während der Eingabe"));
             }
             if ui.button(crate::i18n::text("Neu")).clicked() {
                 self.query = Query::default();
+                self.dml = Dml::default();
                 if let Some(t) = self.schema.as_ref().and_then(|s| s.tables.first()) {
                     self.query.parts[0].select.sources = vec![Source::table(&t.name)];
                 }
@@ -1326,8 +1485,22 @@ impl TabView for BuilderTab {
         crate::tabs::page_keys(ui);
         egui::ScrollArea::both().id_salt(("builder-edit", &self.id)).auto_shrink([false, false]).show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 5.0;
-            query_ui(ui, &mut self.query, &env, egui::Id::new(("bq", &self.id)));
+            let id = egui::Id::new(("bq", &self.id));
+            match self.mode {
+                Mode::Select => query_ui(ui, &mut self.query, &env, id),
+                m => dml::ui(ui, &mut self.dml, m, &mut self.query, &env, id),
+            }
         });
+        self.track_changes();
+        // Live-Vorschau: kurz nach der letzten Aenderung die Abfrage mit wenigen Zeilen ausfuehren
+        if self.live && self.mode == Mode::Select && self.job.is_none() && self.live_done.as_ref() != Some(&self.last_snap) {
+            let wait = std::time::Duration::from_millis(600);
+            if self.live_changed.elapsed() >= wait {
+                self.preview(cx);
+            } else {
+                ui.ctx().request_repaint_after(wait - self.live_changed.elapsed());
+            }
+        }
 
         // Als Sicht speichern
         let mut close = false;

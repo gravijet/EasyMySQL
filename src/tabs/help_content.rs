@@ -428,6 +428,19 @@ pub const CHAPTERS: &[Chapter] = &[
                 ],
             },
             Section {
+                id: "assistent-mehr",
+                title: "Daten ändern, Rückgängig, Live-Vorschau",
+                blocks: &[
+                    List(&[
+                        "Oben wechselt der Assistent zwischen Abfragen, Einfügen, Ändern und Löschen. Einfügen füllt Zeilen aus Werten (leer = DEFAULT) oder holt sie mit einer Abfrage (INSERT … SELECT). Ändern setzt Spalten auf neue Werte, Löschen entfernt Zeilen; beide nutzen dieselben Bedingungen wie SELECT.",
+                        "Anweisungen, die Daten ändern, werden erst nach einer Rückfrage ausgeführt; vor dem Löschen entsteht automatisch eine Sicherung. Fehlt die Bedingung, warnt der Assistent, dass alle Zeilen betroffen sind.",
+                        "Rückgängig und Wiederholen (Strg+Z, Strg+Y) gehen Schritt für Schritt durch deine Änderungen im Assistenten.",
+                        "Die Live-Vorschau führt die Abfrage kurz nach der letzten Änderung aus und zeigt höchstens 200 Zeilen. Der Knopf mit der Lupe zeigt den Ausführungsplan (EXPLAIN).",
+                        "Die Klammern-Taste kopiert die Abfrage als fertige Java-Klasse (JDBC).",
+                    ]),
+                ],
+            },
+            Section {
                 id: "assistent-from",
                 title: "FROM und JOIN",
                 blocks: &[
@@ -956,6 +969,37 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// Jeder deutsche Text des Handbuchs braucht eine englische Fassung (Ausnahmen: Namen und Beispiele).
+    #[test]
+    fn manual_is_translated() {
+        use crate::i18n::Language;
+        let mut missing = Vec::new();
+        let mut check = |t: &str| {
+            if Language::English.text(t) == t && t.chars().any(|c| "äöüÄÖÜß".contains(c)) {
+                missing.push(t.to_string());
+            }
+        };
+        for c in CHAPTERS {
+            check(c.title);
+            for s in c.sections {
+                check(s.title);
+                for b in s.blocks {
+                    match b {
+                        B::P(x) | B::Tip(x) => check(x),
+                        B::Open(x, _) => check(x),
+                        B::List(l) | B::Steps(l) => l.iter().for_each(|x| check(x)),
+                        B::Table(rows) => rows.iter().for_each(|(a, b)| {
+                            check(a);
+                            check(b);
+                        }),
+                        _ => {}
+                    }
+                }
+            }
+        }
+        assert!(missing.is_empty(), "Englische Fassung fehlt:\n{}", missing.join("\n"));
     }
 
     #[test]
