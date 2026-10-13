@@ -5,11 +5,13 @@ use mysql::{Conn, Opts, OptsBuilder, Params, Pool, PoolConstraints, PoolOpts, Va
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
+mod alter;
 mod ddl;
 mod schema;
 mod script;
 mod users;
 
+pub use alter::*;
 pub use ddl::*;
 pub use schema::*;
 pub use script::*;

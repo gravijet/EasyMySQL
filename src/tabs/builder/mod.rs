@@ -1476,7 +1476,7 @@ impl TabView for BuilderTab {
                         ui.label(RichText::new(crate::tr_format!("{} Zeile(n)", "{} row(s)", rs.rows.len())).color(pal.ok_text));
                         grid::export_menu(ui, "ergebnis", &rs.columns, &rs.rows);
                     });
-                    grid::show(ui, ("bgrid", &self.id), &rs.columns, &rs.rows, false, &mut self.grid);
+                    grid::show(ui, ("bgrid", &self.id), &rs.columns, &rs.rows, grid::Edit::View, &mut self.grid);
                 }
             });
 

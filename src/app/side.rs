@@ -584,6 +584,22 @@ impl EasyApp {
                                         ui.close();
                                     }
                                     ui.separator();
+                                    if !t.is_view {
+                                        if ui.button(crate::i18n::tr("Umbenennen …", "Rename …")).clicked() {
+                                            dialogs.push(Dialog::TableOp { db: d.clone(), table: t.name.clone(), copy: false, with_data: true, name: t.name.clone() });
+                                            ui.close();
+                                        }
+                                        if ui.button(crate::i18n::tr("Kopieren …", "Copy …")).clicked() {
+                                            dialogs.push(Dialog::TableOp { db: d.clone(), table: t.name.clone(), copy: true, with_data: true, name: format!("{}_kopie", t.name) });
+                                            ui.close();
+                                        }
+                                        if ui.button(crate::i18n::tr("Zusammenfügen …", "Merge …")).clicked() {
+                                            let other = schema.tables.iter().find(|x| !x.is_view && x.name != t.name).map(|x| x.name.clone()).unwrap_or_default();
+                                            dialogs.push(Dialog::Merge { db: d.clone(), a: t.name.clone(), b: other, mode: crate::app::dialogs::MergeKind::Rows, left_col: String::new(), right_col: String::new(), keep_all_a: true, name: format!("{}_zusammen", t.name) });
+                                            ui.close();
+                                        }
+                                        ui.separator();
+                                    }
                                     if !t.is_view && ui.button(crate::i18n::text("Leeren …")).clicked() {
                                         actions.push(Action::Confirm {
                                             text: crate::tr_format!("Alle Zeilen der Tabelle „{}“ löschen?", "Delete all rows in table “{}”?", t.name),

@@ -487,7 +487,7 @@ impl SqlTab {
                     ui.label(RichText::new(info).color(pal.ok_text));
                     grid::export_menu(ui, "ergebnis", &set.columns, &set.rows);
                 });
-                grid::show(ui, ("sqlgrid", self.editor.id, tab), &set.columns, &set.rows, false, &mut self.grid);
+                grid::show(ui, ("sqlgrid", self.editor.id, tab), &set.columns, &set.rows, grid::Edit::View, &mut self.grid);
             }
             Pane::Messages => {
                 if let Some(n) = &self.note {

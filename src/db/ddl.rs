@@ -39,6 +39,8 @@ pub struct ColDef {
     pub comment: String,
     /// Fremdschluessel-Ziel im Format "tabelle.spalte" (leer = keiner)
     pub references: String,
+    /// z. B. "ON UPDATE CURRENT_TIMESTAMP()" (bleibt beim Aendern erhalten)
+    pub on_update: String,
 }
 
 impl ColDef {
@@ -61,6 +63,7 @@ impl ColDef {
             default: c.default.clone().unwrap_or_default(),
             comment: c.comment.clone(),
             references: String::new(),
+            on_update: c.extra.to_lowercase().find("on update").map(|i| c.extra[i..].to_uppercase()).unwrap_or_default(),
         }
     }
 
@@ -86,6 +89,10 @@ impl ColDef {
             } else {
                 s.push_str(&format!(" DEFAULT {}", smart_lit(d)));
             }
+        }
+        if !self.on_update.is_empty() {
+            s.push(' ');
+            s.push_str(&self.on_update);
         }
         if self.auto_inc {
             s.push_str(" AUTO_INCREMENT");

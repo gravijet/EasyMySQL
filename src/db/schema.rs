@@ -17,6 +17,11 @@ impl ColumnInfo {
     pub fn is_pk(&self) -> bool {
         self.key == "PRI"
     }
+
+    /// Berechnete Spalte (VIRTUAL/STORED): laesst sich nicht wie eine normale Spalte neu definieren
+    pub fn is_generated(&self) -> bool {
+        self.extra.to_lowercase().contains("generated")
+    }
 }
 
 #[derive(Clone, Debug, Default)]

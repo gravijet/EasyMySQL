@@ -11,12 +11,22 @@ pub enum Dialog {
     NewDatabase { name: String, collation: String },
     /// `only`: ausgewaehlte Tabellen (None = alle)
     Export { db: String, only: Option<Vec<String>>, with_data: bool, format: Format },
+    /// Tabelle umbenennen oder kopieren
+    TableOp { db: String, table: String, copy: bool, with_data: bool, name: String },
+    /// Zwei Tabellen zu einer neuen zusammenfuegen
+    Merge { db: String, a: String, b: String, mode: MergeKind, left_col: String, right_col: String, keep_all_a: bool, name: String },
     About,
     Myisam(Vec<(String, String)>),
     /// Verbindung fehlgeschlagen
     ConnectFailed(String),
     /// Ungespeicherte Dateien (Autosave aus) vor dem Schliessen, Beenden oder Projektwechsel
     Unsaved { files: Vec<String>, then: Then },
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum MergeKind {
+    Rows,
+    Columns,
 }
 
 /// Was nach der Rueckfrage zu ungespeicherten Dateien geschieht
@@ -33,6 +43,9 @@ impl EasyApp {
         let mut close = false;
         let mut run_sql: Option<(Option<String>, String)> = None;
         let mut export: Option<export::Job> = None;
+        // Mehrere Anweisungen nacheinander in einer Datenbank ausfuehren
+        let mut batch: Option<(String, Vec<String>)> = None;
+        let mut open_sql: Option<(String, String)> = None;
         let mut create_db: Option<(String, String)> = None;
         let mut convert: Option<Vec<(String, String)>> = None;
         let mut open_settings = false;
@@ -164,6 +177,114 @@ impl EasyApp {
                         }
                     });
                 }
+                Dialog::TableOp { db, table, copy, with_data, name } => {
+                    let t = crate::i18n::tr;
+                    ui.label(RichText::new(if *copy { crate::tr_format!("Tabelle {table} kopieren", "Copy table {table}") } else { crate::tr_format!("Tabelle {table} umbenennen", "Rename table {table}") }).strong());
+                    ui.add_space(4.0);
+                    let r = crate::tabs::name_field(ui, egui::Id::new("tableop-name"), name, 240.0, false);
+                    let valid = !name.trim().is_empty() && name.trim() != table;
+                    if *copy {
+                        ui.checkbox(with_data, t("Mit Daten", "With data"));
+                    }
+                    ui.add_space(6.0);
+                    ui.horizontal(|ui| {
+                        let go = ui.add_enabled(valid, egui::Button::new("OK")).clicked() || (valid && r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)));
+                        if go {
+                            let new = name.trim();
+                            batch = Some((
+                                db.clone(),
+                                if *copy { crate::db::duplicate_table(db, table, new, *with_data) } else { vec![format!("RENAME TABLE {}.{} TO {}.{}", q(db), q(table), q(db), q(new))] },
+                            ));
+                            close = true;
+                        }
+                        if ui.button(crate::i18n::text("Abbrechen")).clicked() || ui.input(|i| i.key_pressed(Key::Escape)) {
+                            close = true;
+                        }
+                    });
+                }
+                Dialog::Merge { db, a, b, mode, left_col, right_col, keep_all_a, name } => {
+                    let t = crate::i18n::tr;
+                    let schema = self.db.as_ref().and_then(|d| self.schemas.get_arc(Some(d), db).cloned());
+                    ui.label(RichText::new(crate::tr_format!("Tabellen zusammenfügen", "Merge tables")).strong());
+                    ui.add_space(6.0);
+                    let tables: Vec<String> = schema.as_ref().map(|s| s.tables.iter().filter(|x| !x.is_view).map(|x| x.name.clone()).collect()).unwrap_or_default();
+                    let (ta, tb) = schema.as_ref().map(|s| (s.table(a).cloned(), s.table(b).cloned())).unwrap_or((None, None));
+                    egui::Grid::new("merge").num_columns(2).spacing([10.0, 8.0]).show(ui, |ui| {
+                        ui.label(t("Tabelle A", "Table A"));
+                        let mut changed = crate::tabs::str_combo(ui, "merge-a", &tables, a, 200.0);
+                        ui.end_row();
+                        ui.label(t("Tabelle B", "Table B"));
+                        changed |= crate::tabs::str_combo(ui, "merge-b", &tables, b, 200.0);
+                        ui.end_row();
+                        ui.label(t("Zusammenfügen", "Combine"));
+                        ui.vertical(|ui| {
+                            ui.radio_value(mode, MergeKind::Rows, t("Zeilen untereinander (gleiche Spaltennamen)", "Rows below each other (same column names)"));
+                            ui.radio_value(mode, MergeKind::Columns, t("Spalten nebeneinander (über gleiche Werte)", "Columns side by side (matching values)"));
+                        });
+                        ui.end_row();
+                        if *mode == MergeKind::Columns {
+                            let cols = |t: &Option<crate::db::TableInfo>| t.as_ref().map(|t| t.columns.iter().map(|c| c.name.clone()).collect::<Vec<_>>()).unwrap_or_default();
+                            if changed || left_col.is_empty() {
+                                // Beziehung zwischen den Tabellen vorschlagen, sonst gleichnamige Spalte
+                                let fk = schema.as_ref().and_then(|s| s.fks.iter().find(|f| (f.table == *a && f.ref_table == *b) || (f.table == *b && f.ref_table == *a)));
+                                match fk {
+                                    Some(f) if f.table == *a => (*left_col, *right_col) = (f.columns[0].clone(), f.ref_columns[0].clone()),
+                                    Some(f) => (*left_col, *right_col) = (f.ref_columns[0].clone(), f.columns[0].clone()),
+                                    None => {
+                                        let same = cols(&ta).into_iter().find(|c| cols(&tb).contains(c));
+                                        *left_col = same.clone().or_else(|| cols(&ta).first().cloned()).unwrap_or_default();
+                                        *right_col = same.or_else(|| cols(&tb).first().cloned()).unwrap_or_default();
+                                    }
+                                }
+                            }
+                            ui.label(t("Verbinden über", "Match on"));
+                            ui.horizontal(|ui| {
+                                crate::tabs::str_combo(ui, "merge-lc", &cols(&ta), left_col, 120.0);
+                                ui.label("=");
+                                crate::tabs::str_combo(ui, "merge-rc", &cols(&tb), right_col, 120.0);
+                            });
+                            ui.end_row();
+                            ui.label("");
+                            ui.checkbox(keep_all_a, t("Alle Zeilen von A behalten", "Keep all rows of A"));
+                            ui.end_row();
+                        }
+                        ui.label(t("Neue Tabelle", "New table"));
+                        ui.add_sized([200.0, 22.0], egui::TextEdit::singleline(name));
+                        ui.end_row();
+                    });
+                    let select = match (&ta, &tb) {
+                        (Some(x), Some(y)) if a != b => {
+                            let m = match mode {
+                                MergeKind::Rows => crate::db::MergeMode::Union,
+                                MergeKind::Columns => crate::db::MergeMode::Join { left_col: left_col.clone(), right_col: right_col.clone(), left_outer: *keep_all_a },
+                            };
+                            Some(crate::db::merge_select(db, x, y, &m))
+                        }
+                        _ => None,
+                    };
+                    if let Some(sel) = &select {
+                        ui.add_space(6.0);
+                        egui::ScrollArea::vertical().max_height(110.0).show(ui, |ui| ui.label(RichText::new(sel.as_str()).monospace().small().color(pal.text_weak)));
+                    }
+                    ui.add_space(8.0);
+                    ui.horizontal(|ui| {
+                        let ok = select.is_some() && !name.trim().is_empty();
+                        if let Some(sel) = select {
+                            let sql = format!("CREATE TABLE {}.{} AS\n{sel}", q(db), q(name.trim()));
+                            if ui.add_enabled(ok, egui::Button::new(t("Zusammenfügen", "Merge"))).clicked() {
+                                batch = Some((db.clone(), vec![sql.clone()]));
+                                close = true;
+                            }
+                            if ui.button(t("In Editor öffnen", "Open in editor")).clicked() {
+                                open_sql = Some((db.clone(), format!("{sql};\n")));
+                                close = true;
+                            }
+                        }
+                        if ui.button(crate::i18n::text("Abbrechen")).clicked() || ui.input(|i| i.key_pressed(Key::Escape)) {
+                            close = true;
+                        }
+                    });
+                }
                 Dialog::About => {
                     ui.label(RichText::new(format!("EasyMySQL {}", env!("CARGO_PKG_VERSION"))).strong());
                     ui.add_space(4.0);
@@ -246,6 +367,22 @@ impl EasyApp {
             self.dialogs.pop();
         }
 
+        if let Some((d, sql)) = open_sql {
+            self.handle_actions(vec![Action::OpenSql { db: Some(d), sql, run: false }]);
+        }
+        if let (Some((d, list)), Some(dbc)) = (batch, self.db.clone()) {
+            let mut failed = false;
+            for sql in &list {
+                if let Err(e) = dbc.exec_in(&d, sql) {
+                    self.error(format!("{e}\n\nSQL: {sql}"));
+                    failed = true;
+                    break;
+                }
+            }
+            if !failed {
+                self.handle_actions(vec![Action::SchemaChanged(d)]);
+            }
+        }
         if let Some((save, then)) = unsaved {
             self.finish_unsaved(save, then);
         }

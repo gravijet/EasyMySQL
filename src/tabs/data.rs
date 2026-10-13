@@ -2,7 +2,8 @@
 
 use super::{Action, Ctx, TabView};
 use crate::db::{self, Row, TableInfo, q};
-use crate::grid::{self, GridEvent, GridState};
+use crate::db::ColDef;
+use crate::grid::{self, ColumnAction, Edit, GridEvent, GridState};
 use crate::style;
 use eframe::egui::{self, RichText};
 use mysql::{Params, Value};
@@ -23,6 +24,21 @@ impl Drop for PageJob {
             std::thread::spawn(move || db::kill_query(&info, id));
         }
     }
+}
+
+/// Eine rueckgaengig machbare Aenderung
+enum Undo {
+    Cell { cond: String, params: Vec<Value>, column: String, old: Option<String> },
+    DeleteRow { columns: Vec<String>, row: Vec<Value> },
+}
+
+/// Dialog zum Aendern oder Hinzufuegen einer Spalte
+struct ColDlg {
+    /// Name der bestehenden Spalte (None = neue Spalte)
+    orig: Option<String>,
+    def: ColDef,
+    /// Neue Spalte hinter dieser einfuegen (None = am Ende)
+    after: Option<String>,
 }
 
 pub struct DataTab {
@@ -46,6 +62,11 @@ pub struct DataTab {
     error: Option<String>,
     grid: GridState,
     insert: Option<Vec<(String, String, bool)>>,
+    undo: Vec<Undo>,
+    col_dlg: Option<ColDlg>,
+    /// Nach dem Einfuegen zur letzten Zeile springen
+    go_last: bool,
+    select_last: bool,
 }
 
 impl DataTab {
@@ -69,6 +90,10 @@ impl DataTab {
             error: None,
             grid: GridState::default(),
             insert: None,
+            undo: Vec::new(),
+            col_dlg: None,
+            go_last: false,
+            select_last: false,
         }
     }
 
@@ -178,7 +203,13 @@ impl DataTab {
                 } else {
                     cx.status(crate::tr_format!("{}.{}: 1 Wert geändert.", "{}.{}: 1 value changed.", self.table, self.columns[c]));
                 }
+                let old = self.rows[r][c].clone();
                 self.rows[r][c] = v;
+                if n > 0 {
+                    // Rueckgaengig: die Zeile wird nach der Aenderung gefunden (bei geaendertem Schluessel mit dem neuen Wert)
+                    let (cond, params) = self.row_key(r);
+                    self.undo.push(Undo::Cell { cond, params, column: self.columns[c].clone(), old });
+                }
                 if !self.has_pk() {
                     self.reload(cx);
                 }
@@ -191,12 +222,152 @@ impl DataTab {
         let Some(dbc) = cx.db else { return };
         let (cond, params) = self.row_key(r);
         let sql = format!("DELETE FROM {} WHERE {} LIMIT 1", self.full_name(), cond);
+        let saved = (self.columns.clone(), self.rows[r].iter().map(db::opt_to_value).collect::<Vec<_>>());
         match dbc.exec(&sql, Params::Positional(params)) {
             Ok(_) => {
                 cx.status(crate::i18n::text("Zeile gelöscht."));
+                // Zeilen mit Binaerdaten lassen sich als Text nicht verlustfrei wiederherstellen
+                let binary = self.info.as_ref().is_some_and(|i| i.columns.iter().any(|c| {
+                    let t = c.col_type.to_lowercase();
+                    t.contains("blob") || t.contains("binary")
+                }));
+                if !binary {
+                    self.undo.push(Undo::DeleteRow { columns: saved.0, row: saved.1 });
+                }
                 self.reload(cx);
             }
             Err(e) => cx.error(e),
+        }
+    }
+
+    /// Letzte Aenderung rueckgaengig machen
+    fn undo(&mut self, cx: &mut Ctx) {
+        let (Some(dbc), Some(op)) = (cx.db, self.undo.pop()) else { return };
+        let res = match op {
+            Undo::Cell { cond, mut params, column, old } => {
+                params.insert(0, db::opt_to_value(&old));
+                dbc.exec(&format!("UPDATE {} SET {} = ? WHERE {} LIMIT 1", self.full_name(), q(&column), cond), Params::Positional(params))
+            }
+            Undo::DeleteRow { columns, row } => {
+                let marks = vec!["?"; columns.len()].join(", ");
+                let cols: Vec<String> = columns.iter().map(|c| q(c)).collect();
+                dbc.exec(&format!("INSERT INTO {} ({}) VALUES ({marks})", self.full_name(), cols.join(", ")), Params::Positional(row))
+            }
+        };
+        match res {
+            Ok(_) => {
+                cx.status(crate::i18n::tr("Rückgängig gemacht.", "Undone."));
+                self.reload(cx);
+            }
+            Err(e) => cx.error(e),
+        }
+    }
+
+    /// ALTER TABLE ausfuehren; danach laden alle Registerkarten der Datenbank die Struktur neu
+    fn alter(&mut self, cx: &mut Ctx, sql: &[String]) -> bool {
+        let Some(dbc) = cx.db else { return false };
+        for s in sql {
+            if let Err(e) = dbc.exec(s, ()) {
+                cx.error(format!("{e}\n\nSQL: {s}"));
+                return false;
+            }
+        }
+        cx.status(crate::i18n::text("Struktur geändert."));
+        cx.actions.push(Action::SchemaChanged(self.db.clone()));
+        true
+    }
+
+    fn column_action(&mut self, cx: &mut Ctx, ci: usize, action: ColumnAction) {
+        let Some(name) = self.columns.get(ci).cloned() else { return };
+        let Some(info) = self.info.clone() else { return };
+        let Some(col) = info.columns.iter().find(|c| c.name == name).cloned() else { return };
+        let full = self.full_name();
+        match action {
+            ColumnAction::Sort(desc) => {
+                self.order = name;
+                self.desc = desc;
+                self.reload(cx);
+            }
+            _ if info.is_view => cx.status(crate::i18n::tr("Sichten lassen sich hier nicht ändern.", "Views cannot be changed here.")),
+            ColumnAction::Edit | ColumnAction::Move(_) | ColumnAction::Duplicate if col.is_generated() => cx.status(crate::i18n::tr("Berechnete Spalten lassen sich hier nicht ändern.", "Generated columns cannot be changed here.")),
+            ColumnAction::Edit => self.col_dlg = Some(ColDlg { orig: Some(name), def: ColDef::from_info(&col), after: None }),
+            ColumnAction::AddAfter => self.col_dlg = Some(ColDlg { orig: None, def: ColDef::new("", "VARCHAR(255)"), after: Some(name) }),
+            ColumnAction::Move(m) => {
+                if let Some(sql) = db::move_column(&full, &info, &name, m) {
+                    self.alter(cx, &[sql]);
+                }
+            }
+            ColumnAction::Duplicate => {
+                if let Some(sql) = db::duplicate_column(&full, &info, &name) {
+                    self.alter(cx, &sql);
+                }
+            }
+            ColumnAction::Delete => cx.actions.push(Action::Confirm {
+                text: crate::tr_format!("Spalte \"{}\" wirklich löschen? Alle Werte darin gehen verloren.", "Really delete column \"{}\"? All its values will be lost.", name),
+                db: None,
+                sql: format!("ALTER TABLE {full} DROP COLUMN {}", q(&name)),
+            }),
+        }
+    }
+
+    fn col_dlg_ui(&mut self, ctx: &egui::Context, cx: &mut Ctx) {
+        let Some(d) = self.col_dlg.as_mut() else { return };
+        let (mut ok, mut cancel) = (false, false);
+        let title = match &d.orig {
+            Some(o) => crate::tr_format!("Spalte {o}", "Column {o}"),
+            None => crate::i18n::tr("Neue Spalte", "New column").to_string(),
+        };
+        egui::Window::new(title).collapsible(false).resizable(false).anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]).show(ctx, |ui| {
+            egui::Grid::new("coldlg").num_columns(2).spacing([10.0, 8.0]).show(ui, |ui| {
+                ui.label("Name");
+                let r = ui.add_sized([220.0, 22.0], egui::TextEdit::singleline(&mut d.def.name));
+                if d.orig.is_none() && !r.has_focus() && d.def.name.is_empty() {
+                    r.request_focus();
+                }
+                ui.end_row();
+                ui.label(crate::i18n::text("Datentyp:"));
+                super::designer::type_field(ui, "coldlg-type", &mut d.def.col_type);
+                ui.end_row();
+                ui.label("");
+                ui.checkbox(&mut d.def.not_null, crate::i18n::text("Nicht NULL"));
+                ui.end_row();
+                ui.label(crate::i18n::text("Standardwert:"));
+                ui.add_sized([220.0, 22.0], egui::TextEdit::singleline(&mut d.def.default));
+                ui.end_row();
+            });
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                ok = ui.add_enabled(!d.def.name.trim().is_empty() && !d.def.col_type.trim().is_empty(), egui::Button::new("OK")).clicked() || (ui.input(|i| i.key_pressed(egui::Key::Enter)) && !d.def.name.trim().is_empty());
+                cancel = ui.button(crate::i18n::text("Abbrechen")).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape));
+            });
+        });
+        if ok {
+            let d = self.col_dlg.take().unwrap();
+            let full = self.full_name();
+            let sql = match &d.orig {
+                Some(o) => db::change_column(&full, o, &d.def),
+                None => {
+                    let pos = d.after.as_ref().map(|a| format!(" AFTER {}", q(a))).unwrap_or_default();
+                    format!("ALTER TABLE {full} ADD COLUMN {}{pos}", d.def.sql())
+                }
+            };
+            if !self.alter(cx, &[sql]) {
+                self.col_dlg = Some(d);
+            }
+        } else if cancel {
+            self.col_dlg = None;
+        }
+    }
+
+    /// Neue Zeile sofort mit Standardwerten anlegen; geht das nicht (Pflichtfelder), fragt der Dialog die Werte ab.
+    fn quick_insert(&mut self, cx: &mut Ctx) {
+        let Some(dbc) = cx.db else { return };
+        match dbc.exec(&format!("INSERT INTO {} () VALUES ()", self.full_name()), ()) {
+            Ok(_) => {
+                self.go_last = true;
+                self.reload(cx);
+            }
+            Err(_) => self.open_insert(),
         }
     }
 
@@ -353,92 +524,110 @@ impl TabView for DataTab {
                 Ok(n) => {
                     self.total = n;
                     self.count_job = None;
+                    // Nach dem Einfuegen die letzte Seite zeigen
+                    if std::mem::take(&mut self.go_last) {
+                        let last = (n.unwrap_or(0).saturating_sub(1) as usize / self.limit) * self.limit;
+                        self.select_last = true;
+                        if last != self.offset {
+                            self.offset = last;
+                            self.reload(cx);
+                        }
+                    }
                 }
                 Err(std::sync::mpsc::TryRecvError::Empty) => ui.ctx().request_repaint_after(std::time::Duration::from_millis(100)),
                 Err(_) => self.count_job = None,
             }
         }
+        if self.select_last && self.page_job.is_none() && self.count_job.is_none() && !self.rows.is_empty() {
+            self.select_last = false;
+            self.grid.selected = Some(self.rows.len() - 1);
+            self.grid.scroll_to = Some(self.rows.len() - 1);
+        }
+        let pal = style::pal();
+        let is_view = self.info.as_ref().map(|i| i.is_view).unwrap_or(false);
+        // Strg+Z macht die letzte Aenderung rueckgaengig (nicht beim Tippen in einem Textfeld)
+        if !ui.ctx().egui_wants_keyboard_input() && ui.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::Z)) {
+            self.undo(cx);
+        }
         ui.horizontal(|ui| {
             ui.label(RichText::new(format!("{}.{}", self.db, self.table)).strong());
             ui.separator();
-            ui.label("WHERE:");
-            let r = ui.add(
-                egui::TextEdit::singleline(&mut self.filter)
-                    .desired_width(220.0)
-                    .hint_text(crate::i18n::text("Bedingung")),
-            );
+            let r = ui.add_sized([260.0, 22.0], egui::TextEdit::singleline(&mut self.filter).hint_text(crate::i18n::tr("WHERE-Bedingung", "WHERE condition")));
             if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                 self.offset = 0;
                 self.reload(cx);
             }
-            ui.label(crate::i18n::text("Sortieren:"));
-            let mut cols = vec![String::new()];
-            cols.extend(self.columns.iter().cloned());
-            if super::str_combo(ui, ("order", &self.table), &cols, &mut self.order, 120.0) {
+            if crate::icons::button(ui, crate::icons::Icon::Refresh, crate::i18n::text("Aktualisieren")).clicked() {
                 self.reload(cx);
             }
-            if ui.checkbox(&mut self.desc, crate::i18n::text("absteigend")).changed() {
-                self.reload(cx);
-            }
-            if ui.button(crate::i18n::text("Aktualisieren")).clicked() {
-                self.reload(cx);
+            if !self.order.is_empty() {
+                let tip = crate::i18n::tr("Sortierung aufheben", "Clear sorting");
+                if crate::icons::text_button(ui, crate::icons::Icon::Close, &format!("{} {}", self.order, if self.desc { "DESC" } else { "ASC" })).on_hover_text(tip).clicked() {
+                    self.order.clear();
+                    self.reload(cx);
+                }
             }
         });
         ui.horizontal(|ui| {
-            let is_view = self.info.as_ref().map(|i| i.is_view).unwrap_or(false);
-            if ui.add_enabled(!is_view, egui::Button::new(crate::i18n::text("+ Neue Zeile"))).clicked() {
-                self.open_insert();
-            }
-            let sel = self.grid.selected;
-            if ui
-                .add_enabled(sel.is_some() && !is_view, egui::Button::new(crate::i18n::text("Zeile löschen")))
-                .clicked()
-                && let Some(r) = sel {
+            use crate::icons::{self, Icon};
+            ui.add_enabled_ui(!is_view, |ui| {
+                if icons::text_button(ui, Icon::Plus, crate::i18n::tr("Zeile", "Row")).on_hover_text(crate::i18n::tr("Neue Zeile", "New row")).clicked() {
+                    self.quick_insert(cx);
+                }
+                if icons::text_button(ui, Icon::Plus, crate::i18n::tr("Spalte", "Column")).on_hover_text(crate::i18n::tr("Neue Spalte am Ende", "New column at the end")).clicked() {
+                    self.col_dlg = Some(ColDlg { orig: None, def: ColDef::new("", "VARCHAR(255)"), after: self.columns.last().cloned() });
+                }
+                let sel = self.grid.selected;
+                if ui.add_enabled_ui(sel.is_some(), |ui| icons::button(ui, Icon::Trash, crate::i18n::text("Zeile löschen"))).inner.clicked()
+                    && let Some(r) = sel
+                {
                     self.delete_row(cx, r);
                 }
-            if ui.button(crate::i18n::text("Struktur")).clicked() {
-                cx.actions.push(Action::OpenStructure {
-                    db: self.db.clone(),
-                    table: self.table.clone(),
-                });
+                let tip = format!("{} (Ctrl+Z)", crate::i18n::tr("Rückgängig", "Undo"));
+                if ui.add_enabled_ui(!self.undo.is_empty(), |ui| icons::button(ui, Icon::Undo, &tip)).inner.clicked() {
+                    self.undo(cx);
+                }
+            });
+            ui.separator();
+            if icons::button(ui, Icon::Columns, crate::i18n::tr("Struktur, Indizes und Beziehungen", "Structure, indexes and relationships")).clicked() {
+                cx.actions.push(Action::OpenStructure { db: self.db.clone(), table: self.table.clone() });
             }
             grid::export_menu(ui, &self.table, &self.columns, &self.rows);
             ui.separator();
             let total = self.total.unwrap_or(self.rows.len() as u64);
-            if ui.add_enabled_ui(self.offset > 0, |ui| crate::icons::button(ui, crate::icons::Icon::ChevronLeft, crate::i18n::text("Vorherige Seite"))).inner.clicked() {
+            if ui.add_enabled_ui(self.offset > 0, |ui| icons::button(ui, Icon::ChevronLeft, crate::i18n::text("Vorherige Seite"))).inner.clicked() {
                 self.offset = self.offset.saturating_sub(self.limit);
                 self.reload(cx);
             }
             let to = self.offset + self.rows.len();
-            ui.label(crate::tr_format!("Zeilen {}–{} von {}", "Rows {}–{} of {}",
-                if self.rows.is_empty() { 0 } else { self.offset + 1 },
-                to,
-                total
-            ));
-            if ui.add_enabled_ui((to as u64) < total, |ui| crate::icons::button(ui, crate::icons::Icon::ChevronRight, crate::i18n::text("Nächste Seite"))).inner.clicked() {
+            ui.label(crate::tr_format!("Zeilen {}–{} von {}", "Rows {}–{} of {}", if self.rows.is_empty() { 0 } else { self.offset + 1 }, to, total));
+            if ui.add_enabled_ui((to as u64) < total, |ui| icons::button(ui, Icon::ChevronRight, crate::i18n::text("Nächste Seite"))).inner.clicked() {
                 self.offset += self.limit;
                 self.reload(cx);
             }
             if !self.has_pk() && !is_view && self.info.is_some() {
-                ui.label(RichText::new(crate::i18n::text("kein Primärschlüssel")).color(style::pal().error_text));
+                ui.label(RichText::new(crate::i18n::text("kein Primärschlüssel")).color(pal.error_text));
             }
         });
         if let Some(e) = &self.error {
-            ui.label(RichText::new(crate::tr_format!("Fehler: {e}", "Error: {e}")).color(style::pal().error_text));
+            ui.label(RichText::new(crate::tr_format!("Fehler: {e}", "Error: {e}")).color(pal.error_text));
         }
         if self.page_job.is_some() {
-            ui.label(RichText::new(crate::i18n::text("Wird gelesen …")).color(style::pal().text_weak));
+            ui.label(RichText::new(crate::i18n::text("Wird gelesen …")).color(pal.text_weak));
             return;
         }
-        let editable = !self.info.as_ref().map(|i| i.is_view).unwrap_or(false);
-        let events = grid::show(ui, ("datagrid", &self.db, &self.table), &self.columns, &self.rows, editable, &mut self.grid);
+        let edit = if is_view { Edit::View } else { Edit::CellsAndColumns };
+        let events = grid::show(ui, ("datagrid", &self.db, &self.table), &self.columns, &self.rows, edit, &mut self.grid);
         for ev in events {
             match ev {
                 GridEvent::Edit(r, c, v) => self.update_cell(cx, r, c, v),
                 GridEvent::DeleteRow(r) => self.delete_row(cx, r),
+                GridEvent::Column(c, a) => self.column_action(cx, c, a),
                 GridEvent::Activate => {}
             }
         }
+        let ctx = ui.ctx().clone();
+        self.col_dlg_ui(&ctx, cx);
         self.insert_ui(ui, cx);
     }
 }

@@ -384,6 +384,22 @@ impl TabView for StructureTab {
                     sql: format!("ALTER TABLE {} DROP COLUMN {}", self.full(), q(&c.name)),
                 });
             }
+            let sel_i = self.selected.filter(|i| *i < info.columns.len());
+            let mut mv = None;
+            ui.add_enabled_ui(sel_i.is_some() && !view, |ui| {
+                if crate::icons::button(ui, crate::icons::Icon::ArrowUp, crate::i18n::tr("Spalte nach oben", "Move column up")).clicked() {
+                    mv = Some(crate::db::Move::Left);
+                }
+                if crate::icons::button(ui, crate::icons::Icon::ArrowDown, crate::i18n::tr("Spalte nach unten", "Move column down")).clicked() {
+                    mv = Some(crate::db::Move::Right);
+                }
+            });
+            if let (Some(m), Some(i)) = (mv, sel_i)
+                && let Some(sql) = crate::db::move_column(&self.full(), &info, &info.columns[i].name, m)
+                && self.alter(cx, sql)
+            {
+                self.selected = Some(if m == crate::db::Move::Left { i - 1 } else { i + 1 });
+            }
             ui.separator();
             if ui.add_enabled(!view, egui::Button::new("+ Index")).clicked() {
                 self.dlg = Some(Dlg::Index {
