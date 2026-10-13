@@ -20,6 +20,7 @@ mod sqlfmt;
 mod style;
 mod updates;
 mod tabs;
+mod terminal;
 mod workspace;
 
 use eframe::egui;

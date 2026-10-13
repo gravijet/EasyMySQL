@@ -80,6 +80,21 @@ pub const CHAPTERS: &[Chapter] = &[
                 ],
             },
             Section {
+                id: "terminal",
+                title: "Terminal",
+                blocks: &[
+                    P("Das Terminal öffnet sich unter dem Editor, wie in Visual Studio Code. Es startet im Projektordner und kennt die MariaDB-Programme (mysql, mysqldump), auch ohne die Installation im PATH."),
+                    List(&[
+                        "Das Plus öffnet ein weiteres Terminal in einer neuen Registerkarte, der Pfeil daneben lässt die Shell wählen: PowerShell, Eingabeaufforderung oder die MariaDB-Konsole (mysql mit den Verbindungsdaten).",
+                        "Mit der Maus markierter Text wird mit Strg+C kopiert, ohne Markierung unterbricht Strg+C das laufende Programm. Rechtsklick: Kopieren und Einfügen, Mausrad: durch die Ausgabe blättern.",
+                        "Beim Ausblenden laufen die Shells weiter. Der Mülleimer beendet das aktive Terminal, das Kreuz an der Registerkarte ebenfalls.",
+                        "Solange der Cursor im Terminal steht, gehören die Tasten der Shell. Nur das Ein- und Ausblenden und die Befehlsliste funktionieren weiter.",
+                    ]),
+                    Keys(&[Cmd::ToggleTerminal, Cmd::NewTerminal]),
+                    Open("Terminal öffnen", Cmd(Cmd::ToggleTerminal)),
+                ],
+            },
+            Section {
                 id: "registerkarten",
                 title: "Registerkarten",
                 blocks: &[

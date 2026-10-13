@@ -5,11 +5,13 @@ mod dialogs;
 mod palette;
 mod shell;
 mod side;
+mod terminal_dock;
 
 use autoscroll::Autoscroll;
 pub use autoscroll::block_autoscroll;
 use dialogs::Dialog;
 use side::{ExplorerDlg, SearchState, SideView};
+use terminal_dock::TerminalDock;
 
 use crate::db::{self, Db};
 use crate::keymap::{self, Cmd};
@@ -64,6 +66,7 @@ pub struct EasyApp {
     closed: Vec<String>,
     current_db: String,
     toasts: Vec<Toast>,
+    terminal: TerminalDock,
     dialogs: Vec<Dialog>,
     hwnd: Option<isize>,
     tray: Option<(platform::Tray, Receiver<TrayCmd>)>,
@@ -160,6 +163,7 @@ impl EasyApp {
             closed: Vec::new(),
             current_db: String::new(),
             toasts: Vec::new(),
+            terminal: TerminalDock::default(),
             dialogs: Vec::new(),
             hwnd,
             tray,
@@ -664,6 +668,8 @@ impl EasyApp {
             Cmd::CommandPalette => self.palette = Some(palette::Palette::new(true)),
             Cmd::QuickOpen => self.palette = Some(palette::Palette::new(false)),
             Cmd::ToggleSidebar => self.sidebar = !self.sidebar,
+            Cmd::ToggleTerminal => self.toggle_terminal(ctx),
+            Cmd::NewTerminal => self.new_terminal(ctx, None),
             Cmd::FontLarger => self.set_editor_font(self.settings.editor_font.saturating_add(1)),
             Cmd::FontSmaller => self.set_editor_font(self.settings.editor_font.saturating_sub(1)),
             Cmd::FontReset => self.set_editor_font(settings::DEFAULT_FONT),
@@ -734,6 +740,8 @@ impl EasyApp {
             Cmd::CommandPalette,
             Cmd::QuickOpen,
             Cmd::ToggleSidebar,
+            Cmd::ToggleTerminal,
+            Cmd::NewTerminal,
             Cmd::FontLarger,
             Cmd::FontSmaller,
             Cmd::FontReset,
@@ -753,7 +761,12 @@ impl EasyApp {
         if crate::tabs::settings::recording() {
             return;
         }
+        // Im Terminal gehoeren fast alle Tasten der Shell
+        let in_terminal = crate::terminal::focused();
         for c in GLOBAL {
+            if in_terminal && !matches!(c, Cmd::ToggleTerminal | Cmd::NewTerminal | Cmd::CommandPalette) {
+                continue;
+            }
             if keymap::take_ctx(ctx, *c) {
                 self.run_cmd(ctx, *c);
             }
@@ -815,6 +828,7 @@ impl EasyApp {
 
     fn quit(&mut self) {
         self.quitting = true;
+        self.terminal.close_all();
         self.save_all();
         if let Some(h) = self.hwnd {
             platform::hide_window(h);
@@ -967,6 +981,7 @@ impl eframe::App for EasyApp {
             self.global_keys(&ctx);
         }
 
+        crate::terminal::set_focused(false);
         egui::Panel::top("menu")
             .frame(egui::Frame::new().fill(style::pal().face).inner_margin(egui::Margin::symmetric(4, 2)))
             .show(ui, |ui| {
@@ -988,6 +1003,9 @@ impl eframe::App for EasyApp {
                 .show(ui, |ui| {
                     self.side_panel(ui, &mut actions);
                 });
+        }
+        if self.terminal.open {
+            self.terminal_panel(ui);
         }
         egui::CentralPanel::default().frame(egui::Frame::new().fill(style::pal().bg)).show(ui, |ui| {
             if !self.tabs.is_empty() {
@@ -1049,6 +1067,7 @@ impl eframe::App for EasyApp {
     }
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        self.terminal.close_all();
         self.save_all();
         self.db = None;
         self.server.stop_blocking(&self.settings.conn);

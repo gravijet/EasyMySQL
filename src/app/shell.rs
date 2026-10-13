@@ -127,6 +127,9 @@ impl EasyApp {
                 ui.menu_button(crate::i18n::text("Ansicht"), |ui| {
                     item(ui, crate::i18n::text("Seitenleiste ein/aus"), Cmd::ToggleSidebar, &mut cmd);
                     ui.separator();
+                    item(ui, crate::i18n::text("Terminal ein/aus"), Cmd::ToggleTerminal, &mut cmd);
+                    item(ui, crate::i18n::text("Neues Terminal"), Cmd::NewTerminal, &mut cmd);
+                    ui.separator();
                     item(ui, crate::i18n::text("Editor-Schrift vergrößern"), Cmd::FontLarger, &mut cmd);
                     item(ui, crate::i18n::text("Editor-Schrift verkleinern"), Cmd::FontSmaller, &mut cmd);
                     item(ui, crate::i18n::text("Editor-Schrift zurücksetzen"), Cmd::FontReset, &mut cmd);
