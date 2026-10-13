@@ -30,6 +30,8 @@ pub struct Settings {
     pub query_log: bool,
     /// Dateien im Editor kurz nach der letzten Aenderung automatisch speichern
     pub autosave: bool,
+    /// Fehler im SQL waehrend des Tippens markieren
+    pub lint: bool,
 }
 
 /// Schriftgroesse im SQL-Editor (Pixel): Standard und Grenzen
@@ -59,6 +61,7 @@ impl Default for Settings {
             recent: Vec::new(),
             query_log: false,
             autosave: true,
+            lint: true,
         }
     }
 }
@@ -93,6 +96,7 @@ impl Settings {
                 "recent" if !v.is_empty() => s.recent.push(PathBuf::from(v)),
                 "query_log" => s.query_log = on,
                 "autosave" => s.autosave = on,
+                "lint" => s.lint = on,
                 _ => {}
             }
         }
@@ -107,7 +111,7 @@ impl Settings {
         let b = |x: bool| if x { "1" } else { "0" };
         let mut text = format!(
             "language={}\ndark={}\nhost={}\nport={}\nuser={}\nsave_password={}\nshow_system_dbs={}\nauto_update={}\neditor_font={}\n\
-             auto_suggest={}\nauto_close={}\nscroll_speed={}\nautoscroll={}\nstorage_dir={}\nquery_log={}\nautosave={}\n",
+             auto_suggest={}\nauto_close={}\nscroll_speed={}\nautoscroll={}\nstorage_dir={}\nquery_log={}\nautosave={}\nlint={}\n",
             self.language.id(),
             b(self.dark),
             self.conn.host,
@@ -124,6 +128,7 @@ impl Settings {
             self.storage_dir,
             b(self.query_log),
             b(self.autosave),
+            b(self.lint),
         );
         for r in &self.recent {
             text.push_str(&format!("recent={}\n", r.display()));

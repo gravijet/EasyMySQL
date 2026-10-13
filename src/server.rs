@@ -622,6 +622,11 @@ impl Server {
         ini.push_str("innodb_buffer_pool_size=128M\n");
         ini.push_str("max_allowed_packet=64M\n");
         ini.push_str(SAFETY_OPTIONS);
+        // Windows speichert Namen sonst komplett klein (lower_case_table_names=1). Mit 2 bleiben Datenbank- und
+        // Tabellennamen so, wie sie geschrieben wurden (z. B. "Spielleitung"), Vergleiche bleiben unabhaengig von
+        // der Gross-/Kleinschreibung.
+        #[cfg(windows)]
+        ini.push_str("lower_case_table_names=2\n");
         #[cfg(not(windows))]
         {
             let sock = if data == paths.data { paths.base.join("mysql.sock") } else { data.with_extension("sock") };

@@ -298,6 +298,17 @@ impl SqlTab {
         cx.status(crate::i18n::text("Java-Code kopiert."));
     }
 
+    /// Alle Fehler mit Korrekturvorschlag selbst ausbessern
+    fn fix_all(&mut self, cx: &mut Ctx) {
+        let n = self.editor.fix_all(&mut self.text);
+        if n > 0 {
+            self.last_edit = Instant::now();
+            cx.status(crate::tr_format!("{n} Stelle(n) korrigiert.", "{n} place(s) corrected."));
+        } else {
+            cx.status(crate::i18n::text("Nichts zu korrigieren."));
+        }
+    }
+
     fn format(&mut self) {
         self.text = sqledit::format_sql(&self.text);
         self.last_edit = Instant::now();
@@ -552,6 +563,7 @@ impl TabView for SqlTab {
             Cmd::RunStatement => self.run_current(cx),
             Cmd::Explain => self.explain(cx),
             Cmd::Format => self.format(),
+            Cmd::FixAll => self.fix_all(cx),
             Cmd::CopyJava => self.copy_java(cx),
             Cmd::Find | Cmd::Replace | Cmd::GotoLine => self.editor.pending = Some(cmd),
             _ => return false,
@@ -657,6 +669,11 @@ impl TabView for SqlTab {
             }
             ui.ctx().request_repaint_after(Duration::from_secs(2));
         }
+        // Struktur fuer die Pruefung der Tabellen- und Spaltennamen
+        self.editor.schema = cx.schema(&self.database);
+        if self.editor.databases.len() != cx.databases.len() {
+            self.editor.databases = cx.databases.to_vec();
+        }
         // Woerter fuer die Autovervollstaendigung
         if self.words_for != self.database {
             let s = cx.schema(&self.database);
@@ -691,6 +708,23 @@ impl TabView for SqlTab {
             });
             if ui.button(crate::i18n::text("Formatieren")).on_hover_text(crate::keymap::text(Cmd::Format)).clicked() {
                 self.format();
+            }
+            let (errors, warnings, fixable) = self.editor.lint_summary();
+            if errors + warnings > 0 {
+                let color = if errors > 0 { pal.error_text } else { pal.warn_text };
+                let summary = match (errors, warnings) {
+                    (e, 0) => crate::tr_format!("{e} Fehler", "{e} error(s)"),
+                    (0, w) => crate::tr_format!("{w} Hinweis(e)", "{w} warning(s)"),
+                    (e, w) => crate::tr_format!("{e} Fehler, {w} Hinweis(e)", "{e} error(s), {w} warning(s)"),
+                };
+                ui.label(RichText::new(summary).small().color(color));
+                if fixable > 0
+                    && icons::text_button(ui, Icon::Sparkles, crate::i18n::text("Korrigieren"))
+                        .on_hover_text(crate::tr_format!("Alle Fehler mit Vorschlag selbst ausbessern ({})", "Fix every problem that has a suggestion ({})", crate::keymap::text(Cmd::FixAll)))
+                        .clicked()
+                {
+                    self.fix_all(cx);
+                }
             }
             let more = icons::button(ui, Icon::More, crate::i18n::text("Weitere"));
             egui::Popup::menu(&more).show(|ui| {

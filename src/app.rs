@@ -616,7 +616,7 @@ impl EasyApp {
 
     fn run_cmd(&mut self, ctx: &egui::Context, cmd: Cmd) {
         match cmd {
-            Cmd::RunAll | Cmd::RunStatement | Cmd::Explain | Cmd::Format | Cmd::CopyJava | Cmd::Find | Cmd::Replace | Cmd::GotoLine => {
+            Cmd::RunAll | Cmd::RunStatement | Cmd::Explain | Cmd::Format | Cmd::FixAll | Cmd::CopyJava | Cmd::Find | Cmd::Replace | Cmd::GotoLine => {
                 let mut acts = Vec::new();
                 if let Some(t) = self.tabs.get_mut(self.active) {
                     t.command(cmd, &mut cx!(self, &mut acts));
@@ -710,6 +710,7 @@ impl EasyApp {
             Cmd::RunStatement,
             Cmd::Explain,
             Cmd::Format,
+            Cmd::FixAll,
             Cmd::Find,
             Cmd::Replace,
             Cmd::GotoLine,
@@ -908,6 +909,7 @@ fn apply_editor_prefs(s: &Settings) {
     crate::sqledit::AUTO_SUGGEST.store(s.auto_suggest, Ordering::Relaxed);
     crate::sqledit::AUTO_CLOSE.store(s.auto_close, Ordering::Relaxed);
     crate::tabs::sql::AUTOSAVE.store(s.autosave, Ordering::Relaxed);
+    crate::sqledit::LINT.store(s.lint, Ordering::Relaxed);
 }
 
 /// egui-Kontext fuer Aktionen, die ihn brauchen (einmal je Bild gesetzt)

@@ -6,15 +6,24 @@ use eframe::egui::{
 };
 
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 mod highlight;
+mod lint;
 mod text;
 
 pub use highlight::*;
+pub use lint::*;
 pub use text::*;
 
 /// Vorschlaege beim Tippen (Einstellung)
 pub static AUTO_SUGGEST: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+/// SQL-Fehler markieren (Einstellung)
+pub static LINT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+/// So lange muss das Tippen pausieren, bevor geprueft wird
+const LINT_DELAY: Duration = Duration::from_millis(350);
 
 /// Klammern automatisch schliessen (Einstellung)
 pub static AUTO_CLOSE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
@@ -65,8 +74,31 @@ struct Find {
     current: usize,
 }
 
+/// Ergebnis der letzten Pruefung samt Zeichenhilfen
+#[derive(Default)]
+struct LintState {
+    problems: Vec<Problem>,
+    /// Text und Struktur (Zeiger), fuer die `problems` gelten
+    text: String,
+    schema: usize,
+    computed: bool,
+    /// Zuletzt gesehener Text und seit wann (Abwarten nach dem Tippen)
+    seen: String,
+    seen_at: Option<Instant>,
+    /// Je Problem: (Zeile, Ende der Wellenlinie)
+    marks: Vec<(usize, usize)>,
+    /// Zeilen mit Problemen, aufsteigend
+    lines: Vec<(usize, Severity)>,
+    /// Gilt `problems` fuer den aktuellen Text? (waehrend des Tippens ausgeblendet)
+    shown: bool,
+}
+
 pub struct SqlEditor {
     pub id: egui::Id,
+    /// Struktur der gewaehlten Datenbank (fuer die Pruefung) und alle Datenbanknamen
+    pub schema: Option<Arc<crate::db::Schema>>,
+    pub databases: Vec<String>,
+    lint: LintState,
     layout_cache: SqlLayoutCache,
     popup: Option<Popup>,
     popup_rect: Option<egui::Rect>,
@@ -95,6 +127,9 @@ impl SqlEditor {
     pub fn new(id: egui::Id) -> Self {
         Self {
             id,
+            schema: None,
+            databases: Vec::new(),
+            lint: LintState::default(),
             layout_cache: SqlLayoutCache::default(),
             popup: None,
             popup_rect: None,
@@ -207,6 +242,93 @@ impl SqlEditor {
         }
         items.truncate(60);
         Some(Popup { items, selected: 0, word_start: s, cursor })
+    }
+
+    fn lint_env(&self) -> Env<'_> {
+        Env { schema: self.schema.as_deref(), databases: &self.databases }
+    }
+
+    /// Pruefung auffrischen: erst wenn kurz nicht getippt wurde.
+    fn update_lint(&mut self, ctx: &egui::Context, text: &str) {
+        if !LINT.load(std::sync::atomic::Ordering::Relaxed) {
+            if self.lint.computed {
+                self.lint = LintState::default();
+            }
+            return;
+        }
+        let schema = self.schema.as_ref().map_or(0, |s| Arc::as_ptr(s) as usize);
+        if self.lint.computed && self.lint.schema == schema && self.lint.text == text {
+            self.lint.shown = true;
+            return;
+        }
+        if self.lint.seen != text {
+            self.lint.seen = text.to_string();
+            self.lint.seen_at = Some(Instant::now());
+        }
+        let waited = self.lint.seen_at.map_or(LINT_DELAY, |t| t.elapsed());
+        if self.lint.computed && self.lint.schema == schema && waited < LINT_DELAY {
+            self.lint.shown = false;
+            ctx.request_repaint_after(LINT_DELAY - waited);
+            return;
+        }
+        let problems = lint(text, &self.lint_env());
+        // Zeilenanfaenge einmal bestimmen: Zeile und Ende der Wellenlinie je Problem
+        let mut starts = vec![0usize];
+        let mut n = 0;
+        for (i, c) in text.chars().enumerate() {
+            n = i + 1;
+            if c == '\n' {
+                starts.push(i + 1);
+            }
+        }
+        let mut lines: Vec<(usize, Severity)> = Vec::new();
+        let marks = problems
+            .iter()
+            .map(|p| {
+                let line = starts.partition_point(|&s| s <= p.start).saturating_sub(1);
+                let line_end = starts.get(line + 1).map_or(n, |s| s - 1);
+                match lines.last_mut() {
+                    Some((l, sev)) if *l == line => {
+                        if p.severity == Severity::Error {
+                            *sev = Severity::Error;
+                        }
+                    }
+                    _ => lines.push((line, p.severity)),
+                }
+                (line, p.end.clamp(p.start + 1, line_end.max(p.start + 1)))
+            })
+            .collect();
+        self.lint = LintState { problems, text: text.to_string(), schema, computed: true, seen: String::new(), seen_at: None, marks, lines, shown: true };
+    }
+
+    /// (Fehler, Hinweise, korrigierbar) der aktuell angezeigten Pruefung
+    pub fn lint_summary(&self) -> (usize, usize, usize) {
+        if !self.lint.shown {
+            return (0, 0, 0);
+        }
+        let errors = self.lint.problems.iter().filter(|p| p.severity == Severity::Error).count();
+        let fixable = self.lint.problems.iter().filter(|p| p.fix.is_some()).count();
+        (errors, self.lint.problems.len() - errors, fixable)
+    }
+
+    /// Alle Fehler, fuer die es einen Vorschlag gibt, selbst ausbessern (bis zu dreimal, weil sich nach einer
+    /// Korrektur weitere Fehler zeigen koennen). Liefert die Zahl der Korrekturen.
+    pub fn fix_all(&mut self, text: &mut String) -> usize {
+        let mut total = 0;
+        for _ in 0..3 {
+            let problems = lint(text, &self.lint_env());
+            let (fixed, n) = apply_fixes(text, &problems);
+            if n == 0 {
+                break;
+            }
+            *text = fixed;
+            total += n;
+        }
+        if total > 0 {
+            self.prev_text = text.clone();
+            self.lint.computed = false;
+        }
+        total
     }
 
     /// Oeffnet die Suchleiste (mit markiertem Text als Suchbegriff) bzw. Ersetzen / Gehe zu.
@@ -568,11 +690,16 @@ impl SqlEditor {
             }
         }
 
+        self.update_lint(&ctx, text);
         // Hoehe der Leisten vom Editor abziehen
         let height = (height - (ui.cursor().top() - top0)).max(60.0);
         let lines = text.split('\n').count().max(1);
         let digits = lines.to_string().len().max(2);
         let gutter_w = digits as f32 * 8.0 + 18.0;
+        // Wie in VS Code laesst sich ueber die letzte Zeile hinaus scrollen: unter dem Text bleibt Platz
+        // fuer die Hoehe des Fensters abzueglich einer Zeile.
+        let visible_rows = (((height - 8.0) / row_h).floor().max(3.0)) as usize;
+        let total_rows = lines + visible_rows - 1;
 
         let mut layout_cache = std::mem::take(&mut self.layout_cache);
         let mut layouter = |ui: &egui::Ui, buf: &dyn egui::TextBuffer, _wrap: f32| -> Arc<egui::Galley> {
@@ -582,6 +709,7 @@ impl SqlEditor {
         let frame = egui::Frame::new().fill(pal.bg).stroke(egui::Stroke::new(1.0, pal.border));
         let mut result = None;
         let mut scroll_state: Option<(f32, f32, egui::Rect)> = None;
+        let mut lint_hits: Vec<(egui::Rect, usize)> = Vec::new();
         let find_q = self.find.as_ref().map(|f| (f.query.clone(), f.case));
         frame.show(ui, |ui| {
             ui.set_min_height(height);
@@ -599,7 +727,7 @@ impl SqlEditor {
                     ui.horizontal_top(|ui| {
                         ui.spacing_mut().item_spacing.x = 0.0;
                         let (gutter, _) = ui.allocate_exact_size(
-                            egui::vec2(gutter_w, (lines as f32 * row_h + 8.0).max(height - 4.0)),
+                            egui::vec2(gutter_w, (total_rows as f32 * row_h + 8.0).max(height - 4.0)),
                             egui::Sense::hover(),
                         );
                         // Platzhalter fuer Hintergrund (aktuelle Zeile, Klammern, Treffer)
@@ -611,7 +739,7 @@ impl SqlEditor {
                             .frame(egui::Frame::NONE)
                             .margin(egui::vec2(6.0, 4.0))
                             .desired_width(f32::INFINITY)
-                            .desired_rows(((height - 8.0) / row_h).max(3.0) as usize)
+                            .desired_rows(total_rows)
                             .lock_focus(true)
                             .layouter(&mut layouter);
                         let o = te.show(ui);
@@ -666,6 +794,21 @@ impl SqlEditor {
                             }
                             ui.painter().add(egui::Shape::line(pts, egui::Stroke::new(1.0, pal.error_text)));
                         }
+                        // Pruefung: Wellenlinien unter den Problemen (nur sichtbare Zeilen werden berechnet)
+                        if self.lint.shown {
+                            let clip = ui.clip_rect();
+                            for (k, prob) in self.lint.problems.iter().enumerate() {
+                                let (line, end) = self.lint.marks[k];
+                                let y0 = gp.y + line as f32 * row_h;
+                                if y0 + row_h < clip.top() || y0 > clip.bottom() {
+                                    continue;
+                                }
+                                let (x0, x1) = (pos_of(prob.start).left(), pos_of(end).left().max(pos_of(prob.start).left() + 6.0));
+                                let color = if prob.severity == Severity::Error { pal.error_text } else { pal.warn_text };
+                                ui.painter().add(squiggle(x0, x1, y0 + row_h - 1.0, color));
+                                lint_hits.push((egui::Rect::from_min_max(egui::pos2(x0, y0), egui::pos2(x1, y0 + row_h)), k));
+                            }
+                        }
                         // Zeilennummern
                         let p = ui.painter();
                         p.rect_filled(gutter, 0.0, pal.bg);
@@ -680,6 +823,12 @@ impl SqlEditor {
                             {
                                 let active = cur_line == Some(n - 1);
                                 let err = self.error_line == Some(n - 1);
+                                if self.lint.shown
+                                    && let Ok(k) = self.lint.lines.binary_search_by_key(&(n - 1), |(l, _)| *l)
+                                {
+                                    let color = if self.lint.lines[k].1 == Severity::Error { pal.error_text } else { pal.warn_text };
+                                    p.circle_filled(egui::pos2(gutter.left() + 6.0, gp.y + row.pos.y + row_h / 2.0), 2.5, color);
+                                }
                                 p.text(
                                     egui::pos2(gutter.right() - 8.0, gp.y + row.pos.y),
                                     egui::Align2::RIGHT_TOP,
@@ -705,6 +854,19 @@ impl SqlEditor {
             } else if FOCUSED_EDITOR.load(Ordering::Relaxed) == self.id.value() {
                 FOCUSED_EDITOR.store(0, Ordering::Relaxed);
             }
+        }
+
+        // Hinweis zum Problem unter dem Mauszeiger
+        if let Some(pos) = ctx.pointer_hover_pos()
+            && o.response.response.hovered()
+            && let Some((_, k)) = lint_hits.iter().find(|(r, _)| r.expand2(egui::vec2(0.0, 1.0)).contains(pos))
+        {
+            let prob = &self.lint.problems[*k];
+            let mut tip = prob.message.clone();
+            if let Some(f) = &prob.fix {
+                tip.push_str(&format!("\n\n{}  ({})", crate::tr_format!("Korrigieren: {}", "Fix: {}", if f.text.is_empty() { crate::i18n::text("entfernen").to_string() } else { f.text.clone() }), crate::keymap::text(crate::keymap::Cmd::FixAll)));
+            }
+            o.response.response.clone().on_hover_text_at_pointer(tip);
         }
 
         let cursor = o.cursor_range.map(|r| r.primary.index.0);
@@ -797,6 +959,20 @@ impl SqlEditor {
         }
         out
     }
+}
+
+/// Wellenlinie unter Text von `x0` bis `x1` auf Hoehe `y`
+fn squiggle(x0: f32, x1: f32, y: f32, color: Color32) -> egui::Shape {
+    let mut pts = Vec::new();
+    let mut x = x0;
+    let mut up = true;
+    while x < x1 {
+        pts.push(egui::pos2(x, if up { y - 2.0 } else { y }));
+        x += 2.5;
+        up = !up;
+    }
+    pts.push(egui::pos2(x1, y));
+    egui::Shape::line(pts, egui::Stroke::new(1.2, color))
 }
 
 #[cfg(test)]

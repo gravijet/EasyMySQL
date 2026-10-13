@@ -42,6 +42,7 @@ pub enum Cmd {
     Backups,
     // Editor
     Format,
+    FixAll,
     CopyJava,
     Suggest,
     Find,
@@ -72,7 +73,7 @@ pub const GROUPS: &[(&str, &[Cmd])] = &[
     (
         "Editor",
         &[
-            Format, CopyJava, Suggest, Find, Replace, GotoLine, ToggleComment, CutLine, DuplicateLine, DeleteLine, SelectLine, MoveLineUp, MoveLineDown,
+            Format, FixAll, CopyJava, Suggest, Find, Replace, GotoLine, ToggleComment, CutLine, DuplicateLine, DeleteLine, SelectLine, MoveLineUp, MoveLineDown,
             CopyLineUp, CopyLineDown, Indent, Outdent,
         ],
     ),
@@ -118,6 +119,7 @@ impl Cmd {
             QueryBuilder => "abfrage_assistent",
             Backups => "sicherungen",
             Format => "formatieren",
+            FixAll => "fehler_korrigieren",
             CopyJava => "java_kopieren",
             Suggest => "vorschlaege",
             Find => "suchen",
@@ -171,6 +173,7 @@ impl Cmd {
             QueryBuilder => crate::i18n::text("Abfrage-Assistent"),
             Backups => crate::i18n::text("Sicherungen & Reparatur"),
             Format => crate::i18n::text("SQL formatieren"),
+            FixAll => crate::i18n::text("Fehler automatisch korrigieren"),
             CopyJava => crate::i18n::text("Als Java-Code kopieren"),
             Suggest => crate::i18n::text("Vorschläge"),
             Find => crate::i18n::text("Suchen"),
@@ -231,6 +234,7 @@ impl Cmd {
             QueryBuilder => vec![cs(Key::Q)],
             Backups => vec![],
             Format => vec![ca(Key::L), sa(Key::F)],
+            FixAll => vec![c(Key::Period)],
             CopyJava => vec![],
             Suggest => vec![c(Key::Space)],
             Find => vec![c(Key::F)],

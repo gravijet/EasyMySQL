@@ -512,6 +512,8 @@ pub const CHAPTERS: &[Chapter] = &[
                     ]),
                     P("Unter „Ansicht“: Notation Krähenfuß (mit 1:n / 1:1 / n:m an der Linie), Chen (1, n, m) oder (min,max); Datentypen ein/aus; \
                        Zwischentabellen als direkte n:m-Linie zusammenfassen."),
+                    Tip("Namen von Tabellen und Datenbanken zeigt EasyMySQL so, wie sie beim Erstellen geschrieben wurden (z. B. Spielleitung). \
+                         Eine Tabelle, die schon klein gespeichert ist, ändert man mit RENAME TABLE schueler TO Schueler;"),
                     Keys(&[Cmd::ErDiagram]),
                     Open("ER-Diagramm öffnen", Cmd(Cmd::ErDiagram)),
                 ],
