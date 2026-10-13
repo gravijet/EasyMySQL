@@ -16,6 +16,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, channel};
 use std::time::{Duration, Instant};
 
+/// Hoehe des Ergebnisfensters, wenn nur die Kopfzeile sichtbar ist
+const RESULTS_HEADER: f32 = 34.0;
+
 /// Dateien kurz nach der letzten Aenderung speichern (Einstellungen)
 pub static AUTOSAVE: AtomicBool = AtomicBool::new(true);
 
@@ -25,6 +28,8 @@ pub struct SqlTab {
     /// Datei (None = unbenannte Abfrage, gesichert im Speicherordner)
     pub file: Option<PathBuf>,
     scratch_id: usize,
+    /// Ergebnisfenster eingeklappt (nur Kopfzeile)
+    results_collapsed: bool,
     /// Projektordner, in dem die Datei liegt
     project: Option<PathBuf>,
     pub database: String,
@@ -82,6 +87,7 @@ impl SqlTab {
             project: None,
             database: String::new(),
             text: String::new(),
+            results_collapsed: false,
             saved_text: String::new(),
             last_edit: Instant::now(),
             file_mtime: None,
@@ -352,6 +358,8 @@ impl SqlTab {
     }
 
     fn results_ui(&mut self, ui: &mut egui::Ui, row_h: f32) {
+        let collapsed = self.results_collapsed;
+        let mut toggle = false;
         let pal = style::pal();
         let sets: Vec<(usize, usize, &db::ResultSet)> = self
             .results
@@ -379,11 +387,24 @@ impl SqlTab {
             if self.job.is_some() {
                 ui.spinner();
             }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let (icon, tip) = if collapsed { (Icon::Up, crate::i18n::text("Ergebnisse einblenden")) } else { (Icon::Down, crate::i18n::text("Ergebnisse ausblenden")) };
+                if icons::button(ui, icon, tip).clicked() {
+                    toggle = true;
+                }
+            });
         });
+        if toggle {
+            self.results_collapsed = !self.results_collapsed;
+        }
         if tab != self.res_tab {
             self.grid.reset();
         }
         self.res_tab = tab;
+        // Nur noch die Kopfzeile sichtbar: der Rest hat keinen Platz
+        if collapsed || ui.available_height() < 30.0 {
+            return;
+        }
         if let Some(n) = &self.note {
             ui.label(RichText::new(n).small().color(pal.text_weak));
         }
@@ -728,14 +749,20 @@ impl TabView for SqlTab {
             self.editor.goto_line(&ctx, &self.text, l, font_row);
         }
         // Ergebnisbereich unten (Hoehe verstellbar), Editor darueber
-        egui::Panel::bottom(self.editor.id.with("results"))
-            .resizable(true)
-            .default_size(ui.available_height() * 0.38)
-            .min_size(80.0)
-            .frame(egui::Frame::new().fill(pal.face).inner_margin(egui::Margin::symmetric(4, 4)))
-            .show(ui, |ui| {
-                self.results_ui(ui, font_row);
-            });
+        // Das Ergebnisfenster laesst sich bis auf die Kopfzeile herunterziehen oder mit dem Pfeil einklappen
+        let total = ui.available_height();
+        let panel = if self.results_collapsed {
+            egui::Panel::bottom(self.editor.id.with("results-collapsed")).resizable(false).exact_size(RESULTS_HEADER)
+        } else {
+            egui::Panel::bottom(self.editor.id.with("results"))
+                .resizable(true)
+                .default_size(total * 0.38)
+                .min_size(RESULTS_HEADER)
+                .max_size((total - 90.0).max(RESULTS_HEADER))
+        };
+        panel.frame(egui::Frame::new().fill(pal.face).inner_margin(egui::Margin::symmetric(4, 4))).show(ui, |ui| {
+            self.results_ui(ui, font_row);
+        });
         let h = (ui.available_height() - 4.0).max(100.0);
         let out = self.editor.show(ui, &mut self.text, h);
         self.selection = out.selection.clone();

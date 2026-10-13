@@ -637,6 +637,8 @@ impl Language {
             "Editor-Schrift verkleinern" => "Decrease editor font size",
             "Editor-Schrift zurücksetzen" => "Reset editor font size",
             "Als Java-Code kopieren" => "Copy as Java code",
+            "Ergebnisse einblenden" => "Show results",
+            "Ergebnisse ausblenden" => "Hide results",
             "SQL-Dateien (.sql)" => "SQL files (.sql)",
             "Ein Doppelklick auf eine .sql-Datei öffnet sie in EasyMySQL." => "Double-clicking a .sql file opens it in EasyMySQL.",
             "Mit EasyMySQL verknüpfen" => "Associate with EasyMySQL",
