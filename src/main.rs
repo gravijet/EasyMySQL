@@ -25,7 +25,9 @@ mod workspace;
 use eframe::egui;
 
 fn main() -> eframe::Result {
-    if !platform::single_instance() {
+    // Dateien aus der Kommandozeile (Doppelklick auf eine .sql-Datei) bzw. an die laufende Instanz weitergeben
+    let files: Vec<std::path::PathBuf> = std::env::args_os().skip(1).map(std::path::PathBuf::from).filter(|p| p.is_file()).collect();
+    if !platform::single_instance(&files) {
         return Ok(());
     }
     // Die Oberfläche braucht keine Hochleistungs-Grafikkarte: Die integrierte GPU startet
@@ -56,6 +58,6 @@ fn main() -> eframe::Result {
     eframe::run_native(
         "EasyMySQL",
         options,
-        Box::new(|cc| Ok(Box::new(app::EasyApp::new(cc)))),
+        Box::new(move |cc| Ok(Box::new(app::EasyApp::new(cc, files)))),
     )
 }

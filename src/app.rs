@@ -103,7 +103,7 @@ pub const COLLATIONS: &[&str] = &[
 ];
 
 impl EasyApp {
-    pub fn new(cc: &eframe::CreationContext) -> Self {
+    pub fn new(cc: &eframe::CreationContext, startup_files: Vec<PathBuf>) -> Self {
         let mut settings = Settings::load();
         crate::workspace::set_storage_root(&settings.storage_dir);
         for p in crate::workspace::migrate_legacy() {
@@ -191,6 +191,12 @@ impl EasyApp {
         }
         app.settings.save();
         app.restore_session(session);
+        // Dateien, mit denen EasyMySQL gestartet wurde, oeffnen
+        for f in startup_files {
+            app.open_file(&f);
+        }
+        let ctx = cc.egui_ctx.clone();
+        platform::install_open_hook(Box::new(move || ctx.request_repaint()));
         app
     }
 
@@ -934,6 +940,12 @@ impl eframe::App for EasyApp {
                 TrayCmd::RestartServer => self.restart_server(ctx),
                 TrayCmd::Quit => self.request_quit(ctx),
             }
+        }
+        // Dateien von einer zweiten Instanz (Doppelklick im Explorer)
+        for f in platform::take_opened_files() {
+            self.open_file(&f);
+            ctx.send_viewport_cmd(ViewportCommand::Visible(true));
+            ctx.send_viewport_cmd(ViewportCommand::Focus);
         }
         self.check_server(ctx);
         self.updater.poll(ctx, self.settings.auto_update);

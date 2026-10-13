@@ -2,6 +2,7 @@
 // nur eine laufende Instanz. Auf anderen Systemen (Entwicklung) leer.
 
 use eframe::egui;
+use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -20,11 +21,79 @@ mod imp {
     use tray_icon::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
     use tray_icon::{Icon, MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
     use windows_sys::Win32::Foundation::{GetLastError, HWND};
+    use std::path::PathBuf;
+    use std::sync::{Mutex, OnceLock};
+    use windows_sys::Win32::System::DataExchange::COPYDATASTRUCT;
     use windows_sys::Win32::System::Threading::CreateMutexW;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        FindWindowW, IsIconic, SW_HIDE, SW_RESTORE, SW_SHOW,
-        SetForegroundWindow, ShowWindow,
+        FindWindowW, IsIconic, SMTO_ABORTIFHUNG, SW_HIDE, SW_RESTORE, SW_SHOW,
+        SendMessageTimeoutW, SetForegroundWindow, ShowWindow, WM_COPYDATA,
     };
+
+    /// Kennung der Nachricht, mit der eine zweite Instanz Dateien an die laufende schickt
+    const COPY_MAGIC: usize = 0x454D_5346;
+
+    /// Von anderen Instanzen geschickte Dateien (werden im naechsten Bild geoeffnet)
+    static OPENED: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
+    static OPEN_HOOK: OnceLock<Box<dyn Fn() + Send + Sync>> = OnceLock::new();
+
+    pub fn install_open_hook(f: Box<dyn Fn() + Send + Sync>) {
+        let _ = OPEN_HOOK.set(f);
+    }
+
+    pub fn take_opened() -> Vec<PathBuf> {
+        OPENED.lock().map(|mut q| std::mem::take(&mut *q)).unwrap_or_default()
+    }
+
+    /// Dateien aus der Kommandozeile an die laufende Instanz schicken.
+    fn forward_files(h: HWND, files: &[PathBuf]) {
+        if files.is_empty() {
+            return;
+        }
+        let text = files.iter().map(|p| p.to_string_lossy().into_owned()).collect::<Vec<_>>().join("\n");
+        let wide: Vec<u16> = text.encode_utf16().collect();
+        let data = COPYDATASTRUCT { dwData: COPY_MAGIC, cbData: (wide.len() * 2) as u32, lpData: wide.as_ptr() as *mut core::ffi::c_void };
+        let mut result: usize = 0;
+        unsafe {
+            SendMessageTimeoutW(h, WM_COPYDATA, 0, &data as *const COPYDATASTRUCT as LPARAM, SMTO_ABORTIFHUNG, 3000, &mut result);
+        }
+    }
+
+    /// EasyMySQL fuer .sql-Dateien eintragen (nur fuer den aktuellen Benutzer, ohne Administratorrechte).
+    pub fn register_sql_association() -> Result<(), String> {
+        use std::os::windows::process::CommandExt;
+        let exe = std::env::current_exe().map_err(|e| e.to_string())?.display().to_string();
+        let run = |key: &str, name: Option<&str>, data: &str| -> Result<(), String> {
+            let mut c = std::process::Command::new("reg");
+            c.args(["add", key]);
+            match name {
+                Some(n) => c.args(["/v", n]),
+                None => c.arg("/ve"),
+            };
+            c.args(["/t", "REG_SZ", "/d", data, "/f"]).creation_flags(0x0800_0000);
+            let out = c.output().map_err(|e| e.to_string())?;
+            if out.status.success() { Ok(()) } else { Err(String::from_utf8_lossy(&out.stderr).trim().to_string()) }
+        };
+        run(r"HKCU\Software\Classes\EasyMySQL.sql", None, "SQL")?;
+        run(r"HKCU\Software\Classes\EasyMySQL.sql\DefaultIcon", None, &format!("\"{exe}\",0"))?;
+        run(r"HKCU\Software\Classes\EasyMySQL.sql\shell\open\command", None, &format!("\"{exe}\" \"%1\""))?;
+        run(r"HKCU\Software\Classes\.sql", None, "EasyMySQL.sql")?;
+        run(r"HKCU\Software\Classes\.sql\OpenWithProgids", Some("EasyMySQL.sql"), "")?;
+        unsafe {
+            windows_sys::Win32::UI::Shell::SHChangeNotify(
+                windows_sys::Win32::UI::Shell::SHCNE_ASSOCCHANGED as i32,
+                windows_sys::Win32::UI::Shell::SHCNF_IDLIST,
+                std::ptr::null(),
+                std::ptr::null(),
+            );
+        }
+        Ok(())
+    }
+
+    /// Windows-Einstellungen "Standard-Apps" oeffnen
+    pub fn open_default_apps() {
+        let _ = std::process::Command::new("explorer").arg("ms-settings:defaultapps").spawn();
+    }
 
     const ERROR_ALREADY_EXISTS: u32 = 183;
 
@@ -50,7 +119,7 @@ mod imp {
     }
 
     /// true = diese Instanz darf laufen. Sonst wird das vorhandene Fenster gezeigt.
-    pub fn single_instance() -> bool {
+    pub fn single_instance(files: &[PathBuf]) -> bool {
         unsafe {
             let name = wide("Local\\EasyMySQL_Einzelinstanz");
             let _m = CreateMutexW(std::ptr::null(), 0, name.as_ptr());
@@ -58,6 +127,7 @@ mod imp {
                 let title = wide("EasyMySQL");
                 let h = FindWindowW(std::ptr::null(), title.as_ptr());
                 if !h.is_null() {
+                    forward_files(h, files);
                     show_window(h as isize);
                 }
                 return false;
@@ -93,6 +163,21 @@ mod imp {
                     let reason = wide(crate::i18n::text("EasyMySQL beendet die Datenbank sicher ..."));
                     ShutdownBlockReasonCreate(hwnd, reason.as_ptr());
                     1
+                }
+                WM_COPYDATA => {
+                    let data = lparam as *const COPYDATASTRUCT;
+                    if !data.is_null() && (*data).dwData == COPY_MAGIC && !(*data).lpData.is_null() {
+                        let units = std::slice::from_raw_parts((*data).lpData as *const u16, (*data).cbData as usize / 2);
+                        let text = String::from_utf16_lossy(units);
+                        if let Ok(mut queue) = OPENED.lock() {
+                            queue.extend(text.lines().filter(|l| !l.is_empty()).map(PathBuf::from));
+                        }
+                        if let Some(f) = OPEN_HOOK.get() {
+                            f();
+                        }
+                        return 1;
+                    }
+                    DefSubclassProc(hwnd, msg, wparam, lparam)
                 }
                 WM_ENDSESSION => {
                     if wparam != 0 {
@@ -175,14 +260,53 @@ pub use imp::Tray;
 #[cfg(not(windows))]
 pub struct Tray;
 
-pub fn single_instance() -> bool {
+/// true = diese Instanz darf laufen. Sonst wurden `files` an die laufende Instanz weitergegeben.
+pub fn single_instance(files: &[PathBuf]) -> bool {
     #[cfg(windows)]
     {
-        imp::single_instance()
+        imp::single_instance(files)
     }
     #[cfg(not(windows))]
     {
+        let _ = files;
         true
+    }
+}
+
+/// Dateien, die eine zweite Instanz (Doppelklick im Explorer) an diese geschickt hat
+pub fn take_opened_files() -> Vec<PathBuf> {
+    #[cfg(windows)]
+    {
+        imp::take_opened()
+    }
+    #[cfg(not(windows))]
+    {
+        Vec::new()
+    }
+}
+
+/// `f` aufrufen, sobald Dateien von einer zweiten Instanz eintreffen (fuer ein neues Bild)
+pub fn install_open_hook(f: Box<dyn Fn() + Send + Sync>) {
+    #[cfg(windows)]
+    imp::install_open_hook(f);
+    #[cfg(not(windows))]
+    let _ = f;
+}
+
+/// Ist die Verknuepfung mit .sql-Dateien in dieser Version moeglich?
+pub const CAN_ASSOCIATE: bool = cfg!(windows);
+
+/// EasyMySQL als Programm fuer .sql-Dateien eintragen und die Windows-Einstellung dazu zeigen.
+pub fn register_sql_association() -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        imp::register_sql_association()?;
+        imp::open_default_apps();
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    {
+        Err(crate::i18n::text("Nur unter Windows verfügbar.").into())
     }
 }
 

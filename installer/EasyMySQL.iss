@@ -37,6 +37,7 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=admin
 ChangesEnvironment=yes
+ChangesAssociations=yes
 LanguageDetectionMethod=none
 UsePreviousLanguage=no
 ShowLanguageDialog=yes
@@ -50,6 +51,9 @@ Name: "german"; MessagesFile: "compiler:Languages\German.isl"
 
 [CustomMessages]
 english.DesktopTask=Create a desktop shortcut
+english.AssocTask=Open .sql files with EasyMySQL (double-click)
+english.SqlFileType=SQL file
+english.AssocDescription=SQL editor and MariaDB manager
 english.ShortcutGroup=Additional shortcuts:
 english.OdbcTask=Install the MariaDB ODBC driver and create the "EasyMySQL" data source (for Excel, Access, LibreOffice ...)
 english.DriverGroup=Drivers:
@@ -60,6 +64,9 @@ english.LaunchApp=Launch EasyMySQL now
 english.Uninstalled=EasyMySQL has been removed.
 english.DatabasesKept=Your databases have been preserved. They are still located in:
 german.DesktopTask=Desktop-Verknüpfung erstellen
+german.AssocTask=.sql-Dateien mit EasyMySQL öffnen (Doppelklick)
+german.SqlFileType=SQL-Datei
+german.AssocDescription=SQL-Editor und MariaDB-Verwaltung
 german.ShortcutGroup=Zusätzliche Verknüpfungen:
 german.OdbcTask=MariaDB ODBC-Treiber installieren und Datenquelle "EasyMySQL" anlegen (für Excel, Access, LibreOffice ...)
 german.DriverGroup=Treiber:
@@ -72,6 +79,7 @@ german.DatabasesKept=Ihre Datenbanken wurden erhalten. Sie liegen weiterhin in:
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:DesktopTask}"; GroupDescription: "{cm:ShortcutGroup}"
+Name: "assoc"; Description: "{cm:AssocTask}"; GroupDescription: "{cm:ShortcutGroup}"
 #if HaveOdbc
 Name: "odbc"; Description: "{cm:OdbcTask}"; GroupDescription: "{cm:DriverGroup}"
 #endif
@@ -100,6 +108,16 @@ Name: "{autoprograms}\{cm:ConsoleShortcut}"; Filename: "{cmd}"; Parameters: "/k 
 Name: "{autodesktop}\EasyMySQL"; Filename: "{app}\EasyMySQL.exe"; Tasks: desktopicon
 
 [Registry]
+; .sql files: EasyMySQL is always offered under "Open with" and in Default apps; the task makes it the default.
+Root: HKLM; Subkey: "Software\Classes\EasyMySQL.sql"; ValueType: string; ValueData: "{cm:SqlFileType}"; Flags: uninsdeletekey
+Root: HKLM; Subkey: "Software\Classes\EasyMySQL.sql\DefaultIcon"; ValueType: string; ValueData: "{app}\EasyMySQL.exe,0"
+Root: HKLM; Subkey: "Software\Classes\EasyMySQL.sql\shell\open\command"; ValueType: string; ValueData: """{app}\EasyMySQL.exe"" ""%1"""
+Root: HKLM; Subkey: "Software\Classes\.sql\OpenWithProgids"; ValueType: string; ValueName: "EasyMySQL.sql"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKLM; Subkey: "Software\Classes\.sql"; ValueType: string; ValueData: "EasyMySQL.sql"; Flags: uninsdeletevalue; Tasks: assoc
+Root: HKLM; Subkey: "Software\EasyMySQL\Capabilities"; ValueType: string; ValueName: "ApplicationName"; ValueData: "EasyMySQL"; Flags: uninsdeletekey
+Root: HKLM; Subkey: "Software\EasyMySQL\Capabilities"; ValueType: string; ValueName: "ApplicationDescription"; ValueData: "{cm:AssocDescription}"
+Root: HKLM; Subkey: "Software\EasyMySQL\Capabilities\FileAssociations"; ValueType: string; ValueName: ".sql"; ValueData: "EasyMySQL.sql"
+Root: HKLM; Subkey: "Software\RegisteredApplications"; ValueType: string; ValueName: "EasyMySQL"; ValueData: "Software\EasyMySQL\Capabilities"; Flags: uninsdeletevalue
 ; Make mysql, mysqldump and mariadb available in Command Prompt.
 Root: HKLM; Subkey: "SYSTEM\CurrentControlSet\Control\Session Manager\Environment"; ValueType: expandsz; ValueName: "Path"; ValueData: "{olddata};{app}\mariadb\bin"; Check: NeedsAddPath(ExpandConstant('{app}\mariadb\bin'))
 Root: HKLM; Subkey: "SYSTEM\CurrentControlSet\Control\Session Manager\Environment"; ValueType: string; ValueName: "EASYMYSQL_HOME"; ValueData: "{app}"; Flags: uninsdeletevalue

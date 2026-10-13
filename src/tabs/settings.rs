@@ -21,6 +21,7 @@ pub const SECTIONS: &[(&str, &str)] = &[
     ("editor", "Editor"),
     ("maus", "Maus"),
     ("speicherorte", "Speicherorte"),
+    ("dateien", "Dateien"),
     ("verbindung", "Verbindung"),
     ("server", "Server"),
     ("sicherungen", "Sicherungen"),
@@ -378,6 +379,25 @@ impl TabView for SettingsTab {
                             }
                         });
                     });
+                }
+
+                self.heading(ui, "dateien", crate::i18n::text("Dateien"));
+                let mut associate = false;
+                grid(ui, "g-files", &mut |ui| {
+                    ui.label(crate::i18n::text("SQL-Dateien (.sql)"));
+                    ui.vertical(|ui| {
+                        ui.label(RichText::new(crate::i18n::text("Ein Doppelklick auf eine .sql-Datei öffnet sie in EasyMySQL.")).color(style::pal().text_weak));
+                        if crate::platform::CAN_ASSOCIATE && ui.button(crate::i18n::text("Mit EasyMySQL verknüpfen")).clicked() {
+                            associate = true;
+                        }
+                    });
+                    ui.end_row();
+                });
+                if associate {
+                    match crate::platform::register_sql_association() {
+                        Ok(()) => cx.actions.push(Action::Status(crate::i18n::text("Verknüpft. Falls Windows ein anderes Programm bevorzugt, hier EasyMySQL für .sql wählen.").into())),
+                        Err(e) => cx.actions.push(Action::Error(e)),
+                    }
                 }
 
                 self.heading(ui, "verbindung", crate::i18n::text("Verbindung"));
