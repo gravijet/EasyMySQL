@@ -212,6 +212,7 @@ impl TabView for SettingsTab {
         });
         let jumping = self.goto.is_some();
         let mut offset = 0.0;
+        crate::tabs::page_keys(ui);
         let body = egui::ScrollArea::vertical().id_salt("settings").auto_shrink([false, false]).show_viewport(ui, |ui, viewport| {
             offset = viewport.min.y;
             egui::Frame::new().inner_margin(egui::Margin::symmetric(28, 12)).show(ui, |ui| {

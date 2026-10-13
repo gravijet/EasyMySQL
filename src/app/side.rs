@@ -261,6 +261,7 @@ impl EasyApp {
         }
         let mut open: Option<PathBuf> = None;
         let mut dlg: Option<ExplorerDlg> = None;
+        crate::tabs::page_keys(ui);
         egui::ScrollArea::vertical().id_salt("explorer").auto_shrink([false, false]).show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 0.0;
             for n in &tree.children {
@@ -374,6 +375,7 @@ impl EasyApp {
             ui.label(RichText::new(t).small().color(pal.text_weak));
         });
         let project = self.project.clone().unwrap_or_default();
+        crate::tabs::page_keys(ui);
         egui::ScrollArea::vertical().id_salt("searchres").auto_shrink([false, false]).show(ui, |ui| {
             for (f, hits) in &self.search.results {
                 let rel = f.strip_prefix(&project).unwrap_or(f).to_string_lossy().replace('\\', "/");
@@ -417,6 +419,7 @@ impl EasyApp {
             .filter(|e| f.is_empty() || e.sql.to_lowercase().contains(&f) || e.db.to_lowercase().contains(&f))
             .collect();
         let row_h = 38.0;
+        crate::tabs::page_keys(ui);
         egui::ScrollArea::vertical().id_salt("history").auto_shrink([false, false]).show_rows(ui, row_h, items.len(), |ui, range| {
             for e in &items[range] {
                 let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), row_h), Sense::click());
@@ -488,6 +491,7 @@ impl EasyApp {
         let conn = self.settings.conn.clone();
         let mut dialogs = Vec::new();
         let pal = style::pal();
+        crate::tabs::page_keys(ui);
         egui::ScrollArea::both().id_salt("tree").auto_shrink([false, false]).show(ui, |ui| {
             for d in &self.databases {
                 let sys = db::SYSTEM_DATABASES.contains(&d.as_str());

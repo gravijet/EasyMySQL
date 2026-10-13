@@ -414,6 +414,7 @@ impl TabView for SafetyTab {
         if self.job.is_some() {
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(200));
         }
+        super::page_keys(ui);
         egui::ScrollArea::vertical().id_salt("safetyscroll").show(ui, |ui| {
             ui.heading(crate::i18n::text("Sicherungen"));
             style::group_frame().show(ui, |ui| {

@@ -409,6 +409,7 @@ impl TabView for StructureTab {
         });
         ui.add_space(4.0);
 
+        super::page_keys(ui);
         egui::ScrollArea::vertical().id_salt(("structscroll", &self.table)).show(ui, |ui| {
             ui.label(RichText::new(crate::i18n::text("Spalten")).strong());
             style::sunken_frame().show(ui, |ui| {

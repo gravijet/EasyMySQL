@@ -256,6 +256,7 @@ impl TabView for HelpTab {
         let jumping = self.goto.is_some();
         let mut offset = 0.0;
         let mut headings = Vec::new();
+        crate::tabs::page_keys(ui);
         let body = egui::ScrollArea::vertical().id_salt(("help-body", self.chapter, query.is_empty())).auto_shrink([false, false]).show_viewport(ui, |ui, viewport| {
             offset = viewport.min.y;
             egui::Frame::new().inner_margin(egui::Margin::symmetric(28, 12)).show(ui, |ui| {

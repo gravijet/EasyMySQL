@@ -170,6 +170,36 @@ impl Ctx<'_> {
     }
 }
 
+/// Bild-rauf/-runter sowie Pos1/Ende scrollen den Bereich, der gleich danach folgt (umgebende oder naechste
+/// `ScrollArea`), solange kein Textfeld getippt wird und die Maus ueber dem Bereich ist.
+pub fn page_keys(ui: &egui::Ui) {
+    let ctx = ui.ctx();
+    if ctx.egui_wants_keyboard_input() {
+        return;
+    }
+    let area = ui.max_rect().intersect(ui.clip_rect());
+    if ctx.pointer_hover_pos().is_some_and(|p| !area.contains(p)) {
+        return;
+    }
+    let page = (area.height() - 30.0).max(40.0);
+    let (up, down, home, end) = ctx.input_mut(|i| {
+        let n = egui::Modifiers::NONE;
+        (i.consume_key(n, egui::Key::PageUp), i.consume_key(n, egui::Key::PageDown), i.consume_key(n, egui::Key::Home), i.consume_key(n, egui::Key::End))
+    });
+    let delta = if up {
+        page
+    } else if down {
+        -page
+    } else if home {
+        1.0e7
+    } else if end {
+        -1.0e7
+    } else {
+        return;
+    };
+    ui.scroll_with_delta(egui::vec2(0.0, delta));
+}
+
 /// Einzeiliges Namensfeld: beim Oeffnen ist der Name markiert (bei `keep_extension` ohne Endung),
 /// sodass man sofort lostippen kann.
 pub fn name_field(ui: &mut egui::Ui, id: egui::Id, text: &mut String, width: f32, keep_extension: bool) -> egui::Response {

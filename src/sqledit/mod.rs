@@ -95,6 +95,8 @@ struct LintState {
 
 pub struct SqlEditor {
     pub id: egui::Id,
+    /// Ansicht (Zeilen je Seite, Zeilenhoehe, Scrollstand, Inhalts- und Fensterhoehe) fuer Bild rauf/runter
+    view: (usize, f32, f32, f32, f32),
     /// Struktur der gewaehlten Datenbank (fuer die Pruefung) und alle Datenbanknamen
     pub schema: Option<Arc<crate::db::Schema>>,
     pub databases: Vec<String>,
@@ -127,6 +129,7 @@ impl SqlEditor {
     pub fn new(id: egui::Id) -> Self {
         Self {
             id,
+            view: (10, 16.0, 0.0, 0.0, 0.0),
             schema: None,
             databases: Vec::new(),
             lint: LintState::default(),
@@ -348,6 +351,22 @@ impl SqlEditor {
         self.goto = Some((String::new(), true));
     }
 
+    /// Cursor um eine Seite nach oben/unten und die Ansicht gleich weit mitnehmen.
+    fn page_move(&mut self, ctx: &egui::Context, text: &str, dir: i64, extend: bool) {
+        let Some(st) = egui::TextEdit::load_state(ctx, self.id) else { return };
+        let Some(range) = st.cursor.char_range() else { return };
+        let (primary, secondary) = (range.primary.index.0, range.secondary.index.0);
+        let (line, col) = line_col(text, primary);
+        let (rows, row_h, offset, content, view) = self.view;
+        let step = rows.saturating_sub(1).max(1) as i64;
+        let last = text.split('\n').count() as i64 - 1;
+        let target = (line as i64 + dir * step).clamp(0, last.max(0)) as usize;
+        let len = text.split('\n').nth(target).map_or(0, |l| l.chars().count());
+        let pos = line_start(text, target) + col.min(len);
+        self.set_selection(ctx, if extend { secondary } else { pos }, pos);
+        self.scroll_to = Some((offset + dir as f32 * step as f32 * row_h).clamp(0.0, (content - view).max(0.0)));
+    }
+
     /// Tastenkuerzel, die den Text veraendern (vor dem Zeichnen des Editors).
     fn handle_keys(&mut self, ui: &mut egui::Ui, text: &mut String, out: &mut EditorOutput) {
         use crate::keymap::{Cmd, take};
@@ -363,6 +382,17 @@ impl SqlEditor {
         }
         if take(ui, Cmd::Format) {
             out.format = true;
+        }
+
+        // Bild rauf/runter: Cursor und Ansicht um eine Seite verschieben (mit Umschalt: Auswahl erweitern)
+        for (key, dir) in [(Key::PageUp, -1i64), (Key::PageDown, 1)] {
+            for extend in [false, true] {
+                let mods = if extend { Modifiers::SHIFT } else { Modifiers::NONE };
+                if ui.input_mut(|i| i.consume_key(mods, key)) {
+                    self.popup = None;
+                    self.page_move(&ctx, text, dir, extend);
+                }
+            }
         }
 
         let Some((a, b)) = self.selection(&ctx) else { return };
@@ -700,6 +730,8 @@ impl SqlEditor {
         // fuer die Hoehe des Fensters abzueglich einer Zeile.
         let visible_rows = (((height - 8.0) / row_h).floor().max(3.0)) as usize;
         let total_rows = lines + visible_rows - 1;
+        self.view.0 = visible_rows;
+        self.view.1 = row_h;
 
         let mut layout_cache = std::mem::take(&mut self.layout_cache);
         let mut layouter = |ui: &egui::Ui, buf: &dyn egui::TextBuffer, _wrap: f32| -> Arc<egui::Galley> {
@@ -842,6 +874,9 @@ impl SqlEditor {
                     });
                 });
                 scroll_state = Some((so.state.offset.y, so.content_size.y, so.inner_rect));
+                self.view.2 = so.state.offset.y;
+                self.view.3 = so.content_size.y;
+                self.view.4 = so.inner_rect.height();
 
             });
         });

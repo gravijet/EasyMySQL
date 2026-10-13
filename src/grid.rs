@@ -62,6 +62,7 @@ pub fn show(
 
     style::sunken_frame().show(ui, |ui| {
         ui.set_min_size(ui.available_size());
+        crate::tabs::page_keys(ui);
         let mut tb = TableBuilder::new(ui)
             .id_salt(id)
             .striped(true)

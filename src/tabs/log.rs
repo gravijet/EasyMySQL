@@ -146,6 +146,7 @@ impl TabView for LogTab {
         let row_h = ui.text_style_height(&egui::TextStyle::Monospace);
         style::sunken_frame().show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 0.0;
+            super::page_keys(ui);
             egui::ScrollArea::both().stick_to_bottom(true).auto_shrink([false, false]).show_rows(ui, row_h, self.visible_rows.len(), |ui, range| {
                 for &index in &self.visible_rows[range] {
                     let l = &self.cache[index];
