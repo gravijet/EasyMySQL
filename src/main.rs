@@ -15,6 +15,7 @@ mod platform;
 mod qhistory;
 mod server;
 mod settings;
+mod ssh;
 mod sqledit;
 mod sqlfmt;
 mod style;
@@ -27,6 +28,10 @@ mod workspace;
 use eframe::egui;
 
 fn main() -> eframe::Result {
+    // ssh startet dieses Programm als Passwortabfrage (SSH_ASKPASS)
+    if ssh::answer_askpass() {
+        return Ok(());
+    }
     // Dateien aus der Kommandozeile (Doppelklick auf eine .sql-Datei) bzw. an die laufende Instanz weitergeben
     let files: Vec<std::path::PathBuf> = std::env::args_os().skip(1).map(std::path::PathBuf::from).filter(|p| p.is_file()).collect();
     if !platform::single_instance(&files) {

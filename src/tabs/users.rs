@@ -66,8 +66,8 @@ impl UsersTab {
     }
 
     fn reload(&mut self, cx: &mut Ctx) {
-        self.loaded = true;
         let Some(dbc) = cx.db else { return };
+        self.loaded = true;
         match dbc.accounts() {
             Ok(a) => {
                 self.error = None;

@@ -35,6 +35,7 @@ pub struct SettingsTab {
     pinned_section: bool,
     headings: Vec<(String, f32)>,
     conn: Option<(ConnInfo, bool)>,
+    ssh: Option<crate::ssh::SshConfig>,
     keymap: Keymap,
     key_filter: String,
     /// Aufzeichnung: (Befehl, Index der Belegung; None = neue hinzufuegen)
@@ -53,6 +54,7 @@ impl SettingsTab {
             pinned_section: false,
             headings: Vec::new(),
             conn: None,
+            ssh: None,
             keymap: keymap::current(),
             key_filter: String::new(),
             record: None,
@@ -423,14 +425,47 @@ impl TabView for SettingsTab {
                     ui.checkbox(save_pw, crate::i18n::text("Passwort speichern"));
                     ui.end_row();
                 });
+                let ssh = self.ssh.get_or_insert_with(|| s.ssh.clone());
+                ui.checkbox(&mut ssh.enabled, crate::i18n::tr("Über SSH-Tunnel verbinden", "Connect through an SSH tunnel")).on_hover_text(crate::i18n::tr(
+                    "Server und Port oben gelten dann aus Sicht des SSH-Servers (meist 127.0.0.1).",
+                    "Server and port above then apply as seen from the SSH server (usually 127.0.0.1).",
+                ));
+                if ssh.enabled {
+                    grid(ui, "g-ssh", &mut |ui| {
+                        ui.label(crate::i18n::tr("SSH-Server", "SSH server"));
+                        ui.text_edit_singleline(&mut ssh.host);
+                        ui.end_row();
+                        ui.label("SSH-Port");
+                        ui.add(egui::DragValue::new(&mut ssh.port).range(1..=65535));
+                        ui.end_row();
+                        ui.label(crate::i18n::text("Benutzer"));
+                        ui.text_edit_singleline(&mut ssh.user);
+                        ui.end_row();
+                        ui.label(crate::i18n::tr("Schlüsseldatei", "Key file"));
+                        ui.horizontal(|ui| {
+                            ui.add(egui::TextEdit::singleline(&mut ssh.key).hint_text(crate::i18n::tr("leer = ssh-Agent", "empty = ssh agent")));
+                            if crate::icons::button(ui, crate::icons::Icon::File, crate::i18n::tr("Datei wählen …", "Choose file …")).clicked()
+                                && let Some(p) = rfd::FileDialog::new().pick_file()
+                            {
+                                ssh.key = p.to_string_lossy().into_owned();
+                            }
+                        });
+                        ui.end_row();
+                        ui.label(crate::i18n::text("Passwort"));
+                        ui.add(egui::TextEdit::singleline(&mut ssh.password).password(true).hint_text(crate::i18n::tr("nur ohne Schlüssel", "only without a key")));
+                        ui.end_row();
+                    });
+                }
                 ui.horizontal(|ui| {
                     if ui.button(crate::i18n::text("Verbinden")).clicked() {
                         s.conn = info.clone();
                         s.save_password = *save_pw;
+                        s.ssh = ssh.clone();
                         cx.actions.push(Action::Connect);
                     }
                     if ui.button(crate::i18n::text("Standard")).clicked() {
                         *info = ConnInfo::default();
+                        *ssh = Default::default();
                     }
                     let connected = cx.db.map(|d| d.info.label()).unwrap_or_else(|| crate::i18n::text("nicht verbunden").into());
                     ui.label(RichText::new(connected).color(pal.text_weak));

@@ -6,6 +6,8 @@ use std::path::PathBuf;
 #[derive(Clone, Debug, PartialEq)]
 pub struct Settings {
     pub conn: ConnInfo,
+    /// Verbindung ueber einen SSH-Tunnel; Server und Port von `conn` gelten dann aus Sicht des SSH-Servers
+    pub ssh: crate::ssh::SshConfig,
     pub language: crate::i18n::Language,
     pub dark: bool,
     pub save_password: bool,
@@ -47,6 +49,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             conn: ConnInfo::default(),
+            ssh: Default::default(),
             language: crate::i18n::Language::English,
             dark: true,
             save_password: false,
@@ -84,6 +87,12 @@ impl Settings {
                 "port" => s.conn.port = v.parse().unwrap_or(3306),
                 "user" => s.conn.user = v,
                 "password" => s.conn.password = v,
+                "ssh" => s.ssh.enabled = on,
+                "ssh_host" => s.ssh.host = v,
+                "ssh_port" => s.ssh.port = v.parse().unwrap_or(22),
+                "ssh_user" => s.ssh.user = v,
+                "ssh_key" => s.ssh.key = v,
+                "ssh_password" => s.ssh.password = v,
                 "save_password" => s.save_password = on,
                 "show_system_dbs" => s.show_system_dbs = on,
                 "auto_update" => s.auto_update = on,
@@ -133,8 +142,10 @@ impl Settings {
         for r in &self.recent {
             text.push_str(&format!("recent={}\n", r.display()));
         }
+        let s = &self.ssh;
+        text.push_str(&format!("ssh={}\nssh_host={}\nssh_port={}\nssh_user={}\nssh_key={}\n", b(s.enabled), s.host, s.port, s.user, s.key));
         if self.save_password {
-            text.push_str(&format!("password={}\n", self.conn.password));
+            text.push_str(&format!("password={}\nssh_password={}\n", self.conn.password, s.password));
         }
         text
     }
