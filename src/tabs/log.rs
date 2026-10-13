@@ -98,7 +98,6 @@ impl TabView for LogTab {
             let mut on = cx.settings.query_log;
             if ui
                 .checkbox(&mut on, crate::i18n::text("Alle Anweisungen mitschreiben"))
-                .on_hover_text(crate::i18n::text("Schreibt jede Anweisung an den Server mit – auch aus der Eingabeaufforderung (mysql) und anderen Programmen."))
                 .changed()
             {
                 cx.settings.query_log = on;
@@ -107,15 +106,14 @@ impl TabView for LogTab {
                     self.filter = Filter::Queries;
                 }
             }
-            ui.checkbox(&mut self.hide_internal, crate::i18n::text("Interne ausblenden"))
-                .on_hover_text(crate::i18n::text("Anweisungen ausblenden, die EasyMySQL selbst sendet (Struktur lesen, Verbindungen)"));
-            ui.checkbox(&mut self.show_old, crate::i18n::text("Frühere Sitzungen")).on_hover_text(crate::i18n::text("Meldungen vor dem letzten Start (aus server.log)"));
+            ui.checkbox(&mut self.hide_internal, crate::i18n::text("Interne ausblenden"));
+            ui.checkbox(&mut self.show_old, crate::i18n::text("Frühere Sitzungen"));
             ui.separator();
             if ui.button(crate::i18n::text("Kopieren")).clicked() {
                 let text: Vec<String> = self.cache.iter().filter(|l| self.visible(l)).map(|l| format!("{}  {}", l.time, l.text)).collect();
                 ui.ctx().copy_text(text.join("\n"));
             }
-            if ui.button(crate::i18n::text("Leeren")).on_hover_text(crate::i18n::text("Nur die Anzeige leeren; die Datei bleibt erhalten")).clicked() {
+            if ui.button(crate::i18n::text("Leeren")).clicked() {
                 self.cleared_at = Some(self.cache.len());
             }
             ui.menu_button(crate::i18n::text("Dateien"), |ui| {

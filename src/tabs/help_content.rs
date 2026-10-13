@@ -127,9 +127,7 @@ pub const CHAPTERS: &[Chapter] = &[
                        USB-Stick oder in einem Cloud-Ordner."),
                     List(&[
                         "Datei → Ordner öffnen: vorhandenen Ordner als Projekt öffnen.",
-                        "Datei → Neues Projekt: legt einen neuen Ordner im Speicherordner an und öffnet ihn.",
                         "Datei → Zuletzt geöffnet: die letzten zwölf Projekte.",
-                        "Datei → Ordner schließen: kein Projekt geöffnet, der Explorer zeigt dann nur die Knöpfe zum Öffnen.",
                         "Das Menü mit den drei Punkten im Explorer bietet dasselbe.",
                     ]),
                     Keys(&[Cmd::OpenFolder]),
@@ -165,7 +163,7 @@ pub const CHAPTERS: &[Chapter] = &[
                         "Unbenannte Abfragen (Neue Abfrage) werden ebenfalls laufend gesichert und sind nach einem Neustart wieder da. Leere unbenannte Abfragen verschwinden beim Schließen.",
                         "Speichern bei einer unbenannten Abfrage fragt nach einem Namen und legt die Datei im Projekt an („Anderer Ort …“ für einen beliebigen Ordner).",
                         "Frühere Fassungen (Menü mit den drei Punkten in der Datei): höchstens alle 5 Minuten wird der vorherige Stand aufbewahrt, bis zu 50 je Datei. „Wiederherstellen“ setzt den Text zurück.",
-                        "Wird eine offene Datei außerhalb geändert (z. B. in VS Code), übernimmt EasyMySQL den neuen Inhalt automatisch.",
+                        "Wird eine offene Datei außerhalb geändert, übernimmt EasyMySQL den neuen Inhalt automatisch.",
                     ]),
                     Keys(&[Cmd::Save, Cmd::SaveAll, Cmd::NewQuery, Cmd::OpenFile]),
                 ],
@@ -192,8 +190,6 @@ pub const CHAPTERS: &[Chapter] = &[
                     P("Eine Datei darf beliebig viele Anweisungen enthalten, getrennt durch Semikolon."),
                     Table(&[
                         ("Ausführen", "die ganze Datei – oder nur den markierten Teil"),
-                        ("Anweisung", "nur die Anweisung, in der der Cursor steht"),
-                        ("Plan", "EXPLAIN der Anweisung am Cursor (bzw. der Markierung): wie MariaDB die Abfrage abarbeitet, welche Indizes benutzt werden"),
                     ]),
                     Keys(&[Cmd::RunAll, Cmd::RunStatement, Cmd::Explain]),
                     P("Oben links in der Datei steht die Datenbank, in der ausgeführt wird. Sie wird je Datei gemerkt. Ein „USE name;“ im Skript wechselt sie ebenfalls."),
@@ -296,7 +292,6 @@ pub const CHAPTERS: &[Chapter] = &[
                         "Die Scrollgeschwindigkeit des Mausrads ist einstellbar (Standard 1,5-fach).",
                         "Mittlere Maustaste (Mausrad) gedrückt halten und die Maus bewegen: die Ansicht scrollt in diese Richtung, je weiter vom Ausgangspunkt, desto schneller. Loslassen beendet das Scrollen.",
                         "Im ER-Diagramm verschiebt die mittlere Maustaste stattdessen die Ansicht, auf Registerkarten schließt ein Mittelklick.",
-                        "Die Minimap rechts im Editor: Klicken oder Ziehen springt an die Stelle.",
                     ]),
                     Open("Maus-Einstellungen", Settings("maus")),
                 ],
@@ -537,15 +532,14 @@ pub const CHAPTERS: &[Chapter] = &[
                 id: "er-linien",
                 title: "Beziehungen hinzufügen und entfernen",
                 blocks: &[
-                    P("Hinzufügen – drei Wege:"),
+                    P("Hinzufügen – zwei Wege:"),
                     List(&[
                         "Maus über eine Tabelle: rechts neben jeder Spalte erscheint ein Punkt. Vom Punkt auf die Zielspalte (meist id) ziehen.",
-                        "„Verbinden“ einschalten: dann lässt sich von jeder Spalte ziehen, ohne den Punkt zu treffen. Esc beendet den Modus.",
                         "„+ Beziehung“: Tabellen und Spalten aus Listen wählen.",
                     ]),
                     P("Danach wird die Art gewählt: 1:n legt einen Fremdschlüssel an, 1:1 macht die Spalte zusätzlich eindeutig, n:m legt eine Zwischentabelle mit \
                        beiden Schlüsseln an. Unterscheiden sich die Datentypen, erscheint ein Hinweis."),
-                    P("Entfernen: Linie anklicken (sie wird dick hervorgehoben) und Entf drücken oder „Beziehung löschen“, oder Rechtsklick auf die Linie. \
+                    P("Entfernen: Linie anklicken und Entf drücken, oder Rechtsklick auf die Linie. \
                        Bei n:m-Linien wird die Zwischentabelle gelöscht – vorher wird automatisch gesichert."),
                 ],
             },
@@ -579,7 +573,6 @@ pub const CHAPTERS: &[Chapter] = &[
                     List(&[
                         "Server → Starten, Stoppen, Neu starten.",
                         "Läuft auf Port 3306 schon ein anderer Datenbankserver, verwendet EasyMySQL diesen („externer Server“) und startet keinen eigenen.",
-                        "Server → Datenordner öffnen zeigt die Datenbankdateien. Bitte dort nichts von Hand ändern, solange der Server läuft.",
                         "Nach einem Update auf eine neuere MariaDB-Version werden die Systemtabellen beim Start automatisch angepasst.",
                     ]),
                 ],
@@ -657,7 +650,6 @@ pub const CHAPTERS: &[Chapter] = &[
                         ("Updates", "beim Start und alle sechs Stunden nach neuen Versionen suchen; Download und Installation selbst starten"),
                         ("Systemdatenbanken zeigen", "information_schema, mysql, performance_schema, sys in der Seitenleiste"),
                         ("Schriftgröße", "Schrift im SQL-Editor, 10 bis 28 Pixel"),
-                        ("Minimap", "Übersicht rechts im Editor"),
                         ("Vorschläge beim Tippen", "aus = nur noch per Tastenkürzel"),
                         ("Klammern schließen", "( [ { ' \" ` automatisch schließen"),
                         ("Scrollgeschwindigkeit", "Faktor für das Mausrad"),
@@ -668,7 +660,6 @@ pub const CHAPTERS: &[Chapter] = &[
                         ("Anweisungen mitschreiben", "jede Anweisung im Server-Log"),
                         ("Automatisch sichern", "Abstand und Aufbewahrung"),
                         ("Tastenkürzel", "alle Kürzel ändern, siehe unten"),
-                        ("Visual Studio Code", "VS Code einrichten"),
                     ]),
                     Open("Einstellungen öffnen", Cmd(Cmd::Settings)),
                     Open("Wo liegt was?", Section("speicherorte")),
@@ -766,19 +757,6 @@ pub const CHAPTERS: &[Chapter] = &[
                     P("Wird der Speicherordner geändert, fragt EasyMySQL, ob der bisherige Inhalt mitgenommen werden soll („Inhalt mitnehmen“ verschiebt alles, \
                        offene Dateien und die Liste der zuletzt geöffneten Projekte werden angepasst) oder ob nur künftig dort gespeichert wird."),
                     Open("Speicherorte einstellen", Settings("speicherorte")),
-                ],
-            },
-            Section {
-                id: "vscode",
-                title: "Visual Studio Code und GitHub Copilot",
-                blocks: &[
-                    List(&[
-                        "Server → VS Code einrichten installiert die Erweiterung SQLTools mit dem MariaDB-Treiber und legt die Verbindung „EasyMySQL“ an.",
-                        "In einer Datei: Menü mit den drei Punkten → In VS Code öffnen. Speichert man dort, übernimmt EasyMySQL die Änderung.",
-                        "Beim ersten Öffnen fragt VS Code, ob man dem Ordner vertraut: „Ja“ wählen, sonst sind die Erweiterungen ausgeschaltet.",
-                        "In VS Code führt Strg+E Strg+E die Abfrage aus (SQLTools).",
-                        "GitHub Copilot ist in aktuellem VS Code eingebaut: unten rechts auf das Copilot-Symbol klicken und mit dem GitHub-Konto anmelden.",
-                    ]),
                 ],
             },
         ],

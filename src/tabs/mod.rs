@@ -57,7 +57,6 @@ pub enum Action {
     SettingsChanged,
     /// Verbindungsdaten wurden geaendert: neu verbinden
     Connect,
-    SetupVsCode,
     /// Speicherordner wurde verschoben (offene Dateien und Projekte anpassen)
     FilesMoved { from: std::path::PathBuf, to: std::path::PathBuf },
 }

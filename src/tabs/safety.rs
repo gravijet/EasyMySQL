@@ -204,7 +204,6 @@ impl SafetyTab {
             let connected = cx.db.is_some();
             if ui
                 .add_enabled(!busy && connected, egui::Button::new(crate::i18n::text("Alle Tabellen prüfen")))
-                .on_hover_text(crate::i18n::text("CHECK TABLE für alle Tabellen – ändert nichts"))
                 .clicked()
             {
                 let conn = Self::conn(cx);
@@ -219,7 +218,6 @@ impl SafetyTab {
             }
             if ui
                 .add_enabled(!busy && connected, egui::Button::new(crate::i18n::text("Prüfen und reparieren")))
-                .on_hover_text(crate::i18n::text("Prüft alle Tabellen und repariert beschädigte (vorher wird gesichert)"))
                 .clicked()
             {
                 let conn = Self::conn(cx);
@@ -252,7 +250,6 @@ impl SafetyTab {
             if let Some(list) = self.myisam.clone().filter(|l| !l.is_empty()) {
                 if ui
                     .add_enabled(!busy, egui::Button::new(crate::tr_format!("{} MyISAM-Tabellen → InnoDB", "{} MyISAM tables → InnoDB", list.len())))
-                    .on_hover_text(crate::i18n::text("MyISAM ist nicht absturzsicher. InnoDB verliert bei Absturz/Stromausfall keine bestätigten Daten."))
                     .clicked()
                 {
                     let conn = Self::conn(cx);
@@ -264,7 +261,6 @@ impl SafetyTab {
             }
             if ui
                 .add_enabled(!busy && !st.is_busy() && cx.server.paths.is_some(), egui::Button::new(crate::i18n::text("Server retten …")))
-                .on_hover_text(crate::i18n::text("Wenn der Server nicht mehr startet oder die Daten stark beschädigt sind"))
                 .clicked()
             {
                 self.confirm_rescue = true;

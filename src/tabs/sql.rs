@@ -608,7 +608,6 @@ impl TabView for SqlTab {
     fn ui(&mut self, ui: &mut egui::Ui, cx: &mut Ctx) {
         self.poll(cx);
         let pal = style::pal();
-        self.editor.minimap = cx.settings.minimap;
         if self.job.is_some() {
             ui.ctx().request_repaint_after(Duration::from_millis(50));
         }
@@ -666,16 +665,6 @@ impl TabView for SqlTab {
                 {
                     self.run_selection_or_all(cx);
                 }
-                if ui
-                    .button(crate::i18n::text("Anweisung"))
-                    .on_hover_text(crate::tr_format!("Anweisung am Cursor ausführen ({})", "Run statement at cursor ({})", crate::keymap::text(Cmd::RunStatement)))
-                    .clicked()
-                {
-                    self.run_current(cx);
-                }
-                if ui.button("Plan").on_hover_text(crate::tr_format!("EXPLAIN der Anweisung am Cursor ({})", "EXPLAIN statement at cursor ({})", crate::keymap::text(Cmd::Explain))).clicked() {
-                    self.explain(cx);
-                }
             });
             if ui.button(crate::i18n::text("Formatieren")).on_hover_text(crate::keymap::text(Cmd::Format)).clicked() {
                 self.format();
@@ -691,17 +680,6 @@ impl TabView for SqlTab {
                         self.history = Some(workspace::history(&f));
                         ui.close();
                     }
-                }
-                if ui.button(crate::i18n::text("In VS Code öffnen")).clicked() {
-                    self.save();
-                    let res = match &self.file {
-                        Some(f) => crate::vscode::open_path(self.project.as_deref(), f, &self.database),
-                        None => crate::vscode::open_sql(&format!("unbenannt-{}.sql", self.scratch_id), &self.text, &self.database),
-                    };
-                    if let Err(e) = res {
-                        cx.error(e);
-                    }
-                    ui.close();
                 }
             });
             if let Some(e) = &self.save_error {

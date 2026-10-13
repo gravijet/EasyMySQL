@@ -12,9 +12,6 @@ pub enum Icon {
     History,
     Diagram,
     Wizard,
-    Backup,
-    Log,
-    Help,
     Close,
     Plus,
     Refresh,
@@ -94,27 +91,6 @@ pub fn paint(p: &egui::Painter, r: Rect, icon: Icon, color: Color32) {
         Icon::Wizard => {
             let pts = vec![v(-8.0, -7.0), v(8.0, -7.0), v(2.0, 0.0), v(2.0, 7.0), v(-2.0, 5.0), v(-2.0, 0.0)];
             p.add(Shape::closed_line(pts, s));
-        }
-        Icon::Backup => {
-            p.add(Shape::line(arc(c, 7.5 * k, PI * 0.35, PI * 1.95, 24), s));
-            let tip = c + vec2(7.5 * k * (PI * 0.35).cos(), 7.5 * k * (PI * 0.35).sin());
-            p.line_segment([tip, tip + vec2(-4.0 * k, 0.0)], s);
-            p.line_segment([tip, tip + vec2(1.0 * k, -4.0 * k)], s);
-            p.line_segment([c, v(0.0, -4.5)], s);
-            p.line_segment([c, v(3.0, 2.0)], s);
-        }
-        Icon::Log => {
-            let r2 = Rect::from_min_max(v(-7.0, -8.0), v(7.0, 8.0));
-            p.rect_stroke(r2, 1.0, s, egui::StrokeKind::Middle);
-            for (y, w) in [(-4.0, 8.0), (-1.0, 6.0), (2.0, 8.0), (5.0, 4.0)] {
-                p.line_segment([v(-4.0, y), v(-4.0 + w, y)], s);
-            }
-        }
-        Icon::Help => {
-            p.circle_stroke(c, 8.5 * k, s);
-            p.add(Shape::line(arc(v(0.0, -2.5), 3.0 * k, PI, PI * 2.4, 10), s));
-            p.line_segment([v(0.9, 0.3), v(0.0, 2.0)], s);
-            p.circle_filled(v(0.0, 5.0), 1.1 * k, color);
         }
         Icon::Close => {
             p.line_segment([v(-4.5, -4.5), v(4.5, 4.5)], s);

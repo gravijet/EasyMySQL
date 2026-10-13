@@ -254,7 +254,6 @@ pub struct SqlEditor {
     find: Option<Find>,
     goto: Option<(String, bool)>,
     scroll_to: Option<f32>,
-    pub minimap: bool,
     /// Zeile (0-basiert) mit Fehler -> rot unterstrichen
     pub error_line: Option<usize>,
     /// (Zeile, Spalte), 1-basiert
@@ -501,7 +500,6 @@ impl SqlEditor {
             find: None,
             goto: None,
             scroll_to: None,
-            minimap: true,
             error_line: None,
             line_col: (1, 1),
             cursor: 0,
@@ -981,7 +979,6 @@ impl SqlEditor {
             layout_cache.layout(ui, buf.as_str(), &font)
         };
 
-        let minimap_w = if self.minimap { 70.0 } else { 0.0 };
         let frame = egui::Frame::new().fill(pal.bg).stroke(egui::Stroke::new(1.0, pal.border));
         let mut result = None;
         let mut scroll_state: Option<(f32, f32, egui::Rect)> = None;
@@ -994,7 +991,6 @@ impl SqlEditor {
                     .id_salt(self.id.with("scroll"))
                     .max_height(height)
                     .min_scrolled_height(height)
-                    .max_width(ui.available_width() - minimap_w)
                     .auto_shrink([false, false]);
                 if let Some(y) = self.scroll_to.take() {
                     sa = sa.vertical_scroll_offset(y);
@@ -1099,40 +1095,6 @@ impl SqlEditor {
                 });
                 scroll_state = Some((so.state.offset.y, so.content_size.y, so.inner_rect));
 
-                // Minimap
-                if self.minimap {
-                    let (rect, resp) = ui.allocate_exact_size(egui::vec2(minimap_w, height), egui::Sense::click_and_drag());
-                    let p = ui.painter_at(rect);
-                    p.rect_filled(rect, 0.0, pal.bg);
-                    p.vline(rect.left(), rect.y_range(), egui::Stroke::new(1.0, pal.grid_line));
-                    let scale = (rect.height() / (lines as f32 * row_h).max(1.0)).min(2.0 / row_h);
-                    let lh = row_h * scale;
-                    for (i, l) in text.split('\n').enumerate() {
-                        let y = rect.top() + i as f32 * lh;
-                        if y > rect.bottom() {
-                            break;
-                        }
-                        let indent = l.len() - l.trim_start().len();
-                        let len = l.trim_end().chars().count();
-                        if len > indent {
-                            let x0 = rect.left() + 4.0 + indent as f32 * 0.8;
-                            let x1 = (rect.left() + 4.0 + len as f32 * 0.8).min(rect.right() - 2.0);
-                            let color = if l.trim_start().starts_with("--") { pal.syn_comment } else { pal.syn_gutter };
-                            p.line_segment([egui::pos2(x0, y), egui::pos2(x1, y)], egui::Stroke::new(lh.clamp(1.0, 2.0), color.gamma_multiply(0.8)));
-                        }
-                    }
-                    if let Some((off, content, inner)) = scroll_state {
-                        let top = rect.top() + off * scale;
-                        let vh = (inner.height() * scale).max(8.0);
-                        p.rect_filled(egui::Rect::from_min_size(egui::pos2(rect.left(), top), egui::vec2(minimap_w, vh)), 0.0, pal.text.gamma_multiply(0.12));
-                        if let Some(pt) = resp.interact_pointer_pos() {
-                            if resp.clicked() || resp.dragged() {
-                                let y = ((pt.y - rect.top()) / scale - inner.height() / 2.0).clamp(0.0, (content - inner.height()).max(0.0));
-                                self.scroll_to = Some(y);
-                            }
-                        }
-                    }
-                }
             });
         });
         self.layout_cache = layout_cache;

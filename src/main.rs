@@ -19,7 +19,6 @@ mod sqlfmt;
 mod style;
 mod updates;
 mod tabs;
-mod vscode;
 mod workspace;
 
 use eframe::egui;

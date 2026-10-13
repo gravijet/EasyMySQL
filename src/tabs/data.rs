@@ -344,8 +344,7 @@ impl TabView for DataTab {
                 self.reload(cx);
             }
             if !self.has_pk() && !is_view && self.info.is_some() {
-                ui.label(RichText::new(crate::i18n::text("kein Primärschlüssel")).color(style::pal().error_text))
-                    .on_hover_text(crate::i18n::text("Änderungen werden über alle Spaltenwerte zugeordnet."));
+                ui.label(RichText::new(crate::i18n::text("kein Primärschlüssel")).color(style::pal().error_text));
             }
         });
         if let Some(e) = &self.error {

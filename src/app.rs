@@ -157,7 +157,6 @@ pub struct EasyApp {
     tray: Option<(platform::Tray, Receiver<TrayCmd>)>,
     quitting: bool,
     last_state: State,
-    vscode_job: Option<Receiver<Result<String, String>>>,
     backup_job: Option<Receiver<Result<String, String>>>,
     backup_last_check: Option<Instant>,
     check_job: Option<Receiver<Result<crate::repair::CheckResult, String>>>,
@@ -247,7 +246,6 @@ impl EasyApp {
             tray,
             quitting: false,
             last_state: State::Stopped,
-            vscode_job: None,
             backup_job: None,
             backup_last_check: None,
             check_job: None,
@@ -607,12 +605,6 @@ impl EasyApp {
                     self.history.truncate(3000);
                 }
                 Action::SettingsChanged => self.apply_settings(),
-                Action::SetupVsCode => {
-                    let ctx = CTX.lock().unwrap().clone();
-                    if let Some(ctx) = ctx {
-                        self.setup_vscode(&ctx);
-                    }
-                }
                 Action::FilesMoved { from, to } => {
                     for t in self.tabs.iter_mut() {
                         t.file_renamed(&from, &to);
@@ -846,36 +838,6 @@ impl EasyApp {
     // ------------------------------------------------------------------
     // Dateien und Projekte
 
-    fn setup_vscode(&mut self, ctx: &egui::Context) {
-        if crate::vscode::find_vscode().is_none() {
-            self.dialogs.push(Dialog::Message { title: "Visual Studio Code".into(), text: crate::i18n::text(crate::vscode::NOT_FOUND).into(), error: false });
-            let _ = open_url("https://code.visualstudio.com/download");
-            return;
-        }
-        let _ = crate::vscode::prepare_workspace(&self.current_db);
-        let (tx, rx) = std::sync::mpsc::channel();
-        let ctx = ctx.clone();
-        std::thread::spawn(move || {
-            let _ = tx.send(crate::vscode::install_extensions());
-            ctx.request_repaint();
-        });
-        self.vscode_job = Some(rx);
-        self.toast(crate::i18n::text("VS-Code-Erweiterungen werden installiert …"));
-    }
-
-    fn poll_vscode(&mut self) {
-        let Some(rx) = &self.vscode_job else { return };
-        let Ok(res) = rx.try_recv() else { return };
-        self.vscode_job = None;
-        match res {
-            Ok(report) => {
-                self.dialogs.push(Dialog::Message { title: crate::i18n::text("VS Code eingerichtet").into(), text: report, error: false });
-                let _ = crate::vscode::open_workspace(&self.current_db);
-            }
-            Err(e) => self.error(e),
-        }
-    }
-
     fn open_sql_file(&mut self, run: bool) {
         let mut dlg = rfd::FileDialog::new().add_filter(crate::i18n::text("SQL-Dateien"), &["sql", "txt"]);
         if let Some(p) = &self.project {
@@ -958,18 +920,6 @@ fn apply_editor_prefs(s: &Settings) {
 /// egui-Kontext fuer Aktionen, die ihn brauchen (einmal je Bild gesetzt)
 static CTX: Mutex<Option<egui::Context>> = Mutex::new(None);
 
-pub fn open_url(url: &str) -> std::io::Result<std::process::Child> {
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        std::process::Command::new("cmd").args(["/C", "start", "", url]).creation_flags(0x0800_0000).spawn()
-    }
-    #[cfg(not(windows))]
-    {
-        std::process::Command::new("xdg-open").arg(url).spawn()
-    }
-}
-
 /// Ordner im Datei-Explorer bzw. Datei mit dem zugehoerigen Programm oeffnen
 pub fn open_path(p: &Path) {
     #[cfg(windows)]
@@ -991,7 +941,6 @@ impl eframe::App for EasyApp {
             }
         }
         self.check_server(ctx);
-        self.poll_vscode();
         self.updater.poll(ctx, self.settings.auto_update);
         self.background_tasks(ctx);
 

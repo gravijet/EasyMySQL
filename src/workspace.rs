@@ -9,7 +9,13 @@ static ROOT: std::sync::RwLock<Option<PathBuf>> = std::sync::RwLock::new(None);
 
 /// Standard-Speicherordner: Dokumente\EasyMySQL
 pub fn default_root() -> PathBuf {
-    crate::vscode::workspace_dir()
+    let home = std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| crate::server::app_data_dir());
+    let docs = home.join("Documents");
+    let base = if docs.is_dir() { docs } else { home };
+    base.join("EasyMySQL")
 }
 
 /// Speicherordner aus den Einstellungen setzen (leer = Standard).

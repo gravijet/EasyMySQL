@@ -313,8 +313,6 @@ pub struct ErTab {
     error: Option<String>,
     /// Ausgewaehlte Beziehung (fk_key), Entf loescht sie
     selected: Option<String>,
-    /// Verbinden: Ziehen von einer beliebigen Spalte legt eine Beziehung an
-    connect_mode: bool,
     route_cache: Option<RouteCache>,
     box_cache: Option<BoxCache>,
 }
@@ -470,7 +468,6 @@ impl ErTab {
             fit_pending: false,
             error: None,
             selected: None,
-            connect_mode: false,
             route_cache: None,
             box_cache: None,
         }
@@ -1036,12 +1033,7 @@ impl ErTab {
             self.drag = match origin_press {
                 Some(_) if middle => Drag::Pan,
                 Some(p) => {
-                    let column = if self.connect_mode {
-                        self.column_at(&schema, self.to_world(origin, p)).and_then(|(t, c)| Some((t, c?)))
-                    } else {
-                        None
-                    };
-                    if let Some((t, c)) = handle_at(self, p).or(column) {
+                    if let Some((t, c)) = handle_at(self, p) {
                         Drag::Link(t, c)
                     } else if let Some(t) = hit_table(self, p) {
                         Drag::Table(t)
@@ -1096,7 +1088,6 @@ impl ErTab {
         }
         if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
             self.selected = None;
-            self.connect_mode = false;
         }
         if resp.double_clicked() {
             if let Some(t) = pointer.and_then(|p| hit_table(self, p)) {
@@ -1278,7 +1269,7 @@ impl ErTab {
                     painter.text(pos2(r.right() - 16.0 * z, y), Align2::RIGHT_CENTER, &c.col_type, font.clone(), style::pal().er_type);
                 }
                 // Anfasser zum Verknuepfen (nur bei Maus ueber der Tabelle)
-                if (focused || self.connect_mode) && !t.is_view && matches!(self.drag, Drag::None) {
+                if focused && !t.is_view && matches!(self.drag, Drag::None) {
                     painter.circle(pos2(r.right() - 7.0 * z, y), 3.5 * z, style::pal().er_box, Stroke::new(1.2, LINE_HI));
                 }
             }
@@ -1438,12 +1429,9 @@ impl ErTab {
                 ui.horizontal(|ui| {
                     ui.label(crate::i18n::text("Art:"));
                     let before = dlg.kind;
-                    ui.radio_value(&mut dlg.kind, LinkKind::OneToMany, "1:n")
-                        .on_hover_text(crate::i18n::text("Ein Datensatz gehört zu vielen (z. B. eine Klasse – viele Schüler)"));
-                    ui.radio_value(&mut dlg.kind, LinkKind::OneToOne, "1:1")
-                        .on_hover_text(crate::i18n::text("Ein Datensatz gehört zu höchstens einem (z. B. Schüler – Ausweis)"));
-                    ui.radio_value(&mut dlg.kind, LinkKind::ManyToMany, "n:m")
-                        .on_hover_text(crate::i18n::text("Viele zu vielen über eine Zwischentabelle (z. B. Schüler – Kurse)"));
+                    ui.radio_value(&mut dlg.kind, LinkKind::OneToMany, "1:n");
+                    ui.radio_value(&mut dlg.kind, LinkKind::OneToOne, "1:1");
+                    ui.radio_value(&mut dlg.kind, LinkKind::ManyToMany, "n:m");
                     // Beim Wechsel zu n:m die Zieltabelle als zweite Tabelle uebernehmen
                     if dlg.kind == LinkKind::ManyToMany && before != LinkKind::ManyToMany && dlg.other.is_empty() {
                         if let Some((rt, _)) = dlg.target.split_once('.') {
@@ -1687,29 +1675,14 @@ impl TabView for ErTab {
                 self.schema_changed(&self.db.clone(), cx);
             }
             ui.separator();
-            if ui.button(crate::i18n::text("Anordnen")).on_hover_text(crate::i18n::text("Automatisch anordnen: wenig Kreuzungen, kompakt")).clicked() {
+            if ui.button(crate::i18n::text("Anordnen")).clicked() {
                 self.auto_layout();
                 self.fit_pending = true;
                 self.save_layout();
             }
             ui.separator();
-            let r = ui.add(egui::Button::new(crate::i18n::text("Verbinden")).selected(self.connect_mode));
-            if r.clicked() {
-                self.connect_mode = !self.connect_mode;
-            }
-            r
-                .on_hover_text(crate::i18n::text("Von einer Spalte auf die Zielspalte ziehen legt eine Beziehung an (Esc beendet)"));
             if ui.button(crate::i18n::text("+ Beziehung")).clicked() {
                 self.open_link(String::new(), String::new(), String::new());
-            }
-            let sel = self.selected.clone().and_then(|k| self.schema.as_ref()?.fks.iter().find(|f| fk_key(f) == k).cloned());
-            if let Some(fk) = &sel {
-                if ui.button(crate::i18n::text("Beziehung löschen")).on_hover_text(crate::i18n::text("Entf")).clicked() {
-                    cx.actions.push(self.delete_action(fk));
-                }
-            }
-            if ui.button(crate::i18n::text("+ Tabelle")).clicked() {
-                cx.actions.push(Action::NewTable(self.db.clone()));
             }
             ui.separator();
             let before = (self.notation, self.collapse_nm, self.rel_labels);
@@ -1754,7 +1727,7 @@ impl TabView for ErTab {
                 }
             });
             ui.separator();
-            if ui.button(format!("{:.0}\u{a0}%", self.zoom * 100.0)).on_hover_text(crate::i18n::text("Alles zeigen (Mausrad = Zoom)")).clicked() {
+            if ui.button(format!("{:.0}\u{a0}%", self.zoom * 100.0)).clicked() {
                 self.fit_pending = true;
             }
         });

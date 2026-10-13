@@ -228,7 +228,7 @@ fn column_picker(ui: &mut egui::Ui, id: egui::Id, src: &mut String, col: &mut St
         ui.separator();
         ui.horizontal(|ui| {
             ui.label("Name:");
-            ui.add(egui::TextEdit::singleline(col).desired_width(90.0)).on_hover_text(crate::i18n::text("z. B. ein Alias aus SELECT"));
+            ui.add(egui::TextEdit::singleline(col).desired_width(90.0));
             if ui.small_button(crate::i18n::text("ohne Tabelle")).clicked() {
                 src.clear();
             }
@@ -300,7 +300,7 @@ fn expr_ui(ui: &mut egui::Ui, e: &mut Expr, env: &Env, id: egui::Id) {
                 }
                 ui.label("(");
                 if func_def(name).is_some_and(|d| d.aggregate) {
-                    ui.checkbox(distinct, RichText::new("DISTINCT").small()).on_hover_text(crate::i18n::text("doppelte Werte nur einmal"));
+                    ui.checkbox(distinct, RichText::new("DISTINCT").small());
                 }
                 let mut remove = None;
                 for (i, a) in args.iter_mut().enumerate() {
@@ -323,7 +323,7 @@ fn expr_ui(ui: &mut egui::Ui, e: &mut Expr, env: &Env, id: egui::Id) {
                 ui.label(")");
                 if func_def(name).is_none_or(|d| d.window || d.aggregate) {
                     let mut on = over.is_some();
-                    if ui.checkbox(&mut on, RichText::new("OVER").small()).on_hover_text(crate::i18n::text("als Fensterfunktion")).changed() {
+                    if ui.checkbox(&mut on, RichText::new("OVER").small()).changed() {
                         *over = on.then(Window::default);
                     }
                 }
@@ -507,7 +507,6 @@ fn cond_item_ui(ui: &mut egui::Ui, c: &mut Cond, env: &Env, id: egui::Id) {
                     let use_sub = sub.is_some();
                     if ui
                         .add(egui::Button::new(RichText::new(crate::i18n::text("Unterabfrage")).small()).selected(use_sub))
-                        .on_hover_text(crate::i18n::text("Werte aus einer Unterabfrage statt fester Werte"))
                         .clicked()
                     {
                         *sub = (!use_sub).then(|| Box::new(new_query(env)));
@@ -607,7 +606,7 @@ fn cond_group_ui(ui: &mut egui::Ui, c: &mut Cond, env: &Env, id: egui::Id) {
         if ui.small_button(crate::i18n::text("+ Bedingung")).clicked() {
             items.push(new_cmp(env));
         }
-        if ui.small_button(crate::i18n::text("+ Gruppe (…)")).on_hover_text(crate::i18n::text("Klammer mit UND/ODER")).clicked() {
+        if ui.small_button(crate::i18n::text("+ Gruppe (…)")).clicked() {
             items.push(Cond::Group { any: !*any, not: false, items: vec![new_cmp(env)] });
         }
         if ui.small_button("+ EXISTS").clicked() {
@@ -733,7 +732,7 @@ fn sources_ui(ui: &mut egui::Ui, s: &mut Select, env: &Env, id: egui::Id) {
                         if src.using.trim().is_empty() {
                             ui.horizontal(|ui| {
                                 keyword(ui, "ON");
-                                if src.on.is_empty() && ui.small_button("USING …").on_hover_text(crate::i18n::text("gleichnamige Spalten")).clicked() {
+                                if src.on.is_empty() && ui.small_button("USING …").clicked() {
                                     src.using = "id".into();
                                 }
                             });
@@ -807,7 +806,7 @@ fn sources_ui(ui: &mut egui::Ui, s: &mut Select, env: &Env, id: egui::Id) {
 
 fn items_ui(ui: &mut egui::Ui, s: &mut Select, env: &Env, id: egui::Id) {
     ui.horizontal(|ui| {
-        ui.checkbox(&mut s.distinct, "DISTINCT").on_hover_text(crate::i18n::text("doppelte Zeilen nur einmal"));
+        ui.checkbox(&mut s.distinct, "DISTINCT");
         if s.items.is_empty() {
             ui.label(RichText::new(crate::i18n::text("alle Spalten (*)")).color(style::pal().text_weak));
         }
@@ -899,7 +898,7 @@ fn select_ui(ui: &mut egui::Ui, s: &mut Select, env: &Env, id: egui::Id) {
     section(ui, id.with("group"), "GROUP BY", crate::i18n::text("Gruppieren"), group_open, |ui| {
         ui.horizontal_wrapped(|ui| {
             expr_list_ui(ui, &mut s.group, &inner, id.with("g"));
-            ui.checkbox(&mut s.rollup, "WITH ROLLUP").on_hover_text(crate::i18n::text("zusätzliche Zwischensummen"));
+            ui.checkbox(&mut s.rollup, "WITH ROLLUP");
         });
         let needed = s.needed_group();
         if !needed.is_empty() && needed.iter().any(|e| !s.group.contains(e)) {
@@ -946,7 +945,7 @@ fn query_ui(ui: &mut egui::Ui, qr: &mut Query, env: &Env, id: egui::Id) {
     if !qr.with.is_empty() {
         ui.horizontal(|ui| {
             keyword(ui, "WITH");
-            ui.checkbox(&mut qr.recursive, "RECURSIVE").on_hover_text(crate::i18n::text("WITH-Abfragen dürfen sich selbst verwenden (z. B. Bäume, Zahlenreihen)"));
+            ui.checkbox(&mut qr.recursive, "RECURSIVE");
         });
         let mut remove = None;
         for i in 0..qr.with.len() {
@@ -1014,7 +1013,7 @@ fn query_ui(ui: &mut egui::Ui, qr: &mut Query, env: &Env, id: egui::Id) {
                 }
             }
         });
-        if ui.small_button("+ WITH").on_hover_text(crate::i18n::text("benannte Hilfsabfrage (CTE)")).clicked() {
+        if ui.small_button("+ WITH").clicked() {
             let k = qr.with.len() + 1;
             qr.with.push(Cte { name: format!("hilf{k}"), columns: String::new(), query: new_query(&env) });
         }
@@ -1279,10 +1278,10 @@ impl TabView for BuilderTab {
             if ui.button(crate::i18n::text("Kopieren")).clicked() {
                 ui.ctx().copy_text(sql.clone());
             }
-            if ui.button(crate::i18n::text("Als Sicht speichern …")).on_hover_text("CREATE VIEW").clicked() {
+            if ui.button(crate::i18n::text("Als Sicht speichern …")).clicked() {
                 self.view_name = Some(String::new());
             }
-            if ui.button(crate::i18n::text("Neu")).on_hover_text(crate::i18n::text("Leere Abfrage")).clicked() {
+            if ui.button(crate::i18n::text("Neu")).clicked() {
                 self.query = Query::default();
                 if let Some(t) = self.schema.as_ref().and_then(|s| s.tables.first()) {
                     self.query.parts[0].select.sources = vec![Source::table(&t.name)];

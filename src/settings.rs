@@ -14,7 +14,6 @@ pub struct Settings {
     pub auto_update: bool,
     /// Schriftgroesse im SQL-Editor (Pixel)
     pub editor_font: u32,
-    pub minimap: bool,
     /// Vorschlaege beim Tippen automatisch zeigen (sonst nur mit Strg+Leertaste)
     pub auto_suggest: bool,
     /// Klammern und Anfuehrungszeichen automatisch schliessen
@@ -45,7 +44,6 @@ impl Default for Settings {
             show_system_dbs: false,
             auto_update: true,
             editor_font: 13,
-            minimap: true,
             auto_suggest: true,
             auto_close: true,
             scroll_speed: 1.5,
@@ -79,7 +77,6 @@ impl Settings {
                 "show_system_dbs" => s.show_system_dbs = on,
                 "auto_update" => s.auto_update = on,
                 "editor_font" => s.editor_font = v.parse().unwrap_or(13),
-                "minimap" => s.minimap = on,
                 "auto_suggest" => s.auto_suggest = on,
                 "auto_close" => s.auto_close = on,
                 "scroll_speed" => s.scroll_speed = v.parse().unwrap_or(1.5f32).clamp(0.25, 6.0),
@@ -101,7 +98,7 @@ impl Settings {
         let b = |x: bool| if x { "1" } else { "0" };
         let mut text = format!(
             "language={}\ndark={}\nhost={}\nport={}\nuser={}\nsave_password={}\nshow_system_dbs={}\nauto_update={}\neditor_font={}\n\
-             minimap={}\nauto_suggest={}\nauto_close={}\nscroll_speed={}\nautoscroll={}\nstorage_dir={}\nquery_log={}\n",
+             auto_suggest={}\nauto_close={}\nscroll_speed={}\nautoscroll={}\nstorage_dir={}\nquery_log={}\n",
             self.language.id(),
             b(self.dark),
             self.conn.host,
@@ -111,7 +108,6 @@ impl Settings {
             b(self.show_system_dbs),
             b(self.auto_update),
             self.editor_font,
-            b(self.minimap),
             b(self.auto_suggest),
             b(self.auto_close),
             self.scroll_speed,

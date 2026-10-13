@@ -25,7 +25,6 @@ pub const SECTIONS: &[(&str, &str)] = &[
     ("server", "Server"),
     ("sicherungen", "Sicherungen"),
     ("tastenkuerzel", "Tastenkürzel"),
-    ("vscode", "Visual Studio Code"),
 ];
 
 pub struct SettingsTab {
@@ -244,19 +243,12 @@ impl TabView for SettingsTab {
 
                 self.heading(ui, "updates", "Updates");
                 ui.label(crate::tr_format!("Installierte Version: {}", "Installed version: {}", env!("CARGO_PKG_VERSION")));
-                ui.checkbox(&mut s.auto_update, crate::i18n::text("Beim Start und alle sechs Stunden nach Updates suchen"));
-                ui.label(crate::i18n::text("Neue Versionen werden automatisch gefunden. Die Installation starten Sie selbst."));
-                if ui.button(crate::i18n::text("Jetzt nach Updates suchen")).clicked() {
-                    cx.actions.push(Action::Run(Cmd::CheckUpdates));
-                }
+                ui.checkbox(&mut s.auto_update, crate::i18n::text("Automatisch nach Updates suchen"));
 
                 self.heading(ui, "editor", "Editor");
                 grid(ui, "g-editor", &mut |ui| {
                     ui.label(crate::i18n::text("Schriftgröße"));
                     ui.add(egui::Slider::new(&mut s.editor_font, 10..=28).suffix(" px"));
-                    ui.end_row();
-                    ui.label("Minimap");
-                    ui.checkbox(&mut s.minimap, crate::i18n::text("Übersicht rechts neben dem Text"));
                     ui.end_row();
                     ui.label(crate::i18n::text("Vorschläge beim Tippen"));
                     ui.checkbox(&mut s.auto_suggest, crate::i18n::text("Automatisch Vorschläge zeigen"))
@@ -282,7 +274,7 @@ impl TabView for SettingsTab {
                 let mut pick_root = false;
                 let mut reset_root = false;
                 grid(ui, "g-paths", &mut |ui| {
-                    ui.label(crate::i18n::text("Speicherordner")).on_hover_text(crate::i18n::text("Neue Projekte, unbenannte Abfragen, frühere Fassungen, Verlauf, Diagramm-Anordnungen und gespeicherte Abfragen des Assistenten"));
+                    ui.label(crate::i18n::text("Speicherordner"));
                     ui.vertical(|ui| {
                         ui.label(RichText::new(root.display().to_string()).monospace());
                         ui.horizontal(|ui| {
@@ -364,7 +356,7 @@ impl TabView for SettingsTab {
                                 Ok(())
                             };
                             let mut res = None;
-                            if ui.button(crate::i18n::text("Inhalt mitnehmen")).on_hover_text(crate::i18n::text("Alles aus dem bisherigen Ordner in den neuen verschieben")).clicked() {
+                            if ui.button(crate::i18n::text("Inhalt mitnehmen")).clicked() {
                                 res = Some(apply(true, s, cx.actions));
                             }
                             if ui.button(crate::i18n::text("Nur umstellen")).clicked() {
@@ -407,7 +399,7 @@ impl TabView for SettingsTab {
                         s.save_password = *save_pw;
                         cx.actions.push(Action::Connect);
                     }
-                    if ui.button(crate::i18n::text("Standard")).on_hover_text(crate::i18n::text("127.0.0.1, Port 3306, root, ohne Passwort")).clicked() {
+                    if ui.button(crate::i18n::text("Standard")).clicked() {
                         *info = ConnInfo::default();
                     }
                     let connected = cx.db.map(|d| d.info.label()).unwrap_or_else(|| crate::i18n::text("nicht verbunden").into());
@@ -417,12 +409,7 @@ impl TabView for SettingsTab {
                 self.heading(ui, "server", "Server");
                 grid(ui, "g-server", &mut |ui| {
                     ui.label(crate::i18n::text("Anweisungen mitschreiben"));
-                    ui.checkbox(&mut s.query_log, crate::i18n::text("jede Anweisung im Server-Log (auch von mysql in der Eingabeaufforderung)"));
-                    ui.end_row();
-                    ui.label(crate::i18n::text("Server-Log"));
-                    if ui.button(crate::i18n::text("Öffnen")).clicked() {
-                        cx.actions.push(Action::OpenLog);
-                    }
+                    ui.checkbox(&mut s.query_log, crate::i18n::text("jede Anweisung im Server-Log"));
                     ui.end_row();
                 });
 
@@ -442,11 +429,6 @@ impl TabView for SettingsTab {
                         ui.add(egui::DragValue::new(&mut self.backup.keep_days).range(0..=365).suffix(crate::i18n::text(" Tage")));
                     });
                     ui.end_row();
-                    ui.label("");
-                    if ui.button(crate::i18n::text("Sicherungen & Reparatur")).clicked() {
-                        cx.actions.push(Action::OpenSafety);
-                    }
-                    ui.end_row();
                 });
                 if self.backup != old {
                     self.backup.save();
@@ -454,13 +436,6 @@ impl TabView for SettingsTab {
 
                 self.heading(ui, "tastenkuerzel", crate::i18n::text("Tastenkürzel"));
                 self.keys_ui(ui);
-
-                self.heading(ui, "vscode", "Visual Studio Code");
-                ui.horizontal(|ui| {
-                    if ui.button(crate::i18n::text("VS Code einrichten")).on_hover_text(crate::i18n::text("SQLTools mit MariaDB-Treiber installieren, Verbindung „EasyMySQL“ anlegen")).clicked() {
-                        cx.actions.push(Action::SetupVsCode);
-                    }
-                });
                 ui.add_space(30.0);
             });
         });
@@ -524,11 +499,11 @@ mod tests {
         for _ in 0..3 {
             let _ = render(&mut tab, vec![]);
         }
-        tab.show_section("vscode");
+        tab.show_section("tastenkuerzel");
         for _ in 0..5 {
             let _ = render(&mut tab, vec![]);
         }
-        assert_eq!(tab.active_section, "vscode", "Ein Klick muss auch den letzten Abschnitt dauerhaft markieren");
+        assert_eq!(tab.active_section, "tastenkuerzel", "Ein Klick muss auch den letzten Abschnitt dauerhaft markieren");
         assert!(tab.scroll_offset.unwrap() > 0.0);
         let _ = render(
             &mut tab,
