@@ -75,6 +75,10 @@ pub struct EasyApp {
     hwnd: Option<isize>,
     tray: Option<(platform::Tray, Receiver<TrayCmd>)>,
     quitting: bool,
+    was_focused: bool,
+    /// Von aussen auf das Fenster gezogene Dateien und Mausposition dazu (Explorer wertet sie aus)
+    os_files: Vec<PathBuf>,
+    os_pos: Option<egui::Pos2>,
     last_state: State,
     backup_job: Option<Receiver<Result<String, String>>>,
     export_job: Option<Receiver<Result<PathBuf, String>>>,
@@ -130,7 +134,7 @@ impl EasyApp {
         apply_editor_prefs(&settings);
         let server = Server::new(3306);
         let hwnd = platform::window_handle(cc);
-        let tray = platform::create_tray(&cc.egui_ctx, hwnd);
+        let tray = if settings.background { platform::create_tray(&cc.egui_ctx, hwnd) } else { None };
         {
             let srv = server.clone();
             let conn = settings.conn.clone();
@@ -176,6 +180,9 @@ impl EasyApp {
             hwnd,
             tray,
             quitting: false,
+            was_focused: true,
+            os_files: Vec::new(),
+            os_pos: None,
             last_state: State::Stopped,
             backup_job: None,
             export_job: None,
@@ -212,6 +219,18 @@ impl EasyApp {
         let ctx = cc.egui_ctx.clone();
         platform::install_open_hook(Box::new(move || ctx.request_repaint()));
         app
+    }
+
+    /// Dateien, die von aussen ueber das Fenster gezogen oder darauf abgelegt werden
+    fn track_os_drag(&mut self, ctx: &egui::Context) {
+        let (hovering, dropped) = ctx.input(|i| (!i.raw.hovered_files.is_empty(), i.raw.dropped_files.iter().filter_map(|f| f.path.clone()).collect::<Vec<PathBuf>>()));
+        self.os_files = dropped;
+        if hovering || !self.os_files.is_empty() {
+            self.os_pos = platform::cursor_pos(self.hwnd, ctx.pixels_per_point()).or_else(|| ctx.input(|i| i.pointer.latest_pos()));
+            ctx.request_repaint();
+        } else {
+            self.os_pos = None;
+        }
     }
 
     // ------------------------------------------------------------------
@@ -654,10 +673,13 @@ impl EasyApp {
         if let Some(ctx) = CTX.lock().unwrap().as_ref() {
             style::set_theme(ctx, self.settings.dark);
         }
-        if self.applied_language != self.settings.language {
-            if let Some(ctx) = CTX.lock().unwrap().as_ref() {
-                self.tray = platform::create_tray(ctx, self.hwnd);
-            }
+        // Infobereich-Symbol nur, wenn das Programm im Hintergrund weiterlaufen soll;
+        // bei neuer Sprache neu anlegen (Menütexte)
+        if self.applied_language != self.settings.language || self.tray.is_some() != self.settings.background {
+            self.tray = match CTX.lock().unwrap().as_ref() {
+                Some(ctx) if self.settings.background => platform::create_tray(ctx, self.hwnd),
+                _ => None,
+            };
             self.applied_language = self.settings.language;
         }
         apply_editor_prefs(&self.settings);
@@ -1018,22 +1040,35 @@ impl eframe::App for EasyApp {
                 TrayCmd::Quit => self.request_quit(ctx),
             }
         }
-        // Dateien von einer zweiten Instanz (Doppelklick im Explorer)
-        for f in platform::take_opened_files() {
-            self.open_file(&f);
+        // Dateien von einer zweiten Instanz (Doppelklick im Explorer); wer EasyMySQL erneut
+        // startet, bekommt das Fenster zurück
+        let focused = ctx.input(|i| i.viewport().focused).unwrap_or(true);
+        if focused && !self.was_focused {
+            platform::check_queue();
+        }
+        self.was_focused = focused;
+        if let Some(files) = platform::take_opened_files() {
+            for f in files {
+                self.open_file(&f);
+            }
             ctx.send_viewport_cmd(ViewportCommand::Visible(true));
+            ctx.send_viewport_cmd(ViewportCommand::Minimized(false));
             ctx.send_viewport_cmd(ViewportCommand::Focus);
         }
         self.check_server(ctx);
         self.updater.poll(ctx, self.settings.auto_update);
         self.background_tasks(ctx);
 
-        // Fenster schliessen = im Hintergrund weiterlaufen
-        if ctx.input(|i| i.viewport().close_requested()) && !self.quitting
-            && let (Some(h), Some(_)) = (self.hwnd, &self.tray) {
+        // Fenster schliessen: mit Infobereich-Symbol im Hintergrund weiterlaufen, sonst beenden
+        if ctx.input(|i| i.viewport().close_requested()) && !self.quitting {
+            if let (Some(h), Some(_)) = (self.hwnd, &self.tray) {
                 ctx.send_viewport_cmd(ViewportCommand::CancelClose);
                 platform::hide_window(h);
+            } else if !self.unsaved_files().is_empty() {
+                ctx.send_viewport_cmd(ViewportCommand::CancelClose);
+                self.request_quit(ctx);
             }
+        }
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
@@ -1043,52 +1078,65 @@ impl eframe::App for EasyApp {
         if self.palette.is_none() {
             self.global_keys(&ctx);
         }
+        self.track_os_drag(&ctx);
 
         crate::terminal::set_focused(false);
-        egui::Panel::top("menu")
-            .frame(egui::Frame::new().fill(style::pal().face).inner_margin(egui::Margin::symmetric(4, 2)))
-            .show(ui, |ui| {
-                self.menu_bar(ui, &mut actions);
-            });
-        egui::Panel::left("activity")
-            .exact_size(44.0)
-            .resizable(false)
-            .frame(egui::Frame::new().fill(style::pal().activity_bg))
-            .show(ui, |ui| {
-                self.activity_bar(ui);
-            });
+        let pal = style::pal();
+        let chrome = |l: i8, r: i8, t: i8, b: i8| egui::Frame::new().fill(pal.face).inner_margin(egui::Margin { left: l, right: r, top: t, bottom: b });
+        egui::Panel::top("menu").frame(chrome(10, 10, 4, 2)).show(ui, |ui| {
+            self.menu_bar(ui, &mut actions);
+        });
+        egui::Panel::left("activity").exact_size(54.0).resizable(false).frame(chrome(6, 0, 4, 0)).show(ui, |ui| {
+            self.activity_bar(ui);
+        });
         if self.sidebar {
-            egui::Panel::left("sidebar")
-                .resizable(true)
-                .default_size(260.0)
-                .min_size(170.0)
-                .frame(egui::Frame::new().fill(style::pal().sidebar_bg))
-                .show(ui, |ui| {
+            egui::Panel::left("sidebar").resizable(true).default_size(268.0).min_size(190.0).frame(chrome(0, 4, 0, 8)).show(ui, |ui| {
+                let frame = egui::Frame::new()
+                    .fill(pal.sidebar_bg)
+                    .stroke(egui::Stroke::new(1.0, pal.border))
+                    .corner_radius(egui::CornerRadius::same(style::PANEL_RADIUS))
+                    .inner_margin(egui::Margin::symmetric(2, 6));
+                let size = ui.available_size() - frame.total_margin().sum();
+                frame.show(ui, |ui| {
+                    ui.set_min_size(size);
                     self.side_panel(ui, &mut actions);
                 });
+            });
         }
         if self.terminal.open {
             self.terminal_panel(ui);
         }
-        egui::CentralPanel::default().frame(egui::Frame::new().fill(style::pal().bg)).show(ui, |ui| {
+        egui::CentralPanel::default().frame(chrome(0, 8, 0, 8)).show(ui, |ui| {
             if !self.tabs.is_empty() {
                 self.tab_bar(ui);
             }
-            // Nach dem Schliessen der letzten Registerkarte bleibt die Flaeche einfach leer
-            if self.tabs.is_empty() {
-                self.empty_area(ui);
-            } else {
-                let active = self.active.min(self.tabs.len() - 1);
-                self.active = active;
-                let tab = &mut self.tabs[active];
-                let mut cx = cx!(self, &mut actions);
-                egui::Frame::new().fill(style::pal().bg).inner_margin(egui::Margin::symmetric(8, 6)).show(ui, |ui| {
-                    ui.set_min_size(ui.available_size());
+            // Inhalt als abgerundete Flaeche unter den Reitern
+            let frame = egui::Frame::new()
+                .fill(pal.bg)
+                .stroke(egui::Stroke::new(1.0, pal.border))
+                .corner_radius(egui::CornerRadius::same(style::PANEL_RADIUS))
+                .inner_margin(egui::Margin::symmetric(14, 10));
+            let size = ui.available_size() - frame.total_margin().sum();
+            frame.show(ui, |ui| {
+                ui.set_min_size(size);
+                // Nach dem Schliessen der letzten Registerkarte bleibt die Flaeche einfach leer
+                if self.tabs.is_empty() {
+                    self.empty_area(ui);
+                } else {
+                    let active = self.active.min(self.tabs.len() - 1);
+                    self.active = active;
+                    let tab = &mut self.tabs[active];
+                    let mut cx = cx!(self, &mut actions);
                     tab.ui(ui, &mut cx);
-                });
-            }
+                }
+            });
         });
 
+        // Nicht im Explorer abgelegt: im Editor öffnen
+        if !self.os_files.is_empty() {
+            let files = std::mem::take(&mut self.os_files);
+            self.open_dropped(files);
+        }
         // Sitzung regelmaessig sichern (offene Dateien usw.)
         if self.session_saved.elapsed().as_secs() >= 5 {
             self.save_session();

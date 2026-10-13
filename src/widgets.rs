@@ -7,7 +7,7 @@ use eframe::egui::{self, Color32, FontId, Frame, Margin, Rect, Response, Sense, 
 /// Kartenflaeche fuer zusammengehoerige Einstellungen
 pub fn card() -> Frame {
     let p = style::pal();
-    Frame::new().fill(if p.dark { p.face } else { Color32::WHITE }).stroke(Stroke::new(1.0, if p.dark { Color32::from_gray(0x35) } else { Color32::from_gray(0xDD) })).corner_radius(8).inner_margin(Margin::symmetric(16, 12))
+    Frame::new().fill(if p.dark { Color32::from_rgb(0x22, 0x25, 0x2C) } else { Color32::from_rgb(0xF7, 0xF8, 0xFB) }).stroke(Stroke::new(1.0, p.border)).corner_radius(style::PANEL_RADIUS - 2).inner_margin(Margin::symmetric(18, 14))
 }
 
 /// Ein-/Ausschalter mit Beschriftung

@@ -269,6 +269,10 @@ impl TabView for ImportTab {
         self.job.is_some()
     }
 
+    fn takes_drop(&self, path: &std::path::Path) -> bool {
+        Kind::from_path(path).is_some()
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, cx: &mut Ctx) {
         self.poll(cx);
         let pal = style::pal();

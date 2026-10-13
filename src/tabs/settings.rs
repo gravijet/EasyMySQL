@@ -17,6 +17,7 @@ pub fn recording() -> bool {
 
 pub const SECTIONS: &[(&str, &str)] = &[
     ("darstellung", "Darstellung"),
+    ("start", "Start"),
     ("updates", "Updates"),
     ("editor", "Editor"),
     ("maus", "Maus"),
@@ -249,6 +250,20 @@ impl TabView for SettingsTab {
                     ui.label(crate::i18n::text("Systemdatenbanken zeigen"));
                     crate::widgets::switch(ui, &mut s.show_system_dbs, "information_schema, mysql, …");
                     ui.end_row();
+                });
+
+                self.heading(ui, "start", crate::i18n::text("Start"));
+                grid(ui, "g-start", &mut |ui| {
+                    ui.label(crate::i18n::text("Registerkarten"));
+                    crate::widgets::switch(ui, &mut s.restore_tabs, crate::i18n::text("Beim Start wieder öffnen"))
+                        .on_hover_text(crate::i18n::text("Ungespeicherte Abfragen bleiben immer erhalten."));
+                    ui.end_row();
+                    if crate::platform::CAN_ASSOCIATE {
+                        ui.label(crate::i18n::text("Schließen"));
+                        crate::widgets::switch(ui, &mut s.background, crate::i18n::text("Im Infobereich weiterlaufen"))
+                            .on_hover_text(crate::i18n::text("Sonst beendet das Schließen des Fensters EasyMySQL und den Server."));
+                        ui.end_row();
+                    }
                 });
 
                 self.heading(ui, "updates", "Updates");

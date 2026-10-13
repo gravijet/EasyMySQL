@@ -23,6 +23,9 @@ pub(super) struct RouteGeometry {
     pub(super) tags: Vec<(usize, Pos2, String)>,
     /// Beschriftungen an den Linienenden, schon ueberlappungsfrei: (Beziehung, Ort, Text, Ausrichtung)
     pub(super) texts: Vec<(usize, Pos2, String, Align2)>,
+    /// Tabellen (Index in `schema.tables`), die meisten Beziehungen zuerst: bekommen beim
+    /// Herauszoomen zuerst ihren Namen
+    pub(super) label_order: Vec<usize>,
 }
 
 pub(super) struct RouteCache {
@@ -42,16 +45,34 @@ pub(super) struct BoxCache {
     pub(super) sizes: HashMap<String, Vec2>,
 }
 
+/// Kurzform eines Datentyps fuer die Tabellenkarte: lange Aufzaehlungen werden zu "enum(7)",
+/// andere sehr lange Typen gekuerzt. Der volle Typ steht im Tooltip der Spalte.
+pub(super) fn type_label(t: &str) -> std::borrow::Cow<'_, str> {
+    const MAX: usize = 20;
+    if t.chars().count() <= MAX {
+        return t.into();
+    }
+    let lower = t.to_ascii_lowercase();
+    for kind in ["enum", "set"] {
+        if lower.starts_with(kind) && lower[kind.len()..].starts_with('(') {
+            let values = t.matches("','").count() + 1;
+            return format!("{kind}({values})").into();
+        }
+    }
+    let cut: String = t.chars().take(MAX - 1).collect();
+    format!("{cut}…").into()
+}
+
 pub(super) fn box_size(t: &TableInfo, show_types: bool) -> Vec2 {
     let mut chars = t.name.chars().count() + 4;
     for c in &t.columns {
         let mut n = c.name.chars().count() + 5;
         if show_types {
-            n += c.col_type.chars().count() + 2;
+            n += type_label(&c.col_type).chars().count() + 2;
         }
         chars = chars.max(n);
     }
-    let w = (chars as f32 * CHAR_W + 22.0).clamp(130.0, 420.0);
+    let w = (chars as f32 * CHAR_W + 22.0).clamp(130.0, 460.0);
     let h = HEADER_H + ROW_H * t.columns.len().max(1) as f32 + 6.0;
     vec2(w, h)
 }
@@ -103,11 +124,19 @@ impl ErTab {
         if src.name == dst.name {
             return Some((pos2(sr.right(), sy), 1.0, pos2(dr.right(), dy), 1.0, None));
         }
-        // Mit Fahrspuren, wenn die Anordnung noch passt (Kind rechts vom Elternteil)
+        // Mit Fahrspuren, wenn die Anordnung noch passt: die erste liegt auf der Seite des Kindes,
+        // die letzte auf der Seite des Elternteils
         if let Some(lanes) = self.routes.get(&fk_key(fk))
-            && !lanes.is_empty() && dr.right() < lanes.last()?.x + 1.0 && sr.left() > lanes[0].x - 1.0 {
-                return Some((pos2(sr.left(), sy), -1.0, pos2(dr.right(), dy), 1.0, Some(lanes)));
+            && let (Some(first), Some(last)) = (lanes.first(), lanes.last())
+        {
+            let (sx, da) = if first.x < sr.center().x { (sr.left(), -1.0) } else { (sr.right(), 1.0) };
+            let (dx, db) = if last.x > dr.center().x { (dr.right(), 1.0) } else { (dr.left(), -1.0) };
+            let child_ok = if da < 0.0 { first.x <= sr.left() + 1.0 } else { first.x >= sr.right() - 1.0 };
+            let parent_ok = if db > 0.0 { last.x >= dr.right() - 1.0 } else { last.x <= dr.left() + 1.0 };
+            if child_ok && parent_ok {
+                return Some((pos2(sx, sy), da, pos2(dx, dy), db, Some(lanes)));
             }
+        }
         // Direkt: passende Seiten waehlen
         Some(if sr.left() > dr.right() + 20.0 {
             (pos2(sr.left(), sy), -1.0, pos2(dr.right(), dy), 1.0, None)
@@ -148,7 +177,7 @@ impl ErTab {
                 continue;
             }
             group.sort_by(|x, y| x.0.total_cmp(&y.0).then_with(|| (x.1, x.2).cmp(&(y.1, y.2))));
-            let step = (12.0 / (n - 1) as f32).min(5.0);
+            let step = (20.0 / (n - 1) as f32).clamp(2.5, 5.0);
             for (idx, &(_, i, at_start)) in group.iter().enumerate() {
                 let off = (idx as f32 - (n - 1) as f32 / 2.0) * step;
                 if at_start {
@@ -180,7 +209,8 @@ impl ErTab {
                         if (w[0].y - w[1].y).abs() < 0.5 {
                             path.push([w[0], w[0].lerp(w[1], 0.33), w[0].lerp(w[1], 0.66), w[1]]);
                         } else {
-                            path.push(bezier_between(w[0], w[1], -1.0, 1.0));
+                            let d = if w[1].x >= w[0].x { 1.0 } else { -1.0 };
+                            path.push(bezier_between(w[0], w[1], d, -d));
                         }
                     }
                     return Some(path);
@@ -235,7 +265,18 @@ impl ErTab {
             .into_iter()
             .map(|(p, s, a, e)| (e, p, s, a))
             .collect();
-        let geometry = Arc::new(RouteGeometry { paths, polylines, bounds, keys, shapes, tags, texts });
+        let mut degree = vec![0u32; schema.tables.len()];
+        let index: HashMap<&str, usize> = schema.tables.iter().enumerate().map(|(i, t)| (t.name.as_str(), i)).collect();
+        for fk in &schema.fks {
+            for name in [&fk.table, &fk.ref_table] {
+                if let Some(&i) = index.get(name.as_str()) {
+                    degree[i] += 1;
+                }
+            }
+        }
+        let mut label_order: Vec<usize> = (0..degree.len()).collect();
+        label_order.sort_by_key(|&i| std::cmp::Reverse(degree[i]));
+        let geometry = Arc::new(RouteGeometry { paths, polylines, bounds, keys, shapes, tags, texts, label_order });
         self.route_cache = Some(RouteCache {
             schema: Arc::clone(schema), positions: self.pos.clone(), routes: self.routes.clone(),
             show_types: self.show_types, notation: self.notation, rel_labels: self.rel_labels,

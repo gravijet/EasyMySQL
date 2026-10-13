@@ -1211,6 +1211,14 @@ impl Language {
             "„Über SSH-Tunnel verbinden“ erreicht einen Server, der nur von seinem eigenen Rechner aus zugänglich ist: EasyMySQL baut mit dem OpenSSH-Client (ssh) einen Tunnel auf. Server und Port gelten dann aus Sicht des SSH-Servers (meist 127.0.0.1 und 3306). Anmeldung mit Schlüsseldatei, ssh-Agent oder Passwort; unbekannte Server werden beim ersten Mal gemerkt." => "“Connect through an SSH tunnel” reaches a server that is only accessible from its own computer: EasyMySQL sets up a tunnel with the OpenSSH client (ssh). Server and port then apply as seen from the SSH server (usually 127.0.0.1 and 3306). Sign in with a key file, the ssh agent or a password; unknown servers are remembered the first time.",
             "Klick auf eine Spaltenüberschrift öffnet das Spaltenmenü: umbenennen, Datentyp ändern, nach links/rechts/an den Anfang/ans Ende verschieben, kopieren, neue Spalte danach, analysieren, sortieren, löschen. „+ Spalte“ fügt eine Spalte am Ende hinzu." => "Clicking a column header opens the column menu: rename, change data type, move left/right/to the start/to the end, duplicate, new column after, analyze, sort, delete. “+ Column” adds a column at the end.",
             "„Spalte analysieren“ zeigt Anzahl, leere und verschiedene Werte, kleinsten und größten Wert, den Durchschnitt und die häufigsten Werte; ein Klick auf einen Wert zeigt genau diese Zeilen." => "“Analyze column” shows the count, empty and distinct values, the smallest and largest value, the average and the most frequent values; clicking a value shows exactly those rows.",
+            "Start" => "Start",
+            "Beim Start wieder öffnen" => "Reopen on startup",
+            "Ungespeicherte Abfragen bleiben immer erhalten." => "Unsaved queries are always kept.",
+            "Im Infobereich weiterlaufen" => "Keep running in the tray",
+            "Sonst beendet das Schließen des Fensters EasyMySQL und den Server." => "Otherwise closing the window quits EasyMySQL and the server.",
+            "Ein Ordner lässt sich nicht in sich selbst kopieren." => "A folder cannot be copied into itself.",
+            "Ein Ordner lässt sich nicht in sich selbst verschieben." => "A folder cannot be moved into itself.",
+            "„{}“ gibt es dort schon." => "“{}” already exists there.",
             _ => source,
         }
     }

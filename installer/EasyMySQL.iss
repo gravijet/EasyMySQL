@@ -114,6 +114,8 @@ Root: HKLM; Subkey: "Software\Classes\EasyMySQL.sql\DefaultIcon"; ValueType: str
 Root: HKLM; Subkey: "Software\Classes\EasyMySQL.sql\shell\open\command"; ValueType: string; ValueData: """{app}\EasyMySQL.exe"" ""%1"""
 Root: HKLM; Subkey: "Software\Classes\.sql\OpenWithProgids"; ValueType: string; ValueName: "EasyMySQL.sql"; ValueData: ""; Flags: uninsdeletevalue
 Root: HKLM; Subkey: "Software\Classes\.sql"; ValueType: string; ValueData: "EasyMySQL.sql"; Flags: uninsdeletevalue; Tasks: assoc
+Root: HKLM; Subkey: "Software\Classes\Applications\EasyMySQL.exe\shell\open\command"; ValueType: string; ValueData: """{app}\EasyMySQL.exe"" ""%1"""; Flags: uninsdeletekey
+Root: HKLM; Subkey: "Software\Classes\Applications\EasyMySQL.exe\SupportedTypes"; ValueType: string; ValueName: ".sql"; ValueData: ""
 Root: HKLM; Subkey: "Software\EasyMySQL\Capabilities"; ValueType: string; ValueName: "ApplicationName"; ValueData: "EasyMySQL"; Flags: uninsdeletekey
 Root: HKLM; Subkey: "Software\EasyMySQL\Capabilities"; ValueType: string; ValueName: "ApplicationDescription"; ValueData: "{cm:AssocDescription}"
 Root: HKLM; Subkey: "Software\EasyMySQL\Capabilities\FileAssociations"; ValueType: string; ValueName: ".sql"; ValueData: "EasyMySQL.sql"

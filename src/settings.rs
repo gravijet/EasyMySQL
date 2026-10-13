@@ -34,6 +34,10 @@ pub struct Settings {
     pub autosave: bool,
     /// Fehler im SQL waehrend des Tippens markieren
     pub lint: bool,
+    /// Beim Schliessen des Fensters im Infobereich weiterlaufen (sonst wird alles beendet)
+    pub background: bool,
+    /// Beim naechsten Start alle Registerkarten wieder oeffnen
+    pub restore_tabs: bool,
 }
 
 /// Schriftgroesse im SQL-Editor (Pixel): Standard und Grenzen
@@ -65,6 +69,8 @@ impl Default for Settings {
             query_log: false,
             autosave: true,
             lint: true,
+            background: false,
+            restore_tabs: false,
         }
     }
 }
@@ -106,6 +112,8 @@ impl Settings {
                 "query_log" => s.query_log = on,
                 "autosave" => s.autosave = on,
                 "lint" => s.lint = on,
+                "background" => s.background = on,
+                "restore_tabs" => s.restore_tabs = on,
                 _ => {}
             }
         }
@@ -120,7 +128,7 @@ impl Settings {
         let b = |x: bool| if x { "1" } else { "0" };
         let mut text = format!(
             "language={}\ndark={}\nhost={}\nport={}\nuser={}\nsave_password={}\nshow_system_dbs={}\nauto_update={}\neditor_font={}\n\
-             auto_suggest={}\nauto_close={}\nscroll_speed={}\nautoscroll={}\nstorage_dir={}\nquery_log={}\nautosave={}\nlint={}\n",
+             auto_suggest={}\nauto_close={}\nscroll_speed={}\nautoscroll={}\nstorage_dir={}\nquery_log={}\nautosave={}\nlint={}\nbackground={}\nrestore_tabs={}\n",
             self.language.id(),
             b(self.dark),
             self.conn.host,
@@ -138,6 +146,8 @@ impl Settings {
             b(self.query_log),
             b(self.autosave),
             b(self.lint),
+            b(self.background),
+            b(self.restore_tabs),
         );
         for r in &self.recent {
             text.push_str(&format!("recent={}\n", r.display()));

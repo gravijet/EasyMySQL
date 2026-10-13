@@ -291,6 +291,10 @@ pub trait TabView {
     fn file(&self) -> Option<&std::path::Path> {
         None
     }
+    /// Verarbeitet die Registerkarte selbst, wenn diese Datei auf das Fenster gezogen wird?
+    fn takes_drop(&self, _path: &std::path::Path) -> bool {
+        false
+    }
     /// Datei/Ordner wurde im Explorer umbenannt
     fn file_renamed(&mut self, _old: &std::path::Path, _new: &std::path::Path) {}
     /// Vor dem Schliessen (speichern). false = nicht schliessen

@@ -239,6 +239,66 @@ pub fn rename(path: &Path, new_name: &str) -> Result<PathBuf, String> {
 }
 
 /// "Loeschen" = in den Papierkorb des Projekts verschieben (wiederherstellbar).
+/// Freier Name im Ordner `dir` fuer `name` ("a.sql" -> "a 2.sql")
+fn free_name(dir: &Path, name: &std::ffi::OsStr) -> PathBuf {
+    let first = dir.join(name);
+    if !first.exists() {
+        return first;
+    }
+    let (stem, ext) = {
+        let p = Path::new(name);
+        (p.file_stem().unwrap_or(name).to_string_lossy().into_owned(), p.extension().map(|e| e.to_string_lossy().into_owned()))
+    };
+    (2..)
+        .map(|i| match &ext {
+            Some(e) => dir.join(format!("{stem} {i}.{e}")),
+            None => dir.join(format!("{stem} {i}")),
+        })
+        .find(|p| !p.exists())
+        .unwrap()
+}
+
+fn copy_tree(from: &Path, to: &Path) -> std::io::Result<()> {
+    if from.is_dir() {
+        std::fs::create_dir_all(to)?;
+        for e in std::fs::read_dir(from)? {
+            let e = e?;
+            copy_tree(&e.path(), &to.join(e.file_name()))?;
+        }
+        Ok(())
+    } else {
+        std::fs::copy(from, to).map(|_| ())
+    }
+}
+
+/// Datei oder Ordner in `dir` kopieren (bei gleichem Namen mit Nummer). Liefert den neuen Pfad.
+pub fn copy_into(src: &Path, dir: &Path) -> Result<PathBuf, String> {
+    let name = src.file_name().ok_or_else(|| crate::i18n::text("Ungültiger Name.").to_string())?;
+    if dir.starts_with(src) {
+        return Err(crate::i18n::text("Ein Ordner lässt sich nicht in sich selbst kopieren.").into());
+    }
+    let target = free_name(dir, name);
+    copy_tree(src, &target).map_err(|e| e.to_string())?;
+    Ok(target)
+}
+
+/// Datei oder Ordner in `dir` verschieben. `Ok(None)`: liegt schon dort.
+pub fn move_into(src: &Path, dir: &Path) -> Result<Option<PathBuf>, String> {
+    let name = src.file_name().ok_or_else(|| crate::i18n::text("Ungültiger Name.").to_string())?;
+    if src.parent() == Some(dir) {
+        return Ok(None);
+    }
+    if dir.starts_with(src) {
+        return Err(crate::i18n::text("Ein Ordner lässt sich nicht in sich selbst verschieben.").into());
+    }
+    let target = dir.join(name);
+    if target.exists() {
+        return Err(crate::tr_format!("„{}“ gibt es dort schon.", "“{}” already exists there.", name.to_string_lossy()));
+    }
+    std::fs::rename(src, &target).map_err(|e| e.to_string())?;
+    Ok(Some(target))
+}
+
 pub fn trash(project: &Path, path: &Path) -> Result<PathBuf, String> {
     let bin = project.join(".papierkorb");
     std::fs::create_dir_all(&bin).map_err(|e| e.to_string())?;
@@ -469,6 +529,33 @@ mod tests {
         assert!(target.join("Ordner").join("x.sql").exists());
         assert!(!sub.exists());
         let _ = std::fs::remove_dir_all(&target);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn copy_and_move_into_folders() {
+        let dir = std::env::temp_dir().join(format!("easymysql-dnd-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let a = create_folder(&dir, "a").unwrap();
+        let b = create_folder(&dir, "b").unwrap();
+        let f = create_file(&a, "x.sql", "SELECT 1;").unwrap();
+        // Kopieren: bei gleichem Namen mit Nummer
+        let c1 = copy_into(&f, &b).unwrap();
+        let c2 = copy_into(&f, &b).unwrap();
+        assert!(c1.ends_with("x.sql") && c2.ends_with("x 2.sql") && f.exists());
+        assert_eq!(std::fs::read_to_string(&c2).unwrap(), "SELECT 1;");
+        // Ordner mit Inhalt kopieren, aber nicht in sich selbst
+        let copy = copy_into(&a, &b).unwrap();
+        assert!(copy.join("x.sql").exists());
+        assert!(copy_into(&a, &a.join("tief")).is_err());
+        // Verschieben: nicht auf den Namen einer vorhandenen Datei, nicht in sich selbst
+        assert!(move_into(&f, &b).unwrap_err().contains("x.sql"));
+        assert_eq!(move_into(&f, &a).unwrap(), None);
+        let deep = create_folder(&a, "tief").unwrap();
+        assert!(move_into(&a, &deep).is_err());
+        let g = create_file(&a, "y.sql", "").unwrap();
+        let moved = move_into(&g, &b).unwrap().unwrap();
+        assert!(moved.exists() && !g.exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

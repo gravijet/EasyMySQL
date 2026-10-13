@@ -41,6 +41,44 @@ pub enum ExplorerDlg {
     NewProject { name: String },
 }
 
+/// Beim Ziehen im Explorer: Pfad der gezogenen Datei bzw. des Ordners
+struct DragPath(PathBuf);
+
+/// Zustand beim Zeichnen des Dateibaums: Rueckgaben und Ziehen/Ablegen
+struct TreeIo<'a> {
+    active: Option<&'a Path>,
+    open: Option<PathBuf>,
+    dlg: Option<ExplorerDlg>,
+    /// Ablage: (Zielordner, Quellen, verschieben statt kopieren)
+    drop: Option<(PathBuf, Vec<PathBuf>, bool)>,
+    /// Mauszeiger waehrend Dateien von aussen gezogen werden bzw. beim Ablegen
+    os_pos: Option<egui::Pos2>,
+    os_files: &'a [PathBuf],
+}
+
+impl TreeIo<'_> {
+    /// Ablage auf `rect` (Ordner `dir`): zeichnet die Markierung und merkt sich die Ablage.
+    fn target(&mut self, ui: &egui::Ui, resp: &egui::Response, rect: Rect, dir: &Path) {
+        let mut hot = false;
+        if self.os_pos.is_some_and(|p| rect.contains(p)) {
+            hot = true;
+            if !self.os_files.is_empty() {
+                self.drop = Some((dir.to_path_buf(), self.os_files.to_vec(), false));
+            }
+        }
+        if let Some(src) = resp.dnd_release_payload::<DragPath>() {
+            self.drop = Some((dir.to_path_buf(), vec![src.0.clone()], true));
+        }
+        if resp.dnd_hover_payload::<DragPath>().is_some() {
+            hot = true;
+        }
+        if hot {
+            let accent = style::pal().accent;
+            ui.painter().rect(rect, 3.0, accent.gamma_multiply(0.18), egui::Stroke::new(1.0, accent), egui::StrokeKind::Inside);
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct SearchState {
     pub query: String,
@@ -273,26 +311,27 @@ impl EasyApp {
         if collapse {
             collapse_all(ui.ctx(), &tree);
         }
-        let mut open: Option<PathBuf> = None;
-        let mut dlg: Option<ExplorerDlg> = None;
+        let os_files = std::mem::take(&mut self.os_files);
+        let mut io = TreeIo { active: active_file.as_deref(), open: None, dlg: None, drop: None, os_pos: self.os_pos, os_files: &os_files };
         crate::tabs::page_keys(ui);
         egui::ScrollArea::vertical().id_salt("explorer").auto_shrink([false, false]).show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 0.0;
             for n in &tree.children {
-                draw_node(ui, n, 0, active_file.as_deref(), &mut open, &mut dlg);
+                draw_node(ui, n, 0, &mut io);
             }
-            // Rechtsklick auf freie Flaeche
+            // Freie Flaeche: Ablage im Projektordner, Doppelklick und Rechtsklick
             let rest = ui.allocate_response(ui.available_size().max(vec2(10.0, 40.0)), Sense::click());
+            io.target(ui, &rest, rest.rect, &tree.path);
             if rest.double_clicked() {
-                dlg = Some(ExplorerDlg::NewFile { dir: tree.path.clone(), name: new_name(&tree.path) });
+                io.dlg = Some(ExplorerDlg::NewFile { dir: tree.path.clone(), name: new_name(&tree.path) });
             }
             rest.context_menu(|ui| {
                 if ui.button(crate::i18n::text("Neue Datei …")).clicked() {
-                    dlg = Some(ExplorerDlg::NewFile { dir: tree.path.clone(), name: new_name(&tree.path) });
+                    io.dlg = Some(ExplorerDlg::NewFile { dir: tree.path.clone(), name: new_name(&tree.path) });
                     ui.close();
                 }
                 if ui.button(crate::i18n::text("Neuer Ordner …")).clicked() {
-                    dlg = Some(ExplorerDlg::NewFolder { dir: tree.path.clone(), name: String::new() });
+                    io.dlg = Some(ExplorerDlg::NewFolder { dir: tree.path.clone(), name: String::new() });
                     ui.close();
                 }
                 if ui.button(crate::i18n::text("Im Datei-Explorer zeigen")).clicked() {
@@ -301,11 +340,17 @@ impl EasyApp {
                 }
             });
         });
+        let TreeIo { open, dlg, drop, .. } = io;
         if let Some(p) = open {
             self.open_file(&p);
         }
         if dlg.is_some() {
             self.explorer_dlg = dlg;
+        }
+        if let Some((dir, srcs, mv)) = drop {
+            self.apply_drop(&dir, &srcs, mv);
+        } else {
+            self.os_files = os_files;
         }
     }
 
@@ -670,6 +715,43 @@ impl EasyApp {
         self.dialogs.extend(dialogs);
     }
 
+    /// Dateien im Explorer ablegen: von aussen kopieren, innerhalb verschieben.
+    fn apply_drop(&mut self, dir: &Path, srcs: &[PathBuf], mv: bool) {
+        for src in srcs {
+            let res = if mv {
+                workspace::move_into(src, dir).map(|new| {
+                    if let Some(new) = new {
+                        for t in self.tabs.iter_mut() {
+                            t.file_renamed(src, &new);
+                        }
+                    }
+                })
+            } else {
+                workspace::copy_into(src, dir).map(|_| ())
+            };
+            if let Err(e) = res {
+                self.error(e);
+                break;
+            }
+        }
+        self.tree_scan = None;
+    }
+
+    /// Von aussen auf das Fenster gezogene Dateien (nicht im Explorer abgelegt): im Editor
+    /// oeffnen, ein Ordner wird zum Projekt – wie in VS Code.
+    pub(super) fn open_dropped(&mut self, files: Vec<PathBuf>) {
+        for f in files {
+            if self.tabs.get(self.active).is_some_and(|t| t.takes_drop(&f)) {
+                continue;
+            }
+            if f.is_dir() {
+                self.switch_project(Some(f));
+            } else if f.is_file() {
+                self.open_file(&f);
+            }
+        }
+    }
+
     // ------------------------------------------------------------------
     // Dialoge des Explorers
 
@@ -820,11 +902,32 @@ fn file_icon(name: &str) -> (Icon, Color32) {
     }
 }
 
+/// Waehrend des Ziehens: Name der gezogenen Datei neben dem Mauszeiger
+fn drag_ghost(ui: &egui::Ui, name: &str) {
+    if let Some(p) = ui.ctx().pointer_latest_pos() {
+        let painter = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("explorer-ghost")));
+        let pal = style::pal();
+        let galley = painter.layout_no_wrap(name.to_string(), egui::FontId::proportional(12.5), pal.text);
+        let r = Rect::from_min_size(p + vec2(12.0, 8.0), galley.size() + vec2(14.0, 8.0));
+        painter.rect(r, 5.0, pal.face_light, egui::Stroke::new(1.0, pal.accent), egui::StrokeKind::Inside);
+        painter.galley(r.min + vec2(7.0, 4.0), galley, pal.text);
+    }
+}
+
 /// Eintrag im Dateibaum zeichnen (rekursiv).
-fn draw_node(ui: &mut egui::Ui, n: &Node, depth: usize, active: Option<&Path>, open: &mut Option<PathBuf>, dlg: &mut Option<ExplorerDlg>) {
+fn draw_node(ui: &mut egui::Ui, n: &Node, depth: usize, io: &mut TreeIo) {
     let pal = style::pal();
     let indent = 8.0 + depth as f32 * 14.0;
-    let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 22.0), Sense::click());
+    let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 22.0), Sense::click_and_drag());
+    resp.dnd_set_drag_payload(DragPath(n.path.clone()));
+    if resp.dragged() {
+        drag_ghost(ui, &n.name);
+    }
+    // Auf einer Datei abgelegt = in deren Ordner
+    let drop_dir = if n.is_dir { Some(n.path.as_path()) } else { n.path.parent() };
+    if let Some(dir) = drop_dir {
+        io.target(ui, &resp, r, dir);
+    }
     if n.is_dir {
         let id = egui::Id::new(("dir", &n.path));
         let mut state = egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, false);
@@ -840,14 +943,14 @@ fn draw_node(ui: &mut egui::Ui, n: &Node, depth: usize, active: Option<&Path>, o
             state.toggle(ui);
         }
         state.store(ui.ctx());
-        dir_menu(&resp, n, dlg);
+        dir_menu(&resp, n, &mut io.dlg);
         if state.is_open() {
             for c in &n.children {
-                draw_node(ui, c, depth + 1, active, open, dlg);
+                draw_node(ui, c, depth + 1, io);
             }
         }
     } else {
-        let sel = active.is_some_and(|a| a == n.path);
+        let sel = io.active.is_some_and(|a| a == n.path);
         if sel {
             ui.painter().rect_filled(r, 0.0, if pal.dark { Color32::from_rgb(0x37, 0x37, 0x3D) } else { Color32::from_rgb(0xE4, 0xE6, 0xF1) });
         } else if resp.hovered() {
@@ -857,19 +960,19 @@ fn draw_node(ui: &mut egui::Ui, n: &Node, depth: usize, active: Option<&Path>, o
         icons::paint(ui.painter(), Rect::from_center_size(pos2(r.left() + indent + 26.0, r.center().y), vec2(16.0, 16.0)), icon, tint);
         ui.painter().text(pos2(r.left() + indent + 40.0, r.center().y), egui::Align2::LEFT_CENTER, &n.name, egui::FontId::proportional(13.0), pal.text);
         if resp.clicked() {
-            *open = Some(n.path.clone());
+            io.open = Some(n.path.clone());
         }
         resp.context_menu(|ui| {
             if ui.button(crate::i18n::text("Öffnen")).clicked() {
-                *open = Some(n.path.clone());
+                io.open = Some(n.path.clone());
                 ui.close();
             }
             if ui.button(crate::i18n::text("Umbenennen …")).clicked() {
-                *dlg = Some(ExplorerDlg::Rename { path: n.path.clone(), name: n.name.clone() });
+                io.dlg = Some(ExplorerDlg::Rename { path: n.path.clone(), name: n.name.clone() });
                 ui.close();
             }
             if ui.button(crate::i18n::text("Löschen")).clicked() {
-                *dlg = Some(ExplorerDlg::Delete { path: n.path.clone() });
+                io.dlg = Some(ExplorerDlg::Delete { path: n.path.clone() });
                 ui.close();
             }
             ui.separator();
