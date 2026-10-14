@@ -1,6 +1,6 @@
 [package]
 name = "easymysql"
-version = "4.0.0"
+version = "4.0.1"
 edition = "2024"
 description = "EasyMySQL - MariaDB server and graphical database manager for Windows"
 build = "build.rs"

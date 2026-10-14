@@ -137,6 +137,20 @@ fn section(ui: &mut egui::Ui, id: egui::Id, kw: &str, title: &str, open: bool, a
 /// Abschnitt als Karte: Schluesselwort als Marke, Titel, bei zugeklapptem Abschnitt eine Kurzfassung des Inhalts.
 /// `clearable`: Papierkorb in der Kopfzeile; gibt true zurueck, wenn er geklickt wurde.
 #[allow(clippy::too_many_arguments)]
+/// Karte für die Bereiche unten (SQL, Ergebnis): eigener Rahmen, füllt den freien Platz
+fn pane_card(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
+    let pal = style::pal();
+    egui::Frame::new()
+        .fill(pal.bg)
+        .stroke(egui::Stroke::new(1.0, pal.border))
+        .corner_radius(style::RADIUS + 1)
+        .inner_margin(egui::Margin::symmetric(10, 6))
+        .show(ui, |ui| {
+            ui.set_min_size(ui.available_size());
+            add(ui);
+        });
+}
+
 fn section_ex(ui: &mut egui::Ui, id: egui::Id, kw: &str, title: &str, open: bool, summary: &str, clearable: bool, add: impl FnOnce(&mut egui::Ui)) -> bool {
     use egui::{FontId, Sense, Stroke, pos2, vec2};
     let ctx = ui.ctx().clone();
@@ -1625,9 +1639,9 @@ impl TabView for BuilderTab {
             .resizable(true)
             .default_size(ui.available_height() * 0.42)
             .min_size(90.0)
-            .frame(egui::Frame::new().fill(pal.face).inner_margin(egui::Margin::symmetric(4, 4)))
+            .frame(egui::Frame::new().inner_margin(egui::Margin { left: 0, right: 0, top: 8, bottom: 0 }))
             .show(ui, |ui| {
-                egui::Panel::left(egui::Id::new(("builder-sql", &self.id))).resizable(true).default_size(ui.available_width() * 0.4).show(ui, |ui| {
+                egui::Panel::left(egui::Id::new(("builder-sql", &self.id))).resizable(true).default_size(ui.available_width() * 0.4).frame(egui::Frame::new().inner_margin(egui::Margin { left: 0, right: 4, top: 0, bottom: 0 })).show(ui, |ui| pane_card(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.label(RichText::new("SQL").small().strong().color(pal.text_weak));
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -1643,7 +1657,8 @@ impl TabView for BuilderTab {
                         let galley = self.layout_cache.layout(ui, &sql, &egui::FontId::monospace(12.5));
                         ui.add(egui::Label::new(galley).selectable(true).wrap_mode(egui::TextWrapMode::Extend));
                     });
-                });
+                }));
+                pane_card(ui, |ui| {
                 if let Some(e) = &self.error {
                     egui::Frame::new().fill(pal.error_text.gamma_multiply(0.12)).corner_radius(style::RADIUS as f32).inner_margin(egui::Margin::symmetric(10, 8)).show(ui, |ui| {
                         ui.set_min_width(ui.available_width());
@@ -1669,6 +1684,7 @@ impl TabView for BuilderTab {
                         ui.label(RichText::new(crate::i18n::text("Noch kein Ergebnis. „Ausführen“ zeigt die Zeilen der Abfrage.")).color(pal.text_weak));
                     });
                 }
+                });
             });
 
         let tables: Vec<String> = self.schema.as_ref().map(|s| s.tables.iter().map(|t| t.name.clone()).collect()).unwrap_or_default();

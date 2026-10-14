@@ -1293,6 +1293,8 @@ impl Language {
             "Suchen …" => "Search …",
             "Jede Datei kann auf einem anderen Server laufen: Links neben der Datenbank steht „Standard-Server“ – das ist der Server aus den Einstellungen. Dort lassen sich gespeicherte Server wählen (Einstellungen → Verbindung → Weitere Server). Die Wahl wird je Datei gemerkt; Datenbanken, Vorschläge und Prüfung kommen dann von diesem Server." => "Each file can run on a different server: next to the database selector there is “Default server”, the server from Settings. Saved servers can be chosen there (Settings → Connection → More servers). The choice is remembered for each file; databases, suggestions and checks then come from that server.",
             "Unter „Weitere Server“ lassen sich beliebig viele Server mit Namen speichern (auch mit SSH-Tunnel). Eine SQL-Datei kann sich einen davon aussuchen; ohne Auswahl gilt der Server oben. Verbunden wird erst, wenn eine Datei den Server braucht." => "Under “More servers” you can save any number of named servers (also through an SSH tunnel). A SQL file can pick one of them; without a choice the server above is used. EasyMySQL only connects when a file needs the server.",
+            "EasyMySQL läuft bereits, zeigt aber kein Fenster. Bitte im Task-Manager „EasyMySQL.exe“ beenden und die Datei erneut öffnen." => "EasyMySQL is already running but shows no window. Please end “EasyMySQL.exe” in Task Manager and open the file again.",
+            "EasyMySQL ist abgestürzt. Details stehen in:" => "EasyMySQL crashed. Details are in:",
             _ => source,
         }
     }

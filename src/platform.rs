@@ -141,31 +141,15 @@ mod imp {
         }
     }
 
-    /// Mauszeiger im Fenster (in Punkten). Waehrend Dateien von aussen ueber das Fenster gezogen werden,
-/// meldet das Fenster keine Mausbewegung; unter Windows wird der Zeiger deshalb direkt abgefragt.
-pub fn cursor_pos(hwnd: Option<isize>, pixels_per_point: f32) -> Option<egui::Pos2> {
-    #[cfg(windows)]
-    {
-        use windows_sys::Win32::Foundation::{HWND, POINT};
-        use windows_sys::Win32::Graphics::Gdi::ScreenToClient;
-        use windows_sys::Win32::UI::WindowsAndMessaging::GetCursorPos;
-        let h = hwnd? as HWND;
-        let mut p = POINT { x: 0, y: 0 };
+    pub fn message_box(title: &str, text: &str) {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{MB_ICONERROR, MB_OK, MB_SETFOREGROUND, MessageBoxW};
+        let (t, m) = (wide(title), wide(text));
         unsafe {
-            if GetCursorPos(&mut p) == 0 || ScreenToClient(h, &mut p) == 0 {
-                return None;
-            }
+            MessageBoxW(std::ptr::null_mut(), m.as_ptr(), t.as_ptr(), MB_OK | MB_ICONERROR | MB_SETFOREGROUND);
         }
-        Some(egui::pos2(p.x as f32, p.y as f32) / pixels_per_point)
     }
-    #[cfg(not(windows))]
-    {
-        let _ = (hwnd, pixels_per_point);
-        None
-    }
-}
 
-pub fn hide_window(hwnd: isize) {
+    pub fn hide_window(hwnd: isize) {
         unsafe {
             ShowWindow(hwnd as HWND, SW_HIDE);
         }
@@ -186,6 +170,13 @@ pub fn hide_window(hwnd: isize) {
                         break;
                     }
                     std::thread::sleep(std::time::Duration::from_millis(200));
+                }
+                if main_window().is_none() {
+                    // Sonst passiert für den Nutzer gar nichts: Das Programm läuft schon, zeigt aber kein Fenster
+                    message_box(
+                        "EasyMySQL",
+                        crate::i18n::text("EasyMySQL läuft bereits, zeigt aber kein Fenster. Bitte im Task-Manager „EasyMySQL.exe“ beenden und die Datei erneut öffnen."),
+                    );
                 }
                 return false;
             }
@@ -466,4 +457,12 @@ pub fn hide_window(hwnd: isize) {
     imp::hide_window(hwnd);
     #[cfg(not(windows))]
     let _ = hwnd;
+}
+
+/// Fehlermeldung als Dialog (unter Windows startet das Programm ohne Konsole, sonst bliebe ein Fehler unsichtbar)
+pub fn message_box(title: &str, text: &str) {
+    #[cfg(windows)]
+    imp::message_box(title, text);
+    #[cfg(not(windows))]
+    eprintln!("{title}: {text}");
 }

@@ -29,7 +29,26 @@ mod workspace;
 
 use eframe::egui;
 
+/// Abstuerze der Oberflaeche in `fehler.log` festhalten und anzeigen: Ohne Konsole sieht man sonst nur,
+/// dass sich das Programm nicht oeffnet.
+fn install_crash_report() {
+    let default = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let text = format!("{info}");
+        let log = server::app_data_dir().join("fehler.log");
+        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&log) {
+            let _ = std::io::Write::write_all(&mut f, format!("EasyMySQL {}: {text}\n\n", env!("CARGO_PKG_VERSION")).as_bytes());
+        }
+        if std::thread::current().name() == Some("main") {
+            let intro = i18n::text("EasyMySQL ist abgestürzt. Details stehen in:");
+            platform::message_box("EasyMySQL", &format!("{intro}\n{}\n\n{text}", log.display()));
+        }
+        default(info);
+    }));
+}
+
 fn main() -> eframe::Result {
+    install_crash_report();
     // Erhoehter Helfer des Updates: Programmdatei austauschen und beenden
     let args: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
     if let Some(code) = updates::run_helper(&args) {
