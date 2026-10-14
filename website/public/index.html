@@ -31,10 +31,12 @@
 
 <section class="hero" id="start">
   <h1 data-en="Your own database, set up quickly">Deine eigene Datenbank, schnell eingerichtet</h1>
-  <p class="sub" data-en="EasyMySQL brings a MariaDB server with it and lets you work with your data in one window: write queries, edit tables, draw diagrams, keep backups.">EasyMySQL bringt einen MariaDB-Server mit und lässt dich in einem Fenster mit deinen Daten arbeiten: Abfragen schreiben, Tabellen bearbeiten, Diagramme zeichnen, Sicherungen aufbewahren.</p>
+  <p class="sub" data-en="A MariaDB server and everything to work with it in one window: queries, tables, diagrams, backups.">Ein MariaDB-Server und alles, um damit zu arbeiten, in einem Fenster: Abfragen, Tabellen, Diagramme, Sicherungen.</p>
   <p class="cta">
-    <a class="btn" href="/download/setup" id="dl-main" data-en="Download for Windows">Für Windows herunterladen</a>
+    <a class="btn big" href="/download/setup" id="dl-main" data-en="Download for Windows">Für Windows herunterladen</a>
   </p>
+  <p class="meta"><span id="dl-info"></span> <a href="/download/portable" id="dl-portable" data-en="Portable (ZIP)">Portable (ZIP)</a></p>
+  <p class="hint" data-en="Free and open source, Windows 64-bit. If Windows warns about an unknown publisher, choose “More info” and “Run anyway”.">Kostenlos und quelloffen, Windows 64-bit. Warnt Windows vor einem unbekannten Herausgeber: „Weitere Informationen“ und „Trotzdem ausführen“.</p>
 
   <div class="gallery" id="gallery">
     <div class="tabs" role="tablist" aria-label="Ansichten">
@@ -59,64 +61,32 @@
 </section>
 
 <section class="features" id="funktionen">
-  <h2 data-en="What it does">Was es kann</h2>
   <ul>
     <li>
       <h3 data-en="Server included">Server inklusive</h3>
-      <p data-en="MariaDB is part of the program and starts with it. There is nothing else to install.">MariaDB gehört zum Programm und startet mit ihm. Du musst nichts weiter installieren.</p>
+      <p data-en="MariaDB comes with the program and starts with it. It only accepts connections from your own PC.">MariaDB gehört zum Programm und startet mit ihm. Es nimmt nur Verbindungen vom eigenen PC an.</p>
+    </li>
+    <li>
+      <h3 data-en="One server per file">Ein Server pro Datei</h3>
+      <p data-en="Every query file can use its own server, also through an SSH tunnel. By default it is the global one.">Jede Abfragedatei kann einen eigenen Server nutzen, auch über SSH-Tunnel. Standard ist der globale.</p>
     </li>
     <li>
       <h3 data-en="Queries and tables">Abfragen und Tabellen</h3>
-      <p data-en="An editor with suggestions and error marking, tables you edit in place, and a query builder with the SQL right next to it.">Ein Editor mit Vorschlägen und Fehlermarkierung, Tabellen, die du direkt bearbeitest, und ein Abfrage-Assistent mit dem SQL gleich daneben.</p>
+      <p data-en="An editor with suggestions and error marking, tables you edit in place, and a query builder with the SQL next to it.">Ein Editor mit Vorschlägen und Fehlermarkierung, Tabellen zum direkten Bearbeiten und ein Abfrage-Assistent mit dem SQL daneben.</p>
     </li>
     <li>
       <h3 data-en="Clear diagrams">Klare Diagramme</h3>
-      <p data-en="Even large databases are laid out with few crossings and tidy right-angled lines. Zoom out as far as you like, names stay readable.">Auch große Datenbanken werden kreuzungsarm mit ordentlichen, rechtwinkligen Linien angeordnet. Zoome beliebig weit hinaus, die Namen bleiben lesbar.</p>
+      <p data-en="Even large databases are laid out with few crossings and right-angled lines.">Auch große Datenbanken werden kreuzungsarm mit rechtwinkligen Linien angeordnet.</p>
     </li>
     <li>
       <h3 data-en="Import and export">Import und Export</h3>
-      <p data-en="Move data between MariaDB, MySQL, PostgreSQL, SQLite, MongoDB, Redis and CSV. As files or straight from and to other servers, with SSH tunnel and TLS.">Daten zwischen MariaDB, MySQL, PostgreSQL, SQLite, MongoDB, Redis und CSV übertragen. Als Dateien oder direkt von und zu anderen Servern, mit SSH-Tunnel und TLS.</p>
-    </li>
-    <li>
-      <h3 data-en="Users and privileges">Benutzer und Rechte</h3>
-      <p data-en="Create accounts and grant privileges per database or table with a few clicks.">Konten anlegen und Rechte je Datenbank oder Tabelle mit wenigen Klicks vergeben.</p>
+      <p data-en="MariaDB, MySQL, PostgreSQL, SQLite, MongoDB, Redis and CSV. As files or straight from and to other servers.">MariaDB, MySQL, PostgreSQL, SQLite, MongoDB, Redis und CSV. Als Dateien oder direkt von und zu anderen Servern.</p>
     </li>
     <li>
       <h3 data-en="Safe and up to date">Sicher und aktuell</h3>
-      <p data-en="Backups before risky commands and on a schedule. Updates install in the background while you keep working.">Sicherungen vor riskanten Befehlen und nach Zeitplan. Updates installieren sich im Hintergrund, während du weiterarbeitest.</p>
+      <p data-en="Backups before risky commands and on a schedule. Updates install in the background.">Sicherungen vor riskanten Befehlen und nach Zeitplan. Updates installieren sich im Hintergrund.</p>
     </li>
   </ul>
-</section>
-
-<section class="download" id="download">
-  <h2 data-en="Download">Herunterladen</h2>
-  <p class="lead" data-en="For Windows, 64-bit. Free and open source.">Für Windows, 64-bit. Kostenlos und quelloffen.</p>
-  <p class="cta">
-    <a class="btn big" href="/download/setup" id="dl-setup" data-en="Installer">Installer</a>
-    <a class="btn ghost big" href="/download/portable" id="dl-portable" data-en="Portable (ZIP)">Portable (ZIP)</a>
-  </p>
-  <p class="meta" id="dl-info"></p>
-  <p class="hint" data-en="If Windows shows a warning about an unknown publisher, click “More info” and then “Run anyway”.">Zeigt Windows eine Warnung vor einem unbekannten Herausgeber, auf „Weitere Informationen“ und dann auf „Trotzdem ausführen“ klicken.</p>
-</section>
-
-<section class="faq" id="fragen">
-  <h2 data-en="Questions">Fragen</h2>
-  <details>
-    <summary data-en="Do I need to install MariaDB separately?">Muss ich MariaDB extra installieren?</summary>
-    <p data-en="No. It is included.">Nein, es ist dabei.</p>
-  </details>
-  <details>
-    <summary data-en="Can other computers reach my data?">Kommen andere Rechner an meine Daten?</summary>
-    <p data-en="No. By default the server only accepts connections from your own PC.">Nein. Der Server nimmt standardmäßig nur Verbindungen vom eigenen PC an.</p>
-  </details>
-  <details>
-    <summary data-en="Can I work with a server on another computer?">Kann ich mit einem Server auf einem anderen Rechner arbeiten?</summary>
-    <p data-en="Yes, under Settings → Connection, also through an SSH tunnel. Import and export can talk to other servers directly.">Ja, unter Einstellungen → Verbindung, auch über einen SSH-Tunnel. Import und Export sprechen auch direkt mit anderen Servern.</p>
-  </details>
-  <details>
-    <summary data-en="How do updates work?">Wie laufen Updates ab?</summary>
-    <p data-en="EasyMySQL checks for new versions and tells you. A click downloads and installs it in the background, or turn on automatic updates. Afterwards you only restart the app.">EasyMySQL sucht nach neuen Versionen und sagt dir Bescheid. Ein Klick lädt und installiert im Hintergrund, oder du schaltest automatische Updates ein. Danach startest du die App nur noch neu.</p>
-  </details>
 </section>
 
 </main>
