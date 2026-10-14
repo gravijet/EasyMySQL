@@ -45,11 +45,10 @@
         var d = new Date(r.published);
         if (!isNaN(d)) parts.push(d.toLocaleDateString(lang === "de" ? "de-AT" : "en-GB", { day: "numeric", month: "long", year: "numeric" }));
       }
-      if (s && s.size) parts.push((lang === "en" ? "Installer " : "Installer ") + mb(s.size));
-      if (p && p.size) parts.push("Portable " + mb(p.size));
+      if (s && s.size) parts.push(mb(s.size));
       info.textContent = parts.join(" · ");
     }
-    if (s && s.url) { ["dl-main", "dl-setup"].forEach(function (id) { var a = document.getElementById(id); if (a) a.setAttribute("href", s.url); }); }
+    if (s && s.url) { var m = document.getElementById("dl-main"); if (m) m.setAttribute("href", s.url); }
     if (p && p.url) { var pa = document.getElementById("dl-portable"); if (pa) pa.setAttribute("href", p.url); }
   }
   try { var c = JSON.parse(localStorage.getItem("em-rel") || "null"); if (c && c.version) { rel = c; render(c); } } catch (e) {}

@@ -63,9 +63,8 @@ h1 { font-size: clamp(2rem, 5.2vw, 3.5rem); line-height: 1.12; letter-spacing: -
   border: 1px solid var(--accent);
 }
 .btn:hover { filter: brightness(1.1); }
-.btn.ghost { background: transparent; color: var(--accent); }
-.btn.ghost:hover { background: var(--bg2); filter: none; }
 .btn.big { padding: .9rem 2rem; }
+#dl-info:not(:empty)::after { content: " ·"; }
 .meta { margin-top: .75rem; color: var(--mute); font-size: .9375rem; }
 
 .gallery { max-width: 62rem; margin: clamp(2rem, 5vw, 3.5rem) auto 0; }
@@ -84,19 +83,7 @@ h2 { font-size: clamp(1.6rem, 3.4vw, 2.2rem); letter-spacing: -.02em; line-heigh
 h3 { font-size: 1.1rem; margin-bottom: .3rem; }
 .features p { color: var(--mute); }
 
-/* Download */
-.download { text-align: center; padding-block: clamp(3.5rem, 8vw, 6rem); }
-.download h2 { margin-bottom: .5rem; }
-.lead { color: var(--mute); font-size: 1.125rem; }
 .hint { color: var(--mute); font-size: .875rem; max-width: 34rem; margin: 1.25rem auto 0; }
-
-/* Fragen */
-.faq { padding-block: 0 clamp(3rem, 7vw, 5rem); max-width: calc(46rem + 2 * max(1.25rem, calc((100% - 70rem) / 2))); margin-inline: auto; }
-.faq h2 { text-align: center; }
-.faq details { border-top: 1px solid var(--line); }
-.faq details:last-child { border-bottom: 1px solid var(--line); }
-.faq summary { cursor: pointer; padding: .9rem 0; font-weight: 600; }
-.faq details p { color: var(--mute); padding: 0 0 1rem; }
 
 footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .5rem 2rem; padding-block: 1.5rem 2rem; border-top: 1px solid var(--line); font-size: .875rem; color: var(--mute); }
 footer a { color: inherit; }
