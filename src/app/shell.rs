@@ -104,6 +104,7 @@ impl EasyApp {
         let ctx = ui.ctx().clone();
         let mut cmd: Option<Cmd> = None;
         let item = |ui: &mut egui::Ui, text: &str, c: Cmd, cmd: &mut Option<Cmd>| {
+            style::menu_item_look(ui);
             if ui.add(egui::Button::new(text).shortcut_text(keymap::text(c))).clicked() {
                 *cmd = Some(c);
                 ui.close();
@@ -130,10 +131,12 @@ impl EasyApp {
                 ui.spacing_mut().button_padding = vec2(12.0, 6.0);
                 ui.spacing_mut().item_spacing.x = 4.0;
                 ui.menu_button(crate::i18n::text("Datei"), |ui| {
+                    style::menu_item_look(ui);
                     item(ui, crate::i18n::text("Neue Abfrage"), Cmd::NewQuery, &mut cmd);
                     item(ui, crate::i18n::text("Datei öffnen …"), Cmd::OpenFile, &mut cmd);
                     item(ui, crate::i18n::text("Ordner öffnen …"), Cmd::OpenFolder, &mut cmd);
                     ui.menu_button(crate::i18n::text("Zuletzt geöffnet"), |ui| {
+                    style::menu_item_look(ui);
                         for p in self.settings.recent.clone() {
                             if ui.button(workspace::dir_name(&p)).on_hover_text(p.display().to_string()).clicked() {
                                 self.switch_project(Some(p));
@@ -152,6 +155,7 @@ impl EasyApp {
                     }
                 });
                 ui.menu_button(crate::i18n::text("Ansicht"), |ui| {
+                    style::menu_item_look(ui);
                     item(ui, crate::i18n::text("Neues Terminal"), Cmd::NewTerminal, &mut cmd);
                     ui.separator();
                     item(ui, crate::i18n::text("Editor-Schrift vergrößern"), Cmd::FontLarger, &mut cmd);
@@ -159,6 +163,7 @@ impl EasyApp {
                     item(ui, crate::i18n::text("Editor-Schrift zurücksetzen"), Cmd::FontReset, &mut cmd);
                 });
                 ui.menu_button(crate::i18n::text("Datenbank"), |ui| {
+                    style::menu_item_look(ui);
                     let connected = self.db.is_some();
                     if ui.add_enabled(connected, egui::Button::new(crate::i18n::text("Neue Datenbank …"))).clicked() {
                         self.dialogs.push(Dialog::NewDatabase { name: String::new(), collation: COLLATIONS[0].into() });
@@ -186,6 +191,7 @@ impl EasyApp {
                     }
                 });
                 ui.menu_button("Server", |ui| {
+                    style::menu_item_look(ui);
                     let st = self.server.state();
                     if ui.add_enabled(!st.is_running() && !st.is_busy(), egui::Button::new(crate::i18n::text("Starten"))).clicked() {
                         self.start_server(&ctx);
@@ -210,6 +216,7 @@ impl EasyApp {
                     }
                 });
                 ui.menu_button(crate::i18n::text("Hilfe"), |ui| {
+                    style::menu_item_look(ui);
                     item(ui, crate::i18n::text("Handbuch"), Cmd::Help, &mut cmd);
                     item(ui, crate::i18n::text("Nach Updates suchen"), Cmd::CheckUpdates, &mut cmd);
                 });
@@ -272,7 +279,7 @@ impl EasyApp {
                     k => format!("{} ({k})", Cmd::NewQuery.label()),
                 };
                 let clicked = if bar_w >= 640.0 {
-                    icons::primary_button(ui, Icon::Plus, crate::i18n::tr("Abfrage", "Query")).on_hover_text(tip).clicked()
+                    icons::accent_button(ui, Icon::Plus, crate::i18n::tr("Abfrage", "Query")).on_hover_text(tip).clicked()
                 } else {
                     icons::button_sized(ui, Icon::Plus, &tip, 28.0).clicked()
                 };

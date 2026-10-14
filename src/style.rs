@@ -236,7 +236,7 @@ fn visuals(p: &Pal) -> Visuals {
     v.slider_trailing_fill = true;
     v.handle_shape = egui::style::HandleShape::Circle;
     v.window_shadow = Shadow { offset: [0, 8], blur: 24, spread: 0, color: Color32::from_black_alpha(if p.dark { 150 } else { 46 }) };
-    v.popup_shadow = Shadow { offset: [0, 4], blur: 16, spread: 0, color: Color32::from_black_alpha(if p.dark { 140 } else { 40 }) };
+    v.popup_shadow = Shadow { offset: [0, 6], blur: 22, spread: 0, color: Color32::from_black_alpha(if p.dark { 90 } else { 30 }) };
     v.window_fill = p.face_light;
     v.panel_fill = p.face;
     v.window_stroke = Stroke::new(1.0, p.border);
@@ -280,6 +280,18 @@ fn visuals(p: &Pal) -> Visuals {
         ws.expansion = 0.0;
     }
     v
+}
+
+/// Einträge in Menüs: mehr Innenabstand, beim Darüberfahren eine abgerundete Fläche in der Auswahlfarbe
+pub fn menu_item_look(ui: &mut egui::Ui) {
+    let p = pal();
+    ui.spacing_mut().button_padding = egui::vec2(10.0, 6.0);
+    let w = &mut ui.visuals_mut().widgets;
+    w.hovered.weak_bg_fill = p.selection;
+    w.hovered.bg_fill = p.selection;
+    w.hovered.fg_stroke = Stroke::new(1.0, if p.dark { Color32::WHITE } else { p.text });
+    w.active.weak_bg_fill = p.selection.gamma_multiply(1.25);
+    w.active.bg_fill = p.selection.gamma_multiply(1.25);
 }
 
 /// Umrandeter Inhaltsbereich (wie ein Listenfeld).

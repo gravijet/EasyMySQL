@@ -213,6 +213,32 @@ pub fn primary_button(ui: &mut egui::Ui, icon: Icon, text: &str) -> Response {
     labelled_button(ui, icon, text, true, false)
 }
 
+/// Hervorgehobener Knopf der oberen Leiste: runde Akzentfläche, Symbol im hellen Kreis, beim Darüberfahren heller
+pub fn accent_button(ui: &mut egui::Ui, icon: Icon, text: &str) -> Response {
+    let pal = style::pal();
+    let galley = ui.painter().layout_no_wrap(text.to_string(), egui::FontId::proportional(13.0), Color32::WHITE);
+    let size = vec2(galley.size().x + 48.0, 30.0);
+    let (r, resp) = ui.allocate_exact_size(size, Sense::click());
+    let fill = if resp.is_pointer_button_down_on() {
+        pal.accent.gamma_multiply(0.82)
+    } else if resp.hovered() {
+        pal.accent.lerp_to_gamma(Color32::WHITE, 0.16)
+    } else {
+        pal.accent
+    };
+    ui.painter().rect_filled(r, 10.0, fill);
+    // Heller Rand oben gibt der Fläche etwas Tiefe
+    ui.painter().rect_stroke(r, 10.0, Stroke::new(1.0, Color32::from_white_alpha(28)), egui::StrokeKind::Inside);
+    let dot = pos2(r.left() + 17.0, r.center().y);
+    ui.painter().circle_filled(dot, 9.0, Color32::from_white_alpha(46));
+    paint(ui.painter(), Rect::from_center_size(dot, vec2(12.0, 12.0)), icon, Color32::WHITE);
+    ui.painter().galley_with_override_text_color(pos2(r.left() + 33.0, r.center().y - galley.size().y / 2.0), galley, Color32::WHITE);
+    if resp.has_focus() {
+        ui.painter().rect_stroke(r, 10.0, Stroke::new(1.5, Color32::WHITE), egui::StrokeKind::Outside);
+    }
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
 fn labelled_button(ui: &mut egui::Ui, icon: Icon, text: &str, primary: bool, icon_right: bool) -> Response {
     let pal = style::pal();
     let galley = ui.painter().layout_no_wrap(text.to_string(), egui::FontId::proportional(13.0), pal.text);
@@ -226,7 +252,7 @@ fn labelled_button(ui: &mut egui::Ui, icon: Icon, text: &str, primary: bool, ico
     } else {
         (visuals.weak_bg_fill, if enabled { visuals.fg_stroke.color } else { pal.text_weak })
     };
-    ui.painter().rect(r, 3.0, fill, if primary { Stroke::NONE } else { visuals.bg_stroke }, egui::StrokeKind::Inside);
+    ui.painter().rect(r, style::RADIUS as f32, fill, if primary { Stroke::NONE } else { visuals.bg_stroke }, egui::StrokeKind::Inside);
     let (icon_x, text_x) = if icon_right { (r.right() - 15.0, r.left() + 11.0) } else { (r.left() + 15.0, r.left() + 28.0) };
     paint(ui.painter(), Rect::from_center_size(pos2(icon_x, r.center().y), vec2(14.0, 14.0)), icon, fg);
     ui.painter().galley_with_override_text_color(pos2(text_x, r.center().y - galley.size().y / 2.0), galley, fg);
