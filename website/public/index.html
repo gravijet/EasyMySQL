@@ -35,7 +35,6 @@
   <p class="cta">
     <a class="btn" href="/download/setup" id="dl-main" data-en="Download for Windows">Für Windows herunterladen</a>
   </p>
-  <p class="meta" id="dl-meta" hidden></p>
 
   <div class="gallery" id="gallery">
     <div class="tabs" role="tablist" aria-label="Ansichten">
@@ -43,16 +42,18 @@
       <button type="button" role="tab" id="t-data" aria-selected="false" aria-controls="p-data" tabindex="-1" data-en="Tables">Tabellen</button>
       <button type="button" role="tab" id="t-er" aria-selected="false" aria-controls="p-er" tabindex="-1" data-en="Diagram">Diagramm</button>
       <button type="button" role="tab" id="t-builder" aria-selected="false" aria-controls="p-builder" tabindex="-1" data-en="Query builder">Assistent</button>
-      <button type="button" role="tab" id="t-users" aria-selected="false" aria-controls="p-users" tabindex="-1" data-en="Users">Benutzer</button>
       <button type="button" role="tab" id="t-import" aria-selected="false" aria-controls="p-import" tabindex="-1" data-en="Import">Import</button>
+      <button type="button" role="tab" id="t-export" aria-selected="false" aria-controls="p-export" tabindex="-1" data-en="Export">Export</button>
+      <button type="button" role="tab" id="t-users" aria-selected="false" aria-controls="p-users" tabindex="-1" data-en="Users">Benutzer</button>
     </div>
     <div class="frame">
       <img id="p-sql" role="tabpanel" aria-labelledby="t-sql" src="/shots/sql.webp" width="1200" height="760" alt="Der SQL-Editor mit einer Abfrage und dem Ergebnis darunter" data-en-alt="The SQL editor with a query and its result below">
-      <img id="p-data" role="tabpanel" aria-labelledby="t-data" src="/shots/data.webp" width="1200" height="760" loading="lazy" hidden alt="Eine Tabelle mit Kundendaten und dem Spaltenmenü" data-en-alt="A table with customer data and the column menu">
+      <img id="p-data" role="tabpanel" aria-labelledby="t-data" src="/shots/data.webp" width="1200" height="760" loading="lazy" hidden alt="Eine Tabelle mit Produktdaten" data-en-alt="A table with product data">
       <img id="p-er" role="tabpanel" aria-labelledby="t-er" src="/shots/er.webp" width="1200" height="760" loading="lazy" hidden alt="Das ER-Diagramm einer Shop-Datenbank" data-en-alt="The ER diagram of a shop database">
       <img id="p-builder" role="tabpanel" aria-labelledby="t-builder" src="/shots/builder.webp" width="1200" height="760" loading="lazy" hidden alt="Der Abfrage-Assistent mit dem erzeugten SQL" data-en-alt="The query builder with the generated SQL">
+      <img id="p-import" role="tabpanel" aria-labelledby="t-import" src="/shots/import.webp" width="1200" height="760" loading="lazy" hidden alt="Der Import aus einem anderen Datenbankserver" data-en-alt="Importing from another database server">
+      <img id="p-export" role="tabpanel" aria-labelledby="t-export" src="/shots/export.webp" width="1200" height="760" loading="lazy" hidden alt="Der Export auf einen PostgreSQL-Server" data-en-alt="Exporting to a PostgreSQL server">
       <img id="p-users" role="tabpanel" aria-labelledby="t-users" src="/shots/users.webp" width="1200" height="760" loading="lazy" hidden alt="Die Verwaltung von Benutzern und ihren Rechten" data-en-alt="Managing users and their privileges">
-      <img id="p-import" role="tabpanel" aria-labelledby="t-import" src="/shots/import.webp" width="1200" height="760" loading="lazy" hidden alt="Der Import aus Redis in neue Tabellen" data-en-alt="Importing from Redis into new tables">
     </div>
   </div>
 </section>
@@ -65,36 +66,24 @@
       <p data-en="MariaDB is part of the program and starts with it. There is nothing else to install.">MariaDB gehört zum Programm und startet mit ihm. Du musst nichts weiter installieren.</p>
     </li>
     <li>
-      <h3 data-en="Write queries">Abfragen schreiben</h3>
-      <p data-en="An editor with suggestions and error marking while you type, and a history of everything you ran.">Ein Editor mit Vorschlägen und Fehlermarkierung beim Tippen und einem Verlauf aller ausgeführten Abfragen.</p>
+      <h3 data-en="Queries and tables">Abfragen und Tabellen</h3>
+      <p data-en="An editor with suggestions and error marking, tables you edit in place, and a query builder with the SQL right next to it.">Ein Editor mit Vorschlägen und Fehlermarkierung, Tabellen, die du direkt bearbeitest, und ein Abfrage-Assistent mit dem SQL gleich daneben.</p>
     </li>
     <li>
-      <h3 data-en="Edit tables">Tabellen bearbeiten</h3>
-      <p data-en="Change values and the structure right in the table: rename, move and copy columns, with undo. Merge tables with a click.">Werte und Struktur direkt in der Tabelle ändern: Spalten umbenennen, verschieben und kopieren, mit Rückgängig. Tabellen zusammenfügen per Klick.</p>
-    </li>
-    <li>
-      <h3 data-en="See connections">Zusammenhänge sehen</h3>
-      <p data-en="The diagram shows how the tables of a database relate. Rearrange it and export it as an image.">Das Diagramm zeigt, wie die Tabellen einer Datenbank zusammenhängen. Du kannst es umordnen und als Bild exportieren.</p>
-    </li>
-    <li>
-      <h3 data-en="Build queries by clicking">Abfragen zusammenklicken</h3>
-      <p data-en="Assemble a query from blocks. The finished SQL appears right next to it.">Aus Bausteinen eine Abfrage zusammensetzen. Das fertige SQL steht gleich daneben.</p>
+      <h3 data-en="Clear diagrams">Klare Diagramme</h3>
+      <p data-en="Even large databases are laid out with few crossings and tidy right-angled lines. Zoom out as far as you like, names stay readable.">Auch große Datenbanken werden kreuzungsarm mit ordentlichen, rechtwinkligen Linien angeordnet. Zoome beliebig weit hinaus, die Namen bleiben lesbar.</p>
     </li>
     <li>
       <h3 data-en="Import and export">Import und Export</h3>
-      <p data-en="Import SQLite, MongoDB exports, CSV and Redis. Export as SQL, JSON, CSV, XML or a SQLite file.">Importiere SQLite, MongoDB-Exporte, CSV und Redis. Exportiere als SQL, JSON, CSV, XML oder SQLite-Datei.</p>
+      <p data-en="Move data between MariaDB, MySQL, PostgreSQL, SQLite, MongoDB, Redis and CSV. As files or straight from and to other servers, with SSH tunnel and TLS.">Daten zwischen MariaDB, MySQL, PostgreSQL, SQLite, MongoDB, Redis und CSV übertragen. Als Dateien oder direkt von und zu anderen Servern, mit SSH-Tunnel und TLS.</p>
     </li>
     <li>
       <h3 data-en="Users and privileges">Benutzer und Rechte</h3>
       <p data-en="Create accounts and grant privileges per database or table with a few clicks.">Konten anlegen und Rechte je Datenbank oder Tabelle mit wenigen Klicks vergeben.</p>
     </li>
     <li>
-      <h3 data-en="Reach remote servers">Entfernte Server erreichen</h3>
-      <p data-en="Connect to a database on another machine through an SSH tunnel.">Verbinde dich über einen SSH-Tunnel mit einer Datenbank auf einem anderen Rechner.</p>
-    </li>
-    <li>
-      <h3 data-en="Backups">Sicherungen</h3>
-      <p data-en="Before risky commands a backup is made automatically, and on a schedule as well.">Vor riskanten Befehlen wird automatisch gesichert, außerdem nach einem Zeitplan.</p>
+      <h3 data-en="Safe and up to date">Sicher und aktuell</h3>
+      <p data-en="Backups before risky commands and on a schedule. Updates install in the background while you keep working.">Sicherungen vor riskanten Befehlen und nach Zeitplan. Updates installieren sich im Hintergrund, während du weiterarbeitest.</p>
     </li>
   </ul>
 </section>
@@ -117,20 +106,16 @@
     <p data-en="No. It is included.">Nein, es ist dabei.</p>
   </details>
   <details>
-    <summary data-en="What happens when I close the window?">Was passiert, wenn ich das Fenster schließe?</summary>
-    <p data-en="Closing the window quits EasyMySQL and shuts the server down cleanly. If you want it to keep running, switch on “Keep running in the tray” in the settings. It does not start with Windows on its own.">Das Schließen des Fensters beendet EasyMySQL und fährt den Server sauber herunter. Wer es im Hintergrund weiterlaufen lassen möchte, schaltet in den Einstellungen „Im Infobereich weiterlaufen“ ein. Mit Windows startet es nicht von selbst.</p>
-  </details>
-  <details>
     <summary data-en="Can other computers reach my data?">Kommen andere Rechner an meine Daten?</summary>
     <p data-en="No. By default the server only accepts connections from your own PC.">Nein. Der Server nimmt standardmäßig nur Verbindungen vom eigenen PC an.</p>
   </details>
   <details>
-    <summary data-en="Can I use it for a server on another computer?">Kann ich einen Server auf einem anderen Rechner verwenden?</summary>
-    <p data-en="Yes. Enter its address under Settings → Connection. If it only accepts connections from itself, tick “Connect through an SSH tunnel”.">Ja. Trage die Adresse unter Einstellungen → Verbindung ein. Nimmt der Server nur Verbindungen von sich selbst an, hake „Über SSH-Tunnel verbinden“ an.</p>
+    <summary data-en="Can I work with a server on another computer?">Kann ich mit einem Server auf einem anderen Rechner arbeiten?</summary>
+    <p data-en="Yes, under Settings → Connection, also through an SSH tunnel. Import and export can talk to other servers directly.">Ja, unter Einstellungen → Verbindung, auch über einen SSH-Tunnel. Import und Export sprechen auch direkt mit anderen Servern.</p>
   </details>
   <details>
-    <summary data-en="Does it update itself?">Aktualisiert es sich selbst?</summary>
-    <p data-en="EasyMySQL looks for new versions now and then and tells you. You decide when to install them.">EasyMySQL sucht regelmäßig nach neuen Versionen und sagt dir Bescheid. Wann du installierst, entscheidest du.</p>
+    <summary data-en="How do updates work?">Wie laufen Updates ab?</summary>
+    <p data-en="EasyMySQL checks for new versions and tells you. A click downloads and installs it in the background, or turn on automatic updates. Afterwards you only restart the app.">EasyMySQL sucht nach neuen Versionen und sagt dir Bescheid. Ein Klick lädt und installiert im Hintergrund, oder du schaltest automatische Updates ein. Danach startest du die App nur noch neu.</p>
   </details>
 </section>
 

@@ -68,7 +68,7 @@ pub fn scan(path: &Path, cancel: &AtomicBool) -> Result<Vec<TableScan>, String> 
                 if decl.to_uppercase().contains("BOOL") && ty == ColType::Int {
                     ty = ColType::Bool;
                 }
-                Col { name: n.clone(), ty }
+                Col { name: n.clone(), ty, decl: None }
             })
             .collect();
         let mut pk: Vec<(i64, String)> = info.iter().zip(&names).filter(|(c, _)| c.2 > 0).map(|(c, n)| (c.2, n.clone())).collect();
@@ -101,7 +101,7 @@ pub fn scan(path: &Path, cancel: &AtomicBool) -> Result<Vec<TableScan>, String> 
             by_id.retain(|f| f.columns.len() == f.ref_columns.len());
             by_id
         };
-        out.push(TableScan { name: name.clone(), origin: name, columns, rows, pk: if pk_ok { pk } else { vec![] }, auto_inc, fks });
+        out.push(TableScan { name: name.clone(), origin: name, columns, rows, pk: if pk_ok { pk } else { vec![] }, auto_inc, fks, ddl: None });
     }
     Ok(out)
 }

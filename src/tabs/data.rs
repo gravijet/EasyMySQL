@@ -455,7 +455,7 @@ impl DataTab {
         egui::Window::new(title).collapsible(false).resizable(false).anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]).show(ctx, |ui| {
             egui::Grid::new("coldlg").num_columns(2).spacing([10.0, 8.0]).show(ui, |ui| {
                 ui.label("Name");
-                let r = ui.add_sized([220.0, 22.0], egui::TextEdit::singleline(&mut d.def.name).vertical_align(egui::Align::Center));
+                let r = ui.add_sized([220.0, 28.0], crate::widgets::edit(&mut d.def.name).vertical_align(egui::Align::Center));
                 if d.orig.is_none() && !r.has_focus() && d.def.name.is_empty() {
                     r.request_focus();
                 }
@@ -467,7 +467,7 @@ impl DataTab {
                 crate::widgets::check(ui, &mut d.def.not_null, crate::i18n::text("Nicht NULL"));
                 ui.end_row();
                 ui.label(crate::i18n::text("Standardwert:"));
-                ui.add_sized([220.0, 22.0], egui::TextEdit::singleline(&mut d.def.default).vertical_align(egui::Align::Center));
+                ui.add_sized([220.0, 28.0], crate::widgets::edit(&mut d.def.default).vertical_align(egui::Align::Center));
                 ui.end_row();
             });
             ui.add_space(6.0);
@@ -547,7 +547,7 @@ impl DataTab {
                                 .map(|c| c.col_type.clone())
                                 .unwrap_or_default();
                             ui.label(name.as_str()).on_hover_text(&ty);
-                            ui.add_enabled_ui(!*def, |ui| ui.add_sized([240.0, 20.0], egui::TextEdit::singleline(val).vertical_align(egui::Align::Center).hint_text(ty)));
+                            ui.add_enabled_ui(!*def, |ui| ui.add_sized([240.0, 28.0], crate::widgets::edit(val).vertical_align(egui::Align::Center).hint_text(ty)));
                             crate::widgets::check(ui, def, crate::i18n::text("Standard"));
                             ui.end_row();
                         }
@@ -603,6 +603,10 @@ impl DataTab {
 }
 
 impl TabView for DataTab {
+    fn database(&self) -> Option<String> {
+        Some(self.db.clone()).filter(|d| !d.is_empty())
+    }
+
     fn icon(&self) -> Option<crate::icons::Icon> {
         Some(crate::icons::Icon::Table)
     }
@@ -688,7 +692,7 @@ impl TabView for DataTab {
             ui.label(RichText::new(format!("{}.{}", self.db, self.table)).strong());
             ui.add_space(6.0);
             let w = (ui.available_width() - 46.0 - if self.order.is_empty() { 0.0 } else { 150.0 }).clamp(160.0, 560.0);
-            let r = ui.add_sized([w, 28.0], egui::TextEdit::singleline(&mut self.filter).vertical_align(egui::Align::Center).hint_text(crate::i18n::tr("WHERE-Bedingung", "WHERE condition")));
+            let r = ui.add_sized([w, 28.0], crate::widgets::edit(&mut self.filter).vertical_align(egui::Align::Center).hint_text(crate::i18n::tr("WHERE-Bedingung", "WHERE condition")));
             if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                 self.offset = 0;
                 self.reload(cx);

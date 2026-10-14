@@ -28,7 +28,8 @@ impl EasyApp {
             ["builder", id, db] => Box::new(BuilderTab::restore(id, db)),
             ["safety"] => Box::new(SafetyTab::new()),
             ["users"] => Box::new(crate::tabs::users::UsersTab::new()),
-            ["import"] => Box::new(crate::tabs::import::ImportTab::new()),
+            ["import"] => Box::new(crate::tabs::transfer::TransferTab::new(crate::tabs::transfer::Mode::Import)),
+            ["export"] => Box::new(crate::tabs::transfer::TransferTab::new(crate::tabs::transfer::Mode::Export)),
             ["log"] => Box::new(LogTab::new()),
             ["settings"] => Box::new(SettingsTab::new()),
             ["help"] => Box::new(HelpTab::new()),
@@ -40,7 +41,6 @@ impl EasyApp {
         let mut restored_scratch = Vec::new();
         if let Some(s) = &session {
             self.side_view = SideView::from_name(&s.side_view);
-            self.sidebar = s.sidebar;
             let tabs: &[String] = if self.settings.restore_tabs { &s.tabs } else { &[] };
             for t in tabs {
                 if let Some(id) = t.strip_prefix("scratch\t").and_then(|r| r.split('\t').next()).and_then(|i| i.parse::<usize>().ok()) {
@@ -82,7 +82,6 @@ impl EasyApp {
             tabs: self.tabs.iter().filter_map(|t| t.session()).collect(),
             active: self.active,
             side_view: self.side_view.name().into(),
-            sidebar: self.sidebar,
         };
         if self.saved_session.as_ref() != Some(&s) {
             s.save();
@@ -110,8 +109,11 @@ impl EasyApp {
                 ui.close();
             }
         };
+        let bar_w = ui.available_width();
+        let bar = Rect::from_min_size(ui.next_widget_position(), vec2(bar_w, titlebar::HEIGHT));
+        titlebar::drag_area(ui, bar);
         ui.horizontal(|ui| {
-            ui.set_min_height(34.0);
+            ui.set_min_height(titlebar::HEIGHT);
             ui.spacing_mut().item_spacing.x = 2.0;
             ui.spacing_mut().button_padding = vec2(11.0, 6.0);
             // Zeichen und Name des Programms
@@ -150,9 +152,6 @@ impl EasyApp {
                     }
                 });
                 ui.menu_button(crate::i18n::text("Ansicht"), |ui| {
-                    item(ui, crate::i18n::text("Seitenleiste ein/aus"), Cmd::ToggleSidebar, &mut cmd);
-                    ui.separator();
-                    item(ui, crate::i18n::text("Terminal ein/aus"), Cmd::ToggleTerminal, &mut cmd);
                     item(ui, crate::i18n::text("Neues Terminal"), Cmd::NewTerminal, &mut cmd);
                     ui.separator();
                     item(ui, crate::i18n::text("Editor-Schrift vergrößern"), Cmd::FontLarger, &mut cmd);
@@ -177,12 +176,9 @@ impl EasyApp {
                         item(ui, crate::i18n::text("Abfrage-Assistent"), Cmd::QueryBuilder, &mut cmd);
                     });
                     ui.separator();
-                    if ui.add_enabled(connected, egui::Button::new(crate::i18n::text("Exportieren …"))).clicked() {
-                        if let Some(d) = self.need_db() {
-                            self.dialogs.push(Dialog::Export { db: d, only: None, with_data: true, format: crate::transfer::export::Format::Sql });
-                        }
-                        ui.close();
-                    }
+                    ui.add_enabled_ui(connected, |ui| {
+                        item(ui, crate::i18n::text("Exportieren …"), Cmd::Export, &mut cmd);
+                    });
                     item(ui, crate::i18n::text("Importieren …"), Cmd::Import, &mut cmd);
                     if ui.add_enabled(connected, egui::Button::new(crate::i18n::text("SQL-Datei importieren …"))).clicked() {
                         ui.close();
@@ -216,16 +212,21 @@ impl EasyApp {
                 ui.menu_button(crate::i18n::text("Hilfe"), |ui| {
                     item(ui, crate::i18n::text("Handbuch"), Cmd::Help, &mut cmd);
                     item(ui, crate::i18n::text("Nach Updates suchen"), Cmd::CheckUpdates, &mut cmd);
-                    ui.separator();
-                    if ui.button(crate::i18n::text("Über EasyMySQL")).clicked() {
-                        self.dialogs.push(Dialog::About);
-                        ui.close();
-                    }
                 });
             });
             // Rechts: Neue Abfrage, Werkzeuge und der Serverzustand
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                titlebar::controls(ui);
+                ui.add_space(8.0);
                 ui.spacing_mut().item_spacing.x = 4.0;
+                // Update installiert: zum Benutzen neu starten
+                if let Some(v) = self.updater.installed_version() {
+                    let label = crate::tr_format!("Neu starten ({v})", "Restart ({v})");
+                    if crate::widgets::primary(ui, &label).on_hover_text(crate::i18n::text("Das Update ist installiert. Neu starten, um die neue Version zu benutzen.")).clicked() {
+                        actions.push(Action::UpdateRestart);
+                    }
+                    ui.add_space(6.0);
+                }
                 let st = self.server.state();
                 let pal = style::pal();
                 let color = if st.is_running() {
@@ -235,16 +236,19 @@ impl EasyApp {
                 } else {
                     pal.warn_text
                 };
-                // Zustandsanzeige: Punkt und kurzer Text
+                // Zustandsanzeige: Punkt und kurzer Text (bei schmalem Fenster nur der Punkt)
                 let text = match &self.db {
                     Some(d) => d.info.label(),
                     None => st.text().to_string(),
                 };
-                let galley = ui.painter().layout_no_wrap(text, egui::FontId::proportional(12.5), pal.text_weak);
-                let (r, resp) = ui.allocate_exact_size(vec2(galley.size().x + 36.0, 28.0), Sense::click());
+                let show_text = bar_w >= 940.0;
+                let galley = ui.painter().layout_no_wrap(if show_text { text } else { String::new() }, egui::FontId::proportional(12.5), pal.text_weak);
+                let (r, resp) = ui.allocate_exact_size(vec2(if show_text { galley.size().x + 36.0 } else { 28.0 }, 28.0), Sense::click());
                 ui.painter().rect(r, 14.0, if resp.hovered() { pal.hover } else { pal.face_light }, egui::Stroke::new(1.0, pal.border), egui::StrokeKind::Inside);
-                ui.painter().circle_filled(pos2(r.left() + 15.0, r.center().y), 4.0, color);
-                ui.painter().galley(pos2(r.left() + 26.0, r.center().y - galley.size().y / 2.0), galley, pal.text_weak);
+                ui.painter().circle_filled(if show_text { pos2(r.left() + 15.0, r.center().y) } else { r.center() }, 4.0, color);
+                if show_text {
+                    ui.painter().galley(pos2(r.left() + 26.0, r.center().y - galley.size().y / 2.0), galley, pal.text_weak);
+                }
                 let tip = match &self.db {
                     Some(d) => format!("Server {} – {} (MariaDB {})", st.text(), d.info.label(), d.version.split('-').next().unwrap_or("")),
                     None => format!("Server {}", st.text()),
@@ -253,7 +257,7 @@ impl EasyApp {
                     cmd = Some(Cmd::ServerLog);
                 }
                 ui.add_space(6.0);
-                for (icon, c) in [(Icon::Wizard, Cmd::QueryBuilder), (Icon::Diagram, Cmd::ErDiagram)] {
+                for (icon, c) in [(Icon::Wizard, Cmd::QueryBuilder), (Icon::Diagram, Cmd::ErDiagram)].into_iter().filter(|_| bar_w >= 760.0) {
                     let tip = match keymap::text(c) {
                         k if k.is_empty() => c.label().to_string(),
                         k => format!("{} ({k})", c.label()),
@@ -267,7 +271,12 @@ impl EasyApp {
                     k if k.is_empty() => Cmd::NewQuery.label().to_string(),
                     k => format!("{} ({k})", Cmd::NewQuery.label()),
                 };
-                if icons::primary_button(ui, Icon::Plus, crate::i18n::tr("Abfrage", "Query")).on_hover_text(tip).clicked() {
+                let clicked = if bar_w >= 640.0 {
+                    icons::primary_button(ui, Icon::Plus, crate::i18n::tr("Abfrage", "Query")).on_hover_text(tip).clicked()
+                } else {
+                    icons::button_sized(ui, Icon::Plus, &tip, 28.0).clicked()
+                };
+                if clicked {
                     cmd = Some(Cmd::NewQuery);
                 }
             });
@@ -281,29 +290,41 @@ impl EasyApp {
     // Aktivitaetsleiste (nur Seitenleisten)
 
     pub(super) fn activity_bar(&mut self, ui: &mut egui::Ui) {
+        const BTN: f32 = 44.0;
+        const GAP: f32 = 6.0;
         let pal = style::pal();
-        ui.add_space(6.0);
+        let ctx = ui.ctx().clone();
+        // Ein Knopf der Leiste: runde Flaeche, Symbol mittig, bei Auswahl ein Balken am linken Rand
+        let button = |ui: &mut egui::Ui, icon: Icon, active: bool, tip: String| -> bool {
+            let (slot, resp) = ui.allocate_exact_size(vec2(ui.available_width(), BTN), Sense::click());
+            let r = Rect::from_center_size(slot.center(), vec2(BTN, BTN));
+            let radius = style::RADIUS as f32 + 3.0;
+            if active {
+                ui.painter().rect_filled(r, radius, pal.selection.gamma_multiply(if pal.dark { 0.75 } else { 0.9 }));
+                let bar = Rect::from_center_size(pos2(slot.left() + 1.0, r.center().y), vec2(3.0, 20.0));
+                ui.painter().rect_filled(bar, 1.5, pal.activity_active);
+            } else if resp.hovered() {
+                ui.painter().rect_filled(r, radius, pal.hover);
+            }
+            let color = if active { pal.activity_active } else if resp.hovered() { pal.text } else { pal.activity_fg };
+            icons::paint(ui.painter(), Rect::from_center_size(r.center(), vec2(24.0, 24.0)), icon, color);
+            resp.on_hover_text(tip).clicked()
+        };
+        ui.add_space(2.0);
+        ui.spacing_mut().item_spacing.y = GAP;
         for (icon, view, cmd) in [
             (Icon::Files, SideView::Explorer, Cmd::ShowExplorer),
             (Icon::Search, SideView::Search, Cmd::ShowSearch),
             (Icon::Database, SideView::Databases, Cmd::ShowDatabases),
             (Icon::History, SideView::History, Cmd::ShowHistory),
         ] {
-            let (slot, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 42.0), Sense::click());
-            let r = Rect::from_center_size(slot.center(), vec2(40.0, 38.0));
-            let active = self.sidebar && self.side_view == view;
-            if active {
-                ui.painter().rect_filled(r, style::RADIUS as f32 + 2.0, pal.selection.gamma_multiply(if pal.dark { 0.75 } else { 0.9 }));
-            } else if resp.hovered() {
-                ui.painter().rect_filled(r, style::RADIUS as f32 + 2.0, pal.hover);
-            }
-            let color = if active { pal.activity_active } else if resp.hovered() { pal.text } else { pal.activity_fg };
-            icons::paint(ui.painter(), Rect::from_center_size(r.center(), vec2(22.0, 22.0)), icon, color);
+            let active = self.settings.sidebar && self.side_view == view;
             let k = keymap::text(cmd);
             let tip = if k.is_empty() { cmd.label().to_string() } else { format!("{} ({k})", cmd.label()) };
-            if resp.on_hover_text(tip).clicked() {
+            if button(ui, icon, active, tip) {
                 if active {
-                    self.sidebar = false;
+                    self.settings.sidebar = false;
+                    self.settings.save();
                 } else {
                     self.show_side(view);
                     if view == SideView::Search {
@@ -312,6 +333,16 @@ impl EasyApp {
                 }
             }
         }
+        // Einstellungen unten, getrennt von den Ansichten
+        ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
+            ui.add_space(8.0);
+            let k = keymap::text(Cmd::Settings);
+            let tip = if k.is_empty() { Cmd::Settings.label().to_string() } else { format!("{} ({k})", Cmd::Settings.label()) };
+            let open = self.tabs.get(self.active).is_some_and(|t| t.icon() == Some(Icon::Settings));
+            if button(ui, Icon::Settings, open, tip) {
+                self.run_cmd(&ctx, Cmd::Settings);
+            }
+        });
     }
 
     // ------------------------------------------------------------------

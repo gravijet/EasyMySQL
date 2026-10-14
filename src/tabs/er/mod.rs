@@ -22,6 +22,7 @@ mod draw;
 mod layout;
 mod link;
 mod notation;
+mod ortho;
 mod routes;
 mod svg;
 
@@ -65,7 +66,7 @@ fn view_file() -> std::path::PathBuf {
 
 /// Kleinster und groesster Zoom: auch sehr grosse Diagramme passen noch komplett ins Bild
 /// Erste Zeile der Anordnungsdatei (Version des Anordnungsverfahrens)
-const LAYOUT_TAG: &str = "#v2";
+const LAYOUT_TAG: &str = "#v3";
 const MIN_ZOOM: f32 = 0.01;
 const MAX_ZOOM: f32 = 3.0;
 
@@ -474,6 +475,10 @@ impl ErTab {
 }
 
 impl TabView for ErTab {
+    fn database(&self) -> Option<String> {
+        Some(self.db.clone()).filter(|d| !d.is_empty())
+    }
+
     fn icon(&self) -> Option<crate::icons::Icon> {
         Some(crate::icons::Icon::Diagram)
     }

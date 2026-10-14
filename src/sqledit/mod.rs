@@ -463,7 +463,7 @@ impl SqlEditor {
             ui.horizontal(|ui| {
                 ui.label(crate::i18n::text("Suchen:"));
                 let find_id = self.id.with("find");
-                let r = ui.add(egui::TextEdit::singleline(&mut f.query).desired_width(200.0).id(find_id));
+                let r = ui.add(crate::widgets::edit(&mut f.query).desired_width(200.0).id(find_id));
                 if f.focus {
                     r.request_focus();
                     // Vorhandenen Suchtext markieren, damit Tippen ihn ersetzt
@@ -503,7 +503,7 @@ impl SqlEditor {
             if f.show_replace {
                 ui.horizontal(|ui| {
                     ui.label(crate::i18n::text("Ersetzen:"));
-                    ui.add(egui::TextEdit::singleline(&mut f.replace).desired_width(200.0));
+                    ui.add(crate::widgets::edit(&mut f.replace).desired_width(200.0));
                     if ui.button(crate::i18n::text("Ersetzen")).clicked() {
                         replace_one = true;
                     }
@@ -633,7 +633,7 @@ impl SqlEditor {
             egui::Frame::new().fill(pal.face_light).inner_margin(egui::Margin::symmetric(6, 3)).show(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.label(crate::tr_format!("Gehe zu Zeile (1–{}):", "Go to line (1–{}):", text.split('\n').count()));
-                    let r = ui.add(egui::TextEdit::singleline(line).desired_width(80.0));
+                    let r = ui.add(crate::widgets::edit(line).desired_width(80.0));
                     if *first {
                         r.request_focus();
                         *first = false;
@@ -672,7 +672,7 @@ impl SqlEditor {
             layout_cache.layout(ui, buf.as_str(), &font)
         };
 
-        let frame = egui::Frame::new().fill(pal.bg).stroke(egui::Stroke::new(1.0, pal.border));
+        let frame = egui::Frame::new().fill(pal.bg).stroke(egui::Stroke::new(1.0, pal.border)).corner_radius(crate::style::RADIUS + 1).inner_margin(egui::Margin::same(3));
         let mut result = None;
         let mut scroll_state: Option<(f32, f32, egui::Rect)> = None;
         let mut lint_hits: Vec<(egui::Rect, usize)> = Vec::new();

@@ -168,11 +168,12 @@ pub fn scan(files: &[PathBuf], cancel: &AtomicBool) -> Result<Vec<TableScan>, St
         out.push(TableScan {
             name: stem,
             origin: path.to_string_lossy().into_owned(),
-            columns: names.into_iter().zip(&infer).map(|(name, inf)| Col { name, ty: column_type(inf) }).collect(),
+            columns: names.into_iter().zip(&infer).map(|(name, inf)| Col { name, ty: column_type(inf), decl: None }).collect(),
             rows,
             pk: vec![],
             auto_inc: false,
             fks: vec![],
+            ddl: None,
         });
     }
     Ok(out)

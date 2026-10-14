@@ -185,7 +185,7 @@ pub fn ui(ui: &mut egui::Ui, dml: &mut Dml, mode: Mode, query: &mut Query, env: 
                         for (ri, row) in dml.rows.iter_mut().enumerate() {
                             row.resize(n, String::new());
                             for (ci, v) in row.iter_mut().enumerate() {
-                                ui.add_sized([130.0, 22.0], egui::TextEdit::singleline(v).vertical_align(egui::Align::Center).hint_text(crate::i18n::text("leer = DEFAULT")).id_salt((id, ri, ci)));
+                                ui.add_sized([130.0, 28.0], crate::widgets::edit(v).vertical_align(egui::Align::Center).hint_text(crate::i18n::text("leer = DEFAULT")).id_salt((id, ri, ci)));
                             }
                             if super::remove_button(ui) {
                                 remove = Some(ri);
@@ -213,7 +213,7 @@ pub fn ui(ui: &mut egui::Ui, dml: &mut Dml, mode: Mode, query: &mut Query, env: 
                         let names: Vec<String> = cols.iter().map(|c| c.0.clone()).collect();
                         crate::tabs::str_combo(ui, id.with(("setcol", i)), &names, c, 160.0);
                         ui.label("=");
-                        ui.add(egui::TextEdit::singleline(v).desired_width(180.0).hint_text(crate::i18n::text("Wert")).id_salt((id, "setval", i)));
+                        ui.add(crate::widgets::edit(v).desired_width(180.0).hint_text(crate::i18n::text("Wert")).id_salt((id, "setval", i)));
                         if super::remove_button(ui) {
                             remove = Some(i);
                         }

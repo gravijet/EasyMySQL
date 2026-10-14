@@ -169,7 +169,7 @@ impl ErTab {
                         ui.end_row();
                         ui.label(crate::i18n::text("Zwischentabelle:"));
                         let auto = format!("{}_{}", dlg.table, dlg.other);
-                        ui.add(egui::TextEdit::singleline(&mut dlg.junction).hint_text(auto).desired_width(180.0));
+                        ui.add(crate::widgets::edit(&mut dlg.junction).hint_text(auto).desired_width(180.0));
                         ui.end_row();
                     } else {
                         ui.label(if dlg.kind == LinkKind::OneToOne { crate::i18n::text("Tabelle (abhängig):") } else { crate::i18n::text("Tabelle (viele):") });

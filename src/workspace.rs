@@ -430,6 +430,74 @@ pub fn set_file_db(project: &Path, file: &Path, db: &str) {
     let _ = atomic_write(&path, &(lines.join("\n") + "\n"));
 }
 
+fn global_db_map_file() -> PathBuf {
+    crate::server::app_data_dir().join("dateidatenbanken.txt")
+}
+
+fn global_key(file: &Path) -> String {
+    file.to_string_lossy().replace('\\', "/").to_lowercase()
+}
+
+/// Datenbank einer Datei: im Projekt aus dessen Liste, sonst aus der allgemeinen Liste.
+pub fn file_db_any(project: Option<&Path>, file: &Path) -> Option<String> {
+    if let Some(db) = project.filter(|p| file.starts_with(p)).and_then(|p| file_db(p, file)) {
+        return Some(db);
+    }
+    let key = global_key(file);
+    std::fs::read_to_string(global_db_map_file())
+        .ok()?
+        .lines()
+        .find_map(|l| l.split_once('\t').filter(|(k, _)| *k == key).map(|(_, v)| v.to_string()))
+        .filter(|v| !v.is_empty())
+}
+
+/// Datenbank einer Datei merken (Dateien im Projekt in dessen Liste, alle anderen in der allgemeinen).
+pub fn set_file_db_any(project: Option<&Path>, file: &Path, db: &str) {
+    if let Some(p) = project.filter(|p| file.starts_with(p)) {
+        set_file_db(p, file, db);
+        return;
+    }
+    let key = global_key(file);
+    let path = global_db_map_file();
+    let mut lines: Vec<String> = std::fs::read_to_string(&path).unwrap_or_default().lines().filter(|l| !l.starts_with(&format!("{key}\t"))).map(|l| l.to_string()).collect();
+    if file_db_any(None, file).as_deref() == Some(db) {
+        return;
+    }
+    lines.push(format!("{key}\t{db}"));
+    // Die Liste bleibt klein: nur die letzten 500 Dateien
+    let skip = lines.len().saturating_sub(500);
+    let _ = atomic_write(&path, &(lines[skip..].join("\n") + "\n"));
+}
+
+/// Server einer Datei (Name eines gespeicherten Servers); `None` = der globale Server.
+pub fn file_server(file: &Path) -> Option<String> {
+    let key = global_key(file);
+    std::fs::read_to_string(global_server_map_file())
+        .ok()?
+        .lines()
+        .find_map(|l| l.split_once('\t').filter(|(k, _)| *k == key).map(|(_, v)| v.to_string()))
+        .filter(|v| !v.is_empty())
+}
+
+/// Server einer Datei merken (`None` = globaler Server).
+pub fn set_file_server(file: &Path, server: Option<&str>) {
+    let key = global_key(file);
+    if file_server(file).as_deref() == server {
+        return;
+    }
+    let path = global_server_map_file();
+    let mut lines: Vec<String> = std::fs::read_to_string(&path).unwrap_or_default().lines().filter(|l| !l.starts_with(&format!("{key}\t"))).map(|l| l.to_string()).collect();
+    if let Some(s) = server {
+        lines.push(format!("{key}\t{s}"));
+    }
+    let skip = lines.len().saturating_sub(500);
+    let _ = atomic_write(&path, &(lines[skip..].join("\n") + "\n"));
+}
+
+fn global_server_map_file() -> PathBuf {
+    crate::server::app_data_dir().join("dateiserver.txt")
+}
+
 // ---------------------------------------------------------------------------
 // Ungespeicherte Abfragen ("Unbenannt"), bleiben ueber Neustarts erhalten
 
@@ -450,7 +518,6 @@ pub struct Session {
     pub tabs: Vec<String>,
     pub active: usize,
     pub side_view: String,
-    pub sidebar: bool,
 }
 
 fn session_file() -> PathBuf {
@@ -460,7 +527,7 @@ fn session_file() -> PathBuf {
 impl Session {
     pub fn load() -> Option<Session> {
         let text = std::fs::read_to_string(session_file()).ok()?;
-        let mut s = Session { sidebar: true, ..Default::default() };
+        let mut s = Session::default();
         for line in text.lines() {
             if let Some(v) = line.strip_prefix("projekt=") {
                 s.project = v.to_string();
@@ -468,8 +535,6 @@ impl Session {
                 s.active = v.parse().unwrap_or(0);
             } else if let Some(v) = line.strip_prefix("ansicht=") {
                 s.side_view = v.to_string();
-            } else if let Some(v) = line.strip_prefix("seitenleiste=") {
-                s.sidebar = v == "1";
             } else if let Some(v) = line.strip_prefix("tab=") {
                 s.tabs.push(v.to_string());
             }
@@ -479,11 +544,10 @@ impl Session {
 
     pub fn save(&self) {
         let mut t = format!(
-            "projekt={}\naktiv={}\nansicht={}\nseitenleiste={}\n",
+            "projekt={}\naktiv={}\nansicht={}\n",
             self.project,
             self.active,
             self.side_view,
-            if self.sidebar { 1 } else { 0 }
         );
         for tab in &self.tabs {
             t.push_str(&format!("tab={tab}\n"));

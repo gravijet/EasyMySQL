@@ -3,25 +3,33 @@
 //   redis_sets(key, member)          redis_zsets(key, member, score)
 
 use super::*;
+use crate::transfer::rdb;
+use crate::transfer::server::{Link, Tls, wrap_tls};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct RedisConf {
     pub host: String,
     pub port: u16,
     pub user: String,
     pub password: String,
     pub db: u32,
+    pub tls: Tls,
+    /// Offene Verbindung (bei SSH der Tunnel); ohne Wert gilt `host` und `port`
+    pub link: Option<Link>,
 }
 
 impl Default for RedisConf {
     fn default() -> Self {
-        RedisConf { host: "127.0.0.1".into(), port: 6379, user: String::new(), password: String::new(), db: 0 }
+        RedisConf { host: "127.0.0.1".into(), port: 6379, user: String::new(), password: String::new(), db: 0, tls: Tls::Off, link: None }
     }
 }
+
+trait Stream: Read + Write + Send {}
+impl<T: Read + Write + Send> Stream for T {}
 
 #[derive(Debug, Clone, PartialEq)]
 enum Reply {
@@ -58,16 +66,21 @@ impl Reply {
 }
 
 struct Client {
-    r: BufReader<TcpStream>,
+    r: BufReader<Box<dyn Stream>>,
 }
 
 impl Client {
     fn connect(c: &RedisConf) -> Result<Client, String> {
-        let addr = (c.host.as_str(), c.port).to_socket_addrs().map_err(|e| format!("{}:{}: {e}", c.host, c.port))?.next().ok_or_else(|| format!("{}: unbekannter Server", c.host))?;
-        let s = TcpStream::connect_timeout(&addr, Duration::from_secs(5)).map_err(|e| format!("{}:{}: {e}", c.host, c.port))?;
+        let (host, port) = match &c.link {
+            Some(l) => (l.host.as_str(), l.port),
+            None => (c.host.as_str(), c.port),
+        };
+        let addr = (host, port).to_socket_addrs().map_err(|e| format!("{host}:{port}: {e}"))?.next().ok_or_else(|| format!("{host}: unbekannter Server"))?;
+        let s = TcpStream::connect_timeout(&addr, Duration::from_secs(8)).map_err(|e| format!("{host}:{port}: {e}"))?;
         s.set_read_timeout(Some(Duration::from_secs(30))).ok();
         s.set_nodelay(true).ok();
-        let mut cl = Client { r: BufReader::new(s) };
+        let stream: Box<dyn Stream> = if c.tls.on() { Box::new(wrap_tls(&c.host, s, c.tls)?) } else { Box::new(s) };
+        let mut cl = Client { r: BufReader::new(stream) };
         if !c.password.is_empty() {
             let mut args: Vec<&[u8]> = vec![b"AUTH"];
             if !c.user.is_empty() {
@@ -221,9 +234,9 @@ pub fn scan(c: &RedisConf, cancel: &AtomicBool) -> Result<Vec<TableScan>, String
             }
         }
         // Laengster Schluessel/Feldname bestimmt die Spaltenlaenge nicht: alle sind VARCHAR(255) oder LONGTEXT
-        let columns = layout(table).into_iter().map(|(n, t)| Col { name: n.into(), ty: t }).collect();
+        let columns = layout(table).into_iter().map(|(n, t)| Col { name: n.into(), ty: t, decl: None }).collect();
         let pk = if kind == "string" { vec!["key".to_string()] } else { vec![] };
-        out.push(TableScan { name: table.into(), origin: kind.into(), columns, rows, pk, auto_inc: false, fks: vec![] });
+        out.push(TableScan { name: table.into(), origin: kind.into(), columns, rows, pk, auto_inc: false, fks: vec![], ddl: None });
     }
     Ok(out)
 }
@@ -314,4 +327,126 @@ pub fn exec(c: &RedisConf, args: &[&str]) {
     let mut cl = Client::connect(c).unwrap();
     let a: Vec<&[u8]> = args.iter().map(|x| x.as_bytes()).collect();
     cl.cmd(&a).unwrap();
+}
+
+// ---------------------------------------------------------------------------
+// Aus einer Redis-Datei (RDB) lesen: dieselben Tabellen wie bei einem Server
+
+fn kind_of(item: &rdb::Item) -> &'static str {
+    match item {
+        rdb::Item::Str(_) => "string",
+        rdb::Item::Hash(_) => "hash",
+        rdb::Item::List(_) => "list",
+        rdb::Item::Set(_) => "set",
+        rdb::Item::ZSet(_) => "zset",
+    }
+}
+
+/// Verbleibende Lebensdauer in Sekunden; `None` = laeuft nie ab. Schon Abgelaufenes liefert `Some(None)`-aehnlich ueber `expired`.
+fn ttl_of(expire_ms: Option<i64>) -> (Option<i64>, bool) {
+    let Some(ms) = expire_ms else { return (None, false) };
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0);
+    (Some(((ms - now) / 1000).max(0)), ms <= now)
+}
+
+fn open_file(path: &std::path::Path) -> Result<std::fs::File, String> {
+    std::fs::File::open(path).map_err(|e| format!("{}: {e}", path.display()))
+}
+
+pub fn scan_file(path: &std::path::Path, db: u32, cancel: &AtomicBool) -> Result<Vec<TableScan>, String> {
+    let mut counts = [0u64; 5];
+    rdb::read(open_file(path)?, &mut |e| {
+        if cancel.load(Ordering::Relaxed) {
+            return Err("abgebrochen".into());
+        }
+        if e.db != db || ttl_of(e.expire_ms).1 {
+            return Ok(true);
+        }
+        let (i, n) = match &e.item {
+            rdb::Item::Str(_) => (0, 1),
+            rdb::Item::Hash(v) => (1, v.len()),
+            rdb::Item::List(v) => (2, v.len()),
+            rdb::Item::Set(v) => (3, v.len()),
+            rdb::Item::ZSet(v) => (4, v.len()),
+        };
+        counts[i] += n as u64;
+        Ok(true)
+    })?;
+    let mut out = Vec::new();
+    for (i, (kind, table)) in KINDS.iter().enumerate() {
+        if counts[i] == 0 {
+            continue;
+        }
+        let columns = layout(table).into_iter().map(|(n, t)| Col { name: n.into(), ty: t, decl: None }).collect();
+        let pk = if *kind == "string" { vec!["key".to_string()] } else { vec![] };
+        out.push(TableScan { name: (*table).into(), origin: (*kind).into(), columns, rows: counts[i], pk, auto_inc: false, fks: vec![], ddl: None });
+    }
+    Ok(out)
+}
+
+pub fn read_file(path: &std::path::Path, db: u32, t: &TableScan, f: &mut dyn FnMut(Vec<Val>) -> Result<bool, String>) -> Result<(), String> {
+    let kind = t.origin.as_str();
+    let mut stopped = false;
+    rdb::read(open_file(path)?, &mut |e| {
+        let (ttl, expired) = ttl_of(e.expire_ms);
+        if stopped || e.db != db || expired || kind_of(&e.item) != kind {
+            return Ok(!stopped);
+        }
+        let key = text(&e.key);
+        let mut go = true;
+        match &e.item {
+            rdb::Item::Str(v) => go = f(vec![key, text(v), ttl.map(Val::Int).unwrap_or(Val::Null)])?,
+            rdb::Item::Hash(v) => {
+                for (k, x) in v {
+                    if !f(vec![key.clone(), text(k), text(x)])? {
+                        go = false;
+                        break;
+                    }
+                }
+            }
+            rdb::Item::List(v) => {
+                for (n, x) in v.iter().enumerate() {
+                    if !f(vec![key.clone(), Val::Int(n as i64), text(x)])? {
+                        go = false;
+                        break;
+                    }
+                }
+            }
+            rdb::Item::Set(v) => {
+                for x in v {
+                    if !f(vec![key.clone(), text(x)])? {
+                        go = false;
+                        break;
+                    }
+                }
+            }
+            rdb::Item::ZSet(v) => {
+                for (m, sc) in v {
+                    if !f(vec![key.clone(), text(m), Val::Real(*sc)])? {
+                        go = false;
+                        break;
+                    }
+                }
+            }
+        }
+        stopped = !go;
+        Ok(go)
+    })?;
+    Ok(())
+}
+
+/// Befehle an einen Redis-Server schicken (Export)
+pub struct RedisPush(Client);
+
+impl RedisPush {
+    pub fn connect(c: &RedisConf) -> Result<RedisPush, String> {
+        Client::connect(c).map(RedisPush)
+    }
+
+    pub fn run(&mut self, cmds: &[Vec<Vec<u8>>]) -> Result<(), String> {
+        if cmds.is_empty() {
+            return Ok(());
+        }
+        self.0.pipeline(cmds).map(|_| ())
+    }
 }

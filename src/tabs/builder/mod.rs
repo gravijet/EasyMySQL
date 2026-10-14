@@ -131,12 +131,107 @@ fn remove_button(ui: &mut egui::Ui) -> bool {
 
 /// Abschnitt mit Ueberschrift (einklappbar)
 fn section(ui: &mut egui::Ui, id: egui::Id, kw: &str, title: &str, open: bool, add: impl FnOnce(&mut egui::Ui)) {
-    let st = egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, open);
-    st.show_header(ui, |ui| {
-        keyword(ui, kw);
-        ui.label(RichText::new(title).small().color(style::pal().text_weak));
-    })
-    .body(|ui| add(ui));
+    section_ex(ui, id, kw, title, open, "", false, add);
+}
+
+/// Abschnitt als Karte: Schluesselwort als Marke, Titel, bei zugeklapptem Abschnitt eine Kurzfassung des Inhalts.
+/// `clearable`: Papierkorb in der Kopfzeile; gibt true zurueck, wenn er geklickt wurde.
+#[allow(clippy::too_many_arguments)]
+fn section_ex(ui: &mut egui::Ui, id: egui::Id, kw: &str, title: &str, open: bool, summary: &str, clearable: bool, add: impl FnOnce(&mut egui::Ui)) -> bool {
+    use egui::{FontId, Sense, Stroke, pos2, vec2};
+    let ctx = ui.ctx().clone();
+    let pal = style::pal();
+    let mut state = egui::collapsing_header::CollapsingState::load_with_default_open(&ctx, id, open);
+    let mut cleared = false;
+    egui::Frame::new()
+        .fill(pal.face_light.gamma_multiply(if pal.dark { 0.7 } else { 0.9 }))
+        .stroke(Stroke::new(1.0, pal.border.gamma_multiply(0.55)))
+        .corner_radius(style::RADIUS as f32 + 2.0)
+        .inner_margin(egui::Margin::symmetric(8, 3))
+        .show(ui, |ui| {
+            ui.set_min_width(ui.available_width());
+            let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::click());
+            let painter = ui.painter();
+            if resp.hovered() {
+                painter.rect_filled(rect, style::RADIUS as f32, pal.hover);
+            }
+            let is_open = state.is_open();
+            let chevron = egui::Rect::from_center_size(pos2(rect.left() + 12.0, rect.center().y), vec2(14.0, 14.0));
+            icons::paint(painter, chevron, if is_open { Icon::ChevronDown } else { Icon::ChevronRight }, pal.text_weak);
+            let mut x = rect.left() + 28.0;
+            if !kw.is_empty() {
+                let g = painter.layout_no_wrap(kw.to_string(), FontId::monospace(12.5), pal.syn_keyword);
+                let pill = egui::Rect::from_min_size(pos2(x, rect.center().y - 11.0), vec2(g.size().x + 14.0, 22.0));
+                painter.rect_filled(pill, 6.0, pal.syn_keyword.gamma_multiply(if pal.dark { 0.16 } else { 0.12 }));
+                painter.galley(pos2(pill.left() + 7.0, rect.center().y - g.size().y / 2.0), g, pal.syn_keyword);
+                x = pill.right() + 10.0;
+            }
+            let g = painter.layout_no_wrap(title.to_string(), FontId::proportional(12.5), pal.text_weak);
+            painter.galley(pos2(x, rect.center().y - g.size().y / 2.0), g.clone(), pal.text_weak);
+            x += g.size().x + 14.0;
+            // Kurzfassung, solange der Abschnitt zu ist (offen steht der Inhalt ja da)
+            let right = rect.right() - if clearable { 30.0 } else { 8.0 };
+            if !is_open && !summary.is_empty() && right - x > 40.0 {
+                let mut text = summary.to_string();
+                loop {
+                    let g = painter.layout_no_wrap(text.clone(), FontId::proportional(12.5), pal.text);
+                    if g.size().x <= right - x || text.chars().count() <= 3 {
+                        painter.galley(pos2(x, rect.center().y - g.size().y / 2.0), g, pal.text.gamma_multiply(0.85));
+                        break;
+                    }
+                    text = text.chars().take(text.chars().count() - 2).collect::<String>().trim_end().to_string() + "…";
+                    if text.ends_with("……") {
+                        text.pop();
+                    }
+                }
+            }
+            let mut toggle = resp.clicked();
+            if clearable {
+                let r = egui::Rect::from_center_size(pos2(rect.right() - 16.0, rect.center().y), vec2(22.0, 22.0));
+                let clear = ui.interact(r, id.with("clear"), Sense::click());
+                if resp.hovered() || clear.hovered() {
+                    if clear.hovered() {
+                        ui.painter().rect_filled(r, 5.0, pal.hover.gamma_multiply(1.6));
+                    }
+                    icons::paint(ui.painter(), r.shrink(4.0), Icon::Trash, if clear.hovered() { pal.text } else { pal.text_weak });
+                }
+                let clear = clear.on_hover_text(crate::i18n::text("Leeren"));
+                if clear.clicked() {
+                    cleared = true;
+                    toggle = false;
+                }
+            }
+            if toggle {
+                state.toggle(ui);
+            }
+            state.show_body_unindented(ui, |ui| {
+                ui.add_space(2.0);
+                ui.horizontal(|ui| {
+                    ui.add_space(4.0);
+                    ui.vertical(|ui| {
+                        ui.set_min_width(ui.available_width() - 4.0);
+                        add(ui);
+                    });
+                });
+                ui.add_space(4.0);
+            });
+        });
+    state.store(&ctx);
+    cleared
+}
+
+/// Anzahl der einzelnen Bedingungen (ohne leere Gruppen)
+fn cond_count(c: &Cond) -> usize {
+    match c {
+        Cond::Group { items, .. } => items.iter().map(cond_count).sum(),
+        Cond::Raw(s) => !s.trim().is_empty() as usize,
+        _ => 1,
+    }
+}
+
+/// Aufzaehlung fuer die Kurzfassung eines zugeklappten Abschnitts
+fn list_summary(items: impl Iterator<Item = String>) -> String {
+    items.collect::<Vec<_>>().join(", ")
 }
 
 // ---------------------------------------------------------------------------
@@ -230,7 +325,7 @@ fn column_picker(ui: &mut egui::Ui, id: egui::Id, src: &mut String, col: &mut St
         ui.separator();
         ui.horizontal(|ui| {
             ui.label("Name:");
-            ui.add(egui::TextEdit::singleline(col).desired_width(90.0));
+            ui.add(crate::widgets::edit(col).desired_width(90.0));
             if ui.button(crate::i18n::text("ohne Tabelle")).clicked() {
                 src.clear();
             }
@@ -257,7 +352,7 @@ fn func_picker(ui: &mut egui::Ui, name: &mut String) -> bool {
         ui.separator();
         ui.horizontal(|ui| {
             ui.label(crate::i18n::text("andere:"));
-            if ui.add(egui::TextEdit::singleline(name).desired_width(110.0)).changed() {
+            if ui.add(crate::widgets::edit(name).desired_width(110.0)).changed() {
                 changed = true;
             }
         });
@@ -286,10 +381,10 @@ fn expr_ui(ui: &mut egui::Ui, e: &mut Expr, env: &Env, id: egui::Id) {
                 ui.label(RichText::new("*").monospace());
             }
             Expr::Value(v) => {
-                ui.add(egui::TextEdit::singleline(v).desired_width(100.0).hint_text(crate::i18n::text("Wert")));
+                ui.add(crate::widgets::edit(v).desired_width(100.0).hint_text(crate::i18n::text("Wert")));
             }
             Expr::Raw(r) => {
-                ui.add(egui::TextEdit::singleline(r).desired_width(180.0).font(egui::TextStyle::Monospace).hint_text("SQL"));
+                ui.add(crate::widgets::edit(r).desired_width(180.0).font(egui::TextStyle::Monospace).hint_text("SQL"));
             }
             Expr::Func { name, args, distinct, over } => {
                 if func_picker(ui, name) {
@@ -413,7 +508,7 @@ fn window_ui(ui: &mut egui::Ui, w: &mut Window, env: &Env, id: egui::Id) {
             });
             ui.horizontal(|ui| {
                 ui.label(RichText::new(crate::i18n::text("Rahmen")).small());
-                ui.add(egui::TextEdit::singleline(&mut w.frame).desired_width(260.0).hint_text(crate::i18n::text("z. B. ROWS BETWEEN 2 PRECEDING AND CURRENT ROW")));
+                ui.add(crate::widgets::edit(&mut w.frame).desired_width(260.0).hint_text(crate::i18n::text("z. B. ROWS BETWEEN 2 PRECEDING AND CURRENT ROW")));
             });
         });
     });
@@ -473,7 +568,7 @@ fn cond_item_ui(ui: &mut egui::Ui, c: &mut Cond, env: &Env, id: egui::Id) {
             ui.vertical(|ui| cond_group_ui(ui, c, env, id));
         }
         Cond::Raw(r) => {
-            ui.add(egui::TextEdit::singleline(r).desired_width(260.0).font(egui::TextStyle::Monospace).hint_text(crate::i18n::text("Bedingung in SQL")));
+            ui.add(crate::widgets::edit(r).desired_width(260.0).font(egui::TextStyle::Monospace).hint_text(crate::i18n::text("Bedingung in SQL")));
         }
         Cond::Exists { not, query } => {
             ui.vertical(|ui| {
@@ -719,7 +814,7 @@ fn sources_ui(ui: &mut egui::Ui, s: &mut Select, env: &Env, id: egui::Id) {
                     From::Sub(_) => {}
                 }
                 keyword(ui, "AS");
-                ui.add(egui::TextEdit::singleline(&mut src.alias).desired_width(70.0).hint_text("Alias"));
+                ui.add(crate::widgets::edit(&mut src.alias).desired_width(70.0).hint_text("Alias"));
                 if n > 1 && remove_button(ui) {
                     remove = Some(i);
                 }
@@ -742,7 +837,7 @@ fn sources_ui(ui: &mut egui::Ui, s: &mut Select, env: &Env, id: egui::Id) {
                         } else {
                             ui.horizontal(|ui| {
                                 keyword(ui, "USING");
-                                ui.add(egui::TextEdit::singleline(&mut src.using).desired_width(160.0).hint_text(crate::i18n::text("spalte1, spalte2")));
+                                ui.add(crate::widgets::edit(&mut src.using).desired_width(160.0).hint_text(crate::i18n::text("spalte1, spalte2")));
                                 if ui.button("ON").clicked() {
                                     src.using.clear();
                                 }
@@ -806,6 +901,48 @@ fn sources_ui(ui: &mut egui::Ui, s: &mut Select, env: &Env, id: egui::Id) {
     });
 }
 
+/// "+ Spalte": Spalten aller Tabellen der Abfrage ankreuzen (mehrere auf einmal), mit Suchfeld.
+/// Das Menue bleibt offen, bis man daneben klickt.
+fn column_menu(ui: &mut egui::Ui, s: &mut Select, env: &Env, id: egui::Id) {
+    use egui::containers::menu::{MenuButton, MenuConfig};
+    let cfg = MenuConfig::new().close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside);
+    MenuButton::from_button(egui::Button::new(crate::i18n::text("+ Spalte"))).config(cfg).ui(ui, |ui| {
+        ui.set_min_width(250.0);
+        let mut filter: String = ui.data_mut(|d| d.get_temp(id.with("filter")).unwrap_or_default());
+        let r = ui.add(crate::widgets::edit(&mut filter).hint_text(crate::i18n::text("Suchen …")).desired_width(250.0));
+        if r.changed() {
+            ui.data_mut(|d| d.insert_temp(id.with("filter"), filter.clone()));
+        }
+        let needle = filter.trim().to_lowercase();
+        ui.add_space(4.0);
+        egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
+            for (src, cols) in env.scope.iter().take(s.sources.len()) {
+                ui.label(RichText::new(src).small().strong().color(style::pal().text_weak));
+                let mut entries: Vec<&str> = vec!["*"];
+                entries.extend(cols.iter().map(|c| c.as_str()));
+                for c in entries {
+                    if !needle.is_empty() && !c.to_lowercase().contains(&needle) {
+                        continue;
+                    }
+                    let pos = s.items.iter().position(|i| matches!(&i.expr, Expr::Column { src: a, col: b } if a == src && b == c));
+                    let mut on = pos.is_some();
+                    let label = if c == "*" { crate::i18n::text("alle Spalten (*)").to_string() } else { c.to_string() };
+                    if crate::widgets::check(ui, &mut on, label).changed() {
+                        match pos {
+                            Some(i) if !on => {
+                                s.items.remove(i);
+                            }
+                            None if on => s.items.push(Item { expr: Expr::column(src, c), alias: String::new() }),
+                            _ => {}
+                        }
+                    }
+                }
+                ui.add_space(4.0);
+            }
+        });
+    });
+}
+
 fn items_ui(ui: &mut egui::Ui, s: &mut Select, env: &Env, id: egui::Id) {
     ui.horizontal(|ui| {
         crate::widgets::check(ui, &mut s.distinct, "DISTINCT");
@@ -831,7 +968,7 @@ fn items_ui(ui: &mut egui::Ui, s: &mut Select, env: &Env, id: egui::Id) {
                 });
                 expr_ui(ui, &mut it.expr, env, id.with(("item", i)));
                 keyword(ui, "AS");
-                ui.add(egui::TextEdit::singleline(&mut it.alias).desired_width(90.0).hint_text("Name"));
+                ui.add(crate::widgets::edit(&mut it.alias).desired_width(90.0).hint_text("Name"));
                 if remove_button(ui) {
                     remove = Some(i);
                 }
@@ -845,23 +982,7 @@ fn items_ui(ui: &mut egui::Ui, s: &mut Select, env: &Env, id: egui::Id) {
         s.items.remove(i);
     }
     ui.horizontal(|ui| {
-        ui.menu_button(crate::i18n::text("+ Spalte"), |ui| {
-            egui::ScrollArea::vertical().max_height(420.0).show(ui, |ui| {
-                for (src, cols) in env.scope.iter().take(s.sources.len()) {
-                    ui.label(RichText::new(src).small().strong().color(style::pal().text_weak));
-                    if ui.button(format!("{src}.*")).clicked() {
-                        s.items.push(Item { expr: Expr::column(src, "*"), alias: String::new() });
-                        ui.close();
-                    }
-                    for c in cols {
-                        if ui.button(c).clicked() {
-                            s.items.push(Item { expr: Expr::column(src, c), alias: String::new() });
-                            ui.close();
-                        }
-                    }
-                }
-            });
-        });
+        column_menu(ui, s, env, id.with("cols"));
         ui.menu_button(crate::i18n::text("+ Funktion"), |ui| {
             let mut groups: Vec<&str> = FUNCS.iter().map(|f| f.group).collect();
             groups.dedup();
@@ -893,11 +1014,21 @@ fn items_ui(ui: &mut egui::Ui, s: &mut Select, env: &Env, id: egui::Id) {
 
 fn select_ui(ui: &mut egui::Ui, s: &mut Select, env: &Env, id: egui::Id) {
     let inner = env.inside(s);
-    section(ui, id.with("from"), "FROM", crate::i18n::text("Tabellen"), true, |ui| sources_ui(ui, s, env, id.with("src")));
-    section(ui, id.with("sel"), "SELECT", crate::i18n::text("Spalten"), true, |ui| items_ui(ui, s, &inner, id.with("items")));
-    section(ui, id.with("where"), "WHERE", crate::i18n::text("Bedingungen"), true, |ui| cond_group_ui(ui, &mut s.filter, &inner, id.with("filter")));
+    let from_sum = list_summary(s.sources.iter().map(|x| x.reference()));
+    section_ex(ui, id.with("from"), "FROM", crate::i18n::text("Tabellen"), true, &from_sum, false, |ui| sources_ui(ui, s, env, id.with("src")));
+    let sel_sum = if s.items.is_empty() { "*".to_string() } else { list_summary(s.items.iter().map(|i| if i.alias.trim().is_empty() { i.expr.label() } else { i.alias.trim().to_string() })) };
+    if section_ex(ui, id.with("sel"), "SELECT", crate::i18n::text("Spalten"), true, &sel_sum, !s.items.is_empty(), |ui| items_ui(ui, s, &inner, id.with("items"))) {
+        s.items.clear();
+    }
+    let n_where = cond_count(&s.filter);
+    let where_sum = if n_where == 0 { String::new() } else { crate::tr_format!("{} Bedingung(en)", "{} condition(s)", n_where) };
+    if section_ex(ui, id.with("where"), "WHERE", crate::i18n::text("Bedingungen"), true, &where_sum, n_where > 0, |ui| cond_group_ui(ui, &mut s.filter, &inner, id.with("filter"))) {
+        s.filter = Cond::group();
+    }
     let group_open = !s.group.is_empty() || !s.having.is_empty() || s.items.iter().any(|i| i.expr.is_aggregate());
-    section(ui, id.with("group"), "GROUP BY", crate::i18n::text("Gruppieren"), group_open, |ui| {
+    let group_sum = list_summary(s.group.iter().map(|e| e.label()));
+    let has_group = !s.group.is_empty() || !s.having.is_empty();
+    if section_ex(ui, id.with("group"), "GROUP BY", crate::i18n::text("Gruppieren"), group_open, &group_sum, has_group, |ui| {
         ui.horizontal_wrapped(|ui| {
             expr_list_ui(ui, &mut s.group, &inner, id.with("g"));
             crate::widgets::check(ui, &mut s.rollup, "WITH ROLLUP");
@@ -920,22 +1051,34 @@ fn select_ui(ui: &mut egui::Ui, s: &mut Select, env: &Env, id: egui::Id) {
             ui.label(RichText::new(crate::i18n::text("Bedingungen für Gruppen")).small().color(style::pal().text_weak));
         });
         cond_group_ui(ui, &mut s.having, &inner, id.with("having"));
-    });
+    }) {
+        s.group.clear();
+        s.rollup = false;
+        s.having = Cond::group();
+    }
     let mut order_env = inner.clone();
     let aliases: Vec<String> = s.items.iter().map(|i| i.alias.trim().to_string()).filter(|a| !a.is_empty()).collect();
     if !aliases.is_empty() {
         order_env.scope.insert(0, (String::new(), aliases));
     }
-    section(ui, id.with("order"), "ORDER BY", crate::i18n::text("Sortieren"), !s.order.is_empty(), |ui| {
+    let order_sum = list_summary(s.order.iter().map(|o| format!("{} {}", o.expr.label(), if o.desc { "↓" } else { "↑" })));
+    if section_ex(ui, id.with("order"), "ORDER BY", crate::i18n::text("Sortieren"), !s.order.is_empty(), &order_sum, !s.order.is_empty(), |ui| {
         ui.horizontal_wrapped(|ui| order_list_ui(ui, &mut s.order, &order_env, id.with("ord")));
-    });
-    section(ui, id.with("limit"), "LIMIT", crate::i18n::text("Begrenzen"), !s.limit.is_empty(), |ui| {
+    }) {
+        s.order.clear();
+    }
+    let limit_sum = if s.limit.trim().is_empty() { String::new() } else if s.offset.trim().is_empty() { s.limit.trim().to_string() } else { format!("{} OFFSET {}", s.limit.trim(), s.offset.trim()) };
+    let has_limit = !s.limit.trim().is_empty() || !s.offset.trim().is_empty();
+    if section_ex(ui, id.with("limit"), "LIMIT", crate::i18n::text("Begrenzen"), has_limit, &limit_sum, has_limit, |ui| {
         ui.horizontal(|ui| {
-            ui.add(egui::TextEdit::singleline(&mut s.limit).desired_width(60.0).hint_text(crate::i18n::text("Zeilen")));
+            ui.add(crate::widgets::edit(&mut s.limit).desired_width(60.0).hint_text(crate::i18n::text("Zeilen")));
             keyword(ui, "OFFSET");
-            ui.add(egui::TextEdit::singleline(&mut s.offset).desired_width(60.0).hint_text("0"));
+            ui.add(crate::widgets::edit(&mut s.offset).desired_width(60.0).hint_text("0"));
         });
-    });
+    }) {
+        s.limit.clear();
+        s.offset.clear();
+    }
 }
 
 fn query_ui(ui: &mut egui::Ui, qr: &mut Query, env: &Env, id: egui::Id) {
@@ -958,8 +1101,8 @@ fn query_ui(ui: &mut egui::Ui, qr: &mut Query, env: &Env, id: egui::Id) {
             let cte = &mut qr.with[i];
             ui.push_id(("cte", i), |ui| {
                 ui.horizontal(|ui| {
-                    ui.add(egui::TextEdit::singleline(&mut cte.name).desired_width(120.0).hint_text("Name"));
-                    ui.add(egui::TextEdit::singleline(&mut cte.columns).desired_width(120.0).hint_text(crate::i18n::text("(Spalten)")));
+                    ui.add(crate::widgets::edit(&mut cte.name).desired_width(120.0).hint_text("Name"));
+                    ui.add(crate::widgets::edit(&mut cte.columns).desired_width(120.0).hint_text(crate::i18n::text("(Spalten)")));
                     keyword(ui, "AS");
                     if remove_button(ui) {
                         remove = Some(i);
@@ -1029,9 +1172,9 @@ fn query_ui(ui: &mut egui::Ui, qr: &mut Query, env: &Env, id: egui::Id) {
             keyword(ui, "ORDER BY");
             order_list_ui(ui, &mut qr.order, &oenv, id.with("qord"));
             keyword(ui, "LIMIT");
-            ui.add(egui::TextEdit::singleline(&mut qr.limit).desired_width(50.0));
+            ui.add(crate::widgets::edit(&mut qr.limit).desired_width(50.0));
             keyword(ui, "OFFSET");
-            ui.add(egui::TextEdit::singleline(&mut qr.offset).desired_width(50.0));
+            ui.add(crate::widgets::edit(&mut qr.offset).desired_width(50.0));
         });
     }
 }
@@ -1079,6 +1222,9 @@ pub struct BuilderTab {
     view_name: Option<String>,
     initialized: bool,
     running: Option<Running>,
+    /// Start der laufenden Abfrage und Dauer der letzten
+    started: Option<std::time::Instant>,
+    took: Option<std::time::Duration>,
     pretty_for: Option<Snap>,
     pretty_sql: String,
     layout_cache: crate::sqledit::SqlLayoutCache,
@@ -1115,6 +1261,8 @@ impl BuilderTab {
             view_name: None,
             initialized: false,
             running: None,
+            started: None,
+            took: None,
             pretty_for: None,
             pretty_sql: String::new(),
             layout_cache: crate::sqledit::SqlLayoutCache::default(),
@@ -1277,6 +1425,7 @@ impl BuilderTab {
             let _ = tx.send(res);
         });
         self.job = Some(rx);
+        self.started = Some(std::time::Instant::now());
         self.running = history.map(|sql| Running { start: std::time::Instant::now(), sql });
     }
 
@@ -1284,6 +1433,7 @@ impl BuilderTab {
         let Some(rx) = &self.job else { return };
         let Ok(r) = rx.try_recv() else { return };
         self.job = None;
+        self.took = self.started.take().map(|t| t.elapsed());
         self.grid.reset();
         if let Some(run) = self.running.take() {
             let entry = crate::qhistory::Entry {
@@ -1309,6 +1459,10 @@ impl BuilderTab {
 }
 
 impl TabView for BuilderTab {
+    fn database(&self) -> Option<String> {
+        Some(self.db.clone()).filter(|d| !d.is_empty())
+    }
+
     fn icon(&self) -> Option<crate::icons::Icon> {
         Some(crate::icons::Icon::Wizard)
     }
@@ -1474,23 +1628,46 @@ impl TabView for BuilderTab {
             .frame(egui::Frame::new().fill(pal.face).inner_margin(egui::Margin::symmetric(4, 4)))
             .show(ui, |ui| {
                 egui::Panel::left(egui::Id::new(("builder-sql", &self.id))).resizable(true).default_size(ui.available_width() * 0.4).show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("SQL").small().strong().color(pal.text_weak));
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if icons::button(ui, Icon::Copy, crate::i18n::text("Kopieren")).clicked() {
+                                ui.ctx().copy_text(sql.clone());
+                                cx.status(crate::i18n::text("SQL kopiert."));
+                            }
+                            let lines = sql.lines().count();
+                            ui.label(RichText::new(crate::tr_format!("{} Zeile(n)", "{} line(s)", lines)).small().color(pal.text_weak));
+                        });
+                    });
                     egui::ScrollArea::both().id_salt("bsql").auto_shrink([false, false]).show(ui, |ui| {
                         let galley = self.layout_cache.layout(ui, &sql, &egui::FontId::monospace(12.5));
                         ui.add(egui::Label::new(galley).selectable(true).wrap_mode(egui::TextWrapMode::Extend));
                     });
                 });
                 if let Some(e) = &self.error {
-                    ui.label(RichText::new(e).color(pal.error_text));
+                    egui::Frame::new().fill(pal.error_text.gamma_multiply(0.12)).corner_radius(style::RADIUS as f32).inner_margin(egui::Margin::symmetric(10, 8)).show(ui, |ui| {
+                        ui.set_min_width(ui.available_width());
+                        ui.label(RichText::new(e).color(pal.error_text));
+                    });
                 }
                 if self.job.is_some() {
-                    ui.spinner();
+                    ui.horizontal(|ui| {
+                        ui.spinner();
+                        ui.label(RichText::new(crate::i18n::text("Läuft …")).small().color(pal.text_weak));
+                    });
                 }
                 if let Some(rs) = &self.result {
                     ui.horizontal(|ui| {
-                        ui.label(RichText::new(crate::tr_format!("{} Zeile(n)", "{} row(s)", rs.rows.len())).color(pal.ok_text));
+                        let took = self.took.map(|t| if t.as_millis() < 1000 { format!(" · {} ms", t.as_millis()) } else { format!(" · {:.1} s", t.as_secs_f32()) }).unwrap_or_default();
+                        ui.label(RichText::new(format!("{}{took}", crate::tr_format!("{} Zeile(n)", "{} row(s)", rs.rows.len()))).color(pal.ok_text));
                         grid::export_menu(ui, "ergebnis", &rs.columns, &rs.rows);
                     });
                     grid::show(ui, ("bgrid", &self.id), &rs.columns, &rs.rows, grid::Edit::View, &mut self.grid);
+                } else if self.job.is_none() && self.error.is_none() {
+                    ui.add_space(10.0);
+                    ui.vertical_centered(|ui| {
+                        ui.label(RichText::new(crate::i18n::text("Noch kein Ergebnis. „Ausführen“ zeigt die Zeilen der Abfrage.")).color(pal.text_weak));
+                    });
                 }
             });
 
@@ -1520,7 +1697,7 @@ impl TabView for BuilderTab {
         let mut close = false;
         if let Some(name) = self.view_name.as_mut() {
             egui::Window::new(crate::i18n::text("Als Sicht speichern")).collapsible(false).resizable(false).anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]).show(ui.ctx(), |ui| {
-                let r = ui.add(egui::TextEdit::singleline(name).hint_text(crate::i18n::text("Name der Sicht")).desired_width(240.0));
+                let r = ui.add(crate::widgets::edit(name).hint_text(crate::i18n::text("Name der Sicht")).desired_width(240.0));
                 r.request_focus();
                 ui.horizontal(|ui| {
                     let ok = ui.button(crate::i18n::text("Speichern")).clicked() || (r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)));

@@ -25,7 +25,27 @@ env:
   VCREDIST_URL: https://aka.ms/vs/17/release/vc_redist.x64.exe
 
 jobs:
+  # A release is only built when Cargo.toml carries a version that has no tag yet,
+  # so every published version is a deliberate decision (see "Versioning" in the README).
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      new: ${{ steps.tag.outputs.new }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: tag
+        run: |
+          v=$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"(.+)".*/\1/')
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || ! git ls-remote --exit-code --tags origin "refs/tags/v$v" >/dev/null 2>&1; then
+            echo "new=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "new=false" >> "$GITHUB_OUTPUT"
+            echo "Version $v is already released; nothing to do."
+          fi
+
   windows:
+    needs: check
+    if: needs.check.outputs.new == 'true'
     runs-on: windows-latest
     defaults:
       run:
@@ -140,6 +160,10 @@ jobs:
           Copy-Item target/release/easymysql.exe "$p/EasyMySQL.exe"
           Copy-Item build/mariadb "$p/mariadb" -Recurse
           Compress-Archive -Path $p -DestinationPath "dist/EasyMySQL-portable-${{ steps.ver.outputs.version }}.zip" -CompressionLevel Optimal
+          # Small update package: only the program. The app downloads and installs it in the background.
+          New-Item -ItemType Directory -Force build/app | Out-Null
+          Copy-Item target/release/easymysql.exe build/app/EasyMySQL.exe
+          Compress-Archive -Path build/app/EasyMySQL.exe -DestinationPath "dist/EasyMySQL-app-${{ steps.ver.outputs.version }}.zip" -CompressionLevel Optimal
           Get-ChildItem dist | Select-Object Name, Length
 
       - uses: actions/upload-artifact@v4
@@ -157,6 +181,7 @@ jobs:
           files: |
             dist/EasyMySQL-Setup-${{ steps.ver.outputs.version }}.exe
             dist/EasyMySQL-portable-${{ steps.ver.outputs.version }}.zip
+            dist/EasyMySQL-app-${{ steps.ver.outputs.version }}.zip
           body: |
             ## EasyMySQL ${{ steps.ver.outputs.version }}
 
@@ -176,10 +201,12 @@ jobs:
 
             ### Features
 
-            - English interface by default; German is selectable under Settings → Appearance.
-            - Dark mode by default; a light theme is also available.
-            - SQL editor, query builder, ER diagrams, automatic backups and update checks.
-            - Cached editor layout and diagram routes, shared result data, and background project scans and file searches.
+            - Title bar with minimize, maximize and close built into the window; English interface by default, German selectable.
+            - Import from SQLite, MongoDB, CSV, Redis, MariaDB/MySQL and PostgreSQL, from files, web addresses, SSH or servers (TLS, SSH tunnel).
+            - Export to SQL, JSON, CSV, XML, SQLite, PostgreSQL, MongoDB, Redis files or straight to another MariaDB/MySQL, PostgreSQL or Redis server.
+            - ER diagrams with right-angled lines and shared tracks, readable at any zoom.
+            - Updates download and install in the background; a button restarts the app afterwards.
+            - SQL editor, query builder, users and privileges, integrated terminal, automatic backups.
 
             ### Included
 

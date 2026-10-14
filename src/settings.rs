@@ -12,8 +12,8 @@ pub struct Settings {
     pub dark: bool,
     pub save_password: bool,
     pub show_system_dbs: bool,
-    /// Beim Start und alle sechs Stunden nach neuen Versionen suchen.
-    pub auto_update: bool,
+    /// Neue Versionen automatisch im Hintergrund laden und installieren (sonst erst nach Zustimmung)
+    pub auto_install: bool,
     /// Schriftgroesse im SQL-Editor (Pixel)
     pub editor_font: u32,
     /// Vorschlaege beim Tippen automatisch zeigen (sonst nur mit Strg+Leertaste)
@@ -38,6 +38,8 @@ pub struct Settings {
     pub background: bool,
     /// Beim naechsten Start alle Registerkarten wieder oeffnen
     pub restore_tabs: bool,
+    /// Seitenleiste (Explorer, Suche, Datenbanken, Verlauf) zeigen
+    pub sidebar: bool,
 }
 
 /// Schriftgroesse im SQL-Editor (Pixel): Standard und Grenzen
@@ -58,7 +60,7 @@ impl Default for Settings {
             dark: true,
             save_password: false,
             show_system_dbs: false,
-            auto_update: true,
+            auto_install: false,
             editor_font: DEFAULT_FONT,
             auto_suggest: true,
             auto_close: true,
@@ -71,6 +73,7 @@ impl Default for Settings {
             lint: true,
             background: false,
             restore_tabs: false,
+            sidebar: true,
         }
     }
 }
@@ -101,7 +104,7 @@ impl Settings {
                 "ssh_password" => s.ssh.password = v,
                 "save_password" => s.save_password = on,
                 "show_system_dbs" => s.show_system_dbs = on,
-                "auto_update" => s.auto_update = on,
+                "auto_install" => s.auto_install = on,
                 "editor_font" => s.editor_font = v.parse().unwrap_or(DEFAULT_FONT).clamp(MIN_FONT, MAX_FONT),
                 "auto_suggest" => s.auto_suggest = on,
                 "auto_close" => s.auto_close = on,
@@ -114,6 +117,7 @@ impl Settings {
                 "lint" => s.lint = on,
                 "background" => s.background = on,
                 "restore_tabs" => s.restore_tabs = on,
+                "sidebar" => s.sidebar = on,
                 _ => {}
             }
         }
@@ -127,8 +131,8 @@ impl Settings {
     fn to_text(&self) -> String {
         let b = |x: bool| if x { "1" } else { "0" };
         let mut text = format!(
-            "language={}\ndark={}\nhost={}\nport={}\nuser={}\nsave_password={}\nshow_system_dbs={}\nauto_update={}\neditor_font={}\n\
-             auto_suggest={}\nauto_close={}\nscroll_speed={}\nautoscroll={}\nstorage_dir={}\nquery_log={}\nautosave={}\nlint={}\nbackground={}\nrestore_tabs={}\n",
+            "language={}\ndark={}\nhost={}\nport={}\nuser={}\nsave_password={}\nshow_system_dbs={}\nauto_install={}\neditor_font={}\n\
+             auto_suggest={}\nauto_close={}\nscroll_speed={}\nautoscroll={}\nstorage_dir={}\nquery_log={}\nautosave={}\nlint={}\nbackground={}\nrestore_tabs={}\nsidebar={}\n",
             self.language.id(),
             b(self.dark),
             self.conn.host,
@@ -136,7 +140,7 @@ impl Settings {
             self.conn.user,
             b(self.save_password),
             b(self.show_system_dbs),
-            b(self.auto_update),
+            b(self.auto_install),
             self.editor_font,
             b(self.auto_suggest),
             b(self.auto_close),
@@ -148,6 +152,7 @@ impl Settings {
             b(self.lint),
             b(self.background),
             b(self.restore_tabs),
+            b(self.sidebar),
         );
         for r in &self.recent {
             text.push_str(&format!("recent={}\n", r.display()));
@@ -178,7 +183,7 @@ mod tests {
         assert_eq!(defaults.language, crate::i18n::Language::English);
         assert!(defaults.dark);
         assert_eq!(defaults.conn.port, 3307);
-        let custom = Settings::from_text("language=de\ndark=0\neditor_font=18\nauto_update=0\n");
+        let custom = Settings::from_text("language=de\ndark=0\neditor_font=18\nauto_install=1\n");
         assert_eq!(custom.language, crate::i18n::Language::German);
         assert!(!custom.dark);
         assert_eq!(Settings::from_text(&custom.to_text()), custom);

@@ -3,6 +3,7 @@
 
 use super::{Action, Ctx, TabView};
 use crate::server::{LogKind, LogLine};
+use crate::icons::{self, Icon};
 use crate::style;
 use eframe::egui::{self, RichText};
 
@@ -93,50 +94,52 @@ impl TabView for LogTab {
         }
         ui.ctx().request_repaint_after(std::time::Duration::from_millis(700));
         ui.horizontal_wrapped(|ui| {
-            ui.selectable_value(&mut self.filter, Filter::All, crate::i18n::text("Alles"));
-            ui.selectable_value(&mut self.filter, Filter::Server, "Server");
-            ui.selectable_value(&mut self.filter, Filter::Queries, crate::i18n::text("Anweisungen"));
-            ui.separator();
-            ui.add(egui::TextEdit::singleline(&mut self.search).hint_text(crate::i18n::text("Filtern")).desired_width(180.0));
-            ui.separator();
-            let mut on = cx.settings.query_log;
-            if crate::widgets::check(ui, &mut on, crate::i18n::text("Alle Anweisungen mitschreiben"))
-                .changed()
-            {
-                cx.settings.query_log = on;
-                cx.actions.push(Action::SettingsChanged);
-                if on {
-                    self.filter = Filter::Queries;
-                }
-            }
-            crate::widgets::check(ui, &mut self.hide_internal, crate::i18n::text("Interne ausblenden"));
-            crate::widgets::check(ui, &mut self.show_old, crate::i18n::text("Frühere Sitzungen"));
-            ui.separator();
-            if ui.button(crate::i18n::text("Kopieren")).clicked() {
-                let text: Vec<String> = self.cache.iter().filter(|l| self.visible(l)).map(|l| format!("{}  {}", l.time, l.text)).collect();
-                ui.ctx().copy_text(text.join("\n"));
-            }
-            if ui.button(crate::i18n::text("Leeren")).clicked() {
-                self.cleared_at = Some(self.cache.len());
-            }
-            ui.menu_button(crate::i18n::text("Dateien"), |ui| {
-                if ui.button(crate::i18n::text("server.log öffnen")).clicked() {
-                    crate::app::open_path(&crate::server::log_file());
-                    ui.close();
-                }
-                if ui.button(crate::i18n::text("abfragen.log öffnen")).clicked() {
-                    crate::app::open_path(&crate::server::query_log_file());
-                    ui.close();
-                }
-                if let Some(p) = &cx.server.paths {
-                    ui.separator();
-                    if ui.button(crate::i18n::text("Datenordner öffnen")).clicked() {
-                        crate::app::open_path(&p.data);
+            let items = [(Filter::All, crate::i18n::text("Alles")), (Filter::Server, "Server"), (Filter::Queries, crate::i18n::text("Anweisungen"))];
+            crate::widgets::segmented(ui, &mut self.filter, &items);
+            ui.add(crate::widgets::edit(&mut self.search).hint_text(crate::i18n::text("Filtern")).desired_width(180.0));
+            // Rechts: Optionen, Kopieren, Leeren, Dateien
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let files = icons::button(ui, Icon::Folder, crate::i18n::text("Dateien"));
+                egui::Popup::menu(&files).show(|ui| {
+                    if ui.button(crate::i18n::text("server.log öffnen")).clicked() {
+                        crate::app::open_path(&crate::server::log_file());
                         ui.close();
                     }
+                    if ui.button(crate::i18n::text("abfragen.log öffnen")).clicked() {
+                        crate::app::open_path(&crate::server::query_log_file());
+                        ui.close();
+                    }
+                    if let Some(p) = &cx.server.paths {
+                        ui.separator();
+                        if ui.button(crate::i18n::text("Datenordner öffnen")).clicked() {
+                            crate::app::open_path(&p.data);
+                            ui.close();
+                        }
+                    }
+                });
+                if icons::button(ui, Icon::Trash, crate::i18n::text("Leeren")).clicked() {
+                    self.cleared_at = Some(self.cache.len());
                 }
+                if icons::button(ui, Icon::Copy, crate::i18n::text("Kopieren")).clicked() {
+                    let text: Vec<String> = self.cache.iter().filter(|l| self.visible(l)).map(|l| format!("{}  {}", l.time, l.text)).collect();
+                    ui.ctx().copy_text(text.join("\n"));
+                }
+                let options = icons::button(ui, Icon::More, crate::i18n::tr("Optionen", "Options"));
+                egui::Popup::menu(&options).show(|ui| {
+                    let mut on = cx.settings.query_log;
+                    if crate::widgets::check(ui, &mut on, crate::i18n::text("Alle Anweisungen mitschreiben")).changed() {
+                        cx.settings.query_log = on;
+                        cx.actions.push(Action::SettingsChanged);
+                        if on {
+                            self.filter = Filter::Queries;
+                        }
+                    }
+                    crate::widgets::check(ui, &mut self.hide_internal, crate::i18n::text("Interne ausblenden"));
+                    crate::widgets::check(ui, &mut self.show_old, crate::i18n::text("Frühere Sitzungen"));
+                });
             });
         });
+        ui.add_space(4.0);
         if cx.server.paths.is_none() {
             ui.label(RichText::new(crate::i18n::text("MariaDB wurde nicht gefunden.")).color(pal.error_text));
         }

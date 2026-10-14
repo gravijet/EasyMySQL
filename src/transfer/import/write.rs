@@ -33,12 +33,23 @@ impl Progress {
 }
 
 pub fn create_sql(t: &TableScan) -> String {
+    // Fertige Anweisung der Quelle (anderer MySQL-Server): nur den Namen ersetzen, falls er geaendert wurde
+    if let Some(ddl) = &t.ddl {
+        if t.name == t.origin {
+            return ddl.clone();
+        }
+        let old = format!("CREATE TABLE {}", q(&t.origin));
+        if let Some(rest) = ddl.strip_prefix(&old) {
+            return format!("CREATE TABLE {}{rest}", q(&t.name));
+        }
+    }
     let mut defs: Vec<String> = t
         .columns
         .iter()
         .map(|c| {
             let auto = t.auto_inc && t.pk.len() == 1 && t.pk[0] == c.name && matches!(c.ty, ColType::Int | ColType::BigInt);
-            format!("{} {}{}", q(&c.name), c.ty.sql(), if auto { " NOT NULL AUTO_INCREMENT" } else if t.pk.contains(&c.name) { " NOT NULL" } else { " NULL" })
+            let ty = c.decl.clone().unwrap_or_else(|| c.ty.sql());
+            format!("{} {}{}", q(&c.name), ty, if auto { " NOT NULL AUTO_INCREMENT" } else if t.pk.contains(&c.name) { " NOT NULL" } else { " NULL" })
         })
         .collect();
     if !t.pk.is_empty() {

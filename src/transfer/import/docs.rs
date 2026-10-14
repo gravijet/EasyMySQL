@@ -6,7 +6,10 @@ use serde_json::{Map, Value};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
-type Doc = Map<String, Value>;
+pub(super) type Doc = Map<String, Value>;
+
+/// Gibt jedes Dokument einer Sammlung an die uebergebene Funktion
+pub(super) type Iterate<'a> = &'a mut dyn FnMut(&mut dyn FnMut(Doc) -> Result<bool, String>) -> Result<(), String>;
 
 /// Verbindet Datei und optionalen Schluessel in `TableScan::origin`
 fn origin(path: &Path, key: &str) -> String {
@@ -37,7 +40,7 @@ fn hex(b: &[u8]) -> String {
     b.iter().map(|x| format!("{x:02x}")).collect()
 }
 
-fn base64(b: &[u8]) -> String {
+pub(super) fn base64(b: &[u8]) -> String {
     const A: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut s = String::new();
     for c in b.chunks(3) {
@@ -51,7 +54,7 @@ fn base64(b: &[u8]) -> String {
 }
 
 /// Ein BSON-Dokument ab `*i` (Laenge + Elemente) als JSON-Wert im "Extended JSON"-Stil
-fn bson_doc(b: &[u8], i: &mut usize, array: bool) -> Option<Value> {
+pub(super) fn bson_doc(b: &[u8], i: &mut usize, array: bool) -> Option<Value> {
     let start = *i;
     let len = i32::from_le_bytes(le(b, i)?) as usize;
     let end = start.checked_add(len)?;
@@ -275,6 +278,20 @@ pub fn scan(files: &[PathBuf], cancel: &AtomicBool) -> Result<Vec<TableScan>, St
     }
     let mut out = Vec::new();
     for (name, o) in parts {
+        let o2 = o.clone();
+        out.push(scan_collection(name, o, &mut |f| each(&o2, f), cancel)?);
+    }
+    Ok(out)
+}
+
+/// Eine Sammlung lesen: Spalten und Typen aus den Dokumenten bestimmen. `iterate` liefert die Dokumente.
+pub(super) fn scan_collection(
+    name: String,
+    o: String,
+    iterate: Iterate,
+    cancel: &AtomicBool,
+) -> Result<TableScan, String> {
+    {
         if cancel.load(Ordering::Relaxed) {
             return Err("abgebrochen".into());
         }
@@ -284,7 +301,7 @@ pub fn scan(files: &[PathBuf], cancel: &AtomicBool) -> Result<Vec<TableScan>, St
         let mut rows = 0u64;
         let mut ids = std::collections::HashSet::new();
         let mut id_unique = true;
-        each(&o, &mut |d| {
+        iterate(&mut |d| {
             if let Some(id) = d.get("_id") {
                 id_unique &= ids.insert(id.to_string());
             }
@@ -303,31 +320,41 @@ pub fn scan(files: &[PathBuf], cancel: &AtomicBool) -> Result<Vec<TableScan>, St
         let mut order: Vec<usize> = (0..names.len()).collect();
         order.sort_by_key(|&i| names[i] != "_id");
         let cols = unique_names(order.iter().map(|&i| names[i].clone()).collect());
-        out.push(TableScan {
+        let mut t = TableScan {
             name,
             origin: o,
             // Die Spaltennamen der Quelle bleiben in `origin`-Reihenfolge erhalten: siehe `read`
-            columns: order.iter().zip(cols).map(|(&i, name)| Col { name, ty: column_type(&infer[i]) }).collect(),
+            columns: order.iter().zip(cols).map(|(&i, name)| Col { name, ty: column_type(&infer[i]), decl: None }).collect(),
             rows,
             pk: if id_unique && !ids.is_empty() && ids.len() as u64 == rows { vec!["_id".into()] } else { vec![] },
             auto_inc: false,
             fks: vec![],
-        });
+            ddl: None,
+        };
         // Die Schluessel in Quellreihenfolge fuer `read` merken
-        let last = out.last_mut().unwrap();
-        last.origin = format!("{}\u{1}{}", last.origin, order.iter().map(|&i| names[i].replace('\u{1}', " ")).collect::<Vec<_>>().join("\u{1}"));
+        t.origin = format!("{}\u{1}{}", t.origin, order.iter().map(|&i| names[i].replace('\u{1}', " ")).collect::<Vec<_>>().join("\u{1}"));
         // `_id` ist nur Primaerschluessel, wenn der Typ es erlaubt (und alle Werte vorhanden und eindeutig sind)
-        if last.columns.iter().find(|c| c.name == "_id").is_some_and(|c| !c.ty.indexable()) {
-            last.pk.clear();
+        if t.columns.iter().find(|c| c.name == "_id").is_some_and(|c| !c.ty.indexable()) {
+            t.pk.clear();
         }
+        Ok(t)
     }
-    Ok(out)
 }
 
 pub fn read(t: &TableScan, f: &mut dyn FnMut(Vec<Val>) -> Result<bool, String>) -> Result<(), String> {
-    let (o, keys) = t.origin.split_once('\u{1}').unwrap_or((&t.origin, ""));
+    let (o, _) = t.origin.split_once('\u{1}').unwrap_or((&t.origin, ""));
+    read_with(t, &mut |g| each(o, g), f)
+}
+
+/// Zeilen einer Sammlung: Spalten in der beim Lesen gemerkten Reihenfolge
+pub(super) fn read_with(
+    t: &TableScan,
+    iterate: Iterate,
+    f: &mut dyn FnMut(Vec<Val>) -> Result<bool, String>,
+) -> Result<(), String> {
+    let (_, keys) = t.origin.split_once('\u{1}').unwrap_or((&t.origin, ""));
     let keys: Vec<&str> = keys.split('\u{1}').collect();
-    each(o, &mut |d| {
+    iterate(&mut |d| {
         let row = keys.iter().map(|k| d.get(*k).map(cell).unwrap_or(Val::Null)).collect();
         f(row)
     })

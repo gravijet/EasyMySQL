@@ -18,7 +18,7 @@ pub struct DesignerTab {
 pub fn type_field(ui: &mut egui::Ui, id: impl std::hash::Hash + std::fmt::Debug, value: &mut String) {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
-        ui.add(egui::TextEdit::singleline(value).desired_width(110.0));
+        ui.add(crate::widgets::edit(value).desired_width(110.0));
         crate::widgets::combo(id)
             .selected_text("")
             .width(18.0)
@@ -71,6 +71,10 @@ impl DesignerTab {
 }
 
 impl TabView for DesignerTab {
+    fn database(&self) -> Option<String> {
+        Some(self.db.clone()).filter(|d| !d.is_empty())
+    }
+
     fn icon(&self) -> Option<crate::icons::Icon> {
         Some(crate::icons::Icon::NewFile)
     }
@@ -130,7 +134,7 @@ impl TabView for DesignerTab {
             super::db_combo(ui, "designer-db", cx.databases, &mut self.db);
             ui.end_row();
             ui.label(crate::i18n::text("Tabellenname:"));
-            ui.add(egui::TextEdit::singleline(&mut self.name).desired_width(250.0));
+            ui.add(crate::widgets::edit(&mut self.name).desired_width(250.0));
             ui.end_row();
             ui.label(crate::i18n::text("Speicher-Engine:"));
             super::str_combo(
@@ -142,7 +146,7 @@ impl TabView for DesignerTab {
             );
             ui.end_row();
             ui.label(crate::i18n::text("Kommentar:"));
-            ui.add(egui::TextEdit::singleline(&mut self.comment).desired_width(250.0));
+            ui.add(crate::widgets::edit(&mut self.comment).desired_width(250.0));
             ui.end_row();
         });
         ui.add_space(6.0);
@@ -164,15 +168,15 @@ impl TabView for DesignerTab {
                             }
                             ui.end_row();
                             for (i, c) in self.cols.iter_mut().enumerate() {
-                                ui.add_sized([120.0, 20.0], egui::TextEdit::singleline(&mut c.name).vertical_align(egui::Align::Center));
+                                ui.add_sized([120.0, 28.0], crate::widgets::edit(&mut c.name).vertical_align(egui::Align::Center));
                                 type_field(ui, ("dtype", i), &mut c.col_type);
                                 crate::widgets::check(ui, &mut c.primary, "");
                                 crate::widgets::check(ui, &mut c.not_null, "");
                                 crate::widgets::check(ui, &mut c.auto_inc, "");
                                 crate::widgets::check(ui, &mut c.unique, "");
-                                ui.add_sized([90.0, 20.0], egui::TextEdit::singleline(&mut c.default).vertical_align(egui::Align::Center));
+                                ui.add_sized([90.0, 28.0], crate::widgets::edit(&mut c.default).vertical_align(egui::Align::Center));
                                 ref_field(ui, ("dref", i), &targets, &mut c.references);
-                                ui.add_sized([120.0, 20.0], egui::TextEdit::singleline(&mut c.comment).vertical_align(egui::Align::Center));
+                                ui.add_sized([120.0, 28.0], crate::widgets::edit(&mut c.comment).vertical_align(egui::Align::Center));
                                 if crate::icons::button_sized(ui, crate::icons::Icon::Up, crate::i18n::text("Nach oben"), 18.0).clicked() && i > 0 {
                                     move_up = Some(i);
                                 }

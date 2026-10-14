@@ -118,7 +118,7 @@ impl StructureTab {
                 egui::Grid::new("dlggrid").num_columns(2).spacing([8.0, 5.0]).show(ui, |ui| match dlg {
                     Dlg::Column { orig, def, after } => {
                         ui.label("Name:");
-                        ui.text_edit_singleline(&mut def.name);
+                        ui.add(crate::widgets::edit(&mut def.name));
                         ui.end_row();
                         ui.label(crate::i18n::text("Datentyp:"));
                         type_field(ui, "coltype", &mut def.col_type);
@@ -138,10 +138,10 @@ impl StructureTab {
                         crate::widgets::check(ui, &mut def.unique, crate::i18n::text("Eindeutig (UNIQUE)"));
                         ui.end_row();
                         ui.label(crate::i18n::text("Standardwert:"));
-                        ui.text_edit_singleline(&mut def.default);
+                        ui.add(crate::widgets::edit(&mut def.default));
                         ui.end_row();
                         ui.label(crate::i18n::text("Kommentar:"));
-                        ui.text_edit_singleline(&mut def.comment);
+                        ui.add(crate::widgets::edit(&mut def.comment));
                         ui.end_row();
                         if orig.is_none() {
                             ui.label("Position:");
@@ -156,10 +156,10 @@ impl StructureTab {
                     }
                     Dlg::Index { name, cols: c, unique } => {
                         ui.label("Name:");
-                        ui.text_edit_singleline(name);
+                        ui.add(crate::widgets::edit(name));
                         ui.end_row();
                         ui.label(crate::i18n::text("Spalten:"));
-                        ui.add(egui::TextEdit::singleline(c).hint_text(crate::i18n::text("spalte1, spalte2")));
+                        ui.add(crate::widgets::edit(c).hint_text(crate::i18n::text("spalte1, spalte2")));
                         ui.end_row();
                         ui.label("");
                         ui.horizontal_wrapped(|ui| {
@@ -393,6 +393,10 @@ impl StructureTab {
 }
 
 impl TabView for StructureTab {
+    fn database(&self) -> Option<String> {
+        Some(self.db.clone()).filter(|d| !d.is_empty())
+    }
+
     fn icon(&self) -> Option<crate::icons::Icon> {
         Some(crate::icons::Icon::Columns)
     }
@@ -517,7 +521,7 @@ impl TabView for StructureTab {
         ui.add_space(2.0);
 
         super::page_keys(ui);
-        egui::ScrollArea::vertical().id_salt(("structscroll", &self.table)).auto_shrink([false, false]).show(ui, |ui| {
+        egui::ScrollArea::both().id_salt(("structscroll", &self.table)).auto_shrink([false, false]).show(ui, |ui| {
             super::section_title(ui, crate::i18n::text("Spalten"));
             self.columns_table(ui, &info);
 

@@ -143,3 +143,113 @@ pub fn combo(id: impl std::hash::Hash + std::fmt::Debug) -> egui::ComboBox {
     })
 }
 
+
+/// Hervorgehobene Hauptaktion nur mit Text (Akzentfarbe, weisse Schrift)
+pub fn primary(ui: &mut egui::Ui, text: &str) -> Response {
+    let p = style::pal();
+    ui.add(egui::Button::new(egui::RichText::new(text).color(Color32::WHITE)).fill(p.accent).stroke(Stroke::NONE).min_size(vec2(0.0, ui.spacing().interact_size.y)))
+}
+
+// ---------------------------------------------------------------------------
+// Formulare: einheitliche Hoehen, Beschriftungen links (bei schmalem Platz darueber) und Karten
+
+/// Hoehe aller Eingabefelder und Schaltflaechen in Formularen
+pub const CONTROL_H: f32 = 28.0;
+/// Breite der Beschriftungsspalte
+pub const LABEL_W: f32 = 176.0;
+/// Ab dieser Breite stehen Beschriftung und Feld nebeneinander
+const ROW_WIDE: f32 = 460.0;
+
+/// Zeile eines Formulars: Beschriftung links, Feld rechts (bei wenig Platz uebereinander)
+pub fn row<R>(ui: &mut egui::Ui, label: &str, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    let p = style::pal();
+    if ui.available_width() >= ROW_WIDE {
+        ui.horizontal(|ui| {
+            let galley = ui.painter().layout(label.to_string(), FontId::proportional(13.0), p.text_weak, LABEL_W - 12.0);
+            let (rect, _) = ui.allocate_exact_size(vec2(LABEL_W, CONTROL_H.max(galley.size().y)), Sense::hover());
+            ui.painter().galley(pos2(rect.left(), rect.center().y - galley.size().y / 2.0), galley, p.text_weak);
+            // Textfelder fuellen den Rest, hoechstens 360 breit
+            ui.spacing_mut().text_edit_width = (ui.available_width() - 8.0).clamp(120.0, 360.0);
+            add(ui)
+        })
+        .inner
+    } else {
+        ui.vertical(|ui| {
+            ui.label(egui::RichText::new(label).small().color(p.text_weak));
+            ui.spacing_mut().text_edit_width = ui.available_width().clamp(120.0, 360.0);
+            add(ui)
+        })
+        .inner
+    }
+}
+
+/// Einzeiliges Textfeld mit einheitlicher Hoehe und mittig stehendem Text; `width` None = restliche Breite
+pub fn text_field(ui: &mut egui::Ui, text: &mut String, hint: &str, width: Option<f32>) -> Response {
+    let w = width.unwrap_or_else(|| ui.available_width()).max(40.0);
+    ui.add_sized([w, CONTROL_H], egui::TextEdit::singleline(text).hint_text(hint).margin(Margin::symmetric(8, 0)).vertical_align(egui::Align::Center))
+}
+
+pub fn password_field(ui: &mut egui::Ui, text: &mut String, hint: &str, width: Option<f32>) -> Response {
+    let w = width.unwrap_or_else(|| ui.available_width()).max(40.0);
+    ui.add_sized([w, CONTROL_H], egui::TextEdit::singleline(text).password(true).hint_text(hint).margin(Margin::symmetric(8, 0)).vertical_align(egui::Align::Center))
+}
+
+/// Zahlenfeld fester Breite
+pub fn number_field<N: egui::emath::Numeric>(ui: &mut egui::Ui, value: &mut N, range: std::ops::RangeInclusive<N>) -> Response {
+    ui.add_sized([88.0, CONTROL_H], egui::DragValue::new(value).range(range))
+}
+
+/// Abschnitt mit Titel in einer Karte
+pub fn section<R>(ui: &mut egui::Ui, title: &str, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    let p = style::pal();
+    if !title.is_empty() {
+        ui.add_space(6.0);
+        ui.label(egui::RichText::new(title).strong().size(14.0).color(p.text));
+        ui.add_space(2.0);
+    }
+    card()
+        .show(ui, |ui| {
+            ui.set_min_width(ui.available_width());
+            ui.spacing_mut().item_spacing.y = 10.0;
+            add(ui)
+        })
+        .inner
+}
+
+/// Auswahl aus mehreren Moeglichkeiten als umbrechende Reihe von Schaltflaechen
+pub fn chips<T: PartialEq + Clone>(ui: &mut egui::Ui, value: &mut T, items: &[(T, String)]) -> bool {
+    let p = style::pal();
+    let mut changed = false;
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
+        for (v, label) in items {
+            let selected = value == v;
+            let galley = ui.painter().layout_no_wrap(label.clone(), FontId::proportional(13.0), p.text);
+            let (r, resp) = ui.allocate_exact_size(vec2(galley.size().x + 26.0, CONTROL_H), Sense::click());
+            let (fill, fg, stroke) = if selected {
+                (p.accent, Color32::WHITE, Stroke::NONE)
+            } else if resp.hovered() {
+                (p.hover, p.text, Stroke::new(1.0, p.border))
+            } else {
+                (Color32::TRANSPARENT, p.text, Stroke::new(1.0, p.border))
+            };
+            ui.painter().rect(r, style::RADIUS as f32, fill, stroke, StrokeKind::Inside);
+            ui.painter().galley_with_override_text_color(pos2(r.center().x - galley.size().x / 2.0, r.center().y - galley.size().y / 2.0), galley, fg);
+            if resp.clicked() && !selected {
+                *value = v.clone();
+                changed = true;
+            }
+        }
+    });
+    changed
+}
+
+/// Zahlenfeld mit Einheit (z. B. " h") und einheitlicher Hoehe
+pub fn drag<N: egui::emath::Numeric>(ui: &mut egui::Ui, value: &mut N, range: std::ops::RangeInclusive<N>, suffix: &str) -> Response {
+    ui.add_sized([if suffix.len() > 3 { 104.0 } else { 78.0 }, CONTROL_H], egui::DragValue::new(value).range(range).suffix(suffix))
+}
+
+/// Einzeiliges Textfeld in der einheitlichen Hoehe (Text mittig); Breite wie bei `TextEdit` einstellbar
+pub fn edit(text: &mut String) -> egui::TextEdit<'_> {
+    egui::TextEdit::singleline(text).margin(Margin::symmetric(8, 6)).vertical_align(egui::Align::Center)
+}

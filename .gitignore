@@ -19,3 +19,6 @@ key.properties
 google-services.json
 firebase-service-account.json
 auth_cache/
+
+# Redis dumps from local tests
+dump.rdb

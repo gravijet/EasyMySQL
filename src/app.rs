@@ -3,13 +3,19 @@
 mod autoscroll;
 mod dialogs;
 mod palette;
+mod remote;
 mod shell;
 mod side;
 mod terminal_dock;
+mod titlebar;
+
+/// Hoehe der Titelleiste (fuer Meldungen darunter)
+pub const TITLE_H: f32 = titlebar::HEIGHT;
 
 use autoscroll::Autoscroll;
 pub use autoscroll::block_autoscroll;
 use dialogs::Dialog;
+use remote::{Remote, RemoteChoice};
 use side::{ExplorerDlg, SearchState, SideView};
 use terminal_dock::TerminalDock;
 
@@ -23,7 +29,7 @@ use crate::tabs::{
     Action, Ctx, SchemaCache, TabView, builder::BuilderTab, data::DataTab, designer::DesignerTab, er::ErTab, help::HelpTab,
     log::LogTab, safety::SafetyTab, settings::SettingsTab, sql::SqlTab, structure::StructureTab,
 };
-use eframe::egui::{self, Rect, ViewportCommand};
+use eframe::egui::{self, Rect, RichText, ViewportCommand};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::sync::mpsc::Receiver;
@@ -43,11 +49,33 @@ macro_rules! cx {
             project: $s.project.as_deref(),
             settings: &mut $s.settings,
             history: &$s.history,
+            update: $s.updater.status(),
             actions: $actions,
         }
     };
 }
 
+/// Wie `cx!`, aber fuer eine Registerkarte auf einem gespeicherten Server (`$server`: dessen Name):
+/// Verbindung, Datenbanken und Strukturen kommen dann von diesem Server.
+macro_rules! cx_of {
+    ($s:ident, $server:expr, $actions:expr) => {{
+        let remote = $server.and_then(|n: &str| $s.remotes.get_mut(n)).filter(|r| r.db.is_some());
+        match remote {
+            Some(r) => Ctx {
+                db: r.db.as_ref(),
+                schemas: &mut r.schemas,
+                databases: &r.databases,
+                server: &$s.server,
+                project: $s.project.as_deref(),
+                settings: &mut $s.settings,
+                history: &$s.history,
+                update: $s.updater.status(),
+                actions: $actions,
+            },
+            None => cx!($s, $actions),
+        }
+    }};
+}
 
 struct Toast {
     text: String,
@@ -64,11 +92,15 @@ pub struct EasyApp {
     auto_connect: bool,
     databases: Vec<String>,
     schemas: SchemaCache,
+    /// Verbindungen zu den gespeicherten Servern, die Dateien gewaehlt haben (Name -> Verbindung)
+    remotes: std::collections::HashMap<String, Remote>,
     tabs: Vec<Box<dyn TabView>>,
     active: usize,
     /// Sitzungseintraege geschlossener Registerkarten (zum Wiederoeffnen)
     closed: Vec<String>,
     current_db: String,
+    /// Registerkarte und Datenbank, mit denen `current_db` zuletzt abgeglichen wurde
+    synced_db: Option<(usize, String)>,
     toasts: Vec<Toast>,
     terminal: TerminalDock,
     dialogs: Vec<Dialog>,
@@ -81,7 +113,6 @@ pub struct EasyApp {
     os_pos: Option<egui::Pos2>,
     last_state: State,
     backup_job: Option<Receiver<Result<String, String>>>,
-    export_job: Option<Receiver<Result<PathBuf, String>>>,
     backup_last_check: Option<Instant>,
     check_job: Option<Receiver<Result<crate::repair::CheckResult, String>>>,
     /// Verbindungsaufbau ueber SSH im Hintergrund (zweiter Wert: bei Fehler Dialog zeigen)
@@ -95,7 +126,6 @@ pub struct EasyApp {
     tree_scan: Option<Instant>,
     tree_job: Option<Receiver<(PathBuf, crate::workspace::Node)>>,
     side_view: SideView,
-    sidebar: bool,
     explorer_dlg: Option<ExplorerDlg>,
     session_saved: Instant,
     history: Vec<crate::qhistory::Entry>,
@@ -170,10 +200,12 @@ impl EasyApp {
                 c.set_repaint(cc.egui_ctx.clone());
                 c
             },
+            remotes: Default::default(),
             tabs: Vec::new(),
             active: 0,
             closed: Vec::new(),
             current_db: String::new(),
+            synced_db: None,
             toasts: Vec::new(),
             terminal: TerminalDock::default(),
             dialogs: Vec::new(),
@@ -185,7 +217,6 @@ impl EasyApp {
             os_pos: None,
             last_state: State::Stopped,
             backup_job: None,
-            export_job: None,
             backup_last_check: None,
             check_job: None,
             connect_job: None,
@@ -197,7 +228,6 @@ impl EasyApp {
             tree_scan: None,
             tree_job: None,
             side_view: SideView::Explorer,
-            sidebar: true,
             explorer_dlg: None,
             session_saved: Instant::now(),
             history,
@@ -374,22 +404,13 @@ impl EasyApp {
                     Err(e) => self.toast_error(crate::tr_format!("Automatische Sicherung fehlgeschlagen: {e}", "Automatic backup failed: {e}")),
                 }
             }
+        self.poll_remotes(ctx);
         if let Some((rx, show)) = &self.connect_job {
             ctx.request_repaint_after(Duration::from_millis(200));
             if let Ok(r) = rx.try_recv() {
                 let show = *show;
                 self.connect_job = None;
                 self.finish_connect(r, show);
-            }
-        }
-        if let Some(rx) = &self.export_job {
-            ctx.request_repaint_after(Duration::from_millis(300));
-            if let Ok(r) = rx.try_recv() {
-                self.export_job = None;
-                match r {
-                    Ok(p) => self.toast(crate::tr_format!("Gespeichert: {}", "Saved: {}", p.display())),
-                    Err(e) => self.toast_error(e),
-                }
             }
         }
         if let Some(rx) = &self.check_job
@@ -453,7 +474,7 @@ impl EasyApp {
         let mut actions = Vec::new();
         for d in &dbs {
             let mut cx = cx!(self, &mut actions);
-            for t in self.tabs.iter_mut() {
+            for t in self.tabs.iter_mut().filter(|t| t.server().is_none()) {
                 t.schema_changed(d, &mut cx);
             }
         }
@@ -541,6 +562,47 @@ impl EasyApp {
         }
     }
 
+    /// Die aktive Datenbank folgt der Registerkarte: ER-Diagramm, Assistent und neue Abfragen
+    /// beziehen sich auf die Datenbank der Datei, in der man gerade arbeitet.
+    fn follow_tab_database(&mut self) {
+        // Datenbanken eines anderen Servers gibt es in der Seitenleiste nicht
+        if self.tabs.get(self.active).is_some_and(|t| t.server().is_some()) {
+            return;
+        }
+        let Some(tab_db) = self.tabs.get(self.active).and_then(|t| t.database()) else { return };
+        let now = (self.active, tab_db.clone());
+        if self.synced_db.as_ref() != Some(&now) {
+            self.synced_db = Some(now);
+            if self.databases.contains(&tab_db) {
+                self.current_db = tab_db;
+            }
+        }
+    }
+
+    /// Import-/Export-Registerkarte oeffnen (es gibt nur eine) und in die gewuenschte Richtung stellen
+    fn open_transfer(&mut self, mode: crate::tabs::transfer::Mode, export: Option<(String, Option<Vec<String>>, crate::transfer::export::Format)>) {
+        use crate::tabs::transfer::TransferTab;
+        match export {
+            Some((db, only, format)) => {
+                // Eine vorhandene Karte durch eine frische mit der Auswahl ersetzen
+                if let Some(i) = self.tabs.iter().position(|t| t.key().as_deref() == Some("transfer")) {
+                    self.tabs.remove(i);
+                }
+                self.open_tab(Box::new(TransferTab::export(db, only, format)));
+            }
+            None => {
+                if let Some(i) = self.tabs.iter().position(|t| t.key().as_deref() == Some("transfer")) {
+                    self.active = i;
+                    self.tabs[i].show_section(if mode == crate::tabs::transfer::Mode::Import { "import" } else { "export" });
+                } else {
+                    let mut t = TransferTab::new(mode);
+                    t.set_mode(mode);
+                    self.open_tab(Box::new(t));
+                }
+            }
+        }
+    }
+
     fn need_db(&mut self) -> Option<String> {
         if self.db.is_none() {
             self.error(crate::i18n::text("Keine Verbindung zum Datenbankserver."));
@@ -588,7 +650,7 @@ impl EasyApp {
                     self.schemas.invalidate(&d);
                     let mut acts = Vec::new();
                     let mut cx = cx!(self, &mut acts);
-                    for t in self.tabs.iter_mut() {
+                    for t in self.tabs.iter_mut().filter(|t| t.server().is_none()) {
                         t.schema_changed(&d, &mut cx);
                     }
                     self.handle_actions(acts);
@@ -610,7 +672,8 @@ impl EasyApp {
                     crate::backup::set_env(None);
                 }
                 Action::OpenSafety => self.open_tab(Box::new(SafetyTab::new())),
-                Action::OpenImport => self.open_tab(Box::new(crate::tabs::import::ImportTab::new())),
+                Action::OpenImport => self.open_transfer(crate::tabs::transfer::Mode::Import, None),
+                Action::OpenExport { db, only, format } => self.open_transfer(crate::tabs::transfer::Mode::Export, Some((db, only, format))),
                 Action::OpenUsers => self.open_tab(Box::new(crate::tabs::users::UsersTab::new())),
                 Action::FilesChanged => self.tree_scan = None,
                 Action::OpenFileAt { path, line } => {
@@ -632,6 +695,16 @@ impl EasyApp {
                     }
                 }
                 Action::OpenLog => self.open_tab(Box::new(LogTab::new())),
+                Action::UpdateInstall => {
+                    if let Some(ctx) = CTX.lock().unwrap().clone() {
+                        self.updater.install_now(&ctx);
+                    }
+                }
+                Action::UpdateRestart => {
+                    if let Some(ctx) = CTX.lock().unwrap().clone() {
+                        self.restart_app(&ctx);
+                    }
+                }
                 Action::CopyText(text) => {
                     if let Some(ctx) = CTX.lock().unwrap().as_ref() {
                         ctx.copy_text(text);
@@ -700,8 +773,9 @@ impl EasyApp {
         match cmd {
             Cmd::RunAll | Cmd::RunStatement | Cmd::Explain | Cmd::Format | Cmd::FixAll | Cmd::CopyJava | Cmd::Find | Cmd::Replace | Cmd::GotoLine => {
                 let mut acts = Vec::new();
+                let srv = self.tabs.get(self.active).and_then(|t| t.server());
                 if let Some(t) = self.tabs.get_mut(self.active) {
-                    t.command(cmd, &mut cx!(self, &mut acts));
+                    t.command(cmd, &mut cx_of!(self, srv.as_deref(), &mut acts));
                 }
                 self.handle_actions(acts);
             }
@@ -739,7 +813,10 @@ impl EasyApp {
             Cmd::PrevTab if !self.tabs.is_empty() => self.active = (self.active + self.tabs.len() - 1) % self.tabs.len(),
             Cmd::CommandPalette => self.palette = Some(palette::Palette::new(true)),
             Cmd::QuickOpen => self.palette = Some(palette::Palette::new(false)),
-            Cmd::ToggleSidebar => self.sidebar = !self.sidebar,
+            Cmd::ToggleSidebar => {
+                self.settings.sidebar = !self.settings.sidebar;
+                self.settings.save();
+            }
             Cmd::ToggleTerminal => self.toggle_terminal(ctx),
             Cmd::NewTerminal => self.new_terminal(ctx, None),
             Cmd::FontLarger => self.set_editor_font(self.settings.editor_font.saturating_add(1)),
@@ -764,6 +841,10 @@ impl EasyApp {
             Cmd::QueryBuilder => self.handle_actions(vec![Action::OpenBuilder(Some(self.current_db.clone()))]),
             Cmd::Backups => self.handle_actions(vec![Action::OpenSafety]),
             Cmd::Import => self.handle_actions(vec![Action::OpenImport]),
+            Cmd::Export => {
+                let db = self.current_db.clone();
+                self.handle_actions(vec![Action::OpenExport { db, only: None, format: crate::transfer::export::Format::Sql }]);
+            }
             Cmd::Users => self.handle_actions(vec![Action::OpenUsers]),
             _ => {}
         }
@@ -783,7 +864,10 @@ impl EasyApp {
 
     fn show_side(&mut self, v: SideView) {
         self.side_view = v;
-        self.sidebar = true;
+        if !self.settings.sidebar {
+            self.settings.sidebar = true;
+            self.settings.save();
+        }
     }
 
     /// Tastenkuerzel, die unabhaengig vom Fokus gelten
@@ -831,6 +915,7 @@ impl EasyApp {
             Cmd::QueryBuilder,
             Cmd::Backups,
             Cmd::Import,
+            Cmd::Export,
             Cmd::Users,
         ];
         // Waehrend ein Kuerzel in den Einstellungen aufgezeichnet wird, nichts ausloesen
@@ -902,6 +987,25 @@ impl EasyApp {
         self.server.restart(self.settings.conn.clone(), Self::on_change_cb(ctx));
     }
 
+    /// Programm beenden und sofort wieder starten (nach einem Update); vorher nach ungespeicherten Dateien fragen.
+    pub(crate) fn restart_app(&mut self, ctx: &egui::Context) {
+        let files = self.unsaved_files();
+        if files.is_empty() {
+            self.restart_now();
+        } else {
+            ctx.send_viewport_cmd(ViewportCommand::Visible(true));
+            ctx.send_viewport_cmd(ViewportCommand::Focus);
+            self.dialogs.push(Dialog::Unsaved { files, then: dialogs::Then::Restart });
+        }
+    }
+
+    fn restart_now(&mut self) {
+        match crate::updates::spawn_restart() {
+            Ok(()) => self.quit(),
+            Err(e) => self.error(crate::tr_format!("EasyMySQL konnte nicht neu gestartet werden: {e}", "EasyMySQL could not be restarted: {e}")),
+        }
+    }
+
     fn quit(&mut self) {
         self.quitting = true;
         self.terminal.close_all();
@@ -927,8 +1031,9 @@ impl EasyApp {
             self.open_file(&p);
             if run {
                 let mut acts = Vec::new();
+                let srv = self.tabs.get(self.active).and_then(|t| t.server());
                 if let Some(t) = self.tabs.get_mut(self.active) {
-                    t.execute(&mut cx!(self, &mut acts));
+                    t.execute(&mut cx_of!(self, srv.as_deref(), &mut acts));
                 }
                 self.handle_actions(acts);
             }
@@ -1059,7 +1164,7 @@ impl eframe::App for EasyApp {
             ctx.send_viewport_cmd(ViewportCommand::Focus);
         }
         self.check_server(ctx);
-        self.updater.poll(ctx, self.settings.auto_update);
+        self.updater.poll(ctx, self.settings.auto_install);
         self.background_tasks(ctx);
 
         // Fenster schliessen: mit Infobereich-Symbol im Hintergrund weiterlaufen, sonst beenden
@@ -1084,16 +1189,17 @@ impl eframe::App for EasyApp {
         self.track_os_drag(&ctx);
 
         crate::terminal::set_focused(false);
+        self.follow_tab_database();
         let pal = style::pal();
         let chrome = |l: i8, r: i8, t: i8, b: i8| egui::Frame::new().fill(pal.face).inner_margin(egui::Margin { left: l, right: r, top: t, bottom: b });
-        egui::Panel::top("menu").frame(chrome(12, 12, 6, 4)).show(ui, |ui| {
+        egui::Panel::top("menu").show_separator_line(false).frame(chrome(12, 0, 0, 2)).show(ui, |ui| {
             self.menu_bar(ui, &mut actions);
         });
-        egui::Panel::left("activity").exact_size(54.0).resizable(false).frame(chrome(6, 0, 4, 0)).show(ui, |ui| {
+        egui::Panel::left("activity").exact_size(60.0).resizable(false).show_separator_line(false).frame(chrome(8, 4, 4, 0)).show(ui, |ui| {
             self.activity_bar(ui);
         });
-        if self.sidebar {
-            egui::Panel::left("sidebar").resizable(true).default_size(268.0).min_size(190.0).frame(chrome(0, 4, 0, 8)).show(ui, |ui| {
+        if self.settings.sidebar {
+            egui::Panel::left("sidebar").resizable(true).show_separator_line(false).default_size((ctx.content_rect().width() * 0.24).clamp(190.0, 268.0)).min_size(190.0).max_size((ctx.content_rect().width() * 0.45).max(190.0)).frame(chrome(0, 4, 0, 8)).show(ui, |ui| {
                 style::panel_card(ui, pal.sidebar_bg, egui::Margin::symmetric(2, 6), |ui| {
                     self.side_panel(ui, &mut actions);
                 });
@@ -1102,7 +1208,7 @@ impl eframe::App for EasyApp {
         if self.terminal.open {
             self.terminal_panel(ui);
         }
-        egui::CentralPanel::default().frame(chrome(if self.sidebar { 0 } else { 4 }, 8, 0, 8)).show(ui, |ui| {
+        egui::CentralPanel::default().frame(chrome(4, 8, 0, 8)).show(ui, |ui| {
             if !self.tabs.is_empty() {
                 self.tab_bar(ui);
             }
@@ -1114,9 +1220,45 @@ impl eframe::App for EasyApp {
                 } else {
                     let active = self.active.min(self.tabs.len() - 1);
                     self.active = active;
+                    let server = self.tabs[active].server();
+                    if let Some(n) = &server {
+                        self.ensure_remote(&ctx, n);
+                    }
+                    let ready = server.as_deref().is_none_or(|n| self.remotes.get(n).is_some_and(|r| r.db.is_some()));
+                    if !ready {
+                        let name = server.clone().unwrap_or_default();
+                        match self.remote_status(ui, &name) {
+                            Some(RemoteChoice::Retry) => {
+                                self.remotes.remove(&name);
+                            }
+                            Some(RemoteChoice::UseDefault) => self.tabs[active].use_server(None),
+                            Some(RemoteChoice::Manage) => actions.push(Action::OpenSettings(Some("verbindung".into()))),
+                            None => {}
+                        }
+                        return;
+                    }
                     let tab = &mut self.tabs[active];
-                    let mut cx = cx!(self, &mut actions);
-                    tab.ui(ui, &mut cx);
+                    if let Some(name) = &server {
+                        // Meldungen der Datei betreffen deren Server, nicht den globalen
+                        let mut own = Vec::new();
+                        tab.ui(ui, &mut cx_of!(self, Some(name.as_str()), &mut own));
+                        for a in own {
+                            match a {
+                                Action::SchemaChanged(d) => {
+                                    if let Some(r) = self.remotes.get_mut(name) {
+                                        r.schemas.invalidate(&d);
+                                    }
+                                }
+                                Action::RefreshAll => {
+                                    self.remotes.remove(name);
+                                }
+                                a => actions.push(a),
+                            }
+                        }
+                    } else {
+                        let mut cx = cx!(self, &mut actions);
+                        tab.ui(ui, &mut cx);
+                    }
                 }
             });
         });
@@ -1134,20 +1276,12 @@ impl eframe::App for EasyApp {
         self.handle_actions(actions);
         self.palette_ui(&ctx);
         self.dialogs_ui(&ctx);
-        if self.updater.ui(&ctx) {
-            self.save_all();
-            self.db = None;
-            self.server.stop_blocking(&self.settings.conn);
-            match self.updater.launch() {
-                Ok(()) => self.quit(),
-                Err(e) => {
-                    self.error(e);
-                    self.restart_server(&ctx);
-                }
-            }
+        if self.updater.ui(&ctx) == Some(crate::updates::Event::Restart) {
+            self.restart_app(&ctx);
         }
         self.toasts_ui(&ctx);
         self.autoscroll.paint(&ctx);
+        titlebar::frame_and_resize(&ctx);
     }
 
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {

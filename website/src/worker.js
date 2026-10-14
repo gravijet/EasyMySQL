@@ -7,6 +7,7 @@ const FRESH_SECONDS = 300;
 const STALE_SECONDS = 60 * 60 * 24 * 7;
 
 const KINDS = {
+  app: { match: /^EasyMySQL-app-[\d.]+\.zip$/, name: (v) => `EasyMySQL-app-${v}.zip`, type: "application/zip" },
   setup: { match: /^EasyMySQL-Setup-[\d.]+\.exe$/, name: (v) => `EasyMySQL-Setup-${v}.exe`, type: "application/vnd.microsoft.portable-executable" },
   portable: { match: /^EasyMySQL-portable-[\d.]+\.zip$/, name: (v) => `EasyMySQL-portable-${v}.zip`, type: "application/zip" },
 };

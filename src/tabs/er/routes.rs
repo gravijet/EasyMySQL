@@ -2,12 +2,6 @@
 
 use super::*;
 
-/// Anfang, Richtung am Anfang, Ende, Richtung am Ende und ggf. gespeicherte Fahrspur einer Beziehung.
-pub(super) type Ends<'a> = (Pos2, f32, Pos2, f32, Option<&'a Vec<Pos2>>);
-
-/// Anschlusspunkt (x, y als Bitmuster) und Richtung: Linien mit gleichem Schluessel werden aufgefaechert.
-type PortKey = (u32, u32, i32);
-
 /// Alles, was sich nur mit Struktur, Positionen oder Notation aendert (nicht mit Zoom/Versatz):
 /// wird einmal berechnet und dann in jedem Bild nur noch gezeichnet.
 pub(super) struct RouteGeometry {
@@ -112,112 +106,28 @@ impl ErTab {
         Rect::from_min_size(p, self.box_of(t))
     }
 
-    /// Endpunkte einer Beziehung: (Anfang am Kind, Richtung, Ende am Elternteil, Richtung, Fahrspuren).
-    /// Richtung = +1 nach rechts aus der Tabelle heraus, -1 nach links.
-    pub(super) fn endpoints(&self, schema: &Schema, fk: &ForeignKey) -> Option<Ends<'_>> {
-        let src = schema.table(&fk.table)?;
-        let dst = schema.table(&fk.ref_table)?;
-        let sr = self.table_rect_world(src);
-        let dr = self.table_rect_world(dst);
-        let sy = sr.top() + row_y(src, fk.columns.first()?);
-        let dy = dr.top() + row_y(dst, fk.ref_columns.first()?);
-        if src.name == dst.name {
-            return Some((pos2(sr.right(), sy), 1.0, pos2(dr.right(), dy), 1.0, None));
-        }
-        // Mit Fahrspuren, wenn die Anordnung noch passt: die erste liegt auf der Seite des Kindes,
-        // die letzte auf der Seite des Elternteils
-        if let Some(lanes) = self.routes.get(&fk_key(fk))
-            && let (Some(first), Some(last)) = (lanes.first(), lanes.last())
-        {
-            let (sx, da) = if first.x < sr.center().x { (sr.left(), -1.0) } else { (sr.right(), 1.0) };
-            let (dx, db) = if last.x > dr.center().x { (dr.right(), 1.0) } else { (dr.left(), -1.0) };
-            let child_ok = if da < 0.0 { first.x <= sr.left() + 1.0 } else { first.x >= sr.right() - 1.0 };
-            let parent_ok = if db > 0.0 { last.x >= dr.right() - 1.0 } else { last.x <= dr.left() + 1.0 };
-            if child_ok && parent_ok {
-                return Some((pos2(sx, sy), da, pos2(dx, dy), db, Some(lanes)));
-            }
-        }
-        // Direkt: passende Seiten waehlen
-        Some(if sr.left() > dr.right() + 20.0 {
-            (pos2(sr.left(), sy), -1.0, pos2(dr.right(), dy), 1.0, None)
-        } else if dr.left() > sr.right() + 20.0 {
-            (pos2(sr.right(), sy), 1.0, pos2(dr.left(), dy), -1.0, None)
-        } else if sr.center().x <= dr.center().x {
-            (pos2(sr.left(), sy), -1.0, pos2(dr.left(), dy), -1.0, None)
-        } else {
-            (pos2(sr.right(), sy), 1.0, pos2(dr.right(), dy), 1.0, None)
-        })
-    }
-
-    /// Linienverlauf aller Beziehungen (Weltkoordinaten), in der Reihenfolge von `schema.fks`.
-    ///
-    /// Enden mehrere Linien am selben Punkt (z. B. alle Verweise auf kunde.id), werden sie leicht
-    /// aufgefaechert – sortiert nach der Hoehe des anderen Endes, damit sie sich nicht kreuzen.
-    /// Die Endpunkte werden dafuer einmal berechnet und gruppiert (statt je Linie alle anderen
-    /// zu durchsuchen), sonst waere der Aufwand bei tausenden Beziehungen quadratisch.
+    /// Linienverlauf aller Beziehungen (Weltkoordinaten), in der Reihenfolge von `schema.fks`: rechtwinklig,
+    /// mit eigenen Spuren in den freien Streifen zwischen den Tabellen (siehe `ortho`).
     pub(super) fn all_paths(&self, schema: &Schema) -> Vec<Option<Path>> {
-        let ends: Vec<_> = schema.fks.iter().map(|fk| self.endpoints(schema, fk)).collect();
-        // Gruppe = gleicher Punkt und gleiche Richtung
-        let mut groups: HashMap<PortKey, Vec<(f32, usize, bool)>> = HashMap::new();
-        let group_key = |p: Pos2, d: f32| (p.x.to_bits(), p.y.to_bits(), d as i32);
-        for (i, e) in ends.iter().enumerate() {
-            let Some((a, da, b, db, lanes)) = e else { continue };
-            let (na, nb) = match lanes {
-                Some(l) => (l[0], l[l.len() - 1]),
-                None => (*b, *a),
-            };
-            groups.entry(group_key(*a, *da)).or_default().push((na.y, i, true));
-            groups.entry(group_key(*b, *db)).or_default().push((nb.y, i, false));
+        let index: HashMap<&str, usize> = schema.tables.iter().enumerate().map(|(i, t)| (t.name.as_str(), i)).collect();
+        let rects: Vec<Rect> = schema.tables.iter().map(|t| self.table_rect_world(t)).collect();
+        let mut edges: Vec<ortho::EdgeIn> = Vec::with_capacity(schema.fks.len());
+        let mut edge_of: Vec<Option<usize>> = vec![None; schema.fks.len()];
+        for (i, fk) in schema.fks.iter().enumerate() {
+            let (Some(&c), Some(&p)) = (index.get(fk.table.as_str()), index.get(fk.ref_table.as_str())) else { continue };
+            let (Some(cc), Some(pc)) = (fk.columns.first(), fk.ref_columns.first()) else { continue };
+            let lanes = self.routes.get(&fk_key(fk)).map(|l| l.iter().map(|q| q.y).collect()).unwrap_or_default();
+            edge_of[i] = Some(edges.len());
+            edges.push(ortho::EdgeIn {
+                child: c,
+                parent: p,
+                child_y: rects[c].top() + row_y(&schema.tables[c], cc),
+                parent_y: rects[p].top() + row_y(&schema.tables[p], pc),
+                lanes,
+            });
         }
-        let mut start_off = vec![0.0f32; ends.len()];
-        let mut end_off = vec![0.0f32; ends.len()];
-        for group in groups.values_mut() {
-            let n = group.len();
-            if n <= 1 {
-                continue;
-            }
-            group.sort_by(|x, y| x.0.total_cmp(&y.0).then_with(|| (x.1, x.2).cmp(&(y.1, y.2))));
-            let step = (20.0 / (n - 1) as f32).clamp(2.5, 5.0);
-            for (idx, &(_, i, at_start)) in group.iter().enumerate() {
-                let off = (idx as f32 - (n - 1) as f32 / 2.0) * step;
-                if at_start {
-                    start_off[i] = off;
-                } else {
-                    end_off[i] = off;
-                }
-            }
-        }
-        schema
-            .fks
-            .iter()
-            .zip(ends)
-            .enumerate()
-            .map(|(i, (fk, e))| {
-                let (mut a, da, mut b, db, lanes) = e?;
-                a.y += start_off[i];
-                b.y += end_off[i];
-                if fk.table == fk.ref_table {
-                    let bend = 40.0 + (a.y - b.y).abs() * 0.2;
-                    return Some(vec![[a, a + vec2(bend, 0.0), b + vec2(bend, 0.0), b]]);
-                }
-                if let Some(lanes) = lanes {
-                    let mut pts = vec![a];
-                    pts.extend(lanes.iter().copied());
-                    pts.push(b);
-                    let mut path = Vec::new();
-                    for w in pts.windows(2) {
-                        if (w[0].y - w[1].y).abs() < 0.5 {
-                            path.push([w[0], w[0].lerp(w[1], 0.33), w[0].lerp(w[1], 0.66), w[1]]);
-                        } else {
-                            let d = if w[1].x >= w[0].x { 1.0 } else { -1.0 };
-                            path.push(bezier_between(w[0], w[1], d, -d));
-                        }
-                    }
-                    return Some(path);
-                }
-                Some(vec![bezier_between(a, b, da, db)])
-            })
-            .collect()
+        let routed = ortho::route(&rects, &edges);
+        edge_of.iter().map(|e| e.map(|k| rounded_path(&routed[k].points, 7.0)).filter(|p| !p.is_empty())).collect()
     }
 
     pub(super) fn geometry(&mut self, schema: &Arc<Schema>) -> Arc<RouteGeometry> {

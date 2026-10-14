@@ -10,10 +10,9 @@
 // Die Gruppen werden zu einem Rechteck etwa im Bildschirmformat gepackt, Tabellen ohne
 // Beziehungen kommen gesammelt darunter.
 
+use super::ortho;
 use eframe::egui::{Pos2, Vec2, pos2, vec2};
 
-/// Abstand zwischen zwei Ebenen (Platz fuer Linien, Beschriftungen und Rauten)
-const GAP_X: f32 = 150.0;
 /// Abstand zwischen Tabellen einer Ebene
 const GAP_Y: f32 = 36.0;
 /// Hoehe einer Fahrspur und Abstand zu ihren Nachbarn
@@ -89,13 +88,13 @@ impl Lg {
             let mut le = 0usize;
             while i > 0 {
                 le += tree[i] as usize;
-                i -= i & i.wrapping_neg();
+                i -= i.isolate_lowest_one();
             }
             count += seen - le;
             let mut i = low + 1;
             while i <= width {
                 tree[i] += 1;
-                i += i & i.wrapping_neg();
+                i += i.isolate_lowest_one();
             }
         }
         count
@@ -378,6 +377,44 @@ fn layer_component(nodes: &[usize], sizes: &[Vec2], pairs: &[Pair], ids: &[usize
             layer[v] = first - 1;
         }
     }
+    // Knoten naeher an die Mehrheit ihrer Nachbarn ruecken: kuerzere Linien, weniger Fahrspuren.
+    // Wer mehr Eltern als Kinder hat, rueckt an seine Eltern heran, sonst an seine Kinder.
+    {
+        let mut parents: Vec<Vec<usize>> = vec![Vec::new(); n];
+        for &(a, b, _) in &dag {
+            parents[b].push(a);
+        }
+        let mut lay: Vec<isize> = layer.iter().map(|&l| l as isize).collect();
+        for _ in 0..24 {
+            let mut moved = false;
+            for &v in &topo {
+                let (nin, nout) = (parents[v].len(), dag_out[v].len());
+                if nin == nout {
+                    continue;
+                }
+                let lo = parents[v].iter().map(|&p| lay[p] + 1).max().unwrap_or(isize::MIN);
+                let hi = dag_out[v].iter().map(|&c| lay[c] - 1).min().unwrap_or(isize::MAX);
+                if lo > hi {
+                    continue;
+                }
+                let target = if nin > nout { lo } else { hi };
+                if target != isize::MIN && target != isize::MAX && target != lay[v] {
+                    lay[v] = target;
+                    moved = true;
+                }
+            }
+            if !moved {
+                break;
+            }
+        }
+        // leere Ebenen entfernen
+        let mut used: Vec<isize> = lay.clone();
+        used.sort_unstable();
+        used.dedup();
+        for (l, &v) in layer.iter_mut().zip(&lay) {
+            *l = used.binary_search(&v).unwrap_or(0);
+        }
+    }
     let base = layer.iter().copied().min().unwrap_or(0);
     layer.iter_mut().for_each(|l| *l -= base);
     let n_layers = layer.iter().copied().max().unwrap_or(0) + 1;
@@ -510,10 +547,31 @@ fn layer_component(nodes: &[usize], sizes: &[Vec2], pairs: &[Pair], ids: &[usize
     let min_y = y.iter().copied().fold(f32::MAX, f32::min);
     y.iter_mut().for_each(|v| *v -= min_y);
 
-    // --- Spalten (x)
+    // --- Spalten (x): der Abstand zwischen zwei Spalten richtet sich nach der Zahl der Spuren, die ihre Linien brauchen
     let mut width = vec![0.0f32; n_layers];
     for v in 0..n {
         width[lg.layer[v]] = width[lg.layer[v]].max(lg.w[v]);
+    }
+    let mut gap_segs: Vec<Vec<ortho::Seg>> = vec![Vec::new(); n_layers];
+    for (c, chain) in chains.iter().enumerate() {
+        let k = dag[c].2;
+        let pair = &pairs[ids[k]];
+        let (pa, pb) = if reversed[k] { (pair.child_y, pair.parent_y) } else { (pair.parent_y, pair.child_y) };
+        let last = chain.len() - 1;
+        for i in 0..last {
+            let (x, z) = (chain[i], chain[i + 1]);
+            let ly = y[x] + if i == 0 { pa } else { lg.h[x] / 2.0 };
+            let ry = y[z] + if i + 1 == last { pb } else { lg.h[z] / 2.0 };
+            // Linien vom selben Anschluss des Elternteils teilen sich einen Strang
+            let key = if i == 0 && !reversed[k] {
+                Some(ortho::port_key(nodes[x], ly, true))
+            } else if i + 1 == last && reversed[k] {
+                Some(ortho::port_key(nodes[z], ry, false))
+            } else {
+                None
+            };
+            gap_segs[lg.layer[x]].push(ortho::Seg { ly, ry, key });
+        }
     }
     let mut layer_x = vec![0.0f32; n_layers];
     let mut at = 0.0;
@@ -522,7 +580,7 @@ fn layer_component(nodes: &[usize], sizes: &[Vec2], pairs: &[Pair], ids: &[usize
             width[l] = 12.0;
         }
         layer_x[l] = at;
-        at += width[l] + if lg.layers[l].iter().all(|&v| v >= n) { GAP_X * 0.55 } else { GAP_X };
+        at += width[l] + ortho::gap_width(ortho::tracks_needed(&gap_segs[l]));
     }
     let mut comp = Comp { nodes: Vec::with_capacity(n), lanes: Vec::new(), size: Vec2::ZERO, crossings };
     let (mut max_x, mut max_y) = (0.0f32, 0.0f32);
@@ -820,6 +878,62 @@ mod tests {
         let all = (0..sizes.len()).fold(Rect::NOTHING, |r, i| r.union(Rect::from_min_size(lay.pos[i], sizes[i])));
         let ratio = all.width() / all.height();
         assert!((0.3..=4.0).contains(&ratio), "Seitenverhaeltnis {ratio}");
+    }
+
+    /// Linien eines grossen Diagramms: rechtwinklig, nie durch eine Tabelle, wenige Kreuzungen
+    #[test]
+    fn routes_of_a_large_layout_are_clean() {
+        use super::ortho::{self, EdgeIn};
+        for n in [30usize, 68, 150] {
+            let (sizes, edges) = big(n);
+            let lay = layout(&sizes, &edges);
+            let rects: Vec<Rect> = (0..n).map(|i| Rect::from_min_size(lay.pos[i], sizes[i])).collect();
+            let ins: Vec<EdgeIn> = edges
+                .iter()
+                .enumerate()
+                .map(|(i, e)| EdgeIn {
+                    child: e.child,
+                    parent: e.parent,
+                    child_y: lay.pos[e.child].y + e.child_y,
+                    parent_y: lay.pos[e.parent].y + e.parent_y,
+                    lanes: lay.lanes[i].as_ref().map(|l| l.iter().map(|p| p.y).collect()).unwrap_or_default(),
+                })
+                .collect();
+            let routed = ortho::route(&rects, &ins);
+            let mut segs: Vec<(usize, Pos2, Pos2)> = Vec::new();
+            for (i, r) in routed.iter().enumerate() {
+                let p = &r.points;
+                assert!(p.len() >= 2, "Kante {i} ohne Linie");
+                for w in p.windows(2) {
+                    assert!((w[0].x - w[1].x).abs() < 0.01 || (w[0].y - w[1].y).abs() < 0.01, "Kante {i} nicht rechtwinklig: {p:?}");
+                    for (k, r) in rects.iter().enumerate() {
+                        let seg = Rect::from_two_pos(w[0], w[1]);
+                        let thin = seg.width() < 0.5 && seg.height() < 0.5;
+                        assert!(thin || !seg.intersects(r.shrink(1.0)), "Kante {i} laeuft durch Tabelle {k}: {w:?} {r:?}");
+                    }
+                    segs.push((i, w[0], w[1]));
+                }
+            }
+            // Kreuzungen zwischen senkrechten und waagerechten Stuecken verschiedener Kanten
+            let mut crossings = 0;
+            for (a, &(ia, a0, a1)) in segs.iter().enumerate() {
+                if (a0.x - a1.x).abs() >= 0.01 {
+                    continue;
+                }
+                let (lo, hi) = (a0.y.min(a1.y), a0.y.max(a1.y));
+                for &(ib, b0, b1) in &segs {
+                    if ia == ib || (b0.y - b1.y).abs() >= 0.01 {
+                        continue;
+                    }
+                    let (l, r) = (b0.x.min(b1.x), b0.x.max(b1.x));
+                    if a0.x > l + 0.01 && a0.x < r - 0.01 && b0.y > lo + 0.01 && b0.y < hi - 0.01 {
+                        crossings += 1;
+                    }
+                }
+                let _ = a;
+            }
+            println!("{n} Tabellen, {} Beziehungen: {crossings} Kreuzungen im Linienbild", edges.len());
+        }
     }
 
     /// Handmessung: `cargo test --release layout_timing -- --ignored --nocapture`

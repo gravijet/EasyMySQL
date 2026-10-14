@@ -17,7 +17,7 @@ use std::sync::mpsc::{Receiver, channel};
 use std::time::{Duration, Instant};
 
 /// Hoehe des Ergebnisfensters, wenn nur die Kopfzeile sichtbar ist
-const RESULTS_HEADER: f32 = 34.0;
+const RESULTS_HEADER: f32 = 50.0;
 
 /// Dateien kurz nach der letzten Aenderung speichern (Einstellungen)
 pub static AUTOSAVE: AtomicBool = AtomicBool::new(true);
@@ -47,6 +47,8 @@ pub struct SqlTab {
     /// Projektordner, in dem die Datei liegt
     project: Option<PathBuf>,
     pub database: String,
+    /// Gespeicherter Server dieser Datei; `None` = der globale Server
+    server: Option<String>,
     pub text: String,
     saved_text: String,
     last_edit: Instant,
@@ -104,6 +106,7 @@ impl SqlTab {
             scratch_id: 0,
             project: None,
             database: String::new(),
+            server: None,
             text: String::new(),
             results_collapsed: false,
             saved_text: String::new(),
@@ -147,6 +150,7 @@ impl SqlTab {
         t.scratch_id = id;
         t.editor = SqlEditor::new(egui::Id::new(("sql-scratch", id)));
         t.database = database;
+        t.server = workspace::file_server(&workspace::scratch_path(id)).filter(|n| crate::profiles::find(n).is_some());
         t.saved_text = text.clone();
         t.text = text;
         Some(t)
@@ -160,7 +164,9 @@ impl SqlTab {
         t.text = String::from_utf8_lossy(&bytes).into_owned();
         t.saved_text = t.text.clone();
         t.project = project.filter(|p| path.starts_with(p)).map(|p| p.to_path_buf());
-        t.database = t.project.as_ref().and_then(|p| workspace::file_db(p, path)).unwrap_or_else(|| default_db.to_string());
+        t.server = workspace::file_server(path).filter(|n| crate::profiles::find(n).is_some());
+        // Auf einem anderen Server passt die Standarddatenbank des globalen nicht
+        t.database = workspace::file_db_any(t.project.as_deref(), path).unwrap_or_else(|| if t.server.is_some() { String::new() } else { default_db.to_string() });
         t.file_mtime = std::fs::metadata(path).and_then(|m| m.modified()).ok();
         t.file = Some(path.to_path_buf());
         Ok(t)
@@ -192,9 +198,53 @@ impl SqlTab {
     fn set_database(&mut self, db: String) {
         if db != self.database {
             self.database = db;
-            if let (Some(p), Some(f)) = (&self.project, &self.file) {
-                workspace::set_file_db(p, f, &self.database);
+            if let Some(f) = &self.file {
+                workspace::set_file_db_any(self.project.as_deref(), f, &self.database);
             }
+        }
+    }
+
+    /// Schluessel fuer Dinge, die zur Datei gemerkt werden (Datei oder gesicherte unbenannte Abfrage)
+    fn memory_key(&self) -> PathBuf {
+        self.file.clone().unwrap_or_else(|| workspace::scratch_path(self.scratch_id))
+    }
+
+    fn set_server(&mut self, server: Option<String>) {
+        if server != self.server {
+            self.server = server;
+            self.database.clear();
+            // Die Verbindung gehoert zum alten Server
+            self.conn = None;
+            self.results.clear();
+            workspace::set_file_server(&self.memory_key(), self.server.as_deref());
+            workspace::set_file_db_any(self.project.as_deref(), &self.memory_key(), "");
+        }
+    }
+
+    /// Auswahl des Servers dieser Datei: der globale (Standard) oder ein gespeicherter
+    fn server_combo(&mut self, ui: &mut egui::Ui, cx: &mut Ctx) {
+        let default = crate::i18n::tr("Standard-Server", "Default server");
+        let shown = self.server.clone().unwrap_or_else(|| default.to_string());
+        let mut pick: Option<Option<String>> = None;
+        crate::widgets::combo(self.editor.id.with("server")).selected_text(shown).width(140.0).show_ui(ui, |ui| {
+            if ui.selectable_label(self.server.is_none(), default).on_hover_text(cx.settings.conn.label()).clicked() {
+                pick = Some(None);
+            }
+            for p in crate::profiles::all() {
+                if ui.selectable_label(self.server.as_deref() == Some(p.name.as_str()), &p.name).on_hover_text(p.label()).clicked() {
+                    pick = Some(Some(p.name));
+                }
+            }
+            ui.separator();
+            if ui.button(crate::i18n::tr("Server verwalten …", "Manage servers …")).clicked() {
+                cx.actions.push(Action::OpenSettings(Some("verbindung".into())));
+                ui.close();
+            }
+        })
+        .response
+        .on_hover_text(crate::i18n::tr("Server, auf dem diese Datei ausgeführt wird", "Server this file runs on"));
+        if let Some(p) = pick {
+            self.set_server(p);
         }
     }
 
@@ -511,7 +561,9 @@ impl SqlTab {
                             ui.label(RichText::new(format!("{:.3} s", r.elapsed.as_secs_f64())).small().color(pal.text_weak));
                             ui.label(RichText::new(&r.preview).monospace().small());
                         });
-                        ui.label(RichText::new(format!("    {msg}")).color(color));
+                        egui::Frame::new().inner_margin(egui::Margin { left: 16, right: 0, top: 0, bottom: 6 }).show(ui, |ui| {
+                            ui.label(RichText::new(msg).color(color));
+                        });
                     }
                 });
                 if let Some(l) = jump {
@@ -520,7 +572,7 @@ impl SqlTab {
                 }
             }
             Pane::History => {
-                ui.add(egui::TextEdit::singleline(&mut self.history_filter).hint_text(crate::i18n::text("Filtern")).desired_width(240.0));
+                ui.add(crate::widgets::edit(&mut self.history_filter).hint_text(crate::i18n::text("Filtern")).desired_width(240.0));
                 let f = self.history_filter.to_lowercase();
                 let items: Vec<&crate::qhistory::Entry> = history.iter().filter(|e| f.is_empty() || e.sql.to_lowercase().contains(&f)).collect();
                 let h = 20.0;
@@ -609,15 +661,16 @@ impl SqlTab {
             };
             if let Some(p) = target {
                 let old = workspace::scratch_path(self.scratch_id);
+                let old_key = old.clone();
                 self.file = Some(p.clone());
                 self.project = cx.project.filter(|pr| p.starts_with(pr)).map(|pr| pr.to_path_buf());
                 self.editor.id = egui::Id::new(("sql-file", file_key(&p)));
                 self.saved_text.clear();
                 self.save();
                 let _ = std::fs::remove_file(old);
-                if let Some(pr) = &self.project {
-                    workspace::set_file_db(pr, &p, &self.database);
-                }
+                workspace::set_file_db_any(self.project.as_deref(), &p, &self.database);
+                workspace::set_file_server(&p, self.server.as_deref());
+                workspace::set_file_server(&old_key, None);
                 self.save_as = None;
                 cx.actions.push(Action::FilesChanged);
                 cx.status(crate::tr_format!("Gespeichert: {}", "Saved: {}", p.display()));
@@ -670,6 +723,18 @@ impl SqlTab {
 }
 
 impl TabView for SqlTab {
+    fn server(&self) -> Option<String> {
+        self.server.clone()
+    }
+
+    fn use_server(&mut self, server: Option<String>) {
+        self.set_server(server);
+    }
+
+    fn database(&self) -> Option<String> {
+        Some(self.database.clone()).filter(|d| !d.is_empty())
+    }
+
     fn icon(&self) -> Option<Icon> {
         Some(if self.file.is_some() { Icon::FileCode } else { Icon::NewFile })
     }
@@ -741,6 +806,7 @@ impl TabView for SqlTab {
         // Leere unbenannte Abfrage beim Schliessen entfernen
         if self.file.is_none() && self.text.trim().is_empty() {
             let _ = std::fs::remove_file(workspace::scratch_path(self.scratch_id));
+            workspace::set_file_server(&workspace::scratch_path(self.scratch_id), None);
         }
         true
     }
@@ -812,6 +878,7 @@ impl TabView for SqlTab {
             let mut dbs = vec![String::new()];
             let show_system = super::SHOW_SYSTEM_DBS.load(std::sync::atomic::Ordering::Relaxed);
             dbs.extend(cx.databases.iter().filter(|d| show_system || !super::is_system_db(d) || **d == self.database).cloned());
+            self.server_combo(ui, cx);
             let mut d = self.database.clone();
             if super::str_combo(ui, self.editor.id.with("db"), &dbs, &mut d, 150.0) {
                 self.set_database(d);
@@ -871,6 +938,7 @@ impl TabView for SqlTab {
             });
         });
 
+        ui.add_space(4.0);
         let font_row = ui.ctx().fonts_mut(|f| f.row_height(&egui::FontId::monospace(sqledit::font_size())));
         if let Some(l) = self.pending_line.take() {
             let ctx = ui.ctx().clone();
@@ -889,8 +957,17 @@ impl TabView for SqlTab {
                 .max_size((total - 90.0).max(RESULTS_HEADER))
         };
         let mut hist_act = None;
-        panel.frame(egui::Frame::new().fill(pal.face).inner_margin(egui::Margin::symmetric(4, 4))).show(ui, |ui| {
-            hist_act = self.results_ui(ui, font_row, cx.history);
+        // Zwischen Editor und Ausgabe liegt eine Luecke (zugleich der Griff zum Verstellen); die Ausgabe ist eine eigene Karte
+        panel.frame(egui::Frame::new().inner_margin(egui::Margin { left: 0, right: 0, top: 8, bottom: 0 })).show(ui, |ui| {
+            egui::Frame::new()
+                .fill(pal.bg)
+                .stroke(egui::Stroke::new(1.0, pal.border))
+                .corner_radius(style::RADIUS + 1)
+                .inner_margin(egui::Margin::symmetric(8, 6))
+                .show(ui, |ui| {
+                    ui.set_min_size(ui.available_size());
+                    hist_act = self.results_ui(ui, font_row, cx.history);
+                });
         });
         match hist_act {
             Some(HistoryAct::Insert(sql)) => {
@@ -904,7 +981,7 @@ impl TabView for SqlTab {
             Some(HistoryAct::Run(sql)) => self.run(cx, sql, 0),
             None => {}
         }
-        let h = (ui.available_height() - 4.0).max(100.0);
+        let h = (ui.available_height() - 8.0).max(100.0);
         let out = self.editor.show(ui, &mut self.text, h);
         self.selection = out.selection.clone();
         if out.changed {

@@ -68,8 +68,8 @@ pub const CHAPTERS: &[Chapter] = &[
                 title: "Aufbau des Fensters",
                 blocks: &[
                     List(&[
-                        "Menüleiste oben: alle Befehle. Rechts daneben die Werkzeuge ER-Diagramm und Abfrage-Assistent sowie ein farbiger Punkt für den Server (grün = läuft, gelb = startet/stoppt, rot = Fehler). Ein Klick auf den Punkt öffnet das Server-Log.",
-                        "Aktivitätsleiste ganz links: schaltet die Seitenleiste um – Explorer, Suchen, Datenbanken, Verlauf. Ein zweiter Klick auf das aktive Symbol blendet die Seitenleiste aus.",
+                        "Titelleiste oben: Menü und Werkzeuge (ER-Diagramm, Abfrage-Assistent), ein farbiger Punkt für den Server (grün = läuft, gelb = startet/stoppt, rot = Fehler; Klick öffnet das Server-Log) und ganz rechts Minimieren, Maximieren und Schließen. Es gibt keine zusätzliche Fensterzeile des Betriebssystems; Ziehen an der freien Fläche verschiebt das Fenster, Doppelklick maximiert, die Fensterkanten ändern die Größe.",
+                        "Aktivitätsleiste ganz links: schaltet die Seitenleiste um – Explorer, Suchen, Datenbanken, Verlauf. Die Seitenleiste lässt sich unter Einstellungen → Darstellung → Seitenleiste ein- und ausschalten.",
                         "Seitenleiste: Breite mit der Maus an der rechten Kante ziehen.",
                         "Registerkarten in der Mitte: SQL-Dateien, Daten, Struktur, Diagramme, Einstellungen und so weiter.",
                         "Ohne offene Registerkarte bleibt die Mitte leer. Doppelklick auf die leere Fläche öffnet eine neue Abfrage.",
@@ -84,13 +84,13 @@ pub const CHAPTERS: &[Chapter] = &[
                 blocks: &[
                     P("Das Terminal öffnet sich unter dem Editor, wie in Visual Studio Code. Es startet im Projektordner und kennt die MariaDB-Programme (mysql, mysqldump), auch ohne die Installation im PATH."),
                     List(&[
-                        "Das Plus öffnet ein weiteres Terminal in einer neuen Registerkarte, der Pfeil daneben lässt die Shell wählen: PowerShell, Eingabeaufforderung oder die MariaDB-Konsole (mysql mit den Verbindungsdaten).",
+                        "Ansicht → Neues Terminal öffnet ein Terminal. Das Plus im Terminalbereich öffnet ein weiteres in einer neuen Registerkarte, der Pfeil daneben lässt die Shell wählen: PowerShell, Eingabeaufforderung oder die MariaDB-Konsole (mysql mit den Verbindungsdaten).",
                         "Mit der Maus markierter Text wird mit Strg+C kopiert, ohne Markierung unterbricht Strg+C das laufende Programm. Rechtsklick: Kopieren und Einfügen, Mausrad: durch die Ausgabe blättern.",
                         "Beim Ausblenden laufen die Shells weiter. Der Mülleimer beendet das aktive Terminal, das Kreuz an der Registerkarte ebenfalls.",
                         "Solange der Cursor im Terminal steht, gehören die Tasten der Shell. Nur das Ein- und Ausblenden und die Befehlsliste funktionieren weiter.",
                     ]),
                     Keys(&[Cmd::ToggleTerminal, Cmd::NewTerminal]),
-                    Open("Terminal öffnen", Cmd(Cmd::ToggleTerminal)),
+                    Open("Terminal öffnen", Cmd(Cmd::NewTerminal)),
                 ],
             },
             Section {
@@ -220,6 +220,7 @@ pub const CHAPTERS: &[Chapter] = &[
                     ]),
                     Keys(&[Cmd::RunAll, Cmd::RunStatement, Cmd::Explain]),
                     P("Oben links in der Datei steht die Datenbank, in der ausgeführt wird. Sie wird je Datei gemerkt. Ein „USE name;“ im Skript wechselt sie ebenfalls."),
+                    P("Jede Datei kann auf einem anderen Server laufen: Links neben der Datenbank steht „Standard-Server“ – das ist der Server aus den Einstellungen. Dort lassen sich gespeicherte Server wählen (Einstellungen → Verbindung → Weitere Server). Die Wahl wird je Datei gemerkt; Datenbanken, Vorschläge und Prüfung kommen dann von diesem Server."),
                     P("Prozeduren, Funktionen und Trigger brauchen ein anderes Trennzeichen:"),
                     Code("DELIMITER //\nCREATE PROCEDURE anzahl_kunden()\nBEGIN\n  SELECT COUNT(*) FROM kunde;\nEND //\nDELIMITER ;\n\nCALL anzahl_kunden();"),
                     Tip("Bei DROP, TRUNCATE sowie DELETE oder UPDATE ohne WHERE sichert EasyMySQL die betroffene Datenbank vorher automatisch. Schlägt diese Sicherung fehl, wird nichts ausgeführt."),
@@ -422,10 +423,14 @@ pub const CHAPTERS: &[Chapter] = &[
                 blocks: &[
                     List(&[
                         "Datenbank → Exportieren oder Rechtsklick auf eine Datenbank bzw. Tabelle. Tabellen: alle oder eine Auswahl.",
-                        "Formate: SQL (mit oder ohne Daten, in der Reihenfolge der Abhängigkeiten), JSON, CSV (eine Datei je Tabelle, Semikolon, UTF-8), XML und eine SQLite-Datei.",
-                        "Die Daten werden Zeile für Zeile geschrieben, auch riesige Tabellen belegen kaum Speicher.",
+                        "In eine Datei: SQL (für MariaDB/MySQL, mit Sichten und Beziehungen), JSON, CSV (eine Datei je Tabelle, Semikolon, UTF-8), XML, eine SQLite-Datei, ein SQL-Skript für PostgreSQL, JSON-Zeilen für MongoDB (mongoimport), eine Redis-Datei (dump.rdb) oder Redis-Befehle für redis-cli.",
+                        "Auf einen anderen Server: MariaDB/MySQL, PostgreSQL oder Redis. Dafür Server, Port, Benutzer und Passwort eintragen; auf Wunsch mit Verschlüsselung (TLS) und über einen SSH-Tunnel mit Schlüsseldatei oder Passwort.",
+                        "Redis kennt keine Tabellen: Jede Zeile wird ein Hash mit dem Namen „tabelle:schlüssel“ (der Schlüssel ist der Primärschlüssel, sonst eine Zeilennummer).",
+                        "Die Daten werden Zeile für Zeile geschrieben, auch riesige Tabellen belegen kaum Speicher. Der Export läuft im Hintergrund, zeigt den Fortschritt und lässt sich abbrechen.",
                         "Einzelne Ergebnisse: Export-Knopf über der Tabelle.",
                     ]),
+                    Keys(&[Cmd::Export]),
+                    Open("Exportieren", Cmd(Cmd::Export)),
                 ],
             },
             Section {
@@ -433,12 +438,14 @@ pub const CHAPTERS: &[Chapter] = &[
                 title: "Importieren",
                 blocks: &[
                     List(&[
-                        "Datenbank → Importieren (oder eine Datei auf die Registerkarte ziehen). Quellen: SQLite-Datei, MongoDB-Export, CSV-Dateien und ein laufender Redis-Server.",
+                        "Datenbank → Importieren (oder eine Datei auf die Registerkarte ziehen). Quellen: SQLite-Datei, MongoDB-Export, CSV-Dateien, Redis (Datei oder Server), ein anderer MariaDB/MySQL-Server und ein PostgreSQL-Server.",
+                        "Jede Quelle gibt es auch von einem anderen Rechner: als Datei aus dem Netz (Adresse mit http:// oder https://), als Datei auf einem Server (per SSH, mit Schlüsseldatei oder Passwort) und, wo es passt, als Server mit Port, Benutzer, Passwort, Verschlüsselung (TLS) und SSH-Tunnel.",
                         "Spaltentypen werden aus den Werten bestimmt (Zahlen, Datum, Text, JSON). Tabellennamen lassen sich ändern, Tabellen abwählen.",
                         "SQLite: Primärschlüssel, AUTO_INCREMENT und Beziehungen werden übernommen.",
                         "MongoDB: Exporte von mongoexport (JSON oder eine Zeile je Dokument) und mongodump (.bson). Verschachtelte Felder landen in einer JSON-Spalte, _id ist der Primärschlüssel.",
                         "CSV: Trennzeichen und Kodierung (UTF-8 oder Windows) werden erkannt, die erste Zeile ist die Kopfzeile.",
-                        "Redis: Strings, Hashes, Listen, Sets und Sorted Sets werden zu den Tabellen redis_strings, redis_hashes, redis_lists, redis_sets und redis_zsets.",
+                        "Redis: Strings, Hashes, Listen, Sets und Sorted Sets werden zu den Tabellen redis_strings, redis_hashes, redis_lists, redis_sets und redis_zsets. Gelesen wird ein laufender Server oder eine RDB-Datei (dump.rdb).",
+                        "MariaDB/MySQL und PostgreSQL: Nach „Verbinden“ eine Datenbank des Servers wählen. Tabellen werden samt Schlüsseln und Beziehungen übernommen (PostgreSQL-Typen werden nach MariaDB übersetzt).",
                         "Ziel ist eine neue oder eine vorhandene Datenbank. Gleichnamige Tabellen werden übersprungen, sofern „ersetzen“ nicht angehakt ist.",
                         "SQL-Dateien: Datenbank → SQL-Datei importieren führt die Datei sofort aus.",
                     ]),
@@ -839,7 +846,8 @@ pub const CHAPTERS: &[Chapter] = &[
                     Table(&[
                         ("Sprache", "Englisch als Standard, Deutsch wählbar"),
                         ("Darstellung", "dunkles Standarddesign, helles Design wählbar; die aktive Kategorie ist hervorgehoben"),
-                        ("Updates", "beim Start und alle sechs Stunden nach neuen Versionen suchen; Download und Installation selbst starten"),
+                        ("Updates", "beim Start und alle sechs Stunden nach neuen Versionen suchen; auf Wunsch automatisch im Hintergrund laden und installieren"),
+                        ("Seitenleiste", "Explorer, Suche, Datenbanken und Verlauf links ein- oder ausblenden"),
                         ("Systemdatenbanken zeigen", "information_schema, mysql, performance_schema, sys in der Seitenleiste"),
                         ("Schriftgröße", "Schrift im SQL-Editor, 10 bis 28 Pixel"),
                         ("Vorschläge beim Tippen", "aus = nur noch per Tastenkürzel"),
@@ -866,7 +874,22 @@ pub const CHAPTERS: &[Chapter] = &[
                        jedem Start neu eingegeben werden. „Standard“ setzt die Werte für den eigenen Server."),
                     P("„Über SSH-Tunnel verbinden“ erreicht einen Server, der nur von seinem eigenen Rechner aus zugänglich ist: EasyMySQL baut mit dem OpenSSH-Client (ssh) einen Tunnel auf. \
                        Server und Port gelten dann aus Sicht des SSH-Servers (meist 127.0.0.1 und 3306). Anmeldung mit Schlüsseldatei, ssh-Agent oder Passwort; unbekannte Server werden beim ersten Mal gemerkt."),
+                    P("Unter „Weitere Server“ lassen sich beliebig viele Server mit Namen speichern (auch mit SSH-Tunnel). Eine SQL-Datei kann sich einen davon aussuchen; ohne Auswahl gilt der Server oben. Verbunden wird erst, wenn eine Datei den Server braucht."),
                     Open("Verbindung einstellen", Settings("verbindung")),
+                ],
+            },
+            Section {
+                id: "updates",
+                title: "Updates",
+                blocks: &[
+                    P("EasyMySQL sucht beim Start und danach alle sechs Stunden nach einer neuen Version. Ist eine da, erscheint oben rechts eine Meldung; „Installieren“ lädt das Update im Hintergrund und installiert es, ohne dass EasyMySQL geschlossen werden muss."),
+                    List(&[
+                        "Ist Einstellungen → Updates → „Automatisch aktualisieren“ eingeschaltet, laufen Download und Installation ganz von selbst; die Meldung erscheint erst, wenn alles fertig ist.",
+                        "Nach der Installation fragt EasyMySQL, ob es neu starten soll (Knopf „Jetzt neu starten“). Mit „Später“ arbeiten Sie weiter; oben in der Titelleiste bleibt ein Knopf zum Neustarten.",
+                        "Liegt EasyMySQL in einem geschützten Ordner (Programme), fragt Windows einmal nach der Freigabe für den Austausch der Programmdatei.",
+                        "Die Versionsnummer richtet sich nach der Größe der Änderungen: große Neuerungen erhöhen die erste Zahl (4.0.0), neue Funktionen die zweite (4.1.0), kleine Korrekturen die dritte (4.1.1).",
+                    ]),
+                    Open("Nach Updates suchen", Cmd(Cmd::CheckUpdates)),
                 ],
             },
             Section {

@@ -125,7 +125,7 @@ impl EasyApp {
                 egui::Frame::popup(&ctx.global_style()).inner_margin(egui::Margin::same(6)).show(ui, |ui| {
                     ui.set_width(width);
                     let hint = if p.commands { crate::i18n::text("Befehl") } else { crate::i18n::text("Datei im Projekt (> für Befehle)") };
-                    let r = ui.add(egui::TextEdit::singleline(&mut p.query).hint_text(hint).desired_width(f32::INFINITY));
+                    let r = ui.add(crate::widgets::edit(&mut p.query).hint_text(hint).desired_width(f32::INFINITY));
                     if p.focus {
                         r.request_focus();
                         p.focus = false;

@@ -55,8 +55,9 @@ fn free_port() -> Result<u16, String> {
     l.local_addr().map(|a| a.port()).map_err(|e| e.to_string())
 }
 
-pub fn args(cfg: &SshConfig, local_port: u16, remote_host: &str, remote_port: u16) -> Vec<String> {
-    let mut a: Vec<String> = ["-N", "-T", "-o", "ExitOnForwardFailure=yes", "-o", "ServerAliveInterval=30", "-o", "ConnectTimeout=12", "-o", "StrictHostKeyChecking=accept-new"].iter().map(|s| s.to_string()).collect();
+/// Optionen, die jeder ssh-Aufruf braucht: Zeitlimit, Anmeldeart, Schluessel, Port
+fn common_args(cfg: &SshConfig) -> Vec<String> {
+    let mut a: Vec<String> = ["-o", "ServerAliveInterval=30", "-o", "ConnectTimeout=12", "-o", "StrictHostKeyChecking=accept-new"].iter().map(|s| s.to_string()).collect();
     if cfg.password.is_empty() {
         // Ohne Passwort darf ssh nie nachfragen (kein Terminal vorhanden)
         a.extend(["-o".into(), "BatchMode=yes".into()]);
@@ -66,10 +67,92 @@ pub fn args(cfg: &SshConfig, local_port: u16, remote_host: &str, remote_port: u1
     if !cfg.key.trim().is_empty() {
         a.extend(["-i".into(), cfg.key.trim().to_string(), "-o".into(), "IdentitiesOnly=yes".into()]);
     }
-    a.extend(["-p".into(), cfg.port.to_string(), "-L".into(), format!("127.0.0.1:{local_port}:{remote_host}:{remote_port}")]);
-    let target = if cfg.user.trim().is_empty() { cfg.host.trim().to_string() } else { format!("{}@{}", cfg.user.trim(), cfg.host.trim()) };
-    a.push(target);
+    a.extend(["-p".into(), cfg.port.to_string()]);
     a
+}
+
+fn target(cfg: &SshConfig) -> String {
+    if cfg.user.trim().is_empty() { cfg.host.trim().to_string() } else { format!("{}@{}", cfg.user.trim(), cfg.host.trim()) }
+}
+
+pub fn args(cfg: &SshConfig, local_port: u16, remote_host: &str, remote_port: u16) -> Vec<String> {
+    let mut a: Vec<String> = ["-N", "-T", "-o", "ExitOnForwardFailure=yes"].iter().map(|s| s.to_string()).collect();
+    a.extend(common_args(cfg));
+    a.extend(["-L".into(), format!("127.0.0.1:{local_port}:{remote_host}:{remote_port}")]);
+    a.push(target(cfg));
+    a
+}
+
+/// ssh-Prozess vorbereiten: Passwortabfrage ueber dieses Programm, kein Konsolenfenster
+fn command(cfg: &SshConfig) -> Result<Command, String> {
+    let mut cmd = Command::new("ssh");
+    if !cfg.password.is_empty() {
+        let me = std::env::current_exe().map_err(|e| e.to_string())?;
+        cmd.env("SSH_ASKPASS", me).env("SSH_ASKPASS_REQUIRE", "force").env(ASKPASS_VAR, &cfg.password);
+        if std::env::var_os("DISPLAY").is_none() {
+            cmd.env("DISPLAY", ":0");
+        }
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    }
+    Ok(cmd)
+}
+
+/// Pfad fuer die Shell des Servers in Hochkommas setzen
+pub fn shell_quote(path: &str) -> String {
+    format!("'{}'", path.replace('\'', "'\\''"))
+}
+
+/// Datei vom Server holen (`cat` ueber ssh) und unter `dest` speichern. Liefert die Zahl der Bytes.
+pub fn fetch_file(cfg: &SshConfig, remote_path: &str, dest: &std::path::Path, cancel: &std::sync::atomic::AtomicBool) -> Result<u64, String> {
+    if cfg.host.trim().is_empty() {
+        return Err(crate::i18n::text("Kein SSH-Server angegeben.").into());
+    }
+    if remote_path.trim().is_empty() {
+        return Err(crate::i18n::text("Kein Pfad auf dem Server angegeben.").into());
+    }
+    let mut cmd = command(cfg)?;
+    cmd.arg("-T").args(common_args(cfg)).arg(target(cfg)).arg(format!("cat -- {}", shell_quote(remote_path.trim())));
+    cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = cmd.spawn().map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            crate::i18n::text("ssh wurde nicht gefunden. Der OpenSSH-Client muss installiert sein.").to_string()
+        } else {
+            e.to_string()
+        }
+    })?;
+    let mut err = child.stderr.take().unwrap();
+    let err_thread = std::thread::spawn(move || {
+        let mut s = String::new();
+        let _ = err.read_to_string(&mut s);
+        s
+    });
+    let mut out = child.stdout.take().unwrap();
+    let mut file = std::fs::File::create(dest).map_err(|e| e.to_string())?;
+    let mut buf = vec![0u8; 256 * 1024];
+    let mut total = 0u64;
+    loop {
+        if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(crate::i18n::text("Abgebrochen.").into());
+        }
+        let n = out.read(&mut buf).map_err(|e| e.to_string())?;
+        if n == 0 {
+            break;
+        }
+        std::io::Write::write_all(&mut file, &buf[..n]).map_err(|e| e.to_string())?;
+        total += n as u64;
+    }
+    let status = child.wait().map_err(|e| e.to_string())?;
+    let stderr = err_thread.join().unwrap_or_default();
+    if !status.success() {
+        return Err(short_error(&stderr));
+    }
+    Ok(total)
 }
 
 /// Meldung von ssh auf das Wesentliche kuerzen
@@ -87,20 +170,8 @@ pub fn open(cfg: &SshConfig, remote_host: &str, remote_port: u16) -> Result<Tunn
         return Err(crate::i18n::text("Kein SSH-Server angegeben.").into());
     }
     let local_port = free_port()?;
-    let mut cmd = Command::new("ssh");
+    let mut cmd = command(cfg)?;
     cmd.args(args(cfg, local_port, remote_host, remote_port)).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::piped());
-    if !cfg.password.is_empty() {
-        let me = std::env::current_exe().map_err(|e| e.to_string())?;
-        cmd.env("SSH_ASKPASS", me).env("SSH_ASKPASS_REQUIRE", "force").env(ASKPASS_VAR, &cfg.password);
-        if std::env::var_os("DISPLAY").is_none() {
-            cmd.env("DISPLAY", ":0");
-        }
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
-    }
     let mut child = cmd.spawn().map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
             crate::i18n::text("ssh wurde nicht gefunden. Der OpenSSH-Client muss installiert sein.").to_string()

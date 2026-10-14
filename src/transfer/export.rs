@@ -1,6 +1,10 @@
 // Export einer Datenbank oder einzelner Tabellen in SQL, JSON, CSV, XML oder eine SQLite-Datei.
 // Die Zeilen werden gelesen und sofort geschrieben, auch riesige Tabellen belegen kaum Speicher.
 
+use super::export_targets as targets;
+use super::import::RedisConf;
+use super::import::write::Progress;
+use super::server::Link;
 use crate::db::{Db, TableInfo, err_text, q};
 use mysql::consts::ColumnType as T;
 use mysql::prelude::*;
@@ -15,10 +19,26 @@ pub enum Format {
     Csv,
     Xml,
     Sqlite,
+    /// SQL-Skript fuer PostgreSQL
+    PgSql,
+    /// JSON-Zeilen fuer MongoDB (mongoimport)
+    Mongo,
+    /// Redis-Datei (dump.rdb)
+    RedisRdb,
+    /// Redis-Befehle (HSET ...), ladbar mit redis-cli
+    RedisCmds,
+}
+
+/// Anderer Server als Ziel
+#[derive(Clone, Debug)]
+pub enum Server {
+    Mysql(Link),
+    Postgres(Link),
+    Redis(RedisConf),
 }
 
 impl Format {
-    pub const ALL: [Format; 5] = [Format::Sql, Format::Json, Format::Csv, Format::Xml, Format::Sqlite];
+    pub const ALL: [Format; 9] = [Format::Sql, Format::Json, Format::Csv, Format::Xml, Format::Sqlite, Format::PgSql, Format::Mongo, Format::RedisRdb, Format::RedisCmds];
 
     pub fn label(self) -> &'static str {
         match self {
@@ -27,6 +47,10 @@ impl Format {
             Format::Csv => "CSV",
             Format::Xml => "XML",
             Format::Sqlite => "SQLite",
+            Format::PgSql => "PostgreSQL",
+            Format::Mongo => "MongoDB",
+            Format::RedisRdb => "Redis (RDB)",
+            Format::RedisCmds => "Redis (redis-cli)",
         }
     }
 
@@ -37,13 +61,18 @@ impl Format {
             Format::Csv => "csv",
             Format::Xml => "xml",
             Format::Sqlite => "sqlite",
+            Format::PgSql => "sql",
+            Format::Mongo => "jsonl",
+            Format::RedisRdb => "rdb",
+            Format::RedisCmds => "redis",
         }
     }
 
     /// Eine Datei je Tabelle (Ziel ist dann ein Ordner)
     pub fn folder(self, tables: usize) -> bool {
-        self == Format::Csv && tables != 1
+        matches!(self, Format::Csv | Format::Mongo) && tables != 1
     }
+
 }
 
 pub struct Job {
@@ -53,42 +82,96 @@ pub struct Job {
     pub with_data: bool,
     pub format: Format,
     pub target: PathBuf,
+    /// Vorhandene Tabellen im Zielserver ersetzen
+    pub replace: bool,
+    /// Statt in eine Datei auf einen anderen Server uebertragen
+    pub server: Option<Server>,
+    pub progress: std::sync::Arc<Progress>,
 }
 
 fn io(e: std::io::Error) -> String {
     e.to_string()
 }
 
-pub fn run(dbc: &Db, job: &Job) -> Result<PathBuf, String> {
+type RowFn<'a> = &'a mut dyn FnMut(&[Column], &[Value]) -> Result<(), String>;
+
+/// Zeilen einer Tabelle nacheinander lesen; zaehlt den Fortschritt und bricht bei Abbruch ab.
+/// `f` bekommt die Spalten und die Werte jeder Zeile.
+pub(super) fn rows_of(dbc: &Db, db: &str, table: &str, p: &Progress, f: RowFn) -> Result<(), String> {
+    use std::sync::atomic::Ordering;
+    stream(dbc, db, table, &mut |cols, vals| {
+        if let Some(v) = vals {
+            if p.cancel.load(Ordering::Relaxed) {
+                return Err(crate::i18n::text("Abgebrochen.").into());
+            }
+            f(cols, v)?;
+            p.done.fetch_add(1, Ordering::Relaxed);
+        }
+        Ok(())
+    })
+}
+
+pub fn run(dbc: &Db, job: &Job) -> Result<String, String> {
+    use std::sync::atomic::Ordering;
     let schema = dbc.schema(&job.db)?;
     let only = (!job.tables.is_empty()).then_some(job.tables.as_slice());
-    if job.format == Format::Sql {
+    let done = |p: &Path| Ok(p.display().to_string());
+    if job.server.is_none() && job.format == Format::Sql {
         let f = std::fs::File::create(&job.target).map_err(io)?;
         let mut w = std::io::BufWriter::new(f);
         dbc.dump_to(&job.db, only, job.with_data, &mut w)?;
         w.flush().map_err(io)?;
-        return Ok(job.target.clone());
+        return done(&job.target);
     }
-    // Alle anderen Formate enthalten nur Tabellen (keine Sichten)
+    // Alle anderen Ziele enthalten nur Tabellen (keine Sichten)
     let tables: Vec<&TableInfo> = schema.ordered_tables().iter().filter_map(|n| schema.table(n)).filter(|t| !t.is_view && only.is_none_or(|o| o.contains(&t.name))).collect();
     if tables.is_empty() {
         return Err(crate::i18n::text("Keine Tabellen zum Exportieren.").into());
     }
+    // Gesamtzahl fuer die Fortschrittsanzeige
+    let mut total = 0u64;
+    if job.with_data || job.server.is_none() {
+        for t in &tables {
+            if let Ok(rows) = dbc.rows(&format!("SELECT COUNT(*) FROM {}.{}", q(&job.db), q(&t.name)), ()) {
+                total += rows.first().and_then(|r| r[0].as_deref()).and_then(|n| n.parse::<u64>().ok()).unwrap_or(0);
+            }
+        }
+    }
+    job.progress.total.store(total, Ordering::Relaxed);
+    job.progress.done.store(0, Ordering::Relaxed);
+    if let Some(server) = &job.server {
+        return match server {
+            Server::Mysql(l) => targets::mysql_server(dbc, job, &tables, l).map(|_| l.conf.host.clone()),
+            Server::Postgres(l) => targets::pg_server(dbc, job, &tables, &schema, l).map(|_| l.conf.host.clone()),
+            Server::Redis(c) => targets::redis_server(dbc, job, &tables, c).map(|_| c.host.clone()),
+        };
+    }
     match job.format {
-        Format::Json => write_file(&job.target, |w| json(dbc, &job.db, &tables, w)),
+        Format::Json => write_file(&job.target, |w| json(dbc, job, &tables, w)),
         Format::Xml => write_file(&job.target, |w| xml(dbc, &job.db, &tables, w)),
         Format::Csv if job.format.folder(tables.len()) => {
             std::fs::create_dir_all(&job.target).map_err(io)?;
             for t in &tables {
-                write_file(&job.target.join(format!("{}.csv", file_safe(&t.name))), |w| csv(dbc, &job.db, t, w))?;
+                write_file(&job.target.join(format!("{}.csv", file_safe(&t.name))), |w| csv(dbc, job, t, w))?;
             }
             Ok(())
         }
-        Format::Csv => write_file(&job.target, |w| csv(dbc, &job.db, tables[0], w)),
-        Format::Sqlite => sqlite(dbc, &job.db, &tables, &job.target),
+        Format::Csv => write_file(&job.target, |w| csv(dbc, job, tables[0], w)),
+        Format::Sqlite => sqlite(dbc, job, &tables, &job.target),
+        Format::PgSql => write_file(&job.target, |w| targets::pg_script(dbc, job, &tables, &schema, w)),
+        Format::Mongo if job.format.folder(tables.len()) => {
+            std::fs::create_dir_all(&job.target).map_err(io)?;
+            for t in &tables {
+                write_file(&job.target.join(format!("{}.jsonl", file_safe(&t.name))), |w| targets::mongo_lines(dbc, job, t, w))?;
+            }
+            Ok(())
+        }
+        Format::Mongo => write_file(&job.target, |w| targets::mongo_lines(dbc, job, tables[0], w)),
+        Format::RedisRdb => targets::redis_rdb(dbc, job, &tables, &job.target),
+        Format::RedisCmds => write_file(&job.target, |w| targets::redis_commands(dbc, job, &tables, w)),
         Format::Sql => unreachable!(),
-    }
-    .map(|_| job.target.clone())
+    }?;
+    done(&job.target)
 }
 
 fn write_file(path: &Path, f: impl FnOnce(&mut dyn Write) -> Result<(), String>) -> Result<(), String> {
@@ -118,12 +201,12 @@ fn stream(dbc: &Db, db: &str, table: &str, f: RowSink) -> Result<(), String> {
     Ok(())
 }
 
-fn is_number(t: T) -> bool {
+pub(super) fn is_number(t: T) -> bool {
     matches!(t, T::MYSQL_TYPE_TINY | T::MYSQL_TYPE_SHORT | T::MYSQL_TYPE_LONG | T::MYSQL_TYPE_LONGLONG | T::MYSQL_TYPE_INT24 | T::MYSQL_TYPE_FLOAT | T::MYSQL_TYPE_DOUBLE | T::MYSQL_TYPE_DECIMAL | T::MYSQL_TYPE_NEWDECIMAL | T::MYSQL_TYPE_YEAR)
 }
 
 /// Text eines Werts; Binaerdaten ohne gueltiges UTF-8 als 0x…-Hexwert.
-fn text(v: &Value) -> Option<String> {
+pub(super) fn text(v: &Value) -> Option<String> {
     match v {
         Value::NULL => None,
         Value::Bytes(b) if std::str::from_utf8(b).is_err() => Some(format!("0x{}", hex(b))),
@@ -135,7 +218,7 @@ fn hex(b: &[u8]) -> String {
     b.iter().map(|x| format!("{x:02X}")).collect()
 }
 
-fn valid_number(s: &str) -> bool {
+pub(super) fn valid_number(s: &str) -> bool {
     !s.is_empty() && s.parse::<f64>().is_ok_and(|f| f.is_finite()) && !s.starts_with('+') && !s.starts_with('.') && !s.ends_with('.') && !s.contains(['e', 'E', 'n', 'N', 'i', 'I', 'x'])
 }
 
@@ -150,14 +233,13 @@ fn json_value(t: T, v: &Value) -> String {
     serde_json::Value::String(s).to_string()
 }
 
-fn json(dbc: &Db, db: &str, tables: &[&TableInfo], w: &mut dyn Write) -> Result<(), String> {
+fn json(dbc: &Db, job: &Job, tables: &[&TableInfo], w: &mut dyn Write) -> Result<(), String> {
     w.write_all(b"{\n").map_err(io)?;
     for (i, t) in tables.iter().enumerate() {
         let name = serde_json::Value::String(t.name.clone());
         write!(w, "  {name}: [").map_err(io)?;
         let mut n = 0usize;
-        stream(dbc, db, &t.name, &mut |cols, vals| {
-            let Some(vals) = vals else { return Ok(()) };
+        rows_of(dbc, &job.db, &t.name, &job.progress, &mut |cols, vals| {
             let fields: Vec<String> = cols.iter().zip(vals).map(|(c, v)| format!("{}: {}", serde_json::Value::String(c.name_str().into_owned()), json_value(c.column_type(), v))).collect();
             write!(w, "{}\n    {{{}}}", if n == 0 { "" } else { "," }, fields.join(", ")).map_err(io)?;
             n += 1;
@@ -172,14 +254,16 @@ fn csv_cell(v: &str) -> String {
     if v.contains([';', '"', '\n', '\r']) { format!("\"{}\"", v.replace('"', "\"\"")) } else { v.to_string() }
 }
 
-fn csv(dbc: &Db, db: &str, t: &TableInfo, w: &mut dyn Write) -> Result<(), String> {
+fn csv(dbc: &Db, job: &Job, t: &TableInfo, w: &mut dyn Write) -> Result<(), String> {
     // UTF-8-Kennung, damit Excel Umlaute richtig liest
     w.write_all(b"\xEF\xBB\xBF").map_err(io)?;
-    stream(dbc, db, &t.name, &mut |cols, vals| {
-        let line: Vec<String> = match vals {
-            None => cols.iter().map(|c| csv_cell(&c.name_str())).collect(),
-            Some(v) => v.iter().map(|v| text(v).map(|s| csv_cell(&s)).unwrap_or_default()).collect(),
-        };
+    let mut header = false;
+    rows_of(dbc, &job.db, &t.name, &job.progress, &mut |cols, v| {
+        if !header {
+            header = true;
+            write!(w, "{}\r\n", cols.iter().map(|c| csv_cell(&c.name_str())).collect::<Vec<_>>().join(";")).map_err(io)?;
+        }
+        let line: Vec<String> = v.iter().map(|v| text(v).map(|s| csv_cell(&s)).unwrap_or_default()).collect();
         write!(w, "{}\r\n", line.join(";")).map_err(io)
     })
 }
@@ -262,7 +346,7 @@ fn sqlite_value(t: T, v: &Value) -> rusqlite::types::Value {
     }
 }
 
-fn sqlite(dbc: &Db, db: &str, tables: &[&TableInfo], target: &Path) -> Result<(), String> {
+fn sqlite(dbc: &Db, job: &Job, tables: &[&TableInfo], target: &Path) -> Result<(), String> {
     let _ = std::fs::remove_file(target);
     let mut conn = rusqlite::Connection::open(target).map_err(|e| e.to_string())?;
     let sq = |s: &str| format!("\"{}\"", s.replace('"', "\"\""));
@@ -279,8 +363,7 @@ fn sqlite(dbc: &Db, db: &str, tables: &[&TableInfo], target: &Path) -> Result<()
         {
             let marks = vec!["?"; t.columns.len()].join(", ");
             let mut stmt = tx.prepare(&format!("INSERT INTO {} VALUES ({marks})", sq(&t.name))).map_err(|e| e.to_string())?;
-            stream(dbc, db, &t.name, &mut |cols, vals| {
-                let Some(vals) = vals else { return Ok(()) };
+            rows_of(dbc, &job.db, &t.name, &job.progress, &mut |cols, vals| {
                 let params: Vec<rusqlite::types::Value> = cols.iter().zip(vals).map(|(c, v)| sqlite_value(c.column_type(), v)).collect();
                 stmt.execute(rusqlite::params_from_iter(params)).map(|_| ()).map_err(|e| e.to_string())
             })?;
@@ -324,7 +407,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("export-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let job = |format: Format, tables: &[&str], file: &str| Job { db: "exp_test".into(), tables: tables.iter().map(|t| t.to_string()).collect(), with_data: true, format, target: dir.join(file) };
+        let job = |format: Format, tables: &[&str], file: &str| Job { db: "exp_test".into(), tables: tables.iter().map(|t| t.to_string()).collect(), with_data: true, format, target: dir.join(file), replace: false, server: None, progress: Default::default() };
 
         let p = run(&dbc, &job(Format::Json, &[], "a.json")).unwrap();
         let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(p).unwrap()).unwrap();

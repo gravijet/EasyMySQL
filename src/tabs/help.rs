@@ -272,8 +272,33 @@ impl TabView for HelpTab {
                 .collect()
         };
 
-        egui::Panel::left("help-toc").resizable(true).default_size(230.0).min_size(170.0).frame(egui::Frame::new().inner_margin(egui::Margin::symmetric(4, 6))).show(ui, |ui| {
-            let r = ui.add(egui::TextEdit::singleline(&mut self.search).hint_text(crate::i18n::text("Im Handbuch suchen")).desired_width(f32::INFINITY));
+        if ui.available_width() < 720.0 {
+            // Schmales Fenster: Suche und Kapitelwahl in einer Zeile ueber dem Text statt Inhaltsverzeichnis links
+            ui.horizontal_wrapped(|ui| {
+                let r = crate::widgets::text_field(ui, &mut self.search, crate::i18n::text("Im Handbuch suchen"), Some((ui.available_width() - 200.0).max(140.0)));
+                if r.changed() {
+                    self.goto = None;
+                }
+                let mut ch = self.chapter;
+                crate::widgets::combo("help-chapter").selected_text(crate::i18n::text(CHAPTERS[self.chapter.min(CHAPTERS.len() - 1)].title)).width(180.0).show_ui(ui, |ui| {
+                    for (ci, c) in CHAPTERS.iter().enumerate() {
+                        if ui.selectable_label(ch == ci, crate::i18n::text(c.title)).clicked() {
+                            ch = ci;
+                        }
+                    }
+                });
+                if ch != self.chapter {
+                    self.chapter = ch;
+                    self.search.clear();
+                    self.goto = Some(CHAPTERS[ch].sections[0].id.into());
+                    self.active_section = CHAPTERS[ch].sections[0].id.into();
+                    self.pinned_section = true;
+                }
+            });
+            ui.add_space(4.0);
+        } else {
+        egui::Panel::left("help-toc").resizable(true).show_separator_line(false).default_size(230.0).min_size(170.0).frame(egui::Frame::new().inner_margin(egui::Margin { left: 4, right: 10, top: 6, bottom: 6 })).show(ui, |ui| {
+            let r = crate::widgets::text_field(ui, &mut self.search, crate::i18n::text("Im Handbuch suchen"), None);
             if r.changed() {
                 self.goto = None;
             }
@@ -300,6 +325,7 @@ impl TabView for HelpTab {
                 }
             });
         });
+        }
 
         let jumping = self.goto.is_some();
         let mut offset = 0.0;

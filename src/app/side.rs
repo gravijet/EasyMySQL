@@ -371,7 +371,7 @@ impl EasyApp {
         egui::Frame::new().inner_margin(egui::Margin::symmetric(8, 4)).show(ui, |ui| {
             let w = ui.available_width();
             ui.horizontal(|ui| {
-                let r = ui.add(egui::TextEdit::singleline(&mut self.search.query).hint_text(crate::i18n::text("Suchen")).desired_width((w - 52.0).max(60.0)));
+                let r = ui.add(crate::widgets::edit(&mut self.search.query).hint_text(crate::i18n::text("Suchen")).desired_width((w - 52.0).max(60.0)));
                 if self.search.focus {
                     r.request_focus();
                     self.search.focus = false;
@@ -468,7 +468,7 @@ impl EasyApp {
             self.history.clear();
         }
         egui::Frame::new().inner_margin(egui::Margin::symmetric(8, 4)).show(ui, |ui| {
-            ui.add(egui::TextEdit::singleline(&mut self.history_filter).hint_text(crate::i18n::text("Filtern")).desired_width(f32::INFINITY));
+            ui.add(crate::widgets::edit(&mut self.history_filter).hint_text(crate::i18n::text("Filtern")).desired_width(f32::INFINITY));
         });
         let pal = style::pal();
         let f = self.history_filter.to_lowercase();
@@ -625,7 +625,7 @@ impl EasyApp {
                                         ui.close();
                                     }
                                     if ui.button(crate::i18n::text("Exportieren …")).clicked() {
-                                        dialogs.push(Dialog::Export { db: d.clone(), only: Some(vec![t.name.clone()]), with_data: true, format: crate::transfer::export::Format::Csv });
+                                        actions.push(Action::OpenExport { db: d.clone(), only: Some(vec![t.name.clone()]), format: crate::transfer::export::Format::Csv });
                                         ui.close();
                                     }
                                     ui.separator();
@@ -694,7 +694,7 @@ impl EasyApp {
                     }
                     ui.separator();
                     if ui.button(crate::i18n::text("Exportieren …")).clicked() {
-                        dialogs.push(Dialog::Export { db: d.clone(), only: None, with_data: true, format: crate::transfer::export::Format::Sql });
+                        actions.push(Action::OpenExport { db: d.clone(), only: None, format: crate::transfer::export::Format::Sql });
                         ui.close();
                     }
                     if ui.button(crate::i18n::text("Importieren …")).clicked() {

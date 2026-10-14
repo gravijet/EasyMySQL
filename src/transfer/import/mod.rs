@@ -4,11 +4,17 @@
 
 mod csv;
 mod docs;
+mod maria_source;
+mod mongo_source;
+mod pg_source;
 mod redis;
 mod sqlite;
 pub mod write;
 
-pub use redis::RedisConf;
+use crate::transfer::server::Link;
+pub use maria_source::connect as mysql_connect;
+pub use pg_source::connect as pg_connect;
+pub use redis::{RedisConf, RedisPush};
 use std::path::PathBuf;
 
 #[derive(Clone, Debug)]
@@ -18,6 +24,30 @@ pub enum Source {
     Docs(Vec<PathBuf>),
     Csv(Vec<PathBuf>),
     Redis(RedisConf),
+    /// Redis-Datei (RDB) und Nummer der Datenbank darin
+    RedisFile(PathBuf, u32),
+    /// Anderer MariaDB- oder MySQL-Server
+    Mysql(Link),
+    /// PostgreSQL-Server
+    Postgres(Link),
+    /// MongoDB-Server
+    Mongo(Link),
+}
+
+/// Datenbanken, die ein Server zur Auswahl anbietet
+pub fn databases(kind: ServerKind, link: &Link) -> Result<Vec<String>, String> {
+    match kind {
+        ServerKind::Mysql => maria_source::databases(link),
+        ServerKind::Postgres => pg_source::databases(link),
+        ServerKind::Mongo => mongo_source::databases(link),
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ServerKind {
+    Mysql,
+    Postgres,
+    Mongo,
 }
 
 /// Ein Wert aus einer Quelle
@@ -75,6 +105,8 @@ impl ColType {
 pub struct Col {
     pub name: String,
     pub ty: ColType,
+    /// Genauer SQL-Typ der Quelle fuer MariaDB (ueberschreibt `ty` beim Anlegen)
+    pub decl: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -94,6 +126,8 @@ pub struct TableScan {
     pub pk: Vec<String>,
     pub auto_inc: bool,
     pub fks: Vec<ForeignKey>,
+    /// Fertige CREATE-TABLE-Anweisung (z. B. von einem MySQL-Server); ersetzt die aus den Spalten gebaute
+    pub ddl: Option<String>,
 }
 
 /// Sammelt Eigenschaften einer Spalte und bestimmt daraus den Typ.
@@ -225,6 +259,10 @@ pub fn scan(src: &Source, cancel: &std::sync::atomic::AtomicBool) -> Result<Vec<
         Source::Docs(files) => docs::scan(files, cancel),
         Source::Csv(files) => csv::scan(files, cancel),
         Source::Redis(c) => redis::scan(c, cancel),
+        Source::RedisFile(p, db) => redis::scan_file(p, *db, cancel),
+        Source::Mysql(l) => maria_source::scan(l, cancel),
+        Source::Postgres(l) => pg_source::scan(l, cancel),
+        Source::Mongo(l) => mongo_source::scan(l, cancel),
     }
 }
 
@@ -235,6 +273,10 @@ pub fn read(src: &Source, t: &TableScan, f: &mut dyn FnMut(Vec<Val>) -> Result<b
         Source::Docs(_) => docs::read(t, f),
         Source::Csv(_) => csv::read(t, f),
         Source::Redis(c) => redis::read(c, t, f),
+        Source::RedisFile(p, db) => redis::read_file(p, *db, t, f),
+        Source::Mysql(l) => maria_source::read(l, t, f),
+        Source::Postgres(l) => pg_source::read(l, t, f),
+        Source::Mongo(l) => mongo_source::read(l, t, f),
     }
 }
 

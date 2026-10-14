@@ -12,6 +12,7 @@ mod icons;
 mod javagen;
 mod keymap;
 mod platform;
+mod profiles;
 mod qhistory;
 mod server;
 mod settings;
@@ -29,6 +30,13 @@ mod workspace;
 use eframe::egui;
 
 fn main() -> eframe::Result {
+    // Erhoehter Helfer des Updates: Programmdatei austauschen und beenden
+    let args: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
+    if let Some(code) = updates::run_helper(&args) {
+        std::process::exit(code);
+    }
+    // Nach einem Update neu gestartet: auf das Ende der alten Instanz warten
+    updates::wait_for_previous();
     // ssh startet dieses Programm als Passwortabfrage (SSH_ASKPASS)
     if ssh::answer_askpass() {
         return Ok(());
@@ -50,9 +58,11 @@ fn main() -> eframe::Result {
         width: 64,
         height: 64,
     };
+    updates::cleanup_old();
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("EasyMySQL")
+            .with_decorations(false)
             .with_inner_size([1200.0, 760.0])
             .with_min_inner_size([760.0, 480.0])
             .with_icon(icon),

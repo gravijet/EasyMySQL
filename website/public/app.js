@@ -38,11 +38,6 @@
   }
   function render(r) {
     var f = r.files || {}, s = f.setup, p = f.portable;
-    var hero = $("#dl-meta");
-    if (hero) {
-      hero.textContent = (lang === "en" ? "Version " : "Version ") + r.version + (s && s.size ? " · " + mb(s.size) : "");
-      hero.hidden = false;
-    }
     var info = $("#dl-info");
     if (info) {
       var parts = ["Version " + r.version];

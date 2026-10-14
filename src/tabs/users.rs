@@ -28,6 +28,9 @@ pub struct UsersTab {
     wanted_for: Option<Scope>,
     new_user: Option<NewUser>,
     password: Option<String>,
+    narrow: bool,
+    /// Schmales Fenster: Einzelansicht eines Benutzers statt der Liste
+    show_detail: bool,
 }
 
 impl UsersTab {
@@ -45,6 +48,8 @@ impl UsersTab {
             wanted_for: None,
             new_user: None,
             password: None,
+            show_detail: false,
+            narrow: false,
         }
     }
 
@@ -91,6 +96,7 @@ impl UsersTab {
 
     fn select(&mut self, i: usize, cx: &mut Ctx) {
         self.sel = Some(i);
+        self.show_detail = true;
         self.password = None;
         self.db.clear();
         self.table.clear();
@@ -122,11 +128,11 @@ impl UsersTab {
     fn list_ui(&mut self, ui: &mut egui::Ui, cx: &mut Ctx) {
         let pal = style::pal();
         ui.horizontal(|ui| {
-            ui.add_sized([ui.available_width() - 56.0, 22.0], egui::TextEdit::singleline(&mut self.filter).vertical_align(egui::Align::Center).hint_text(tr("Filtern", "Filter")));
-            if icons::button(ui, Icon::Plus, tr("Neuer Benutzer", "New user")).clicked() {
+            crate::widgets::text_field(ui, &mut self.filter, tr("Filtern", "Filter"), Some((ui.available_width() - 64.0).max(60.0)));
+            if icons::button_sized(ui, Icon::Plus, tr("Neuer Benutzer", "New user"), 28.0).clicked() {
                 self.new_user = Some(NewUser { name: String::new(), host: "localhost".into(), password: String::new(), own_db: true });
             }
-            if icons::button(ui, Icon::Refresh, tr("Aktualisieren", "Refresh")).clicked() {
+            if icons::button_sized(ui, Icon::Refresh, tr("Aktualisieren", "Refresh"), 28.0).clicked() {
                 self.reload(cx);
             }
         });
@@ -164,25 +170,27 @@ impl UsersTab {
     fn detail_ui(&mut self, ui: &mut egui::Ui, cx: &mut Ctx) {
         let pal = style::pal();
         let Some(acc) = self.account().cloned() else {
-            ui.add_space(40.0);
-            ui.vertical_centered(|ui| ui.label(RichText::new(tr("Benutzer wählen", "Select a user")).color(pal.text_weak)));
+            let r = ui.available_rect_before_wrap();
+            ui.painter().text(r.center() - egui::vec2(0.0, 20.0), egui::Align2::CENTER_CENTER, tr("Benutzer wählen", "Select a user"), egui::FontId::proportional(14.0), pal.text_weak);
             return;
         };
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
+            if self.narrow && icons::button_sized(ui, Icon::ArrowLeft, tr("Zurück zur Liste", "Back to the list"), 28.0).clicked() {
+                self.show_detail = false;
+            }
             ui.label(RichText::new(acc.label()).size(16.0).strong());
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if icons::text_button(ui, Icon::Trash, tr("Löschen", "Delete")).clicked() {
-                    cx.actions.push(Action::Confirm { text: crate::tr_format!("Benutzer {} löschen?", "Delete user {}?", acc.label()), db: None, sql: format!("DROP USER {}", acc.sql()) });
-                }
-                if icons::text_button(ui, Icon::Lock, tr("Passwort ändern", "Change password")).clicked() {
-                    self.password = if self.password.is_some() { None } else { Some(String::new()) };
-                }
-            });
+            ui.add_space(8.0);
+            if icons::text_button(ui, Icon::Lock, tr("Passwort ändern", "Change password")).clicked() {
+                self.password = if self.password.is_some() { None } else { Some(String::new()) };
+            }
+            if icons::text_button(ui, Icon::Trash, tr("Löschen", "Delete")).clicked() {
+                cx.actions.push(Action::Confirm { text: crate::tr_format!("Benutzer {} löschen?", "Delete user {}?", acc.label()), db: None, sql: format!("DROP USER {}", acc.sql()) });
+            }
         });
         if let Some(pw) = self.password.as_mut() {
             let mut apply = false;
             ui.horizontal(|ui| {
-                let r = ui.add_sized([220.0, 22.0], egui::TextEdit::singleline(pw).vertical_align(egui::Align::Center).password(true).hint_text(tr("Neues Passwort", "New password")));
+                let r = crate::widgets::password_field(ui, pw, tr("Neues Passwort", "New password"), Some(220.0));
                 if (r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))) || ui.button("OK").clicked() {
                     apply = true;
                 }
@@ -212,7 +220,7 @@ impl UsersTab {
                     Scope::Db(d) => d.clone(),
                     Scope::Table(d, t) => format!("{d}.{t}"),
                 };
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     if ui.link(name).clicked() {
                         jump = Some(s.clone());
                     }
@@ -233,11 +241,11 @@ impl UsersTab {
         // Ebene waehlen
         let mut dbs = vec![String::new()];
         dbs.extend(cx.databases.iter().filter(|d| !crate::db::SYSTEM_DATABASES.contains(&d.as_str())).cloned());
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             ui.label(tr("Gilt für", "Applies to"));
             let mut d = self.db.clone();
             let label = if d.is_empty() { tr("Alle Datenbanken (global)", "All databases (global)").to_string() } else { d.clone() };
-            crate::widgets::combo("users-db").selected_text(label).width(220.0).show_ui(ui, |ui| {
+            crate::widgets::combo("users-db").selected_text(label).width(190.0).show_ui(ui, |ui| {
                 for x in &dbs {
                     let l = if x.is_empty() { tr("Alle Datenbanken (global)", "All databases (global)").to_string() } else { x.clone() };
                     if ui.selectable_label(&d == x, l).clicked() {
@@ -255,7 +263,7 @@ impl UsersTab {
                     tables.extend(s.tables.iter().filter(|t| !t.is_view).map(|t| t.name.clone()));
                 }
                 let label = if self.table.is_empty() { tr("Alle Tabellen", "All tables").to_string() } else { self.table.clone() };
-                crate::widgets::combo("users-table").selected_text(label).width(200.0).show_ui(ui, |ui| {
+                crate::widgets::combo("users-table").selected_text(label).width(160.0).show_ui(ui, |ui| {
                     for t in &tables {
                         let l = if t.is_empty() { tr("Alle Tabellen", "All tables").to_string() } else { t.clone() };
                         if ui.selectable_label(&self.table == t, l).clicked() {
@@ -271,7 +279,7 @@ impl UsersTab {
             self.wanted_for = Some(scope.clone());
         }
         ui.add_space(6.0);
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             for (i, l) in [tr("Keine", "None"), tr("Nur lesen", "Read only"), tr("Lesen & Schreiben", "Read & write"), tr("Alles", "Everything")].into_iter().enumerate() {
                 if ui.button(l).clicked() {
                     self.preset(i as u8);
@@ -282,7 +290,7 @@ impl UsersTab {
         style::group_frame().show(ui, |ui| {
             ui.set_min_width(ui.available_width());
             // Spaltenzahl nach der Breite: etwa 230 Pixel je Recht
-            let cols = ((ui.available_width() / 230.0) as usize).clamp(1, 3);
+            let cols = ((ui.available_width() / 190.0) as usize).clamp(1, 3);
             egui::Grid::new(("users-privs", cols)).num_columns(cols).striped(false).spacing([20.0, 4.0]).show(ui, |ui| {
                 for (i, p) in scope.privileges().iter().enumerate() {
                     let mut on = self.wanted.iter().any(|w| w == p);
@@ -318,16 +326,15 @@ impl UsersTab {
         let Some(n) = self.new_user.as_mut() else { return };
         let (mut create, mut cancel) = (false, false);
         egui::Window::new(tr("Neuer Benutzer", "New user")).collapsible(false).resizable(false).anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]).show(ctx, |ui| {
-            egui::Grid::new("newuser").num_columns(2).spacing([10.0, 8.0]).show(ui, |ui| {
-                ui.label(tr("Name", "Name"));
-                ui.add_sized([220.0, 22.0], egui::TextEdit::singleline(&mut n.name).vertical_align(egui::Align::Center));
-                ui.end_row();
-                ui.label("Host");
-                ui.add_sized([220.0, 22.0], egui::TextEdit::singleline(&mut n.host).vertical_align(egui::Align::Center)).on_hover_text(tr("localhost = nur dieser Computer, % = von überall", "localhost = this computer only, % = from anywhere"));
-                ui.end_row();
-                ui.label(tr("Passwort", "Password"));
-                ui.add_sized([220.0, 22.0], egui::TextEdit::singleline(&mut n.password).vertical_align(egui::Align::Center).password(true));
-                ui.end_row();
+            ui.set_width(380.0);
+            crate::widgets::row(ui, tr("Name", "Name"), |ui| {
+                crate::widgets::text_field(ui, &mut n.name, "", None);
+            });
+            crate::widgets::row(ui, "Host", |ui| {
+                crate::widgets::text_field(ui, &mut n.host, "localhost", None).on_hover_text(tr("localhost = nur dieser Computer, % = von überall", "localhost = this computer only, % = from anywhere"));
+            });
+            crate::widgets::row(ui, tr("Passwort", "Password"), |ui| {
+                crate::widgets::password_field(ui, &mut n.password, "", None);
             });
             crate::widgets::check(ui, &mut n.own_db, tr("Eigene Datenbank mit allen Rechten anlegen", "Create a database of its own with full access"));
             ui.add_space(6.0);
@@ -392,10 +399,24 @@ impl TabView for UsersTab {
         if let Some(e) = &self.error {
             ui.label(RichText::new(e).color(pal.error_text));
         }
-        egui::Panel::left("users-left").resizable(true).default_size(260.0).min_size(180.0).frame(egui::Frame::new().inner_margin(egui::Margin { right: 8, ..Default::default() })).show(ui, |ui| self.list_ui(ui, cx));
-        egui::Frame::new().inner_margin(egui::Margin { left: 12, ..Default::default() }).show(ui, |ui| {
-            egui::ScrollArea::vertical().id_salt("users-detail").auto_shrink([false, false]).show(ui, |ui| self.detail_ui(ui, cx));
-        });
+        self.narrow = ui.available_width() < 700.0;
+        if self.narrow {
+            // Schmales Fenster: entweder die Liste oder der gewaehlte Benutzer
+            if self.show_detail && self.sel.is_some() {
+                egui::ScrollArea::vertical().id_salt("users-detail").auto_shrink([false, false]).show(ui, |ui| {
+                    egui::Frame::new().inner_margin(egui::Margin { right: 14, ..Default::default() }).show(ui, |ui| self.detail_ui(ui, cx));
+                });
+            } else {
+                self.list_ui(ui, cx);
+            }
+        } else {
+            egui::Panel::left("users-left").resizable(true).show_separator_line(false).default_size(260.0).min_size(200.0).max_size((ui.available_width() * 0.4).clamp(220.0, 380.0)).frame(egui::Frame::new().inner_margin(egui::Margin { right: 12, ..Default::default() })).show(ui, |ui| self.list_ui(ui, cx));
+            egui::Frame::new().inner_margin(egui::Margin { left: 12, ..Default::default() }).show(ui, |ui| {
+                egui::ScrollArea::vertical().id_salt("users-detail").auto_shrink([false, false]).show(ui, |ui| {
+                    egui::Frame::new().inner_margin(egui::Margin { right: 14, ..Default::default() }).show(ui, |ui| self.detail_ui(ui, cx));
+                });
+            });
+        }
         let ctx = ui.ctx().clone();
         self.new_user_ui(&ctx, cx);
     }

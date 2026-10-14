@@ -6,13 +6,13 @@ pub mod designer;
 pub mod er;
 pub mod help;
 mod help_content;
-pub mod import;
 pub mod log;
 pub mod preview;
 pub mod safety;
 pub mod settings;
 pub mod sql;
 pub mod structure;
+pub mod transfer;
 pub mod users;
 
 use crate::db::{Db, Schema};
@@ -44,6 +44,8 @@ pub enum Action {
     Disconnect,
     OpenSafety,
     OpenImport,
+    /// Export einer Datenbank (optional nur einzelne Tabellen)
+    OpenExport { db: String, only: Option<Vec<String>>, format: crate::transfer::export::Format },
     OpenUsers,
     /// Dateien im Projekt haben sich geaendert (Explorer neu einlesen)
     FilesChanged,
@@ -64,6 +66,10 @@ pub enum Action {
     SettingsChanged,
     /// Verbindungsdaten wurden geaendert: neu verbinden
     Connect,
+    /// Gefundenes Update jetzt herunterladen und installieren
+    UpdateInstall,
+    /// Programm neu starten, um das installierte Update zu benutzen
+    UpdateRestart,
     /// Speicherordner wurde verschoben (offene Dateien und Projekte anpassen)
     FilesMoved { from: std::path::PathBuf, to: std::path::PathBuf },
 }
@@ -158,6 +164,8 @@ pub struct Ctx<'a> {
     pub settings: &'a mut crate::settings::Settings,
     /// Verlauf der ausgefuehrten Anweisungen, neueste zuerst
     pub history: &'a [crate::qhistory::Entry],
+    /// Stand des Updates (Einstellungen)
+    pub update: crate::updates::Status,
     pub actions: &'a mut Vec<Action>,
 }
 
@@ -250,7 +258,7 @@ pub fn name_field(ui: &mut egui::Ui, id: egui::Id, text: &mut String, width: f32
         state.store(&ctx, id);
         ctx.memory_mut(|m| m.request_focus(id));
     }
-    ui.add(egui::TextEdit::singleline(text).id(id).desired_width(width))
+    ui.add(crate::widgets::edit(text).id(id).desired_width(width))
 }
 
 pub trait TabView {
@@ -289,6 +297,16 @@ pub trait TabView {
     }
     /// Zugehoerige Datei (fuer den Explorer)
     fn file(&self) -> Option<&std::path::Path> {
+        None
+    }
+    /// Gespeicherter Server, auf dem der Reiter arbeitet; `None` = der globale Server
+    fn server(&self) -> Option<String> {
+        None
+    }
+    /// Anderen Server wählen (`None` = globaler Server)
+    fn use_server(&mut self, _server: Option<String>) {}
+    /// Datenbank, mit der diese Registerkarte gerade arbeitet (ER-Diagramm, Assistent, neue Abfrage folgen ihr)
+    fn database(&self) -> Option<String> {
         None
     }
     /// Verarbeitet die Registerkarte selbst, wenn diese Datei auf das Fenster gezogen wird?

@@ -73,13 +73,68 @@ pub(super) enum Prim {
     Diamond(Pos2, f32),
 }
 
-/// Mittelpunkt eines Linienverlaufs
+/// Gerades Stueck (Steuerpunkte auf der Verbindungslinie der Enden)?
+fn is_straight(seg: &[Pos2; 4]) -> bool {
+    let d = seg[3] - seg[0];
+    let off = |p: Pos2| ((p - seg[0]).x * d.y - (p - seg[0]).y * d.x).abs();
+    off(seg[1]) < 0.5 * d.length().max(1.0) * 0.01 + 0.01 && off(seg[2]) < 0.5 * d.length().max(1.0) * 0.01 + 0.01
+}
+
+/// Mittelpunkt eines Linienverlaufs: Mitte des laengsten geraden Stuecks (nicht an den Enden, wo die
+/// Marken sitzen), damit Raute und Beschriftung nie in einer Kurve liegen.
 pub(super) fn path_mid(path: &Path) -> Pos2 {
-    if path.len() % 2 == 1 {
-        sample(&path[path.len() / 2], 0.5)
-    } else {
-        path[path.len() / 2][0]
+    let n = path.len();
+    let inner = if n >= 5 { 1..n - 1 } else { 0..n };
+    let best = path[inner.clone()]
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| is_straight(s))
+        .max_by(|a, b| (a.1[3] - a.1[0]).length().total_cmp(&(b.1[3] - b.1[0]).length()));
+    match best {
+        Some((_, seg)) => sample(seg, 0.5),
+        None => {
+            if n % 2 == 1 {
+                sample(&path[n / 2], 0.5)
+            } else {
+                path[n / 2][0]
+            }
+        }
     }
+}
+
+/// Linienzug mit abgerundeten Ecken als Bezier-Folge (gerade Stuecke sind entartete Kurven)
+pub(super) fn rounded_path(points: &[Pos2], radius: f32) -> Path {
+    let line = |a: Pos2, b: Pos2| [a, a.lerp(b, 1.0 / 3.0), a.lerp(b, 2.0 / 3.0), b];
+    let mut out = Path::new();
+    if points.len() < 2 {
+        return out;
+    }
+    let mut cur = points[0];
+    for i in 1..points.len() - 1 {
+        let (p, next) = (points[i], points[i + 1]);
+        let (din, dout) = (p - cur, next - p);
+        let (lin, lout) = (din.length(), dout.length());
+        if lin < 0.01 || lout < 0.01 {
+            continue;
+        }
+        let (d1, d2) = (din / lin, dout / lout);
+        // Ecke nur runden, wenn die Richtung wechselt
+        if (d1.x * d2.y - d1.y * d2.x).abs() < 0.01 {
+            continue;
+        }
+        let r = radius.min(lin / 2.0).min(lout / 2.0);
+        let (a, b) = (p - d1 * r, p + d2 * r);
+        if (a - cur).length() > 0.01 {
+            out.push(line(cur, a));
+        }
+        out.push([a, a + d1 * (r * 0.5523), b - d2 * (r * 0.5523), b]);
+        cur = b;
+    }
+    let last = *points.last().unwrap();
+    if (last - cur).length() > 0.01 || out.is_empty() {
+        out.push(line(cur, last));
+    }
+    out
 }
 
 /// Markierungen fuer eine Beziehung: Anfang = Kind (bzw. erste n:m-Tabelle), Ende = Elternteil.
@@ -195,6 +250,7 @@ pub(super) fn place_texts<T: Clone>(items: Vec<(Pos2, String, Align2, T)>) -> Ve
     out
 }
 
+#[cfg(test)]
 pub(super) fn bezier_between(a: Pos2, b: Pos2, da: f32, db: f32) -> [Pos2; 4] {
     let bend = ((b.x - a.x).abs() * 0.5).max(30.0);
     [a, a + vec2(da * bend, 0.0), b + vec2(db * bend, 0.0), b]

@@ -137,13 +137,13 @@ impl SafetyTab {
         let old = self.cfg.clone();
         ui.horizontal_wrapped(|ui| {
             crate::widgets::check(ui, &mut self.cfg.auto, crate::i18n::text("Automatisch sichern, alle"));
-            ui.add(egui::DragValue::new(&mut self.cfg.interval_hours).range(1..=168).suffix(" h"));
+            crate::widgets::drag(ui, &mut self.cfg.interval_hours, 1..=168, " h");
             ui.label(crate::i18n::text("· behalten: die letzten"));
-            ui.add(egui::DragValue::new(&mut self.cfg.keep_count).range(1..=200));
+            crate::widgets::drag(ui, &mut self.cfg.keep_count, 1..=200, "");
             ui.label(crate::i18n::text("+ eine pro Tag für"));
-            ui.add(egui::DragValue::new(&mut self.cfg.keep_days).range(0..=365).suffix(crate::i18n::text(" Tage")));
+            crate::widgets::drag(ui, &mut self.cfg.keep_days, 0..=365, crate::i18n::text(" Tage"));
         });
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             ui.label(crate::i18n::text("Ordner:"));
             ui.label(RichText::new(self.cfg.dir().display().to_string()).monospace().small());
             if ui.button(crate::i18n::text("Ändern …")).clicked()
@@ -167,29 +167,29 @@ impl SafetyTab {
                 if self.list.is_empty() {
                     ui.label(RichText::new(crate::i18n::text("Keine Sicherungen")).color(style::pal().null_text));
                 }
-                egui::Grid::new("backups").striped(true).num_columns(5).spacing([16.0, 4.0]).show(ui, |ui| {
-                    for h in [crate::i18n::text("Zeitpunkt"), crate::i18n::text("Anlass"), crate::i18n::text("Datenbanken"), crate::i18n::text("Größe"), ""] {
-                        ui.label(RichText::new(h).strong());
-                    }
-                    ui.end_row();
-                    for b in self.list.clone() {
-                        ui.label(&b.time);
-                        ui.label(backup::reason_text(&b.reason));
-                        let names: Vec<&str> = b.dbs.iter().map(|d| d.0.as_str()).collect();
-                        ui.label(if names.is_empty() { "–".to_string() } else { names.join(", ") });
-                        ui.label(backup::human_size(b.total()));
-                        ui.horizontal(|ui| {
-                            if ui.add_enabled(!busy && connected && !b.dbs.is_empty(), egui::Button::new(crate::i18n::text("Wiederherstellen …")).small()).clicked() {
+                let pal = style::pal();
+                for b in self.list.clone() {
+                    egui::Frame::new().fill(pal.face_light).corner_radius(style::RADIUS).inner_margin(egui::Margin::symmetric(12, 8)).show(ui, |ui| {
+                        ui.set_min_width(ui.available_width());
+                        ui.horizontal_wrapped(|ui| {
+                            ui.label(RichText::new(&b.time).strong());
+                            ui.label(RichText::new(backup::reason_text(&b.reason)).color(pal.text_weak));
+                            let names: Vec<&str> = b.dbs.iter().map(|d| d.0.as_str()).collect();
+                            ui.label(if names.is_empty() { "–".to_string() } else { names.join(", ") });
+                            ui.label(RichText::new(backup::human_size(b.total())).color(pal.text_weak));
+                        });
+                        ui.horizontal_wrapped(|ui| {
+                            if ui.add_enabled(!busy && connected && !b.dbs.is_empty(), egui::Button::new(crate::i18n::text("Wiederherstellen …"))).clicked() {
                                 let db = b.dbs[0].0.clone();
                                 self.restore = Some(RestoreDlg { target: db.clone(), db, backup: b.clone() });
                             }
-                            if ui.add_enabled(!busy, egui::Button::new(crate::i18n::text("Löschen")).small()).clicked() {
+                            if ui.add_enabled(!busy, egui::Button::new(crate::i18n::text("Löschen"))).clicked() {
                                 self.confirm_delete = Some(b.clone());
                             }
                         });
-                        ui.end_row();
-                    }
-                });
+                    });
+                    ui.add_space(4.0);
+                }
             });
         });
     }
@@ -285,7 +285,7 @@ impl SafetyTab {
                         }
                         ui.end_row();
                         ui.label(crate::i18n::text("Einspielen als:"));
-                        ui.text_edit_singleline(&mut dlg.target);
+                        ui.add(crate::widgets::edit(&mut dlg.target));
                         ui.end_row();
                     });
                     if cx.databases.contains(&dlg.target) {
@@ -419,18 +419,11 @@ impl TabView for SafetyTab {
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(200));
         }
         super::page_keys(ui);
-        egui::ScrollArea::vertical().id_salt("safetyscroll").show(ui, |ui| {
-            ui.heading(crate::i18n::text("Sicherungen"));
-            style::group_frame().show(ui, |ui| {
-                ui.set_min_width(ui.available_width());
-                self.backups_ui(ui, cx);
-            });
-            ui.add_space(10.0);
-            ui.heading(crate::i18n::text("Prüfen & Reparieren"));
-            style::group_frame().show(ui, |ui| {
-                ui.set_min_width(ui.available_width());
-                self.repair_ui(ui, cx);
-            });
+        egui::ScrollArea::vertical().id_salt("safetyscroll").auto_shrink([false, false]).show(ui, |ui| {
+            ui.set_max_width(ui.available_width().min(900.0));
+            crate::widgets::section(ui, crate::i18n::text("Sicherungen"), |ui| self.backups_ui(ui, cx));
+            ui.add_space(6.0);
+            crate::widgets::section(ui, crate::i18n::text("Prüfen & Reparieren"), |ui| self.repair_ui(ui, cx));
             ui.add_space(10.0);
             if let Some(job) = &self.job {
                 ui.horizontal(|ui| {
