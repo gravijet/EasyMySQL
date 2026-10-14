@@ -23,7 +23,7 @@ impl ErTab {
             let scroll = ui.input(|i| i.smooth_scroll_delta.y / speed + i.zoom_delta().ln() * 200.0);
             if scroll.abs() > 0.1 {
                 let old = self.zoom;
-                self.zoom = (self.zoom * (1.0 + scroll * 0.0015)).clamp(MIN_ZOOM, MAX_ZOOM);
+                self.zoom = (self.zoom * (1.0 + scroll * 0.0015)).clamp(self.min_zoom().min(old), MAX_ZOOM);
                 if let Some(mouse) = hover {
                     let world = (mouse - origin - self.offset) / old;
                     self.offset = mouse - origin - world * self.zoom;
@@ -268,7 +268,7 @@ impl ErTab {
         let round = egui::CornerRadius::same(radius);
         let round_top = egui::CornerRadius { nw: radius, ne: radius, sw: 0, se: 0 };
         let columns = 12.0 * z >= 7.0;
-        let title_inside = 12.5 * z >= 8.5;
+        let title_inside = 12.5 * z >= 7.5;
         let mut unlabeled: Vec<(usize, Rect)> = Vec::new();
         for (ti, t) in schema.tables.iter().enumerate() {
             let r = Rect::from_min_size(screen(self.table_rect_world(t).min), self.box_of(t) * z);

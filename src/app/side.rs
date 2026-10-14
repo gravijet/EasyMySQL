@@ -717,6 +717,7 @@ impl EasyApp {
 
     /// Dateien im Explorer ablegen: von aussen kopieren, innerhalb verschieben.
     fn apply_drop(&mut self, dir: &Path, srcs: &[PathBuf], mv: bool) {
+        let mut copied: Vec<PathBuf> = Vec::new();
         for src in srcs {
             let res = if mv {
                 workspace::move_into(src, dir).map(|new| {
@@ -727,7 +728,7 @@ impl EasyApp {
                     }
                 })
             } else {
-                workspace::copy_into(src, dir).map(|_| ())
+                workspace::copy_into(src, dir).map(|new| copied.push(new))
             };
             if let Err(e) = res {
                 self.error(e);
@@ -735,6 +736,12 @@ impl EasyApp {
             }
         }
         self.tree_scan = None;
+        // Eine von aussen abgelegte Datei gleich zeigen (Bild, PDF, Text)
+        if let [one] = copied.as_slice()
+            && one.is_file()
+        {
+            self.open_file(one);
+        }
     }
 
     /// Von aussen auf das Fenster gezogene Dateien (nicht im Explorer abgelegt): im Editor

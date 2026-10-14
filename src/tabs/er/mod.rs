@@ -68,6 +68,9 @@ fn view_file() -> std::path::PathBuf {
 /// Erste Zeile der Anordnungsdatei (Version des Anordnungsverfahrens)
 const LAYOUT_TAG: &str = "#v3";
 const MIN_ZOOM: f32 = 0.01;
+/// Bis zu dieser Tabellenzahl lässt sich nicht weiter herauszoomen, als Namen, Spalten und Typen lesbar bleiben
+const READABLE_ZOOM: f32 = 0.65;
+const READABLE_MAX_TABLES: usize = 60;
 const MAX_ZOOM: f32 = 3.0;
 
 pub struct ErTab {
@@ -431,14 +434,25 @@ impl ErTab {
         r
     }
 
+    /// Kleinster Zoom: Bei überschaubaren Datenbanken bleibt der Text immer sichtbar,
+    /// bei sehr großen gilt die Übersicht mit Namensschildern.
+    fn min_zoom(&self) -> f32 {
+        let n = self.schema.as_ref().map_or(0, |s| s.tables.len());
+        if n <= READABLE_MAX_TABLES { READABLE_ZOOM } else { MIN_ZOOM }
+    }
+
     fn fit(&mut self, canvas: Rect) {
         let Some(b) = self.bounds() else { return };
         let margin = 30.0;
         let zx = (canvas.width() - 2.0 * margin) / b.width().max(1.0);
         let zy = (canvas.height() - 2.0 * margin) / b.height().max(1.0);
-        self.zoom = zx.min(zy).clamp(MIN_ZOOM, 1.4);
+        self.zoom = zx.min(zy).clamp(self.min_zoom(), 1.4);
         let content = b.size() * self.zoom;
-        let off = (canvas.size() - content) / 2.0;
+        // Passt alles hinein, mittig; sonst links oben beginnen (der Rest wird verschoben)
+        let off = vec2(
+            if content.x > canvas.width() { margin } else { (canvas.width() - content.x) / 2.0 },
+            if content.y > canvas.height() { margin } else { (canvas.height() - content.y) / 2.0 },
+        );
         self.offset = off - b.min.to_vec2() * self.zoom;
     }
 
