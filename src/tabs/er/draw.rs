@@ -23,7 +23,7 @@ impl ErTab {
             let scroll = ui.input(|i| i.smooth_scroll_delta.y / speed + i.zoom_delta().ln() * 200.0);
             if scroll.abs() > 0.1 {
                 let old = self.zoom;
-                self.zoom = (self.zoom * (1.0 + scroll * 0.0015)).clamp(self.min_zoom().min(old), MAX_ZOOM);
+                self.zoom = (self.zoom * (1.0 + scroll * 0.0015)).clamp(MIN_ZOOM, MAX_ZOOM);
                 if let Some(mouse) = hover {
                     let world = (mouse - origin - self.offset) / old;
                     self.offset = mouse - origin - world * self.zoom;
@@ -258,7 +258,8 @@ impl ErTab {
             }
         }
 
-        // Tabellen. Schriftgroessen werden gestuft: jede neue Groesse legt Zeichen im Schrift-
+        // Tabellen. Der Text schrumpft mit dem Zoom und bleibt immer gezeichnet (er passt sich der
+        // Tabelle an). Schriftgroessen werden gestuft: jede neue Groesse legt Zeichen im Schrift-
         // Atlas an, den egui nie verkleinert (stufenloses Zoomen liesse den Speicher anwachsen).
         let pal = style::pal();
         let font = FontId::proportional(qsize(12.0 * z));
@@ -267,10 +268,7 @@ impl ErTab {
         let radius = (6.0 * z).clamp(1.0, 8.0) as u8;
         let round = egui::CornerRadius::same(radius);
         let round_top = egui::CornerRadius { nw: radius, ne: radius, sw: 0, se: 0 };
-        let columns = 12.0 * z >= 7.0;
-        let title_inside = 12.5 * z >= 7.5;
-        let mut unlabeled: Vec<(usize, Rect)> = Vec::new();
-        for (ti, t) in schema.tables.iter().enumerate() {
+        for t in &schema.tables {
             let r = Rect::from_min_size(screen(self.table_rect_world(t).min), self.box_of(t) * z);
             if !r.intersects(rect) {
                 continue;
@@ -284,16 +282,10 @@ impl ErTab {
             let head = Rect::from_min_size(r.min, vec2(r.width(), (HEADER_H * z).max(2.0)));
             painter.rect_filled(head, round_top, head_color);
             let outline = if focused { Stroke::new(1.8, LINE_HI) } else { Stroke::new(1.0, pal.border) };
-            if !title_inside {
-                // Zu klein fuer Text: Name spaeter ueber Kollisionspruefung setzen
-                painter.rect_stroke(r, round, outline, StrokeKind::Inside);
-                unlabeled.push((ti, r));
-                continue;
-            }
             let clip = painter.with_clip_rect(r.intersect(rect));
             let title = if t.is_view { crate::tr_format!("{} (Sicht)", "{} (View)", t.name) } else { t.name.clone() };
             clip.text(head.left_center() + vec2(8.0 * z, 0.0), Align2::LEFT_CENTER, title, bold.clone(), pal.text);
-            if columns {
+            {
                 let type_x = r.right() - 14.0 * z;
                 for (i, c) in t.columns.iter().enumerate() {
                     let y = r.top() + (HEADER_H + 3.0 + ROW_H * i as f32 + ROW_H / 2.0) * z;
@@ -324,44 +316,6 @@ impl ErTab {
             }
             painter.rect_stroke(r, round, outline, StrokeKind::Inside);
         }
-        // Namen herausgezoomter Tabellen: die mit den meisten Beziehungen zuerst, ohne dass sich
-        // Beschriftungen ueberdecken (wie Ortsnamen auf einer Karte)
-        if !unlabeled.is_empty() {
-            let lookup: HashMap<usize, Rect> = unlabeled.into_iter().collect();
-            let label_font = FontId::proportional(10.0);
-            const CELL: f32 = 96.0;
-            let mut placed: Vec<Rect> = Vec::new();
-            let mut grid: HashMap<(i32, i32), Vec<usize>> = HashMap::new();
-            let cells = |r: Rect| {
-                let (x0, x1) = ((r.min.x / CELL).floor() as i32, (r.max.x / CELL).floor() as i32);
-                let (y0, y1) = ((r.min.y / CELL).floor() as i32, (r.max.y / CELL).floor() as i32);
-                (x0..=x1).flat_map(move |x| (y0..=y1).map(move |y| (x, y)))
-            };
-            let mut drawn = 0;
-            for &ti in &geometry.label_order {
-                let Some(r) = lookup.get(&ti) else { continue };
-                let galley = painter.layout_no_wrap(schema.tables[ti].name.clone(), label_font.clone(), pal.text);
-                let size = galley.size() + vec2(8.0, 3.0);
-                let lr = Rect::from_min_size(pos2(r.left().max(rect.left() + 2.0), r.top().max(rect.top() + 2.0)), size);
-                if lr.right() > rect.right() || lr.bottom() > rect.bottom() {
-                    continue;
-                }
-                if cells(lr).filter_map(|c| grid.get(&c)).flatten().any(|&k| placed[k].expand(1.0).intersects(lr)) {
-                    continue;
-                }
-                for c in cells(lr) {
-                    grid.entry(c).or_default().push(placed.len());
-                }
-                placed.push(lr);
-                painter.rect_filled(lr, 3.0, pal.er_canvas.gamma_multiply(0.88));
-                painter.galley(lr.min + vec2(4.0, 1.5), galley, pal.text);
-                drawn += 1;
-                if drawn >= 800 {
-                    break;
-                }
-            }
-        }
-
         // Neue Beziehung: gestrichelte Linie zur Maus
         if let Drag::Link(t, c) = &self.drag
             && let (Some(ti), Some(p)) = (schema.table(t), hover.or(pointer)) {

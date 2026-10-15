@@ -67,8 +67,7 @@ fn view_file() -> std::path::PathBuf {
 /// Kleinster und groesster Zoom: auch sehr grosse Diagramme passen noch komplett ins Bild
 /// Erste Zeile der Anordnungsdatei (Version des Anordnungsverfahrens)
 const LAYOUT_TAG: &str = "#v3";
-/// Weiter lässt sich nie herauszoomen: Tabellennamen, Spalten und Typen bleiben immer lesbar
-const READABLE_ZOOM: f32 = 0.65;
+const MIN_ZOOM: f32 = 0.01;
 const MAX_ZOOM: f32 = 3.0;
 
 pub struct ErTab {
@@ -432,17 +431,12 @@ impl ErTab {
         r
     }
 
-    /// Kleinster Zoom: der Text in den Tabellen bleibt bei jeder Datenbankgröße sichtbar
-    fn min_zoom(&self) -> f32 {
-        READABLE_ZOOM
-    }
-
     fn fit(&mut self, canvas: Rect) {
         let Some(b) = self.bounds() else { return };
         let margin = 30.0;
         let zx = (canvas.width() - 2.0 * margin) / b.width().max(1.0);
         let zy = (canvas.height() - 2.0 * margin) / b.height().max(1.0);
-        self.zoom = zx.min(zy).clamp(self.min_zoom(), 1.4);
+        self.zoom = zx.min(zy).clamp(MIN_ZOOM, 1.4);
         let content = b.size() * self.zoom;
         // Passt alles hinein, mittig; sonst links oben beginnen (der Rest wird verschoben)
         let off = vec2(

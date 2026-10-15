@@ -17,9 +17,6 @@ pub(super) struct RouteGeometry {
     pub(super) tags: Vec<(usize, Pos2, String)>,
     /// Beschriftungen an den Linienenden, schon ueberlappungsfrei: (Beziehung, Ort, Text, Ausrichtung)
     pub(super) texts: Vec<(usize, Pos2, String, Align2)>,
-    /// Tabellen (Index in `schema.tables`), die meisten Beziehungen zuerst: bekommen beim
-    /// Herauszoomen zuerst ihren Namen
-    pub(super) label_order: Vec<usize>,
 }
 
 pub(super) struct RouteCache {
@@ -175,18 +172,7 @@ impl ErTab {
             .into_iter()
             .map(|(p, s, a, e)| (e, p, s, a))
             .collect();
-        let mut degree = vec![0u32; schema.tables.len()];
-        let index: HashMap<&str, usize> = schema.tables.iter().enumerate().map(|(i, t)| (t.name.as_str(), i)).collect();
-        for fk in &schema.fks {
-            for name in [&fk.table, &fk.ref_table] {
-                if let Some(&i) = index.get(name.as_str()) {
-                    degree[i] += 1;
-                }
-            }
-        }
-        let mut label_order: Vec<usize> = (0..degree.len()).collect();
-        label_order.sort_by_key(|&i| std::cmp::Reverse(degree[i]));
-        let geometry = Arc::new(RouteGeometry { paths, polylines, bounds, keys, shapes, tags, texts, label_order });
+        let geometry = Arc::new(RouteGeometry { paths, polylines, bounds, keys, shapes, tags, texts });
         self.route_cache = Some(RouteCache {
             schema: Arc::clone(schema), positions: self.pos.clone(), routes: self.routes.clone(),
             show_types: self.show_types, notation: self.notation, rel_labels: self.rel_labels,
