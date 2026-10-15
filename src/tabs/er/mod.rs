@@ -67,10 +67,8 @@ fn view_file() -> std::path::PathBuf {
 /// Kleinster und groesster Zoom: auch sehr grosse Diagramme passen noch komplett ins Bild
 /// Erste Zeile der Anordnungsdatei (Version des Anordnungsverfahrens)
 const LAYOUT_TAG: &str = "#v3";
-const MIN_ZOOM: f32 = 0.01;
-/// Bis zu dieser Tabellenzahl lässt sich nicht weiter herauszoomen, als Namen, Spalten und Typen lesbar bleiben
+/// Weiter lässt sich nie herauszoomen: Tabellennamen, Spalten und Typen bleiben immer lesbar
 const READABLE_ZOOM: f32 = 0.65;
-const READABLE_MAX_TABLES: usize = 60;
 const MAX_ZOOM: f32 = 3.0;
 
 pub struct ErTab {
@@ -434,11 +432,9 @@ impl ErTab {
         r
     }
 
-    /// Kleinster Zoom: Bei überschaubaren Datenbanken bleibt der Text immer sichtbar,
-    /// bei sehr großen gilt die Übersicht mit Namensschildern.
+    /// Kleinster Zoom: der Text in den Tabellen bleibt bei jeder Datenbankgröße sichtbar
     fn min_zoom(&self) -> f32 {
-        let n = self.schema.as_ref().map_or(0, |s| s.tables.len());
-        if n <= READABLE_MAX_TABLES { READABLE_ZOOM } else { MIN_ZOOM }
+        READABLE_ZOOM
     }
 
     fn fit(&mut self, canvas: Rect) {
