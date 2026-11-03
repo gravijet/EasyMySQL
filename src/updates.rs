@@ -51,6 +51,13 @@ struct Release {
     files: Files,
 }
 
+impl Asset {
+    /// Eine gueltige SHA-256 liegt vor (ohne sie wird nie installiert)
+    fn has_checksum(&self) -> bool {
+        self.sha256.as_deref().is_some_and(|s| s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit()))
+    }
+}
+
 fn safe_url(a: &Asset) -> bool {
     a.url.starts_with("/download/") && !a.url.contains(['?', '#', '\\']) && !a.url.contains("..")
 }
@@ -73,7 +80,7 @@ impl Release {
         self.files
             .app
             .iter()
-            .find(|a| a.name == name && safe_url(a))
+            .find(|a| a.name == name && safe_url(a) && a.has_checksum())
             .cloned()
             .ok_or_else(|| crate::i18n::text("Für dieses Release gibt es noch kein Update. Bitte später erneut prüfen.").into())
     }
@@ -114,7 +121,8 @@ fn check() -> Result<Option<Release>, String> {
 }
 
 fn verify_download(size: u64, hash: &str, asset: &Asset) -> Result<(), String> {
-    if size == 0 || asset.size != Some(size) {
+    // Die Groesse der Seite ist nur eine Zusatzpruefung (fehlt sie, entscheidet die SHA-256); leer ist nie gueltig
+    if size == 0 || asset.size.is_some_and(|s| s != size) {
         return Err(crate::i18n::text("Der Download ist unvollständig. Bitte erneut herunterladen.").into());
     }
     let expected = asset
@@ -137,11 +145,12 @@ struct Progress {
 
 /// Datei herunterladen, Groesse und SHA-256 pruefen. Liefert den Pfad in einem eigenen, privaten Ordner.
 fn download(asset: &Asset, progress: &Progress) -> Result<PathBuf, String> {
-    let expected_size = asset.size.unwrap_or(0);
-    if expected_size == 0 || expected_size > MAX_APP {
+    // Fehlt die Groesse in der Antwort der Seite, gilt die Obergrenze; die SHA-256 sichert den Inhalt trotzdem
+    let expected_size = asset.size.filter(|s| *s > 0).unwrap_or(MAX_APP);
+    if expected_size > MAX_APP {
         return Err(crate::i18n::text("Die Größe des Updates ist ungültig.").into());
     }
-    progress.total.store(expected_size, Ordering::Relaxed);
+    progress.total.store(if asset.size.is_some() { expected_size } else { 0 }, Ordering::Relaxed);
     let dir = std::env::temp_dir().join(format!(
         "EasyMySQL-update-{}-{}",
         std::process::id(),
@@ -151,6 +160,9 @@ fn download(asset: &Asset, progress: &Progress) -> Result<PathBuf, String> {
     let target = dir.join(&asset.name);
     let result = (|| {
         let mut response = agent(Duration::from_secs(15 * 60)).get(format!("{}{}", site(), asset.url)).call().map_err(|e| e.to_string())?;
+        if asset.size.is_none() {
+            progress.total.store(response.body().content_length().unwrap_or(0), Ordering::Relaxed);
+        }
         let mut reader = response.body_mut().as_reader().take(expected_size + 1);
         let mut file = std::fs::OpenOptions::new().write(true).create_new(true).open(&target).map_err(|e| e.to_string())?;
         let mut hash = Sha256::new();
@@ -716,7 +728,7 @@ mod tests {
     }
 
     fn asset(name: &str, url: &str) -> Asset {
-        Asset { name: name.into(), url: url.into(), size: Some(3), sha256: None }
+        Asset { name: name.into(), url: url.into(), size: Some(3), sha256: Some("a".repeat(64)) }
     }
 
     #[test]
@@ -742,12 +754,15 @@ mod tests {
         }
         r.files.app = Some(asset("EasyMySQL-app-9.9.9.zip", "/download/app"));
         assert!(r.app().is_err());
+        // ohne Pruefsumme gibt es (noch) kein Update, statt spaeter mit einem Fehler abzubrechen
+        r.files.app = Some(Asset { sha256: None, ..asset("EasyMySQL-app-4.0.0.zip", "/download/app") });
+        assert!(r.app().is_err());
     }
 
     #[test]
     fn release_json_from_the_site_is_understood() {
         let r: Release = serde_json::from_str(
-            r#"{"version":"4.0.0","published":null,"mariadb":null,"files":{"setup":{"name":"EasyMySQL-Setup-4.0.0.exe","url":"/download/setup","size":10,"sha256":null},"app":{"name":"EasyMySQL-app-4.0.0.zip","url":"/download/app","size":1,"sha256":null},"portable":{"name":"x","url":"/download/portable","size":1,"sha256":null}}}"#,
+            r#"{"version":"4.0.0","published":null,"mariadb":null,"files":{"setup":{"name":"EasyMySQL-Setup-4.0.0.exe","url":"/download/setup","size":10,"sha256":null},"app":{"name":"EasyMySQL-app-4.0.0.zip","url":"/download/app","size":1,"sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},"portable":{"name":"x","url":"/download/portable","size":1,"sha256":null}}}"#,
         )
         .unwrap();
         assert!(r.newer_than("3.5.0").unwrap());
@@ -764,8 +779,11 @@ mod tests {
         a.sha256 = None;
         assert!(verify_download(3, &hash, &a).is_err());
         a.sha256 = Some(hash.clone());
+        // Groesse unbekannt (Notweg der Seite): die SHA-256 entscheidet, ein leerer Download nie
         a.size = None;
-        assert!(verify_download(3, &hash, &a).is_err());
+        assert!(verify_download(3, &hash, &a).is_ok());
+        assert!(verify_download(0, &hash, &a).is_err());
+        assert!(verify_download(3, &"0".repeat(64), &a).is_err());
     }
 
     fn temp(name: &str) -> PathBuf {

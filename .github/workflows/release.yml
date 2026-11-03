@@ -179,6 +179,9 @@ jobs:
           Copy-Item target/release/easymysql.exe build/app/EasyMySQL.exe
           Compress-Archive -Path build/app/EasyMySQL.exe -DestinationPath "dist/EasyMySQL-app-${{ steps.ver.outputs.version }}.zip" -CompressionLevel Optimal
           Get-ChildItem dist | Select-Object Name, Length
+          # Pruefsummen als eigene Datei: die Website liest sie auch, wenn die GitHub-API gerade nicht antwortet
+          Get-ChildItem dist -File | Where-Object { $_.Name -ne 'SHA256SUMS.txt' } | ForEach-Object { "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)" } | Set-Content -Encoding ascii dist/SHA256SUMS.txt
+          Get-Content dist/SHA256SUMS.txt
 
       - uses: actions/upload-artifact@v4
         with:
@@ -196,6 +199,7 @@ jobs:
             dist/EasyMySQL-Setup-${{ steps.ver.outputs.version }}.exe
             dist/EasyMySQL-portable-${{ steps.ver.outputs.version }}.zip
             dist/EasyMySQL-app-${{ steps.ver.outputs.version }}.zip
+            dist/SHA256SUMS.txt
           body: |
             ## EasyMySQL ${{ steps.ver.outputs.version }}
 

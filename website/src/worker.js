@@ -4,6 +4,7 @@
 
 const REPO = "gravijet/EasyMySQL";
 const FRESH_SECONDS = 300;
+const PARTIAL_SECONDS = 60;
 const STALE_SECONDS = 60 * 60 * 24 * 7;
 
 const KINDS = {
@@ -46,7 +47,9 @@ async function getRelease(env, ctx) {
   let stale = null;
   if (hit) {
     const entry = await hit.json();
-    if (Date.now() - entry.at < FRESH_SECONDS * 1000) return entry.release;
+    // Unvollstaendige Angaben (Notweg ohne Groesse/Pruefsumme) gelten nur kurz, damit bald wieder die volle Fassung kommt
+    const fresh = (isComplete(entry.release) ? FRESH_SECONDS : PARTIAL_SECONDS) * 1000;
+    if (Date.now() - entry.at < fresh) return entry.release;
     stale = entry.release;
   }
   let release = null;
@@ -62,6 +65,8 @@ async function getRelease(env, ctx) {
     if (stale) return stale;
     throw new Error("no release");
   }
+  // Der Notweg liefert weniger als die API: dieselbe Version nie mit schlechteren Angaben ueberschreiben
+  if (stale && isComplete(stale) && !isComplete(release) && stale.version === release.version) release = stale;
   const body = JSON.stringify({ at: Date.now(), release });
   ctx.waitUntil(cache.put(key, new Response(body, { headers: { "content-type": "application/json", "cache-control": `max-age=${STALE_SECONDS}` } })));
   return release;
@@ -71,6 +76,37 @@ function ghHeaders(env, accept) {
   const h = { "user-agent": "easymysql-site", accept };
   if (env.GITHUB_TOKEN) h.authorization = `Bearer ${env.GITHUB_TOKEN}`;
   return h;
+}
+
+// Vollstaendig: jede Datei hat Groesse und SHA-256 (das braucht das automatische Update im Programm)
+function isComplete(rel) {
+  return Object.values(rel.files || {}).every((f) => f.size > 0 && /^[0-9a-f]{64}$/.test(f.sha256 || ""));
+}
+
+// SHA256SUMS.txt des Releases (vom Release-Workflow angelegt); die Download-Adressen unterliegen nicht dem API-Limit
+async function sums(version) {
+  try {
+    const r = await fetch(`https://github.com/${REPO}/releases/download/v${version}/SHA256SUMS.txt`, { headers: { "user-agent": "easymysql-site" }, redirect: "follow" });
+    if (!r.ok) return {};
+    const out = {};
+    for (const line of (await r.text()).split("\n")) {
+      const m = /^([0-9a-fA-F]{64})\s+\*?(\S+)$/.exec(line.trim());
+      if (m) out[m[2]] = m[1].toLowerCase();
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+async function sizeOf(url) {
+  try {
+    const r = await fetch(url, { method: "HEAD", headers: { "user-agent": "easymysql-site" }, redirect: "follow" });
+    const n = Number(r.headers.get("content-length"));
+    return r.ok && n > 0 ? n : null;
+  } catch {
+    return null;
+  }
 }
 
 async function fromApi(env) {
@@ -88,6 +124,11 @@ async function fromApi(env) {
     }
   }
   if (!files.setup) throw new Error("no setup asset");
+  // Aeltere Releases haben keine "digest"-Angabe: dann aus SHA256SUMS.txt
+  if (Object.values(files).some((f) => !f.sha256)) {
+    const list = await sums(version);
+    for (const [kind, f] of Object.entries(files)) f.sha256 ||= list[KINDS[kind].name(version)] ?? null;
+  }
   const mariadb = /MariaDB\s+(\d+\.\d+\.\d+)/.exec(d.body || "")?.[1] ?? null;
   return { version, published: d.published_at ?? null, mariadb, files };
 }
@@ -97,10 +138,14 @@ async function fromRedirect() {
   const r = await fetch(`https://github.com/${REPO}/releases/latest`, { redirect: "manual", headers: { "user-agent": "easymysql-site" } });
   const version = /\/releases\/tag\/v(\d+\.\d+\.\d+)$/.exec(r.headers.get("location") || "")?.[1];
   if (!version) throw new Error("no tag");
+  const list = await sums(version);
   const files = {};
-  for (const [kind, k] of Object.entries(KINDS)) {
-    files[kind] = { source: `https://github.com/${REPO}/releases/download/v${version}/${k.name(version)}`, size: null, sha256: null };
-  }
+  await Promise.all(
+    Object.entries(KINDS).map(async ([kind, k]) => {
+      const source = `https://github.com/${REPO}/releases/download/v${version}/${k.name(version)}`;
+      files[kind] = { source, size: await sizeOf(source), sha256: list[k.name(version)] ?? null };
+    }),
+  );
   return { version, published: null, mariadb: null, files };
 }
 
