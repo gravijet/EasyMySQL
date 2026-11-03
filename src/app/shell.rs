@@ -104,27 +104,28 @@ impl EasyApp {
     /// Eintraege fuer den Server (im Menue "Server" und im Verbindungsknopf der Leiste)
     fn server_items(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, actions: &mut Vec<Action>, cmd: &mut Option<Cmd>) {
         let st = self.server.state();
-        if ui.add_enabled(!st.is_running() && !st.is_busy(), egui::Button::new(crate::i18n::text("Starten"))).clicked() {
+        let pal = style::pal();
+        if ui.add_enabled_ui(!st.is_running() && !st.is_busy(), |ui| icons::menu_item_colored(ui, Some((Icon::Play, Some(pal.ok_text))), crate::i18n::text("Starten"), "")).inner.clicked() {
             self.start_server(ctx);
             ui.close();
         }
-        if ui.add_enabled(st == State::Running { own: true }, egui::Button::new(crate::i18n::text("Stoppen"))).clicked() {
+        if ui.add_enabled_ui(st == State::Running { own: true }, |ui| icons::menu_item_colored(ui, Some((Icon::Stop, Some(pal.error_text))), crate::i18n::text("Stoppen"), "")).inner.clicked() {
             self.stop_server(ctx);
             ui.close();
         }
-        if ui.add_enabled(!st.is_busy(), egui::Button::new(crate::i18n::text("Neu starten"))).clicked() {
+        if ui.add_enabled_ui(!st.is_busy(), |ui| icons::menu_item(ui, Some(Icon::RotateCcw), crate::i18n::text("Neu starten"), "")).inner.clicked() {
             self.restart_server(ctx);
             ui.close();
         }
         ui.separator();
         for c in [Cmd::ServerLog, Cmd::Backups, Cmd::Users] {
-            if ui.add(egui::Button::new(c.label()).shortcut_text(keymap::text(c))).clicked() {
+            if icons::menu_item(ui, cmd_icon(c), c.label(), &keymap::text(c)).clicked() {
                 *cmd = Some(c);
                 ui.close();
             }
         }
         ui.separator();
-        if ui.button(crate::i18n::text("Verbindung …")).clicked() {
+        if icons::menu_item(ui, Some(Icon::Link), crate::i18n::text("Verbindung …"), "").clicked() {
             actions.push(Action::OpenSettings(Some("verbindung".into())));
             ui.close();
         }
@@ -137,7 +138,7 @@ impl EasyApp {
         let pal = style::pal();
         let mut cmd: Option<Cmd> = None;
         let item = |ui: &mut egui::Ui, text: &str, c: Cmd, cmd: &mut Option<Cmd>| {
-            if ui.add(egui::Button::new(text).shortcut_text(keymap::text(c))).clicked() {
+            if icons::menu_item(ui, cmd_icon(c), text, &keymap::text(c)).clicked() {
                 *cmd = Some(c);
                 ui.close();
             }
@@ -174,10 +175,9 @@ impl EasyApp {
                     ui.separator();
                     item(ui, crate::i18n::text("Datei öffnen …"), Cmd::OpenFile, &mut cmd);
                     item(ui, crate::i18n::text("Ordner öffnen …"), Cmd::OpenFolder, &mut cmd);
-                    ui.menu_button(crate::i18n::text("Zuletzt geöffnet"), |ui| {
-                        style::menu_item_look(ui);
-                        for p in self.settings.recent.clone() {
-                            if ui.button(workspace::dir_name(&p)).on_hover_text(p.display().to_string()).clicked() {
+                    icons::submenu(ui, Some(Icon::History), crate::i18n::text("Zuletzt geöffnet"), |ui| {
+                        for p in self.settings.recent.clone().into_iter().filter(|p| p.is_dir()) {
+                            if side::recent_row(ui, &p).clicked() {
                                 self.switch_project(Some(p));
                                 ui.close();
                             }
@@ -193,7 +193,7 @@ impl EasyApp {
                     item(ui, crate::i18n::text("Registerkarte schließen"), Cmd::CloseTab, &mut cmd);
                     ui.separator();
                     item(ui, crate::i18n::text("Einstellungen"), Cmd::Settings, &mut cmd);
-                    if ui.button(crate::i18n::text("Beenden")).clicked() {
+                    if icons::menu_item(ui, Some(Icon::Power), crate::i18n::text("Beenden"), "").clicked() {
                         ui.close();
                         self.request_quit(&ctx);
                     }
@@ -216,11 +216,11 @@ impl EasyApp {
                 ui.menu_button(crate::i18n::text("Datenbank"), |ui| {
                     style::menu_item_look(ui);
                     let connected = self.db.is_some();
-                    if ui.add_enabled(connected, egui::Button::new(crate::i18n::text("Neue Datenbank …"))).clicked() {
+                    if ui.add_enabled_ui(connected, |ui| icons::menu_item(ui, Some(Icon::Database), crate::i18n::text("Neue Datenbank …"), "")).inner.clicked() {
                         self.dialogs.push(Dialog::NewDatabase { name: String::new(), collation: COLLATIONS[0].into() });
                         ui.close();
                     }
-                    if ui.add_enabled(connected, egui::Button::new(crate::i18n::text("Neue Tabelle …"))).clicked() {
+                    if ui.add_enabled_ui(connected, |ui| icons::menu_item(ui, Some(Icon::Table), crate::i18n::text("Neue Tabelle …"), "")).inner.clicked() {
                         if let Some(d) = self.need_db() {
                             actions.push(Action::NewTable(d));
                         }
@@ -236,7 +236,7 @@ impl EasyApp {
                         item(ui, crate::i18n::text("Exportieren …"), Cmd::Export, &mut cmd);
                     });
                     item(ui, crate::i18n::text("Importieren …"), Cmd::Import, &mut cmd);
-                    if ui.add_enabled(connected, egui::Button::new(crate::i18n::text("SQL-Datei importieren …"))).clicked() {
+                    if ui.add_enabled_ui(connected, |ui| icons::menu_item(ui, Some(Icon::FileCode), crate::i18n::text("SQL-Datei importieren …"), "")).inner.clicked() {
                         ui.close();
                         self.open_sql_file(true);
                     }
@@ -266,25 +266,46 @@ impl EasyApp {
             };
             egui::Popup::menu(&resp).show(|ui| {
                 crate::style::menu_item_look(ui);
-                ui.set_min_width(240.0);
+                ui.set_min_width(270.0);
+                // Wie das Projektmenue von IntelliJ IDEA: Aktionen oben, darunter die letzten Projekte mit Kuerzel und Ordner
                 item(ui, crate::i18n::text("Ordner öffnen …"), Cmd::OpenFolder, &mut cmd);
-                item(ui, crate::i18n::tr("Neues Java-Projekt …", "New Java project …"), Cmd::NewJavaProject, &mut cmd);
-                item(ui, crate::i18n::tr("Neues Python-Projekt …", "New Python project …"), Cmd::NewPythonProject, &mut cmd);
-                item(ui, crate::i18n::tr("Neues JavaScript-Projekt …", "New JavaScript project …"), Cmd::NewNodeProject, &mut cmd);
-                let recent: Vec<PathBuf> = self.settings.recent.iter().filter(|p| Some(*p) != self.project.as_ref()).take(8).cloned().collect();
+                if icons::menu_item(ui, Some(Icon::NewFolder), crate::i18n::text("Neues Projekt …"), "").clicked() {
+                    self.explorer_dlg = Some(ExplorerDlg::NewProject { name: String::new() });
+                    ui.close();
+                }
+                icons::submenu(ui, Some(Icon::FileCode), crate::i18n::tr("Neues Programmierprojekt", "New coding project"), |ui| {
+                    ui.set_min_width(220.0);
+                    for (c, sample, label) in [(Cmd::NewJavaProject, "x.java", "Java"), (Cmd::NewPythonProject, "x.py", "Python"), (Cmd::NewNodeProject, "x.js", "JavaScript")] {
+                        let r = icons::menu_item(ui, None, label, &keymap::text(c));
+                        icons::paint_file(ui.painter(), Rect::from_center_size(pos2(r.rect.left() + 17.0, r.rect.center().y), vec2(15.0, 15.0)), sample);
+                        if r.clicked() {
+                            cmd = Some(c);
+                            ui.close();
+                        }
+                    }
+                });
+                if icons::menu_item(ui, Some(Icon::GitBranch), crate::i18n::tr("Repository klonen …", "Clone repository …"), "").clicked() {
+                    self.open_clone_dialog();
+                    ui.close();
+                }
+                let recent: Vec<PathBuf> = self.settings.recent.iter().filter(|p| Some(*p) != self.project.as_ref() && p.is_dir()).take(8).cloned().collect();
                 if !recent.is_empty() {
                     ui.separator();
-                    ui.label(egui::RichText::new(crate::i18n::text("Zuletzt geöffnet")).small().color(pal.text_weak));
+                    icons::menu_heading(ui, crate::i18n::text("Zuletzt geöffnet"));
                     for p in recent {
-                        if ui.button(workspace::dir_name(&p)).on_hover_text(p.display().to_string()).clicked() {
+                        if side::recent_row(ui, &p).clicked() {
                             self.switch_project(Some(p));
                             ui.close();
                         }
                     }
                 }
-                if self.project.is_some() {
+                if let Some(p) = self.project.clone() {
                     ui.separator();
-                    if ui.button(crate::i18n::tr("Projekt schließen", "Close project")).clicked() {
+                    if icons::menu_item(ui, Some(Icon::FolderInput), crate::i18n::text("Im Datei-Explorer zeigen"), "").clicked() {
+                        open_path(&p);
+                        ui.close();
+                    }
+                    if icons::menu_item(ui, Some(Icon::Close), crate::i18n::tr("Projekt schließen", "Close project"), "").clicked() {
                         self.switch_project(None);
                         ui.close();
                     }
@@ -459,12 +480,22 @@ impl EasyApp {
         // Untere Kante der Reiterleiste; der aktive Reiter liegt mit seinem Unterstrich darauf
         ui.painter().hline(bar.x_range(), bar.bottom() - 0.5, Stroke::new(1.0, pal.border));
         let n = self.tabs.len();
-        let looks: Vec<TabLook> = self.tabs.iter().map(|t| TabLook { title: t.title(), icon: t.icon(), busy: t.busy(), modified: t.modified() }).collect();
+        let mut looks: Vec<TabLook> = self
+            .tabs
+            .iter()
+            .map(|t| TabLook { title: t.title(), icon: t.icon(), file: t.file().and_then(|f| f.file_name()).map(|n| n.to_string_lossy().into_owned()), hint: String::new(), busy: t.busy(), modified: t.modified() })
+            .collect();
+        // Gleichnamige Dateien: Ordner dahinter (wie in VS Code)
+        for i in 0..looks.len() {
+            if looks.iter().filter(|l| l.title == looks[i].title).count() > 1 {
+                looks[i].hint = self.tabs[i].file().and_then(|f| f.parent()).and_then(|d| d.file_name()).map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            }
+        }
         // Wunschbreite je Reiter. Passen nicht alle, schrumpfen zuerst die langen Titel, dann die
         // inaktiven Reiter bis auf ihr Symbol; der aktive behaelt seinen Titel.
         let desired: Vec<f32> = looks
             .iter()
-            .map(|l| (ui.painter().layout_no_wrap(l.title.clone(), font.clone(), pal.text).size().x + 52.0 + 22.0).clamp(90.0, MAX_W))
+            .map(|l| (ui.painter().layout_no_wrap(format!("{}  {}", l.title, l.hint), font.clone(), pal.text).size().x + 52.0 + 22.0).clamp(90.0, MAX_W))
             .collect();
         let gaps = GAP * n.saturating_sub(1) as f32;
         let avail = bar.width() - 4.0;
@@ -641,29 +672,62 @@ impl EasyApp {
         let mut cmds = vec![Cmd::NewQuery];
         cmds.push(if self.project.is_some() { Cmd::QuickOpen } else { Cmd::OpenFolder });
         cmds.extend([Cmd::NewFile, Cmd::CommandPalette, Cmd::ToggleTerminal]);
-        const ROW: f32 = 32.0;
-        const W: f32 = 340.0;
-        let top = rect.center().y - (cmds.len() as f32 * ROW) / 2.0;
-        let logo = Rect::from_center_size(pos2(rect.center().x, top - 56.0), vec2(64.0, 64.0));
-        icons::paint(ui.painter(), logo, Icon::Database, pal.text_weak.gamma_multiply(0.3));
+        let recent: Vec<PathBuf> = if self.project.is_none() { self.settings.recent.iter().filter(|p| p.is_dir()).take(4).cloned().collect() } else { Vec::new() };
+        const ROW: f32 = 34.0;
+        let w = (rect.width() - 48.0).clamp(240.0, 400.0);
+        // Hoehe des ganzen Blocks: Kopf, Befehle, letzte Projekte – senkrecht mittig, bei wenig Platz oben
+        let head_h = 92.0;
+        let recent_h = if recent.is_empty() { 0.0 } else { 34.0 + recent.len() as f32 * 42.0 };
+        let total = head_h + cmds.len() as f32 * ROW + recent_h;
+        let top = (rect.center().y - total / 2.0).max(rect.top() + 16.0);
+        let x0 = rect.center().x - w / 2.0;
+        let p = ui.painter().clone();
+        // Zeichen und Name
+        let logo = Rect::from_min_size(pos2(x0 + 4.0, top), vec2(48.0, 48.0));
+        p.rect_filled(logo, 12.0, pal.accent);
+        p.rect_filled(Rect::from_min_max(logo.min, pos2(logo.max.x, logo.center().y)), egui::CornerRadius { nw: 12, ne: 12, sw: 0, se: 0 }, egui::Color32::from_white_alpha(14));
+        icons::paint(&p, Rect::from_center_size(logo.center(), vec2(28.0, 28.0)), Icon::Database, egui::Color32::WHITE);
+        p.text(pos2(logo.right() + 14.0, logo.center().y - 9.0), egui::Align2::LEFT_CENTER, "EasyMySQL", egui::FontId::proportional(22.0), pal.text);
+        p.text(pos2(logo.right() + 14.0, logo.center().y + 13.0), egui::Align2::LEFT_CENTER, crate::tr_format!("Version {}", "Version {}", env!("CARGO_PKG_VERSION")), egui::FontId::proportional(12.0), pal.text_weak);
+        let mut y = top + head_h - 18.0;
+        p.text(pos2(x0 + 4.0, y), egui::Align2::LEFT_CENTER, crate::i18n::tr("STARTEN", "START"), egui::FontId::proportional(10.5), pal.text_weak);
+        y += 12.0;
         let mut run = None;
+        let n_cmds = cmds.len();
         for (i, cmd) in cmds.into_iter().enumerate() {
-            let r = Rect::from_min_size(pos2(rect.center().x - W / 2.0, top + i as f32 * ROW), vec2(W, ROW - 2.0));
+            let r = Rect::from_min_size(pos2(x0, y + i as f32 * ROW), vec2(w, ROW - 2.0));
             let row = ui.interact(r, egui::Id::new(("empty-cmd", i)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
             if row.hovered() {
-                ui.painter().rect_filled(r, style::RADIUS as f32, pal.hover);
+                p.rect_filled(r, style::RADIUS as f32, pal.hover);
             }
             let cy = r.center().y;
-            ui.painter().text(pos2(r.left() + 12.0, cy), egui::Align2::LEFT_CENTER, cmd.label(), egui::FontId::proportional(13.0), if row.hovered() { pal.text } else { pal.text_weak });
+            let c = if row.hovered() { pal.text } else { pal.text_weak };
+            if let Some(icon) = cmd_icon(cmd) {
+                icons::paint(&p, Rect::from_center_size(pos2(r.left() + 16.0, cy), vec2(16.0, 16.0)), icon, if row.hovered() { pal.accent } else { pal.text_weak });
+            }
+            p.text(pos2(r.left() + 36.0, cy), egui::Align2::LEFT_CENTER, cmd.label(), egui::FontId::proportional(13.0), c);
             let k = keymap::text(cmd);
-            if !k.is_empty() {
-                let g = ui.painter().layout_no_wrap(k, egui::FontId::proportional(12.0), pal.text_weak);
-                let kr = Rect::from_min_size(pos2(r.right() - 12.0 - g.size().x - 12.0, cy - 10.0), vec2(g.size().x + 12.0, 20.0));
-                ui.painter().rect(kr, 4.0, pal.face_light, Stroke::new(1.0, pal.border), egui::StrokeKind::Inside);
-                ui.painter().galley(pos2(kr.left() + 6.0, cy - g.size().y / 2.0), g, pal.text_weak);
+            if !k.is_empty() && w >= 300.0 {
+                let g = p.layout_no_wrap(k, egui::FontId::proportional(11.5), pal.text_weak);
+                let kr = Rect::from_min_size(pos2(r.right() - 10.0 - g.size().x - 12.0, cy - 10.0), vec2(g.size().x + 12.0, 20.0));
+                p.rect(kr, 4.0, pal.face_light, Stroke::new(1.0, pal.border), egui::StrokeKind::Inside);
+                p.galley(pos2(kr.left() + 6.0, cy - g.size().y / 2.0), g, pal.text_weak);
             }
             if row.clicked() {
                 run = Some(cmd);
+            }
+        }
+        y += ROW * n_cmds as f32;
+        if !recent.is_empty() {
+            y += 18.0;
+            p.text(pos2(x0 + 4.0, y), egui::Align2::LEFT_CENTER, crate::i18n::text("Zuletzt geöffnet").to_uppercase(), egui::FontId::proportional(10.5), pal.text_weak);
+            y += 12.0;
+            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(Rect::from_min_size(pos2(x0, y), vec2(w, recent.len() as f32 * 42.0))).layout(egui::Layout::top_down_justified(egui::Align::Min)));
+            child.spacing_mut().item_spacing.y = 2.0;
+            for path in recent {
+                if super::side::recent_row(&mut child, &path).clicked() {
+                    self.switch_project(Some(path));
+                }
             }
         }
         if resp.double_clicked() {
@@ -715,8 +779,67 @@ impl EasyApp {
 struct TabLook {
     title: String,
     icon: Option<Icon>,
+    /// Dateiname (fuer das Dateisymbol)
+    file: Option<String>,
+    /// Ordner bei gleichnamigen Dateien
+    hint: String,
     busy: bool,
     modified: bool,
+}
+
+/// Symbol eines Befehls in Menues
+pub(super) fn cmd_icon(c: Cmd) -> Option<Icon> {
+    Some(match c {
+        Cmd::RunAll | Cmd::RunStatement => Icon::Play,
+        Cmd::Explain => Icon::Explain,
+        Cmd::NewQuery => Icon::Plus,
+        Cmd::NewFile => Icon::NewFile,
+        Cmd::NewJavaProject => Icon::Coffee,
+        Cmd::NewPythonProject | Cmd::NewNodeProject => Icon::Script,
+        Cmd::OpenFile => Icon::File,
+        Cmd::OpenFolder => Icon::Folder,
+        Cmd::Save => Icon::Save,
+        Cmd::SaveAll => Icon::Save,
+        Cmd::CloseTab | Cmd::CloseAllTabs => Icon::Close,
+        Cmd::ReopenTab => Icon::RotateCcw,
+        Cmd::CommandPalette => Icon::Search,
+        Cmd::QuickOpen => Icon::Files,
+        Cmd::ToggleTerminal | Cmd::NewTerminal => Icon::Terminal,
+        Cmd::FontLarger => Icon::ZoomIn,
+        Cmd::FontSmaller => Icon::ZoomOut,
+        Cmd::FontReset => Icon::Fit,
+        Cmd::ShowExplorer => Icon::Files,
+        Cmd::ShowSearch => Icon::Search,
+        Cmd::ShowDatabases => Icon::Database,
+        Cmd::ShowHistory => Icon::History,
+        Cmd::ShowGit => Icon::GitBranch,
+        Cmd::Settings => Icon::Settings,
+        Cmd::Help => Icon::Book,
+        Cmd::CheckUpdates => Icon::CloudDownload,
+        Cmd::ServerLog => Icon::FileText,
+        Cmd::ErDiagram => Icon::Diagram,
+        Cmd::QueryBuilder => Icon::Wizard,
+        Cmd::Backups => Icon::Shield,
+        Cmd::Import => Icon::Upload,
+        Cmd::Export => Icon::Download,
+        Cmd::Users => Icon::Users,
+        Cmd::Format => Icon::Sparkles,
+        Cmd::FixAll => Icon::Wizard,
+        Cmd::CopyJava => Icon::Coffee,
+        Cmd::Find | Cmd::Replace => Icon::Search,
+        Cmd::RunTests => Icon::Flask,
+        Cmd::BuildJar => Icon::Package,
+        Cmd::AddLibrary => Icon::Package,
+        Cmd::DebugStart => Icon::Bug,
+        Cmd::StepOver => Icon::StepOver,
+        Cmd::StepInto => Icon::StepInto,
+        Cmd::StepOut => Icon::StepOut,
+        Cmd::DebugStop => Icon::Stop,
+        Cmd::GitCommit => Icon::GitCommit,
+        Cmd::GitPush => Icon::CloudUpload,
+        Cmd::GitPull => Icon::CloudDownload,
+        _ => return None,
+    })
 }
 
 fn self_file(tabs: &[Box<dyn TabView>], i: usize) -> Option<PathBuf> {
@@ -745,7 +868,10 @@ fn paint_tab(p: &egui::Painter, r: Rect, look: &TabLook, sel: bool, hovered: boo
     // Zu schmal fuer den Titel: nur das Symbol (Titel im Tooltip)
     if r.width() < 100.0 {
         let c = if sel { pal.accent } else if hovered { pal.text } else { pal.text_weak };
-        icons::paint(p, Rect::from_center_size(pos2(r.center().x, cy), vec2(16.0, 16.0)), icon, c);
+        match &look.file {
+            Some(f) => icons::paint_file(p, Rect::from_center_size(pos2(r.center().x, cy), vec2(16.0, 16.0)), f),
+            None => icons::paint(p, Rect::from_center_size(pos2(r.center().x, cy), vec2(16.0, 16.0)), icon, c),
+        }
         if look.busy {
             p.circle_filled(r.right_top() + vec2(-8.0, 9.0), 3.0, pal.accent);
         } else if look.modified {
@@ -754,10 +880,16 @@ fn paint_tab(p: &egui::Painter, r: Rect, look: &TabLook, sel: bool, hovered: boo
         return;
     }
     let mut x = r.left() + 12.0;
-    icons::paint(p, Rect::from_center_size(pos2(x + 7.0, cy), vec2(14.0, 14.0)), icon, if sel { pal.accent } else { pal.text_weak });
+    match &look.file {
+        Some(f) => icons::paint_file(p, Rect::from_center_size(pos2(x + 7.0, cy), vec2(15.0, 15.0)), f),
+        None => icons::paint(p, Rect::from_center_size(pos2(x + 7.0, cy), vec2(14.0, 14.0)), icon, if sel { pal.accent } else { pal.text_weak }),
+    }
     x += 22.0;
     let max_w = (r.right() - 30.0 - x).max(10.0);
     let mut job = egui::text::LayoutJob::simple_singleline(look.title.clone(), font.clone(), color);
+    if !look.hint.is_empty() {
+        job.append(&format!("  {}", look.hint), 0.0, egui::TextFormat::simple(egui::FontId::proportional(11.5), pal.text_weak));
+    }
     job.wrap = egui::text::TextWrapping { max_width: max_w, max_rows: 1, break_anywhere: true, overflow_character: Some('…') };
     let galley = p.layout_job(job);
     p.galley(pos2(x, cy - galley.size().y / 2.0), galley, color);

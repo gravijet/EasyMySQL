@@ -1,6 +1,7 @@
 // Zeichnet den Bildschirm einer Terminal-Sitzung und uebersetzt Tastatur und Maus.
 
 use super::{Session, set_focused};
+use crate::dev::autofix::LineKind;
 use eframe::egui::{self, Color32, Event, EventFilter, FontId, Key, Modifiers, Rect, Sense, Stroke, StrokeKind, pos2, vec2};
 
 /// Farben 0-15 der Terminal-Palette (wie in Visual Studio Code)
@@ -114,8 +115,9 @@ fn ordered(sel: ((u16, u16), (u16, u16))) -> ((u16, u16), (u16, u16)) {
 }
 
 /// Zeichnet die Sitzung in den verfuegbaren Platz und verarbeitet die Eingabe.
-/// `want_focus`: Tastaturfokus jetzt auf dieses Terminal setzen.
-pub fn show(ui: &mut egui::Ui, id: egui::Id, s: &mut Session, want_focus: bool) {
+/// `want_focus`: Tastaturfokus jetzt auf dieses Terminal setzen. Liefert einen angeklickten
+/// Verweis auf eine Datei: (Datei wie geschrieben, Zeile 0-basiert, Text der Zeile).
+pub fn show(ui: &mut egui::Ui, id: egui::Id, s: &mut Session, want_focus: bool) -> Option<(String, usize, String)> {
     let pal = crate::style::pal();
     let font = FontId::monospace(super::font_size());
     let ctx = ui.ctx().clone();
@@ -123,7 +125,9 @@ pub fn show(ui: &mut egui::Ui, id: egui::Id, s: &mut Session, want_focus: bool) 
     let avail = ui.available_size();
     let (rect, _) = ui.allocate_exact_size(avail, Sense::hover());
     let resp = ui.interact(rect, id, Sense::click_and_drag());
-    let inner = rect.shrink2(vec2(6.0, 2.0));
+    // Beendet: unten eine Zeile fuer den Hinweis freihalten
+    let status_h = if s.exited() { 22.0 } else { 0.0 };
+    let inner = Rect::from_min_max(rect.min, pos2(rect.max.x, rect.max.y - status_h)).shrink2(vec2(6.0, 2.0));
     let cols = (inner.width() / cw).floor().max(10.0) as u16;
     let rows = (inner.height() / ch).floor().max(2.0) as u16;
     s.resize(rows, cols);
@@ -245,8 +249,30 @@ pub fn show(ui: &mut egui::Ui, id: egui::Id, s: &mut Session, want_focus: bool) 
     let guard = s.parser.lock().unwrap();
     let screen = guard.screen();
     let sel = s.selection.map(ordered);
+    // Fehler, Warnungen und Stacktraces einfaerben (nur Text ohne eigene Farbe); Dateiverweise sind Links
+    let row_texts: Vec<String> = screen.rows(0, cols).collect();
+    let hover_cell = ctx.pointer_hover_pos().filter(|p| inner.contains(*p)).map(cell_at);
+    let mut clicked_link = None;
     for row in 0..rows {
         let y = inner.top() + row as f32 * ch;
+        let text = row_texts.get(row as usize).map(String::as_str).unwrap_or("");
+        let kind = crate::dev::autofix::classify(text);
+        let line_fg = match kind {
+            LineKind::Error => Some(pal.error_text),
+            LineKind::Warning => Some(pal.warn_text),
+            LineKind::Cause => Some(pal.warn_text),
+            LineKind::Frame => Some(default_fg.gamma_multiply(0.62)),
+            LineKind::Plain => None,
+        };
+        let row_links = if kind == LineKind::Plain && !text.contains(':') { Vec::new() } else { crate::dev::autofix::links(text) };
+        for l in &row_links {
+            if hover_cell.is_some_and(|(r, c)| r == row && (l.start..l.end).contains(&(c as usize))) {
+                ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
+                if resp.clicked() {
+                    clicked_link = Some((l.file.clone(), l.line, text.to_string()));
+                }
+            }
+        }
         let mut run = String::new();
         let mut run_start = 0u16;
         let mut run_style: Option<(Color32, bool, bool)> = None;
@@ -287,6 +313,14 @@ pub fn show(ui: &mut egui::Ui, id: egui::Id, s: &mut Session, want_focus: bool) 
             if cell.dim() {
                 fg = fg.gamma_multiply(0.65);
             }
+            let in_link = row_links.iter().any(|l| (l.start..l.end).contains(&(col as usize)));
+            if cell.fgcolor() == vt100::Color::Default && !cell.inverse() {
+                if in_link {
+                    fg = pal.accent;
+                } else if let Some(c) = line_fg {
+                    fg = c;
+                }
+            }
             // Hintergrund
             if bg != default_bg {
                 match bg_run {
@@ -300,7 +334,7 @@ pub fn show(ui: &mut egui::Ui, id: egui::Id, s: &mut Session, want_focus: bool) 
                 flush_bg(&mut bg_run, col);
             }
             // Text
-            let style = Some((fg, cell.bold(), cell.underline()));
+            let style = Some((fg, cell.bold() || (matches!(kind, LineKind::Error | LineKind::Cause) && !in_link), cell.underline() || in_link));
             if run_style != style {
                 flush_text(&mut run, run_start, run_style);
                 run_start = col;
@@ -341,9 +375,11 @@ pub fn show(ui: &mut egui::Ui, id: egui::Id, s: &mut Session, want_focus: bool) 
             Some(e) => format!("{e}  –  {}", crate::i18n::text("Enter versucht es erneut")),
             None => crate::i18n::text("Der Prozess wurde beendet. Enter startet ihn neu.").to_string(),
         };
-        painter.text(pos2(inner.left(), rect.bottom() - 4.0), egui::Align2::LEFT_BOTTOM, msg, FontId::proportional(12.0), pal.warn_text);
+        let band = Rect::from_min_max(pos2(rect.left(), rect.bottom() - status_h), rect.max);
+        painter.hline(band.x_range(), band.top(), Stroke::new(1.0, pal.border));
+        painter.text(pos2(inner.left(), band.center().y), egui::Align2::LEFT_CENTER, msg, FontId::proportional(12.0), pal.text_weak);
     }
-    if resp.hovered() {
+    if resp.hovered() && clicked_link.is_none() && ctx.output(|o| o.cursor_icon) != egui::CursorIcon::PointingHand {
         ctx.set_cursor_icon(egui::CursorIcon::Text);
     }
     // Rechtsklick: Kopieren/Einfuegen
@@ -360,6 +396,7 @@ pub fn show(ui: &mut egui::Ui, id: egui::Id, s: &mut Session, want_focus: bool) 
             ui.close();
         }
     });
+    clicked_link
 }
 
 #[cfg(test)]

@@ -140,7 +140,11 @@ pub struct Session {
     cwd: PathBuf,
     /// Ordner, die vorne in PATH stehen (MariaDB-Programme, JDK, Maven, Gradle)
     path_prefix: Vec<PathBuf>,
+    /// Bisherige Ausgabe als Text (fuer die Fehlererkennung), hoechstens LOG_MAX Bytes
+    pub log: Arc<Mutex<String>>,
 }
+
+const LOG_MAX: usize = 256 * 1024;
 
 impl Session {
     pub fn spawn(ctx: &egui::Context, profile: Profile, cwd: PathBuf, path_prefix: Vec<PathBuf>) -> Session {
@@ -156,6 +160,7 @@ impl Session {
             selection: None,
             cwd,
             path_prefix,
+            log: Arc::new(Mutex::new(String::new())),
         };
         s.start(ctx);
         s
@@ -165,6 +170,7 @@ impl Session {
         self.error = None;
         self.exited.store(false, Ordering::Relaxed);
         self.selection = None;
+        self.log.lock().unwrap().clear();
         let (rows, cols) = self.size;
         *self.parser.lock().unwrap() = vt100::Parser::new(rows, cols, prefs().scrollback.clamp(100, 200_000));
         match self.open(ctx, rows, cols) {
@@ -201,6 +207,7 @@ impl Session {
         let parser = Arc::clone(&self.parser);
         let exited = Arc::clone(&self.exited);
         let reply = Arc::clone(&writer);
+        let log = Arc::clone(&self.log);
         let ctx = ctx.clone();
         std::thread::Builder::new()
             .name("terminal".into())
@@ -211,6 +218,14 @@ impl Session {
                         Ok(0) | Err(_) => break,
                         Ok(n) => {
                             let chunk = &buf[..n];
+                            if let Ok(mut l) = log.lock() {
+                                l.push_str(&String::from_utf8_lossy(chunk));
+                                if l.len() > LOG_MAX {
+                                    let cut = l.len() - LOG_MAX / 2;
+                                    let cut = (cut..l.len()).find(|&i| l.is_char_boundary(i)).unwrap_or(l.len());
+                                    l.drain(..cut);
+                                }
+                            }
                             let answer = {
                                 let mut p = parser.lock().unwrap();
                                 p.process(chunk);
@@ -235,6 +250,10 @@ impl Session {
         self.master = Some(pair.master);
         self.child = Some(child);
         Ok(())
+    }
+
+    pub fn cwd(&self) -> &std::path::Path {
+        &self.cwd
     }
 
     pub fn exited(&self) -> bool {

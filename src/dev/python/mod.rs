@@ -281,10 +281,18 @@ fn syntax_check(req: &Request, py: &Path, root: &Path) -> Result<(), Failure> {
     Err(Failure { message: crate::i18n::tr("Syntaxfehler – das Programm wurde nicht gestartet.", "Syntax error – the program was not started.").into(), diags, output: String::new() })
 }
 
-/// Datei, die gestartet wird: die geoeffnete, wenn sie `if __name__ == "__main__"` hat oder kein main.py
-/// daneben liegt, sonst main.py/app.py des Projekts
+/// Hat die Datei Anweisungen auf oberster Ebene (Aufrufe, Schleifen, with …), ist sie ein Skript
+fn is_script(text: &str) -> bool {
+    text.lines().filter(|l| !l.starts_with([' ', '\t'])).map(str::trim_end).any(|l| {
+        let head: String = l.chars().take_while(|c| c.is_alphanumeric() || *c == '_' || *c == '.').collect();
+        ["with ", "for ", "while ", "if ", "try:", "async "].iter().any(|k| l.starts_with(k)) || (!head.is_empty() && l[head.len()..].starts_with('(') && !["def", "class"].contains(&head.as_str()))
+    })
+}
+
+/// Datei, die gestartet wird: die geoeffnete, wenn sie `if __name__ == "__main__"` hat, ein Skript ist oder kein
+/// main.py daneben liegt, sonst main.py/app.py des Projekts (fuer Module wie models.py)
 fn entry(req: &Request, root: &Path) -> PathBuf {
-    if req.text.contains("__name__") {
+    if req.text.contains("__name__") || is_script(&req.text) {
         return req.file.clone();
     }
     for name in ["main.py", "app.py", "__main__.py"] {
@@ -390,6 +398,13 @@ pub fn latest_on_pypi(package: &str) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn scripts_run_themselves_modules_start_main() {
+        assert!(is_script("import db\nwith db.connect() as c:\n    print(c)\n"));
+        assert!(is_script("print('hallo')\n"));
+        assert!(!is_script("import db\n\nclass Kunde:\n    pass\n\ndef f():\n    print(1)\nX = 3\n"));
+    }
 
     #[test]
     fn syntax_check_lines_are_parsed() {

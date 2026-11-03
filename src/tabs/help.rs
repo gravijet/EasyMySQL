@@ -10,6 +10,8 @@ use eframe::egui::{self, RichText};
 pub struct HelpTab {
     chapter: usize,
     search: String,
+    /// Treffer zur letzten Suche (Kapitel, Abschnitt): nicht in jedem Bild neu suchen
+    hits: (String, Vec<(usize, usize)>),
     /// Zu diesem Abschnitt scrollen
     goto: Option<String>,
     active_section: String,
@@ -19,7 +21,7 @@ pub struct HelpTab {
 
 impl HelpTab {
     pub fn new() -> Self {
-        Self { chapter: 0, search: String::new(), goto: None, active_section: CHAPTERS[0].sections[0].id.into(), scroll_offset: None, pinned_section: false }
+        Self { chapter: 0, search: String::new(), hits: (String::new(), Vec::new()), goto: None, active_section: CHAPTERS[0].sections[0].id.into(), scroll_offset: None, pinned_section: false }
     }
 }
 
@@ -54,19 +56,67 @@ fn section_text(s: &Section) -> String {
 }
 
 /// Aufzaehlungspunkt mit umbrechendem Text (haengender Einzug)
-fn hanging(ui: &mut egui::Ui, marker: RichText, text: &str) {
+fn hanging(ui: &mut egui::Ui, marker: RichText, text: &str, words: &[String]) {
     ui.horizontal_top(|ui| {
         ui.add_sized([20.0, 19.0], egui::Label::new(marker));
         ui.vertical(|ui| {
             ui.set_max_width(ui.available_width());
-            ui.label(body(text));
+            ui.label(body(text, words));
         });
     });
 }
 
-/// Fliesstext mit etwas mehr Zeilenabstand
-fn body(text: &str) -> RichText {
-    RichText::new(text).line_height(Some(19.5))
+/// Fliesstext mit etwas mehr Zeilenabstand; Suchwoerter farbig hinterlegt
+fn body(text: &str, words: &[String]) -> egui::text::LayoutJob {
+    marked(text, words, egui::FontId::proportional(13.0), style::pal().text, Some(19.5))
+}
+
+/// Text mit hervorgehobenen Treffern (Gross-/Kleinschreibung egal)
+fn marked(text: &str, words: &[String], font: egui::FontId, color: egui::Color32, line_height: Option<f32>) -> egui::text::LayoutJob {
+    let pal = style::pal();
+    let plain = egui::TextFormat { font_id: font.clone(), color, line_height, ..Default::default() };
+    let hit = egui::TextFormat { background: pal.warn_text.gamma_multiply(if pal.dark { 0.35 } else { 0.45 }), color: if pal.dark { egui::Color32::WHITE } else { color }, ..plain.clone() };
+    let mut job = egui::text::LayoutJob::default();
+    let ranges = match_ranges(text, words);
+    let mut at = 0;
+    for (a, b) in ranges {
+        job.append(&text[at..a], 0.0, plain.clone());
+        job.append(&text[a..b], 0.0, hit.clone());
+        at = b;
+    }
+    job.append(&text[at..], 0.0, plain);
+    job
+}
+
+/// Byte-Bereiche der Suchwoerter in `text`, sortiert und ohne Ueberschneidung
+fn match_ranges(text: &str, words: &[String]) -> Vec<(usize, usize)> {
+    if words.is_empty() {
+        return Vec::new();
+    }
+    // Je Zeichen ein kleines Zeichen (1:1, damit die Positionen stimmen)
+    let chars: Vec<(usize, char)> = text.char_indices().map(|(i, c)| (i, c.to_lowercase().next().unwrap_or(c))).collect();
+    let mut out: Vec<(usize, usize)> = Vec::new();
+    for w in words {
+        let wc: Vec<char> = w.chars().collect();
+        if wc.is_empty() || wc.len() > chars.len() {
+            continue;
+        }
+        for i in 0..=chars.len() - wc.len() {
+            if chars[i..i + wc.len()].iter().map(|(_, c)| *c).eq(wc.iter().copied()) {
+                let end = chars.get(i + wc.len()).map(|(b, _)| *b).unwrap_or(text.len());
+                out.push((chars[i].0, end));
+            }
+        }
+    }
+    out.sort();
+    let mut merged: Vec<(usize, usize)> = Vec::new();
+    for (a, b) in out {
+        match merged.last_mut() {
+            Some(l) if a <= l.1 => l.1 = l.1.max(b),
+            _ => merged.push((a, b)),
+        }
+    }
+    merged
 }
 
 /// Kleiner Knopf mit Symbol und Text (Kopieren, Oeffnen)
@@ -124,10 +174,10 @@ fn toc_chapter(ui: &mut egui::Ui, title: &str, open: bool) -> egui::Response {
     resp
 }
 
-fn section_ui(ui: &mut egui::Ui, s: &Section, cx: &mut Ctx, goto: &mut Option<String>) {
+fn section_ui(ui: &mut egui::Ui, s: &Section, cx: &mut Ctx, goto: &mut Option<String>, words: &[String]) {
     let pal = style::pal();
     ui.add_space(10.0);
-    let r = ui.label(RichText::new(crate::i18n::text(s.title)).size(20.0).strong());
+    let r = ui.label(marked(crate::i18n::text(s.title), words, egui::FontId::proportional(20.0), pal.text, None));
     if goto.as_deref() == Some(s.id) {
         r.scroll_to_me_animation(Some(egui::Align::TOP), egui::style::ScrollAnimation::none());
         *goto = None;
@@ -136,16 +186,16 @@ fn section_ui(ui: &mut egui::Ui, s: &Section, cx: &mut Ctx, goto: &mut Option<St
     for b in s.blocks.iter() {
         match b {
             B::P(t) => {
-                ui.label(body(crate::i18n::text(t)));
+                ui.label(body(crate::i18n::text(t), words));
             }
             B::List(items) => {
                 for it in items.iter() {
-                    hanging(ui, RichText::new("•").color(pal.text_weak), crate::i18n::text(it));
+                    hanging(ui, RichText::new("•").color(pal.text_weak), crate::i18n::text(it), words);
                 }
             }
             B::Steps(items) => {
                 for (i, it) in items.iter().enumerate() {
-                    hanging(ui, RichText::new(format!("{}.", i + 1)).strong().color(pal.accent), crate::i18n::text(it));
+                    hanging(ui, RichText::new(format!("{}.", i + 1)).strong().color(pal.accent), crate::i18n::text(it), words);
                 }
             }
             B::Shell(cmd) => {
@@ -162,7 +212,7 @@ fn section_ui(ui: &mut egui::Ui, s: &Section, cx: &mut Ctx, goto: &mut Option<St
                 let list: Vec<(&str, &str)> = rows.to_vec();
                 self::rows(ui, list.len(), |ui, i| {
                     left_cell(ui, 150.0, RichText::new(crate::i18n::text(list[i].0)).strong());
-                    ui.label(crate::i18n::text(list[i].1));
+                    ui.label(marked(crate::i18n::text(list[i].1), words, egui::FontId::proportional(13.0), pal.text, None));
                 });
             }
             B::Keys(cmds) => {
@@ -182,7 +232,7 @@ fn section_ui(ui: &mut egui::Ui, s: &Section, cx: &mut Ctx, goto: &mut Option<St
             B::Tip(t) => {
                 let r = egui::Frame::new().fill(pal.face_light).corner_radius(6).inner_margin(egui::Margin { left: 38, right: 12, top: 9, bottom: 9 }).show(ui, |ui| {
                     ui.set_width(ui.available_width());
-                    ui.label(body(crate::i18n::text(t)));
+                    ui.label(body(crate::i18n::text(t), words));
                 });
                 crate::icons::paint(ui.painter(), egui::Rect::from_center_size(egui::pos2(r.response.rect.left() + 18.0, r.response.rect.top() + 16.0), egui::vec2(16.0, 16.0)), crate::icons::Icon::Info, pal.accent);
                 ui.painter().rect_filled(egui::Rect::from_min_size(r.response.rect.min + egui::vec2(0.0, 5.0), egui::vec2(3.0, r.response.rect.height() - 10.0)), 1.5, pal.accent);
@@ -190,7 +240,7 @@ fn section_ui(ui: &mut egui::Ui, s: &Section, cx: &mut Ctx, goto: &mut Option<St
             B::Code(code) => {
                 code_frame().inner_margin(egui::Margin::same(12)).show(ui, |ui| {
                     ui.set_width(ui.available_width());
-                    let mut job = crate::sqledit::highlight(code, egui::FontId::monospace(13.0));
+                    let mut job = highlighted(code);
                     job.wrap.max_width = f32::INFINITY;
                     ui.add(egui::Label::new(job).selectable(true));
                 });
@@ -227,6 +277,16 @@ fn section_ui(ui: &mut egui::Ui, s: &Section, cx: &mut Ctx, goto: &mut Option<St
     ui.add_space(18.0);
 }
 
+/// Eingefaerbter SQL-Code der Beispiele, einmal je Text und Design berechnet
+fn highlighted(code: &'static str) -> egui::text::LayoutJob {
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+    static CACHE: Mutex<Option<HashMap<(usize, bool), egui::text::LayoutJob>>> = Mutex::new(None);
+    let key = (code.as_ptr() as usize, style::pal().dark);
+    let mut c = CACHE.lock().unwrap();
+    c.get_or_insert_with(HashMap::new).entry(key).or_insert_with(|| crate::sqledit::highlight(code, egui::FontId::monospace(13.0))).clone()
+}
+
 impl TabView for HelpTab {
     fn icon(&self) -> Option<crate::icons::Icon> {
         Some(crate::icons::Icon::Book)
@@ -257,20 +317,26 @@ impl TabView for HelpTab {
     fn ui(&mut self, ui: &mut egui::Ui, cx: &mut Ctx) {
         let pal = style::pal();
         let query = self.search.trim().to_lowercase();
-        // Suche: Abschnitte, in denen alle Woerter vorkommen
-        let hits: Vec<(usize, &Section)> = if query.is_empty() {
-            Vec::new()
-        } else {
-            CHAPTERS
-                .iter()
-                .enumerate()
-                .flat_map(|(ci, c)| c.sections.iter().map(move |s| (ci, s)))
-                .filter(|(_, s)| {
-                    let t = section_text(s);
-                    query.split_whitespace().all(|w| t.contains(w))
-                })
-                .collect()
-        };
+        let words: Vec<String> = query.split_whitespace().map(str::to_string).collect();
+        // Suche: Abschnitte, in denen alle Woerter vorkommen (nur neu, wenn sich die Suche geaendert hat)
+        if self.hits.0 != query {
+            let found = if query.is_empty() {
+                Vec::new()
+            } else {
+                CHAPTERS
+                    .iter()
+                    .enumerate()
+                    .flat_map(|(ci, c)| c.sections.iter().enumerate().map(move |(si, s)| (ci, si, s)))
+                    .filter(|(_, _, s)| {
+                        let t = section_text(s);
+                        words.iter().all(|w| t.contains(w.as_str()))
+                    })
+                    .map(|(ci, si, _)| (ci, si))
+                    .collect()
+            };
+            self.hits = (query.clone(), found);
+        }
+        let hits: Vec<(usize, &Section)> = self.hits.1.iter().map(|&(ci, si)| (ci, &CHAPTERS[ci].sections[si])).collect();
 
         if ui.available_width() < 720.0 {
             // Schmales Fenster: Suche und Kapitelwahl in einer Zeile ueber dem Text statt Inhaltsverzeichnis links
@@ -341,7 +407,7 @@ impl TabView for HelpTab {
                     ui.add_space(8.0);
                     for (ci, s) in &hits {
                         ui.label(RichText::new(crate::i18n::text(CHAPTERS[*ci].title)).small().color(pal.text_weak));
-                        section_ui(ui, s, cx, &mut self.goto);
+                        section_ui(ui, s, cx, &mut self.goto, &words);
                     }
                     return;
                 }
@@ -350,7 +416,7 @@ impl TabView for HelpTab {
                 ui.add_space(10.0);
                 for s in c.sections {
                     headings.push((s.id, ui.cursor().top()));
-                    section_ui(ui, s, cx, &mut self.goto);
+                    section_ui(ui, s, cx, &mut self.goto, &[]);
                 }
                 ui.separator();
                 ui.horizontal(|ui| {
@@ -385,6 +451,14 @@ impl TabView for HelpTab {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn search_words_are_marked_case_insensitive() {
+        let w = vec!["tab".to_string(), "über".to_string()];
+        assert_eq!(match_ranges("Tabelle und Übersicht", &w), vec![(0, 3), (12, 17)]);
+        assert!(match_ranges("nichts", &w).is_empty());
+        assert_eq!(match_ranges("aaa", &["aa".to_string()]), vec![(0, 3)]);
+    }
 
     #[test]
     fn search_text_contains_blocks() {

@@ -334,28 +334,6 @@ fn gitignore(kind: Kind) -> String {
     s
 }
 
-fn readme(s: &Spec) -> String {
-    let main = format!("{}/{}/Main.java", s.kind.source_dir(), s.package.replace('.', "/"));
-    let props = format!("{}/db.properties", s.kind.resource_dir());
-    let (run_de, run_en) = match s.kind {
-        Kind::Plain => ("", ""),
-        Kind::Maven => ("\nIm Terminal: `mvn compile exec:java`\n", "\nIn a terminal: `mvn compile exec:java`\n"),
-        Kind::GradleKotlin | Kind::GradleGroovy => ("\nIm Terminal: `gradle run`\n", "\nIn a terminal: `gradle run`\n"),
-    };
-    if en() {
-        format!(
-            "# {name}\n\nJava program for the database `{db}`.\n\n- `{main}` – start here (▶ in EasyMySQL or F5)\n- `{props}` – connection settings for starting outside EasyMySQL\n- One record and one DAO class per table: `findAll`, `findById`, `insert`, `update`, `delete`\n{run_en}",
-            name = s.name,
-            db = s.database
-        )
-    } else {
-        format!(
-            "# {name}\n\nJava-Programm für die Datenbank `{db}`.\n\n- `{main}` – hier geht es los (▶ in EasyMySQL oder F5)\n- `{props}` – Verbindungsdaten für den Start außerhalb von EasyMySQL\n- Je Tabelle ein Record und eine DAO-Klasse: `findAll`, `findById`, `insert`, `update`, `delete`\n{run_de}",
-            name = s.name,
-            db = s.database
-        )
-    }
-}
 
 /// JUnit-Test: Verbindung klappt, und je Tabelle laesst sich findAll aufrufen
 fn test_java(s: &Spec) -> String {
@@ -385,7 +363,6 @@ pub fn files(s: &Spec) -> Vec<(PathBuf, String)> {
         (src.join("Database.java"), database_java(s)),
         (Path::new(s.kind.resource_dir()).join("db.properties"), db_properties(s)),
         (PathBuf::from(".gitignore"), gitignore(s.kind)),
-        (PathBuf::from("README.md"), readme(s)),
     ];
     for t in &s.tables {
         let class = crate::javagen::class_name(&t.name);
@@ -398,10 +375,7 @@ pub fn files(s: &Spec) -> Vec<(PathBuf, String)> {
     }
     let id = artifact_id(&s.name);
     match s.kind {
-        Kind::Plain => out.push((
-            PathBuf::from(".vscode/settings.json"),
-            "{\n  \"java.project.sourcePaths\": [\"src\", \"test\"],\n  \"java.project.referencedLibraries\": [\"lib/**/*.jar\"],\n  \"java.project.outputPath\": \"bin\"\n}\n".into(),
-        )),
+        Kind::Plain => {}
         Kind::Maven => out.push((PathBuf::from("pom.xml"), pom(s))),
         Kind::GradleKotlin => {
             out.push((PathBuf::from("build.gradle.kts"), gradle_kts(s)));
@@ -472,7 +446,7 @@ mod tests {
     fn layouts_follow_the_build_tool() {
         let names = |k: Kind| files(&spec(k)).into_iter().map(|(p, _)| p.to_string_lossy().replace('\\', "/")).collect::<Vec<_>>();
         let plain = names(Kind::Plain);
-        assert!(plain.contains(&"src/de/schule/Main.java".to_string()) && plain.contains(&"src/db.properties".to_string()) && plain.contains(&".vscode/settings.json".to_string()));
+        assert!(plain.contains(&"src/de/schule/Main.java".to_string()) && plain.contains(&"src/db.properties".to_string()) && !plain.contains(&"README.md".to_string()));
         let maven = names(Kind::Maven);
         assert!(maven.contains(&"pom.xml".to_string()) && maven.contains(&"src/main/java/de/schule/SchuelerDao.java".to_string()) && maven.contains(&"src/main/resources/db.properties".to_string()));
         assert!(names(Kind::GradleKotlin).contains(&"settings.gradle.kts".to_string()));

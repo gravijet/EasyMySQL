@@ -60,17 +60,26 @@ impl FileKind {
         }
     }
 
-    fn icon(self) -> Icon {
+    pub fn label(self) -> &'static str {
         match self {
-            FileKind::Sql => Icon::FileCode,
-            FileKind::Java => Icon::Coffee,
-            FileKind::Python => Icon::Script,
-            FileKind::JavaScript | FileKind::TypeScript => Icon::Braces,
-            FileKind::Csv => Icon::FileSheet,
-            FileKind::Json | FileKind::Xml | FileKind::Properties => Icon::FileJson,
-            _ => Icon::FileText,
+            FileKind::Sql => crate::i18n::tr("SQL-Datei", "SQL file"),
+            FileKind::Java => crate::i18n::tr("Java-Klasse", "Java class"),
+            FileKind::Python => crate::i18n::tr("Python-Datei", "Python file"),
+            FileKind::JavaScript => crate::i18n::tr("JavaScript-Datei", "JavaScript file"),
+            FileKind::TypeScript => crate::i18n::tr("TypeScript-Datei", "TypeScript file"),
+            FileKind::Markdown => crate::i18n::tr("Markdown-Datei", "Markdown file"),
+            FileKind::Text => crate::i18n::tr("Textdatei", "Text file"),
+            FileKind::Json => "JSON",
+            FileKind::Csv => "CSV",
+            FileKind::Xml => "XML",
+            FileKind::Properties => "Properties",
+            FileKind::Other => crate::i18n::tr("Datei", "File"),
         }
     }
+
+    /// Arten im Menue "Neu"
+    pub const MENU: [FileKind; 6] = [FileKind::Java, FileKind::Sql, FileKind::Python, FileKind::JavaScript, FileKind::TypeScript, FileKind::Markdown];
+
 
     pub fn from_ext(ext: &str) -> Option<FileKind> {
         let e = ext.to_ascii_lowercase();
@@ -162,6 +171,11 @@ pub struct NewFile {
 impl NewFile {
     pub fn new(dir: PathBuf) -> Self {
         Self { dir, name: String::new(), fallback: FileKind::Sql, java: JavaKind::Database, script: ScriptKind::Database, ready: false }
+    }
+
+    /// Mit fester Art (aus dem Menue "Neu"): ohne Endung wird diese ergaenzt
+    pub fn of_kind(dir: PathBuf, kind: FileKind) -> Self {
+        Self { fallback: kind, ready: true, java: if kind == FileKind::Java { JavaKind::Class } else { JavaKind::Database }, ..Self::new(dir) }
     }
 
     /// Getippte Endung (ohne Punkt) und der Name davor. Eine Endung braucht einen Namen davor und Zeichen danach;
@@ -327,8 +341,9 @@ impl EasyApp {
         let mut cancel = false;
         let name_id = egui::Id::new("new-file-name");
         let frame = egui::Frame::window(&ctx.global_style()).inner_margin(egui::Margin::same(16));
+        let max_w = (ctx.content_rect().width() - 64.0).max(260.0);
         egui::Modal::new(egui::Id::new("new-file-dlg")).frame(frame).show(ctx, |ui| {
-            ui.set_width(480.0);
+            ui.set_width(480.0f32.min(max_w));
             ui.label(RichText::new(crate::i18n::text("Neue Datei")).strong().size(15.0));
             ui.add_space(10.0);
 
@@ -343,9 +358,8 @@ impl EasyApp {
             field.show(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.set_height(crate::widgets::CONTROL_H);
-                    let kind_icon = dlg.kind().icon();
                     let (ir, _) = ui.allocate_exact_size(vec2(16.0, 16.0), Sense::hover());
-                    icons::paint(ui.painter(), ir, kind_icon, pal.text_weak);
+                    icons::paint_file(ui.painter(), ir, &dlg.file_name());
                     let r = ui.add(egui::TextEdit::singleline(&mut dlg.name).id(name_id).hint_text(hint).frame(egui::Frame::NONE).desired_width(f32::INFINITY).vertical_align(egui::Align::Center));
                     if !ui.memory(|m| m.had_focus_last_frame(name_id)) && !focused {
                         ui.memory_mut(|m| m.request_focus(name_id));
@@ -386,28 +400,22 @@ impl EasyApp {
                     } else {
                         crate::tr_format!("Wird angelegt: {} in {}", "Will be created: {} in {}", dlg.file_name(), workspace::dir_name(&dlg.dir))
                     };
-                    if !dlg.name.trim().is_empty() && !dlg.has_typed_ext() {
-                        info.push_str(&crate::tr_format!(" · Endung .{} ergänzt, oder selbst tippen", " · extension .{} added, or type your own", dlg.fallback.ext()));
-                    }
-                    if kind == FileKind::Java && !dlg.name.trim().is_empty() {
-                        match package_for(&dlg.dir) {
-                            Some(p) => info.push_str(&crate::tr_format!(" · Paket {p}", " · package {p}")),
-                            None => info.push_str(crate::i18n::tr(" · ohne Paket", " · no package")),
-                        }
-                        if dlg.stem().starts_with(|c: char| c.is_lowercase()) {
-                            info.push_str(crate::i18n::tr(" · Klassennamen beginnen üblicherweise groß", " · class names usually start with a capital letter"));
-                        }
+                    if kind == FileKind::Java
+                        && !dlg.name.trim().is_empty()
+                        && let Some(p) = package_for(&dlg.dir)
+                    {
+                        info.push_str(&crate::tr_format!(" · Paket {p}", " · package {p}"));
                     }
                     ui.label(RichText::new(info).small().color(pal.text_weak));
                 }
             }
-            ui.add_space(10.0);
-            ui.horizontal(|ui| {
+            ui.add_space(12.0);
+            ui.allocate_ui_with_layout(vec2(ui.available_width(), 30.0), egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let can = problem.is_none();
-                if ui.add_enabled(can, egui::Button::new(RichText::new(crate::i18n::tr("Anlegen", "Create")).color(Color32::WHITE)).fill(pal.accent)).clicked() {
+                if ui.add_enabled(can, egui::Button::new(RichText::new(crate::i18n::tr("Anlegen", "Create")).color(Color32::WHITE)).fill(pal.accent).min_size(vec2(84.0, 28.0))).clicked() {
                     ok = true;
                 }
-                if ui.button(crate::i18n::text("Abbrechen")).clicked() {
+                if ui.add(egui::Button::new(crate::i18n::text("Abbrechen")).min_size(vec2(84.0, 28.0))).clicked() {
                     cancel = true;
                 }
             });
@@ -530,8 +538,9 @@ impl EasyApp {
         let databases = self.user_databases();
         let busy = dlg.job.is_some();
         let frame = egui::Frame::window(&ctx.global_style()).inner_margin(egui::Margin::same(18));
+        let max_w = (ctx.content_rect().width() - 64.0).max(280.0);
         egui::Modal::new(egui::Id::new("project-dlg")).frame(frame).show(ctx, |ui| {
-            ui.set_width(580.0);
+            ui.set_width(580.0f32.min(max_w));
             ui.horizontal(|ui| {
                 let (r, _) = ui.allocate_exact_size(vec2(20.0, 20.0), Sense::hover());
                 icons::paint(ui.painter(), r, dlg.lang.icon(), pal.accent);
@@ -556,7 +565,7 @@ impl EasyApp {
                         pick_dir = true;
                     }
                 });
-                let hint = match dlg.lang {
+                match dlg.lang {
                     ProjectLang::Java => {
                         crate::widgets::row(ui, crate::i18n::tr("Aufbau", "Build"), |ui| {
                             let items: Vec<(project::Kind, &str)> = [project::Kind::Plain, project::Kind::Maven, project::Kind::GradleKotlin, project::Kind::GradleGroovy].iter().map(|k| (*k, k.label())).collect();
@@ -569,11 +578,6 @@ impl EasyApp {
                             let items: Vec<(Driver, &str)> = Driver::ALL.iter().map(|d| (*d, d.label())).collect();
                             crate::widgets::segmented(ui, &mut dlg.driver, &items);
                         });
-                        match dlg.kind {
-                            project::Kind::Plain => crate::i18n::tr("Ohne Build-Werkzeug. Startet direkt in EasyMySQL; der Treiber liegt in lib/.", "No build tool. Runs right away in EasyMySQL; the driver is in lib/."),
-                            project::Kind::Maven => crate::i18n::tr("pom.xml mit dem Treiber. Maven lädt EasyMySQL bei Bedarf selbst.", "pom.xml with the driver. EasyMySQL downloads Maven when needed."),
-                            _ => crate::i18n::tr("Gradle-Skript mit dem Treiber. Gradle lädt EasyMySQL bei Bedarf selbst.", "Gradle script with the driver. EasyMySQL downloads Gradle when needed."),
-                        }
                     }
                     ProjectLang::Python => {
                         crate::widgets::row(ui, crate::i18n::tr("Pakete in", "Packages in"), |ui| {
@@ -584,19 +588,14 @@ impl EasyApp {
                             let items: Vec<(python::Driver, &str)> = python::Driver::ALL.iter().map(|d| (*d, d.label())).collect();
                             crate::widgets::segmented(ui, &mut dlg.py_driver, &items);
                         });
-                        crate::i18n::tr("EasyMySQL legt beim ersten Start eine .venv an und installiert die Pakete selbst.", "EasyMySQL creates a .venv on the first run and installs the packages itself.")
                     }
                     ProjectLang::Node => {
                         crate::widgets::row(ui, crate::i18n::tr("Treiber", "Driver"), |ui| {
                             let items: Vec<(node::Driver, &str)> = node::Driver::ALL.iter().map(|d| (*d, d.label())).collect();
                             crate::widgets::segmented(ui, &mut dlg.js_driver, &items);
                         });
-                        crate::i18n::tr("package.json mit dem Treiber. EasyMySQL führt npm install beim ersten Start selbst aus.", "package.json with the driver. EasyMySQL runs npm install itself on the first run.")
                     }
-                };
-                crate::widgets::row(ui, "", |ui| {
-                    ui.add(egui::Label::new(RichText::new(hint).small().color(pal.text_weak)).wrap());
-                });
+                }
                 crate::widgets::row(ui, crate::i18n::tr("Dazu", "Also"), |ui| {
                     ui.vertical(|ui| {
                         let test = match dlg.lang {
@@ -648,7 +647,7 @@ impl EasyApp {
                 Some(crate::i18n::tr("Bitte einen gültigen Namen eingeben.", "Please enter a valid name.").to_string())
             } else if dlg.lang == ProjectLang::Java && !project::valid_package(dlg.package.trim()) {
                 Some(crate::i18n::tr("Der Paketname besteht aus Wörtern mit Punkt dazwischen, z. B. app oder de.schule.", "A package name is words separated by dots, e.g. app or com.example.").to_string())
-            } else if dlg.location.join(dlg.name.trim()).exists() {
+            } else if !busy && dlg.location.join(dlg.name.trim()).exists() {
                 Some(crate::tr_format!("„{}“ gibt es dort schon.", "“{}” already exists there.", dlg.name.trim()))
             } else {
                 None
@@ -657,18 +656,18 @@ impl EasyApp {
             if let Some(e) = dlg.error.as_ref().or(problem.as_ref()) {
                 ui.label(RichText::new(e).small().color(pal.error_text));
             }
-            ui.add_space(6.0);
-            ui.horizontal(|ui| {
+            ui.add_space(10.0);
+            ui.allocate_ui_with_layout(vec2(ui.available_width(), 30.0), egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let can = problem.is_none() && !busy;
-                if ui.add_enabled(can, egui::Button::new(RichText::new(crate::i18n::tr("Anlegen", "Create")).color(Color32::WHITE)).fill(pal.accent)).clicked() {
+                if ui.add_enabled(can, egui::Button::new(RichText::new(crate::i18n::tr("Anlegen", "Create")).color(Color32::WHITE)).fill(pal.accent).min_size(vec2(84.0, 28.0))).clicked() {
                     create = true;
                 }
-                if ui.add_enabled(!busy, egui::Button::new(crate::i18n::text("Abbrechen"))).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                if ui.add_enabled(!busy, egui::Button::new(crate::i18n::text("Abbrechen")).min_size(vec2(84.0, 28.0))).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
                     cancel = true;
                 }
                 if busy {
-                    ui.spinner();
                     ui.label(RichText::new(crate::i18n::tr("Wird angelegt …", "Creating …")).small().color(pal.text_weak));
+                    ui.spinner();
                 }
             });
         });
@@ -723,12 +722,12 @@ impl EasyApp {
                         project::write(&dir, &spec)
                     }
                     ProjectLang::Python => {
-                        let version = python::latest_on_pypi(py_driver.package()).unwrap_or_else(|_| if py_driver == python::Driver::PyMySql { "1.1.2".into() } else { "9.5.0".into() });
+                        let version = python::latest_on_pypi(py_driver.package()).unwrap_or_else(|_| if py_driver == python::Driver::PyMySql { "1.2.3".into() } else { "26.10.0".into() });
                         let spec = python::project::Spec { name, kind: py_kind, database, tables, host: conn.host.clone(), port: conn.port, user: conn.user.clone(), password, driver: py_driver, driver_version: version, tests };
                         python::project::write(&dir, &spec)
                     }
                     ProjectLang::Node => {
-                        let version = node::latest_on_npm(js_driver.package()).unwrap_or_else(|_| if js_driver == node::Driver::Mysql2 { "3.15.3".into() } else { "3.4.5".into() });
+                        let version = node::latest_on_npm(js_driver.package()).unwrap_or_else(|_| if js_driver == node::Driver::Mysql2 { "3.24.6".into() } else { "3.5.4".into() });
                         let spec = node::project::Spec { name, database, tables, host: conn.host.clone(), port: conn.port, user: conn.user.clone(), password, driver: js_driver, driver_version: version, tests };
                         node::project::write(&dir, &spec)
                     }

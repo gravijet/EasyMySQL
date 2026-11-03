@@ -8,6 +8,7 @@
 //   sprachserver/  jdtls-1.52.0/ (Eclipse JDT LS), npm/node_modules/ (pyright, typescript-language-server)
 //   git/           git-2.51.0/ (MinGit, nur Windows), gh_2.83.0_…/ (GitHub CLI)
 
+pub mod autofix;
 pub mod debug;
 #[cfg(test)]
 mod e2e;

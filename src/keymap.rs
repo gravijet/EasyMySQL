@@ -395,6 +395,7 @@ impl Binding {
             Key::Minus => "-".into(),
             Key::Plus => "+".into(),
             Key::Slash => "/".into(),
+            Key::Backtick => "`".into(),
             k => k.name().to_string(),
         }
     }

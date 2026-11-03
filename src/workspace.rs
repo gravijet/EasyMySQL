@@ -168,7 +168,8 @@ pub fn scan(dir: &Path) -> Node {
                 rd.flatten()
                     .filter_map(|e| {
                         let name = e.file_name().to_string_lossy().into_owned();
-                        if name.starts_with('.') || name.ends_with(".tmp") {
+                        // Versteckte Dateien, Zwischenstaende und Paketordner (node_modules kann zehntausende Dateien haben)
+                        if name.starts_with('.') || name.ends_with(".tmp") || name == "__pycache__" || name == "node_modules" {
                             return None;
                         }
                         let path = e.path();

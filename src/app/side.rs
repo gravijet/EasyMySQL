@@ -4,6 +4,7 @@ use super::*;
 use crate::db::q;
 use crate::icons::{self, Icon};
 use crate::workspace::{self, Node};
+use crate::keymap::{self, Cmd};
 use eframe::egui::{Color32, RichText, Sense, pos2, vec2};
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -40,18 +41,72 @@ pub enum ExplorerDlg {
     NewFile(Box<super::create::NewFile>),
     NewFolder { dir: PathBuf, name: String },
     Rename { path: PathBuf, name: String },
-    Delete { path: PathBuf },
+    Delete { paths: Vec<PathBuf> },
     NewProject { name: String },
 }
 
 /// Beim Ziehen im Explorer: Pfad der gezogenen Datei bzw. des Ordners
 struct DragPath(PathBuf);
 
+/// Auswahl, Zwischenablage und Fokus des Explorers
+#[derive(Default)]
+pub struct ExplorerState {
+    /// Ausgewaehlte Dateien und Ordner (Strg+Klick, Umschalt+Klick)
+    pub sel: Vec<PathBuf>,
+    anchor: Option<PathBuf>,
+    /// Kopiert bzw. ausgeschnitten (true)
+    clip: Option<(Vec<PathBuf>, bool)>,
+    /// Zuletzt aktive Datei im Editor (die Auswahl folgt ihr)
+    last_active: Option<PathBuf>,
+    /// Tasten gehen an den Baum (nach einem Klick hinein, bis woanders geklickt oder getippt wird)
+    pub focused: bool,
+    /// Ein paar Bilder nach dem Klick: Editor einer gerade geoeffneten Datei bekommt den Fokus nicht
+    hold: u8,
+}
+
+impl ExplorerState {
+    /// Ordner fuer Neues und Einfuegen: der gewaehlte Ordner bzw. der Ordner der gewaehlten Datei
+    pub fn target_dir(&self, project: &Path) -> PathBuf {
+        match self.sel.last() {
+            Some(p) if p.is_dir() => p.clone(),
+            Some(p) => p.parent().filter(|d| d.starts_with(project)).map(Path::to_path_buf).unwrap_or_else(|| project.to_path_buf()),
+            None => project.to_path_buf(),
+        }
+    }
+}
+
+/// Befehl aus dem Kontextmenue oder per Taste
+enum TreeCmd {
+    NewFile(PathBuf, Option<super::create::FileKind>),
+    NewFolder(PathBuf),
+    NewDatabase,
+    Open(Vec<PathBuf>),
+    Rename(PathBuf),
+    Delete(Vec<PathBuf>),
+    Copy(Vec<PathBuf>),
+    Cut(Vec<PathBuf>),
+    Paste(PathBuf),
+    CopyPath(PathBuf, bool),
+    Reveal(PathBuf),
+    Terminal(PathBuf),
+}
+
 /// Zustand beim Zeichnen des Dateibaums: Rueckgaben und Ziehen/Ablegen
 struct TreeIo<'a> {
-    active: Option<&'a Path>,
-    open: Option<PathBuf>,
-    dlg: Option<ExplorerDlg>,
+    /// Hervorgehoben (Auswahl, sonst die aktive Datei)
+    sel: &'a [PathBuf],
+    /// Ausgeschnitten (blass)
+    cut: &'a [PathBuf],
+    can_paste: bool,
+    connected: bool,
+    focused: bool,
+    /// Sichtbare Zeilen in Reihenfolge (fuer Umschalt+Klick und Pfeiltasten)
+    order: Vec<(PathBuf, bool)>,
+    /// Klick auf eine Zeile: Pfad, Ordner?, Tasten
+    click: Option<(PathBuf, bool, egui::Modifiers)>,
+    /// Rechtsklick (waehlt die Zeile, wenn sie nicht schon gewaehlt ist)
+    right: Option<PathBuf>,
+    cmd: Option<TreeCmd>,
     /// Ablage: (Zielordner, Quellen, verschieben statt kopieren)
     drop: Option<(PathBuf, Vec<PathBuf>, bool)>,
     /// Mauszeiger waehrend Dateien von aussen gezogen werden bzw. beim Ablegen
@@ -70,7 +125,8 @@ impl TreeIo<'_> {
             }
         }
         if let Some(src) = resp.dnd_release_payload::<DragPath>() {
-            self.drop = Some((dir.to_path_buf(), vec![src.0.clone()], true));
+            let srcs = if self.sel.contains(&src.0) { self.sel.to_vec() } else { vec![src.0.clone()] };
+            self.drop = Some((dir.to_path_buf(), srcs, true));
         }
         if resp.dnd_hover_payload::<DragPath>().is_some() {
             hot = true;
@@ -169,14 +225,18 @@ fn search_files_cancellable(files: &[PathBuf], query: &str, case: bool, cancelle
 
 pub(super) fn section_header(ui: &mut egui::Ui, title: &str, add_buttons: impl FnOnce(&mut egui::Ui)) {
     // Feste Zeilenhoehe: Titel und Knoepfe stehen in jeder Ansicht auf derselben Mittellinie
+    // Knoepfe zuerst (rechts), der Titel bekommt den Rest und wird bei Bedarf mit "…" gekuerzt
     ui.horizontal(|ui| {
         ui.set_min_height(30.0);
-        ui.add_space(8.0);
-        ui.label(RichText::new(title).small().strong().color(style::pal().text_weak));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.add_space(2.0);
+            ui.add_space(4.0);
             ui.spacing_mut().item_spacing.x = 2.0;
             add_buttons(ui);
+            ui.add_space(6.0);
+            ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                ui.add_space(8.0);
+                ui.add(egui::Label::new(RichText::new(title).size(11.0).color(style::pal().text_weak)).truncate()).on_hover_text(title);
+            });
         });
     });
 }
@@ -196,22 +256,36 @@ fn action_row(ui: &mut egui::Ui, icon: Icon, text: &str, detail: &str) -> egui::
     if detail.is_empty() { resp } else { resp.on_hover_text(detail) }
 }
 
-/// Zuletzt geoeffnetes Projekt: farbiges Kaestchen, Name und Ordner darunter
-fn recent_row(ui: &mut egui::Ui, p: &Path) -> egui::Response {
+/// Zuletzt geoeffnetes Projekt: farbiges Kaestchen, Name und Ordner darunter (auch im Projektmenue der Leiste)
+pub(super) fn recent_row(ui: &mut egui::Ui, p: &Path) -> egui::Response {
     let pal = style::pal();
-    let (r, resp) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 40.0), egui::Sense::click());
+    let resp = ui.allocate_response(egui::vec2(260.0, 40.0), egui::Sense::click());
+    let r = resp.rect;
     if resp.hovered() {
         ui.painter().rect_filled(r, style::RADIUS as f32, pal.hover);
     }
     let name = workspace::dir_name(p);
     let (initials, color) = super::titlebar::project_badge(&name);
-    let b = egui::Rect::from_center_size(egui::pos2(r.left() + 20.0, r.center().y), egui::vec2(24.0, 24.0));
-    ui.painter().rect_filled(b, 6.0, color);
-    ui.painter().text(b.center() + egui::vec2(0.0, 0.5), egui::Align2::CENTER_CENTER, initials, egui::FontId::proportional(11.0), egui::Color32::WHITE);
+    let b = egui::Rect::from_center_size(egui::pos2(r.left() + 20.0, r.center().y), egui::vec2(26.0, 26.0));
+    icons::badge(ui.painter(), b, &initials, color, egui::Color32::WHITE, 6.0);
     let x = r.left() + 40.0;
     let painter = ui.painter_at(r.shrink2(egui::vec2(4.0, 0.0)));
-    painter.text(egui::pos2(x, r.center().y - 8.0), egui::Align2::LEFT_CENTER, &name, egui::FontId::proportional(13.0), pal.text);
-    let dir = p.parent().map(|d| d.display().to_string()).unwrap_or_default();
+    let mut job = egui::text::LayoutJob::simple_singleline(name.clone(), egui::FontId::proportional(13.0), pal.text);
+    job.wrap = egui::text::TextWrapping { max_width: (r.right() - x - 8.0).max(20.0), max_rows: 1, break_anywhere: true, overflow_character: Some('…') };
+    let g = painter.layout_job(job);
+    painter.galley(egui::pos2(x, r.center().y - 8.0 - g.size().y / 2.0), g, pal.text);
+    // Ordner mit ~ statt des Benutzerordners, lange Pfade vorne gekuerzt
+    let mut dir = p.parent().map(|d| d.display().to_string()).unwrap_or_default();
+    if let Some(home) = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).map(|h| h.to_string_lossy().into_owned())
+        && !home.is_empty()
+        && dir.starts_with(&home)
+    {
+        dir = format!("~{}", &dir[home.len()..]);
+    }
+    let max = ((r.width() - 48.0) / 6.2).max(10.0) as usize;
+    if dir.chars().count() > max {
+        dir = format!("…{}", dir.chars().rev().take(max - 1).collect::<Vec<_>>().into_iter().rev().collect::<String>());
+    }
     painter.text(egui::pos2(x, r.center().y + 8.0), egui::Align2::LEFT_CENTER, dir, egui::FontId::proportional(11.0), pal.text_weak);
     resp.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(p.display().to_string())
 }
@@ -265,10 +339,7 @@ impl EasyApp {
             // Gemeinsame linke Kante: 8 px wie die Ueberschrift der Seitenleiste
             egui::Frame::new().inner_margin(egui::Margin::symmetric(0, 2)).show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = 2.0;
-                egui::Frame::new().inner_margin(egui::Margin { left: 8, right: 8, top: 0, bottom: 0 }).show(ui, |ui| {
-                    ui.label(RichText::new(crate::i18n::tr("Gespeichert wird immer in einem Projekt oder Ordner.", "Files are always saved in a project or folder.")).small().color(style::pal().text_weak));
-                });
-                ui.add_space(6.0);
+                ui.add_space(4.0);
                 if action_row(ui, Icon::Folder, crate::i18n::text("Ordner öffnen"), "").clicked() {
                     self.pick_project();
                 }
@@ -294,127 +365,231 @@ impl EasyApp {
             });
             return;
         };
-        let mut new_file = false;
-        let mut new_folder = false;
-        let mut refresh = false;
+        let active_file = self.tabs.get(self.active).and_then(|t| t.file().map(|p| p.to_path_buf()));
+        // Die Auswahl folgt der Datei im Editor (wie "Immer die geoeffnete Datei waehlen" in IntelliJ IDEA)
+        if active_file != self.explorer.last_active {
+            if let Some(f) = active_file.as_ref().filter(|f| f.starts_with(&project)) {
+                self.explorer.sel = vec![f.clone()];
+                self.explorer.anchor = Some(f.clone());
+            }
+            self.explorer.last_active = active_file.clone();
+        }
         let mut collapse = false;
-        let mut menu_resp = None;
-        section_header(ui, &workspace::dir_name(&project).to_uppercase(), |ui| {
-            menu_resp = Some(icons::button(ui, Icon::More, crate::i18n::text("Projekt")));
-            if icons::button(ui, Icon::Collapse, crate::i18n::text("Alle Ordner zuklappen")).clicked() {
-                collapse = true;
-            }
-            if icons::button(ui, Icon::Refresh, crate::i18n::text("Aktualisieren")).clicked() {
-                refresh = true;
-            }
-            if icons::button(ui, Icon::NewFolder, crate::i18n::text("Neuer Ordner")).clicked() {
-                new_folder = true;
-            }
-            if icons::button(ui, Icon::NewFile, crate::i18n::text("Neue Datei")).clicked() {
-                new_file = true;
-            }
-        });
-        if let Some(r) = &menu_resp {
-            egui::Popup::menu(r).show(|ui| {
+        let mut cmd: Option<TreeCmd> = None;
+        let target = self.explorer.target_dir(&project);
+        let connected = self.db.is_some();
+        let can_paste = self.explorer.clip.is_some();
+        let title = workspace::dir_name(&project).to_uppercase();
+        section_header(ui, &title, |ui| {
+            let more = icons::button(ui, Icon::More, crate::i18n::text("Projekt"));
+            egui::Popup::menu(&more).show(|ui| {
                 crate::style::menu_item_look(ui);
-                if ui.button(crate::i18n::text("Ordner öffnen …")).clicked() {
-                    ui.close();
-                    self.pick_project();
-                }
-                if ui.button(crate::i18n::text("Neues Projekt …")).clicked() {
-                    self.explorer_dlg = Some(ExplorerDlg::NewProject { name: String::new() });
+                ui.set_min_width(230.0);
+                if icons::menu_item(ui, Some(Icon::Refresh), crate::i18n::text("Aktualisieren"), "").clicked() {
+                    self.tree_scan = None;
                     ui.close();
                 }
-                if ui.button(crate::i18n::tr("Neues Java-Projekt …", "New Java project …")).clicked() {
-                    self.open_project_dialog(super::create::ProjectLang::Java);
-                    ui.close();
-                }
-                if ui.button(crate::i18n::tr("Neues Python-Projekt …", "New Python project …")).clicked() {
-                    self.open_project_dialog(super::create::ProjectLang::Python);
-                    ui.close();
-                }
-                if ui.button(crate::i18n::tr("Neues JavaScript-Projekt …", "New JavaScript project …")).clicked() {
-                    self.open_project_dialog(super::create::ProjectLang::Node);
-                    ui.close();
-                }
-                if ui.button(crate::i18n::tr("Repository klonen …", "Clone repository …")).clicked() {
-                    self.open_clone_dialog();
-                    ui.close();
-                }
-                ui.menu_button(crate::i18n::text("Zuletzt geöffnet"), |ui| {
-                    for p in self.settings.recent.clone() {
-                        if p != project && ui.button(workspace::dir_name(&p)).on_hover_text(p.display().to_string()).clicked() {
-                            self.switch_project(Some(p));
-                            ui.close();
-                        }
-                    }
-                });
-                ui.separator();
-                if ui.button(crate::i18n::text("Im Datei-Explorer zeigen")).clicked() {
+                if icons::menu_item(ui, Some(Icon::External), crate::i18n::text("Im Datei-Explorer zeigen"), "").clicked() {
                     open_path(&project);
                     ui.close();
                 }
-                if ui.button(crate::i18n::text("Ordner schließen")).clicked() {
+                if icons::menu_item(ui, Some(Icon::Terminal), crate::i18n::tr("Terminal hier öffnen", "Open terminal here"), "").clicked() {
+                    cmd = Some(TreeCmd::Terminal(project.clone()));
+                    ui.close();
+                }
+                ui.separator();
+                if icons::menu_item(ui, Some(Icon::Close), crate::i18n::tr("Projekt schließen", "Close project"), "").clicked() {
                     self.switch_project(None);
                     ui.close();
                 }
             });
+            if icons::button(ui, Icon::Collapse, crate::i18n::text("Alle Ordner zuklappen")).clicked() {
+                collapse = true;
+            }
+            let plus = icons::button(ui, Icon::Plus, &crate::tr_format!("Neu in „{}“", "New in “{}”", workspace::dir_name(&target)));
+            egui::Popup::menu(&plus).show(|ui| {
+                crate::style::menu_item_look(ui);
+                new_menu(ui, &target, connected, &mut cmd);
+            });
+        });
+        if self.project.is_none() {
+            return;
         }
-        if refresh {
-            self.tree_scan = None;
-        }
-        if new_file {
-            self.explorer_dlg = Some(ExplorerDlg::NewFile(Box::new(super::create::NewFile::new(project.clone()))));
-        }
-        if new_folder {
-            self.explorer_dlg = Some(ExplorerDlg::NewFolder { dir: project.clone(), name: String::new() });
-        }
-        let active_file = self.tabs.get(self.active).and_then(|t| t.file().map(|p| p.to_path_buf()));
         let Some(tree) = self.tree.clone() else { return };
         if collapse {
             collapse_all(ui.ctx(), &tree);
         }
         let os_files = std::mem::take(&mut self.os_files);
-        let mut io = TreeIo { active: active_file.as_deref(), open: None, dlg: None, drop: None, os_pos: self.os_pos, os_files: &os_files };
+        let sel = self.explorer.sel.clone();
+        let cut: Vec<PathBuf> = match &self.explorer.clip {
+            Some((v, true)) => v.clone(),
+            _ => Vec::new(),
+        };
+        let mut io = TreeIo { sel: &sel, cut: &cut, can_paste, connected, focused: self.explorer.focused, order: Vec::new(), click: None, right: None, cmd: None, drop: None, os_pos: self.os_pos, os_files: &os_files };
+        let tree_id = egui::Id::new("explorer-tree");
         crate::tabs::page_keys(ui);
-        egui::ScrollArea::vertical().id_salt("explorer").auto_shrink([false, false]).show(ui, |ui| {
+        let area = egui::ScrollArea::vertical().id_salt("explorer").auto_shrink([false, false]).show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 0.0;
             for n in &tree.children {
                 draw_node(ui, n, 0, &mut io);
             }
-            // Freie Flaeche: Ablage im Projektordner, Doppelklick und Rechtsklick
+            // Freie Flaeche: Ablage im Projektordner, Klick hebt die Auswahl auf, Doppelklick legt eine Datei an
             let rest = ui.allocate_response(ui.available_size().max(vec2(10.0, 40.0)), Sense::click());
             io.target(ui, &rest, rest.rect, &tree.path);
+            if rest.clicked() {
+                io.click = Some((tree.path.clone(), true, egui::Modifiers::NONE));
+            }
             if rest.double_clicked() {
-                io.dlg = Some(ExplorerDlg::NewFile(Box::new(super::create::NewFile::new(tree.path.clone()))));
+                io.cmd = Some(TreeCmd::NewFile(tree.path.clone(), None));
             }
             rest.context_menu(|ui| {
                 crate::style::menu_item_look(ui);
-                if ui.button(crate::i18n::text("Neue Datei …")).clicked() {
-                    io.dlg = Some(ExplorerDlg::NewFile(Box::new(super::create::NewFile::new(tree.path.clone()))));
+                new_menu(ui, &tree.path, io.connected, &mut io.cmd);
+                ui.separator();
+                if icons::menu_item(ui, Some(Icon::Clipboard), crate::i18n::tr("Einfügen", "Paste"), "Strg+V").clicked() {
+                    io.cmd = Some(TreeCmd::Paste(tree.path.clone()));
                     ui.close();
                 }
-                if ui.button(crate::i18n::text("Neuer Ordner …")).clicked() {
-                    io.dlg = Some(ExplorerDlg::NewFolder { dir: tree.path.clone(), name: String::new() });
-                    ui.close();
-                }
-                if ui.button(crate::i18n::text("Im Datei-Explorer zeigen")).clicked() {
-                    open_path(&tree.path);
+                if icons::menu_item(ui, Some(Icon::External), crate::i18n::text("Im Datei-Explorer zeigen"), "").clicked() {
+                    io.cmd = Some(TreeCmd::Reveal(tree.path.clone()));
                     ui.close();
                 }
             });
         });
-        let TreeIo { open, dlg, drop, .. } = io;
-        if let Some(p) = open {
+        let TreeIo { order, click, right, cmd: tree_cmd, drop, .. } = io;
+        let cmd = cmd.or(tree_cmd);
+        let ex = &mut self.explorer;
+        let clicked_now = click.is_some();
+        // Eigener Fokus: Klick in den Baum holt ihn, Klick woanders oder ein Eingabefeld mit Fokus gibt ihn ab
+        if click.is_some() || right.is_some() {
+            ex.focused = true;
+            ex.hold = 4;
+        }
+        if ex.hold > 0 {
+            ex.hold -= 1;
+            ui.memory_mut(|m| {
+                if let Some(f) = m.focused() {
+                    m.surrender_focus(f);
+                }
+            });
+            ui.ctx().request_repaint();
+        } else if ui.input(|i| i.pointer.any_pressed()) && !ui.input(|i| i.pointer.interact_pos()).is_some_and(|p| area.inner_rect.contains(p)) {
+            ex.focused = false;
+        }
+        if ui.memory(|m| m.focused()).is_some_and(|f| f != tree_id) {
+            ex.focused = false;
+        }
+        let mut open: Vec<PathBuf> = Vec::new();
+        if let Some((path, is_dir, mods)) = click {
+            if path == tree.path {
+                ex.sel.clear();
+                ex.anchor = None;
+            } else if mods.command {
+                if let Some(i) = ex.sel.iter().position(|p| *p == path) {
+                    ex.sel.remove(i);
+                } else {
+                    ex.sel.push(path.clone());
+                }
+                ex.anchor = Some(path);
+            } else if mods.shift && let Some(a) = ex.anchor.clone() {
+                let ia = order.iter().position(|(p, _)| *p == a);
+                let ib = order.iter().position(|(p, _)| *p == path);
+                if let (Some(ia), Some(ib)) = (ia, ib) {
+                    ex.sel = order[ia.min(ib)..=ia.max(ib)].iter().map(|(p, _)| p.clone()).collect();
+                }
+            } else {
+                ex.sel = vec![path.clone()];
+                ex.anchor = Some(path.clone());
+                if !is_dir {
+                    open.push(path);
+                }
+            }
+        }
+        if let Some(p) = right
+            && !ex.sel.contains(&p)
+        {
+            ex.sel = vec![p.clone()];
+            ex.anchor = Some(p);
+        }
+        let mut cmd = cmd;
+        if std::env::var_os("EMDBG").is_some() && ui.input(|i| !i.events.is_empty()) { eprintln!("focused={} mem={:?} ev={:?}", ex.focused, ui.memory(|m| m.focused()), ui.input(|i| i.events.clone())); }
+        if ex.focused && cmd.is_none() && !clicked_now {
+            cmd = tree_keys(ui, ex, &order, &tree.path);
+        }
+        for p in open {
             self.open_file(&p);
         }
-        if dlg.is_some() {
-            self.explorer_dlg = dlg;
+        if let Some(c) = cmd {
+            self.tree_cmd(ui.ctx(), c);
         }
         if let Some((dir, srcs, mv)) = drop {
             self.apply_drop(&dir, &srcs, mv);
         } else {
             self.os_files = os_files;
+        }
+    }
+
+    /// Befehl im Explorer ausfuehren
+    fn tree_cmd(&mut self, ctx: &egui::Context, cmd: TreeCmd) {
+        match cmd {
+            TreeCmd::NewFile(dir, kind) => {
+                let f = match kind {
+                    Some(k) => super::create::NewFile::of_kind(dir, k),
+                    None => super::create::NewFile::new(dir),
+                };
+                self.explorer_dlg = Some(ExplorerDlg::NewFile(Box::new(f)));
+            }
+            TreeCmd::NewFolder(dir) => self.explorer_dlg = Some(ExplorerDlg::NewFolder { dir, name: String::new() }),
+            TreeCmd::NewDatabase => self.dialogs.push(Dialog::NewDatabase { name: String::new(), collation: COLLATIONS[0].into() }),
+            TreeCmd::Open(paths) => {
+                for p in paths.into_iter().filter(|p| p.is_file()) {
+                    self.open_file(&p);
+                }
+            }
+            TreeCmd::Rename(path) => {
+                let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                self.explorer_dlg = Some(ExplorerDlg::Rename { path, name });
+            }
+            TreeCmd::Delete(paths) if !paths.is_empty() => self.explorer_dlg = Some(ExplorerDlg::Delete { paths }),
+            TreeCmd::Delete(_) => {}
+            TreeCmd::Copy(paths) | TreeCmd::Cut(paths) if paths.is_empty() => {}
+            TreeCmd::Copy(paths) => {
+                // Auch als Text: so kommt Strg+V wieder an (und Pfade lassen sich woanders einfuegen)
+                ctx.copy_text(paths.iter().map(|p| p.display().to_string()).collect::<Vec<_>>().join("\n"));
+                self.toast(crate::tr_format!("{} kopiert.", "{} copied.", count_label(&paths)));
+                self.explorer.clip = Some((paths, false));
+            }
+            TreeCmd::Cut(paths) => {
+                ctx.copy_text(paths.iter().map(|p| p.display().to_string()).collect::<Vec<_>>().join("\n"));
+                self.toast(crate::tr_format!("{} ausgeschnitten.", "{} cut.", count_label(&paths)));
+                self.explorer.clip = Some((paths, true));
+            }
+            TreeCmd::Paste(dir) => match self.explorer.clip.clone() {
+                Some((paths, cut)) => {
+                    self.apply_drop(&dir, &paths, cut);
+                    if cut {
+                        self.explorer.clip = None;
+                    }
+                }
+                None => {
+                    // Pfade aus der Zwischenablage des Systems (z. B. aus einem anderen Programm kopiert)
+                    let text = ctx.input(|i| i.events.iter().find_map(|e| if let egui::Event::Paste(t) = e { Some(t.clone()) } else { None })).unwrap_or_default();
+                    let paths: Vec<PathBuf> = text.lines().map(|l| PathBuf::from(l.trim().trim_matches('"'))).filter(|p| p.exists()).collect();
+                    if !paths.is_empty() {
+                        self.apply_drop(&dir, &paths, false);
+                    }
+                }
+            },
+            TreeCmd::CopyPath(p, relative) => {
+                let text = match (&self.project, relative) {
+                    (Some(root), true) => p.strip_prefix(root).unwrap_or(&p).to_string_lossy().replace('\\', "/"),
+                    _ => p.display().to_string(),
+                };
+                ctx.copy_text(text);
+                self.toast(crate::i18n::tr("Pfad kopiert.", "Path copied."));
+            }
+            TreeCmd::Reveal(p) => open_path(if p.is_dir() { &p } else { p.parent().unwrap_or(&p) }),
+            TreeCmd::Terminal(dir) => self.new_terminal_in(ctx, None, Some(dir)),
         }
     }
 
@@ -561,15 +736,15 @@ impl EasyApp {
                 }
                 resp.context_menu(|ui| {
                     crate::style::menu_item_look(ui);
-                    if ui.button(crate::i18n::text("In neuer Abfrage öffnen")).clicked() {
+                    if icons::menu_item(ui, Some(Icon::External), crate::i18n::text("In neuer Abfrage öffnen"), "").clicked() {
                         actions.push(Action::OpenSql { db: Some(e.db.clone()), sql: e.sql.clone() + ";\n", run: false });
                         ui.close();
                     }
-                    if ui.button(crate::i18n::text("Erneut ausführen")).clicked() {
+                    if icons::menu_item(ui, Some(Icon::Play), crate::i18n::text("Erneut ausführen"), "").clicked() {
                         actions.push(Action::OpenSql { db: Some(e.db.clone()), sql: e.sql.clone() + ";\n", run: true });
                         ui.close();
                     }
-                    if ui.button(crate::i18n::text("Kopieren")).clicked() {
+                    if icons::menu_item(ui, Some(Icon::Copy), crate::i18n::text("Kopieren"), "").clicked() {
                         ui.ctx().copy_text(e.sql.clone());
                         ui.close();
                     }
@@ -672,49 +847,49 @@ impl EasyApp {
                                 }
                                 hr.context_menu(|ui| {
                                     crate::style::menu_item_look(ui);
-                                    if ui.button(crate::i18n::text("Daten")).clicked() {
+                                    if icons::menu_item(ui, Some(Icon::Table), crate::i18n::text("Daten"), "").clicked() {
                                         actions.push(Action::OpenData { db: d.clone(), table: t.name.clone() });
                                         ui.close();
                                     }
-                                    if ui.button(crate::i18n::text("Struktur")).clicked() {
+                                    if icons::menu_item(ui, Some(Icon::Columns), crate::i18n::text("Struktur"), "").clicked() {
                                         actions.push(Action::OpenStructure { db: d.clone(), table: t.name.clone() });
                                         ui.close();
                                     }
-                                    if ui.button("SELECT").clicked() {
+                                    if icons::menu_item(ui, Some(Icon::Play), "SELECT … LIMIT 100", "").clicked() {
                                         actions.push(Action::OpenSql { db: Some(d.clone()), sql: format!("SELECT * FROM {} LIMIT 100;", q(&t.name)), run: true });
                                         ui.close();
                                     }
-                                    if ui.button(crate::i18n::text("Name kopieren")).clicked() {
+                                    if icons::menu_item(ui, Some(Icon::Copy), crate::i18n::text("Name kopieren"), "").clicked() {
                                         ui.ctx().copy_text(t.name.clone());
                                         ui.close();
                                     }
-                                    if ui.button(crate::i18n::text("Java-Klasse kopieren")).on_hover_text(crate::i18n::text("Record und DAO-Klasse (JDBC) für diese Tabelle")).clicked() {
+                                    if icons::menu_item(ui, Some(Icon::Coffee), crate::i18n::text("Java-Klasse kopieren"), "").on_hover_text(crate::i18n::text("Record und DAO-Klasse (JDBC) für diese Tabelle")).clicked() {
                                         ui.ctx().copy_text(crate::javagen::table_class(t, &crate::javagen::Target::new(&conn, d)));
                                         actions.push(Action::Status(crate::i18n::text("Java-Code kopiert.").into()));
                                         ui.close();
                                     }
-                                    if ui.button(crate::i18n::text("Exportieren …")).clicked() {
+                                    if icons::menu_item(ui, Some(Icon::Download), crate::i18n::text("Exportieren …"), "").clicked() {
                                         actions.push(Action::OpenExport { db: d.clone(), only: Some(vec![t.name.clone()]), format: crate::transfer::export::Format::Csv });
                                         ui.close();
                                     }
                                     ui.separator();
                                     if !t.is_view {
-                                        if ui.button(crate::i18n::tr("Umbenennen …", "Rename …")).clicked() {
+                                        if icons::menu_item(ui, Some(Icon::Edit), crate::i18n::tr("Umbenennen …", "Rename …"), "").clicked() {
                                             dialogs.push(Dialog::TableOp { db: d.clone(), table: t.name.clone(), copy: false, with_data: true, name: t.name.clone() });
                                             ui.close();
                                         }
-                                        if ui.button(crate::i18n::tr("Kopieren …", "Copy …")).clicked() {
+                                        if icons::menu_item(ui, Some(Icon::Copy), crate::i18n::tr("Kopieren …", "Copy …"), "").clicked() {
                                             dialogs.push(Dialog::TableOp { db: d.clone(), table: t.name.clone(), copy: true, with_data: true, name: format!("{}_kopie", t.name) });
                                             ui.close();
                                         }
-                                        if ui.button(crate::i18n::tr("Zusammenfügen …", "Merge …")).clicked() {
+                                        if icons::menu_item(ui, Some(Icon::GitMerge), crate::i18n::tr("Zusammenfügen …", "Merge …"), "").clicked() {
                                             let other = schema.tables.iter().find(|x| !x.is_view && x.name != t.name).map(|x| x.name.clone()).unwrap_or_default();
                                             dialogs.push(Dialog::Merge { db: d.clone(), a: t.name.clone(), b: other, mode: crate::app::dialogs::MergeKind::Rows, left_col: String::new(), right_col: String::new(), keep_all_a: true, name: format!("{}_zusammen", t.name) });
                                             ui.close();
                                         }
                                         ui.separator();
                                     }
-                                    if !t.is_view && ui.button(crate::i18n::text("Leeren …")).clicked() {
+                                    if !t.is_view && icons::menu_item_colored(ui, Some((Icon::Trash, Some(style::pal().error_text))), crate::i18n::text("Leeren …"), "").clicked() {
                                         actions.push(Action::Confirm {
                                             text: crate::tr_format!("Alle Zeilen der Tabelle „{}“ löschen?", "Delete all rows in table “{}”?", t.name),
                                             db: Some(d.clone()),
@@ -722,7 +897,7 @@ impl EasyApp {
                                         });
                                         ui.close();
                                     }
-                                    if ui.button(crate::i18n::text("Löschen …")).clicked() {
+                                    if icons::menu_item_colored(ui, Some((Icon::Trash, Some(style::pal().error_text))), crate::i18n::text("Löschen …"), "").clicked() {
                                         actions.push(Action::Confirm {
                                             text: crate::tr_format!("„{}“ mit allen Daten löschen?", "Delete “{}” and all its data?", t.name),
                                             db: Some(d.clone()),
@@ -746,32 +921,32 @@ impl EasyApp {
                 }
                 hr.context_menu(|ui| {
                     crate::style::menu_item_look(ui);
-                    if ui.button(crate::i18n::text("Neue Abfrage")).clicked() {
+                    if icons::menu_item(ui, Some(Icon::Plus), crate::i18n::text("Neue Abfrage"), "").clicked() {
                         actions.push(Action::OpenSql { db: Some(d.clone()), sql: String::new(), run: false });
                         ui.close();
                     }
-                    if ui.button(crate::i18n::text("Neue Tabelle …")).clicked() {
+                    if icons::menu_item(ui, Some(Icon::Table), crate::i18n::text("Neue Tabelle …"), "").clicked() {
                         actions.push(Action::NewTable(d.clone()));
                         ui.close();
                     }
-                    if ui.button(crate::i18n::text("ER-Diagramm")).clicked() {
+                    if icons::menu_item(ui, Some(Icon::Diagram), crate::i18n::text("ER-Diagramm"), "").clicked() {
                         actions.push(Action::OpenEr(d.clone()));
                         ui.close();
                     }
-                    if ui.button(crate::i18n::text("Abfrage-Assistent")).clicked() {
+                    if icons::menu_item(ui, Some(Icon::Wizard), crate::i18n::text("Abfrage-Assistent"), "").clicked() {
                         actions.push(Action::OpenBuilder(Some(d.clone())));
                         ui.close();
                     }
                     ui.separator();
-                    if ui.button(crate::i18n::text("Exportieren …")).clicked() {
+                    if icons::menu_item(ui, Some(Icon::Download), crate::i18n::text("Exportieren …"), "").clicked() {
                         actions.push(Action::OpenExport { db: d.clone(), only: None, format: crate::transfer::export::Format::Sql });
                         ui.close();
                     }
-                    if ui.button(crate::i18n::text("Importieren …")).clicked() {
+                    if icons::menu_item(ui, Some(Icon::Upload), crate::i18n::text("Importieren …"), "").clicked() {
                         actions.push(Action::OpenImport);
                         ui.close();
                     }
-                    if !sys && ui.button(crate::i18n::text("Löschen …")).clicked() {
+                    if !sys && icons::menu_item_colored(ui, Some((Icon::Trash, Some(style::pal().error_text))), crate::i18n::text("Löschen …"), "").clicked() {
                         actions.push(Action::Confirm {
                             text: crate::tr_format!("Datenbank „{d}“ mit allen Tabellen und Daten löschen?", "Delete database “{d}” and all its tables and data?"),
                             db: None,
@@ -847,10 +1022,22 @@ impl EasyApp {
             ExplorerDlg::Delete { .. } => crate::i18n::text("Löschen"),
             ExplorerDlg::NewProject { .. } => crate::i18n::text("Neues Projekt"),
         };
-        let frame = egui::Frame::window(&ctx.global_style()).inner_margin(egui::Margin::same(14));
+        let frame = egui::Frame::window(&ctx.global_style()).inner_margin(egui::Margin::same(18));
+        let danger = matches!(dlg, ExplorerDlg::Delete { .. });
         egui::Modal::new(egui::Id::new("explorer-dlg")).frame(frame).show(ctx, |ui| {
-            ui.label(RichText::new(title).strong());
-            ui.add_space(6.0);
+            ui.set_min_width(360.0);
+            let pal = style::pal();
+            ui.horizontal(|ui| {
+                let icon = match dlg {
+                    ExplorerDlg::Delete { .. } => Icon::Trash,
+                    ExplorerDlg::Rename { .. } => Icon::Edit,
+                    _ => Icon::NewFolder,
+                };
+                let (r, _) = ui.allocate_exact_size(vec2(18.0, 18.0), Sense::hover());
+                icons::paint(ui.painter(), r, icon, if danger { pal.error_text } else { pal.accent });
+                ui.label(RichText::new(title).strong().size(15.0));
+            });
+            ui.add_space(10.0);
             match dlg {
                 ExplorerDlg::NewFile(_) => {}
                 ExplorerDlg::NewFolder { name, .. } | ExplorerDlg::Rename { name, .. } | ExplorerDlg::NewProject { name } => {
@@ -863,16 +1050,23 @@ impl EasyApp {
                         ui.label(RichText::new(root.display().to_string()).small().color(style::pal().text_weak));
                     }
                 }
-                ExplorerDlg::Delete { path } => {
-                    ui.label(crate::tr_format!("„{}“ in den Papierkorb des Projekts verschieben?", "Move “{}” to the project's recycle bin?", workspace::dir_name(path)));
+                ExplorerDlg::Delete { paths } => {
+                    let what = count_label(paths);
+                    ui.label(crate::tr_format!("{what} in den Papierkorb des Projekts verschieben?", "Move {what} to the project's recycle bin?"));
+                    ui.label(RichText::new(crate::i18n::tr("Der Papierkorb liegt im Projekt unter .papierkorb.", "The recycle bin is the .papierkorb folder in the project.")).small().color(pal.text_weak));
+                    if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                        ok = true;
+                    }
                 }
             }
-            ui.add_space(6.0);
-            ui.horizontal(|ui| {
-                if ui.button("OK").clicked() {
+            ui.add_space(14.0);
+            ui.allocate_ui_with_layout(vec2(ui.available_width(), 30.0), egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let ok_text = if danger { crate::i18n::text("Löschen") } else { "OK" };
+                let fill = if danger { pal.error_text } else { pal.accent };
+                if ui.add(egui::Button::new(RichText::new(ok_text).color(Color32::WHITE)).fill(fill).min_size(vec2(84.0, 28.0))).clicked() {
                     ok = true;
                 }
-                if ui.button(crate::i18n::text("Abbrechen")).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                if ui.add(egui::Button::new(crate::i18n::text("Abbrechen")).min_size(vec2(84.0, 28.0))).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
                     cancel = true;
                 }
             });
@@ -905,19 +1099,21 @@ impl EasyApp {
                 }
                 None
             }),
-            ExplorerDlg::Delete { path } => {
+            ExplorerDlg::Delete { paths } => {
                 // Offene Registerkarten dieser Datei(en) schliessen
                 let mut i = 0;
                 while i < self.tabs.len() {
-                    if self.tabs[i].file().is_some_and(|f| f.starts_with(&path)) {
+                    if self.tabs[i].file().is_some_and(|f| paths.iter().any(|p| f.starts_with(p))) {
                         self.tabs.remove(i);
                     } else {
                         i += 1;
                     }
                 }
                 self.active = self.active.min(self.tabs.len().saturating_sub(1));
+                self.explorer.sel.retain(|s| !paths.contains(s));
                 match &self.project {
-                    Some(p) => workspace::trash(p, &path).map(|_| None),
+                    // Ordner vor ihrem Inhalt: Eintraege innerhalb eines geloeschten Ordners sind schon weg
+                    Some(p) => paths.iter().filter(|x| !paths.iter().any(|o| o != *x && x.starts_with(o))).try_for_each(|x| workspace::trash(p, x).map(|_| ())).map(|_| None),
                     None => Err(crate::i18n::text("Kein Projekt geöffnet.").into()),
                 }
             }
@@ -987,24 +1183,6 @@ fn collapse_all(ctx: &egui::Context, n: &Node) {
     }
 }
 
-/// Symbol und Farbe einer Datei im Explorer
-fn file_icon(name: &str) -> (Icon, Color32) {
-    let ext = name.rsplit('.').next().unwrap_or("").to_lowercase();
-    match ext.as_str() {
-        "sql" => (Icon::FileCode, Color32::from_rgb(0xE3, 0x8C, 0x3B)),
-        "java" => (Icon::Coffee, Color32::from_rgb(0xE7, 0x6F, 0x51)),
-        "jar" | "class" => (Icon::Package, Color32::from_rgb(0xB0, 0x8B, 0x5B)),
-        "gradle" | "kts" => (Icon::FileCode, Color32::from_rgb(0x4D, 0xB6, 0xAC)),
-        "properties" => (Icon::Settings, style::pal().text_weak),
-        "md" | "txt" | "log" => (Icon::FileText, Color32::from_rgb(0x51, 0x9A, 0xBA)),
-        "csv" | "tsv" | "xlsx" | "xls" => (Icon::FileSheet, Color32::from_rgb(0x6C, 0xBE, 0x6A)),
-        "json" | "xml" | "yml" | "yaml" => (Icon::FileJson, Color32::from_rgb(0xD6, 0xB8, 0x4E)),
-        "png" | "jpg" | "jpeg" | "jfif" | "gif" | "bmp" | "webp" | "ico" | "svg" => (Icon::FileImage, Color32::from_rgb(0xA0, 0x7C, 0xD6)),
-        "pdf" => (Icon::FileText, Color32::from_rgb(0xE0, 0x5A, 0x52)),
-        _ => (Icon::File, style::pal().text_weak),
-    }
-}
-
 /// Waehrend des Ziehens: Name der gezogenen Datei neben dem Mauszeiger
 fn drag_ghost(ui: &egui::Ui, name: &str) {
     if let Some(p) = ui.ctx().pointer_latest_pos() {
@@ -1017,105 +1195,227 @@ fn drag_ghost(ui: &egui::Ui, name: &str) {
     }
 }
 
+/// "3 Elemente" bzw. der Name
+fn count_label(paths: &[PathBuf]) -> String {
+    match paths {
+        [one] => format!("„{}“", workspace::dir_name(one)),
+        _ => crate::tr_format!("{} Elemente", "{} items", paths.len()),
+    }
+}
+
+/// Untermenue "Neu": Datei, Ordner, Dateiarten, Datenbank (wie "New" in IntelliJ IDEA)
+fn new_menu(ui: &mut egui::Ui, dir: &Path, connected: bool, cmd: &mut Option<TreeCmd>) {
+    use super::create::FileKind;
+    ui.set_min_width(220.0);
+    icons::menu_heading(ui, &crate::tr_format!("Neu in {}", "New in {}", workspace::dir_name(dir)));
+    if icons::menu_item(ui, Some(Icon::NewFile), crate::i18n::text("Datei …"), &keymap::text(Cmd::NewFile)).clicked() {
+        *cmd = Some(TreeCmd::NewFile(dir.to_path_buf(), None));
+        ui.close();
+    }
+    if icons::menu_item(ui, Some(Icon::NewFolder), crate::i18n::text("Ordner …"), "").clicked() {
+        *cmd = Some(TreeCmd::NewFolder(dir.to_path_buf()));
+        ui.close();
+    }
+    ui.separator();
+    for k in FileKind::MENU {
+        let r = menu_file_item(ui, &format!("x.{}", k.ext()), k.label());
+        if r.clicked() {
+            *cmd = Some(TreeCmd::NewFile(dir.to_path_buf(), Some(k)));
+            ui.close();
+        }
+    }
+    ui.separator();
+    if ui.add_enabled_ui(connected, |ui| icons::menu_item_colored(ui, Some((Icon::Database, Some(style::pal().accent))), crate::i18n::text("Datenbank …"), "")).inner.on_disabled_hover_text(crate::i18n::text("Nicht verbunden")).clicked() {
+        *cmd = Some(TreeCmd::NewDatabase);
+        ui.close();
+    }
+}
+
+/// Menueeintrag mit dem Dateisymbol einer Art
+fn menu_file_item(ui: &mut egui::Ui, sample: &str, text: &str) -> egui::Response {
+    let r = icons::menu_item(ui, None, text, "");
+    icons::paint_file(ui.painter(), Rect::from_center_size(pos2(r.rect.left() + 17.0, r.rect.center().y), vec2(15.0, 15.0)), sample);
+    r
+}
+
+/// Tasten im Explorer: Strg+C/X/V, Entf, F2, Enter, Pfeile, Strg+A, Esc
+fn tree_keys(ui: &egui::Ui, ex: &mut ExplorerState, order: &[(PathBuf, bool)], root: &Path) -> Option<TreeCmd> {
+    let events = ui.input(|i| i.events.clone());
+    let sel = ex.sel.clone();
+    let dir = ex.target_dir(root);
+    for e in events {
+        match e {
+            egui::Event::Copy => return Some(TreeCmd::Copy(sel)),
+            egui::Event::Cut => return Some(TreeCmd::Cut(sel)),
+            egui::Event::Paste(_) => return Some(TreeCmd::Paste(dir)),
+            egui::Event::Key { key, pressed: true, modifiers, .. } => match key {
+                egui::Key::Delete => return Some(TreeCmd::Delete(sel)),
+                egui::Key::Backspace if modifiers.command => return Some(TreeCmd::Delete(sel)),
+                egui::Key::F2 => return sel.last().cloned().map(TreeCmd::Rename),
+                egui::Key::Enter => return Some(TreeCmd::Open(sel)),
+                egui::Key::Escape => {
+                    ex.clip = None;
+                    ex.sel.clear();
+                }
+                egui::Key::A if modifiers.command => ex.sel = order.iter().map(|(p, _)| p.clone()).collect(),
+                egui::Key::ArrowUp | egui::Key::ArrowDown => {
+                    let cur = sel.last().and_then(|p| order.iter().position(|(q, _)| q == p));
+                    let next = match (cur, key) {
+                        (None, _) => 0,
+                        (Some(i), egui::Key::ArrowUp) => i.saturating_sub(1),
+                        (Some(i), _) => (i + 1).min(order.len().saturating_sub(1)),
+                    };
+                    if let Some((p, _)) = order.get(next) {
+                        if modifiers.shift {
+                            if !ex.sel.contains(p) {
+                                ex.sel.push(p.clone());
+                            }
+                        } else {
+                            ex.sel = vec![p.clone()];
+                            ex.anchor = Some(p.clone());
+                        }
+                        ui.scroll_to_rect(Rect::NOTHING, None);
+                    }
+                }
+                egui::Key::ArrowLeft | egui::Key::ArrowRight => {
+                    if let Some(p) = sel.last().filter(|p| p.is_dir()) {
+                        let id = egui::Id::new(("dir", p));
+                        let mut st = egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, false);
+                        st.set_open(key == egui::Key::ArrowRight);
+                        st.store(ui.ctx());
+                    } else if key == egui::Key::ArrowLeft && let Some(parent) = sel.last().and_then(|p| p.parent()).filter(|d| *d != root) {
+                        ex.sel = vec![parent.to_path_buf()];
+                    }
+                }
+                _ => {}
+            },
+            _ => {}
+        }
+    }
+    None
+}
+
 /// Eintrag im Dateibaum zeichnen (rekursiv).
 fn draw_node(ui: &mut egui::Ui, n: &Node, depth: usize, io: &mut TreeIo) {
     let pal = style::pal();
-    let indent = 8.0 + depth as f32 * 14.0;
-    let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 22.0), Sense::click_and_drag());
+    let indent = 8.0 + depth as f32 * 16.0;
+    let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), TREE_ROW + 2.0), Sense::click_and_drag());
+    io.order.push((n.path.clone(), n.is_dir));
+    let visible = ui.is_rect_visible(r);
     resp.dnd_set_drag_payload(DragPath(n.path.clone()));
     if resp.dragged() {
-        drag_ghost(ui, &n.name);
+        let label = if io.sel.contains(&n.path) && io.sel.len() > 1 { crate::tr_format!("{} Elemente", "{} items", io.sel.len()) } else { n.name.clone() };
+        drag_ghost(ui, &label);
     }
     // Auf einer Datei abgelegt = in deren Ordner
     let drop_dir = if n.is_dir { Some(n.path.as_path()) } else { n.path.parent() };
     if let Some(dir) = drop_dir {
         io.target(ui, &resp, r, dir);
     }
-    if n.is_dir {
-        let id = egui::Id::new(("dir", &n.path));
-        let mut state = egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, false);
-        if resp.hovered() {
-            ui.painter().rect_filled(r.shrink2(vec2(4.0, 0.0)), 5.0, pal.hover);
+    let id = egui::Id::new(("dir", &n.path));
+    let mut state = egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, false);
+    if visible {
+        let row = r.shrink2(vec2(4.0, 0.0));
+        let selected = io.sel.contains(&n.path);
+        if selected {
+            let fill = if io.focused { pal.selection } else { pal.selection.gamma_multiply(0.55) };
+            ui.painter().rect_filled(row, 5.0, fill);
+        } else if resp.hovered() {
+            ui.painter().rect_filled(row, 5.0, pal.hover);
         }
-        let chev = Rect::from_center_size(pos2(r.left() + indent + 6.0, r.center().y), vec2(14.0, 14.0));
-        icons::paint(ui.painter(), chev, if state.is_open() { Icon::ChevronDown } else { Icon::ChevronRight }, pal.text_weak);
-        let folder = Rect::from_center_size(pos2(r.left() + indent + 26.0, r.center().y), vec2(16.0, 16.0));
-        icons::paint(ui.painter(), folder, if state.is_open() { Icon::FolderOpen } else { Icon::Folder }, Color32::from_rgb(0xDC, 0xB6, 0x7A));
-        ui.painter().text(pos2(r.left() + indent + 40.0, r.center().y), egui::Align2::LEFT_CENTER, &n.name, egui::FontId::proportional(13.0), pal.text);
-        if resp.clicked() {
+        let cy = r.center().y;
+        // Hilfslinien der Einrueckung (wie in VS Code)
+        for d in 0..depth {
+            let x = r.left() + 8.0 + d as f32 * 16.0 + 6.0;
+            ui.painter().vline(x, r.y_range(), egui::Stroke::new(1.0, pal.border.gamma_multiply(0.6)));
+        }
+        if n.is_dir {
+            let chev = Rect::from_center_size(pos2(r.left() + indent + 6.0, cy), vec2(14.0, 14.0));
+            icons::paint(ui.painter(), chev, if state.is_open() { Icon::ChevronDown } else { Icon::ChevronRight }, pal.text_weak);
+            let folder = Rect::from_center_size(pos2(r.left() + indent + 24.0, cy), vec2(16.0, 16.0));
+            icons::paint(ui.painter(), folder, if state.is_open() { Icon::FolderOpen } else { Icon::Folder }, icons::folder_color(&n.name));
+        } else {
+            icons::paint_file(ui.painter(), Rect::from_center_size(pos2(r.left() + indent + 24.0, cy), vec2(16.0, 16.0)), &n.name);
+        }
+        let cut = io.cut.contains(&n.path);
+        let color = if cut { pal.text_weak } else if selected && pal.dark { Color32::WHITE } else { pal.text };
+        let painter = ui.painter_at(row);
+        painter.text(pos2(r.left() + indent + 38.0, cy), egui::Align2::LEFT_CENTER, &n.name, egui::FontId::proportional(13.0), color);
+    }
+    if resp.clicked() {
+        io.click = Some((n.path.clone(), n.is_dir, ui.input(|i| i.modifiers)));
+        let plain = !ui.input(|i| i.modifiers.command || i.modifiers.shift);
+        if n.is_dir && plain {
             state.toggle(ui);
         }
-        state.store(ui.ctx());
-        dir_menu(&resp, n, &mut io.dlg);
-        if state.is_open() {
-            for c in &n.children {
-                draw_node(ui, c, depth + 1, io);
-            }
+    }
+    if resp.double_clicked() && !n.is_dir {
+        io.cmd = Some(TreeCmd::Open(vec![n.path.clone()]));
+    }
+    if resp.secondary_clicked() {
+        io.right = Some(n.path.clone());
+    }
+    state.store(ui.ctx());
+    item_menu(&resp, n, io);
+    if n.is_dir && state.is_open() {
+        for c in &n.children {
+            draw_node(ui, c, depth + 1, io);
         }
-    } else {
-        let sel = io.active.is_some_and(|a| a == n.path);
-        if sel {
-            ui.painter().rect_filled(r.shrink2(vec2(4.0, 0.0)), 5.0, pal.selection.gamma_multiply(if pal.dark { 0.7 } else { 0.8 }));
-        } else if resp.hovered() {
-            ui.painter().rect_filled(r.shrink2(vec2(4.0, 0.0)), 5.0, pal.hover);
-        }
-        let (icon, tint) = file_icon(&n.name);
-        icons::paint(ui.painter(), Rect::from_center_size(pos2(r.left() + indent + 26.0, r.center().y), vec2(16.0, 16.0)), icon, tint);
-        ui.painter().text(pos2(r.left() + indent + 40.0, r.center().y), egui::Align2::LEFT_CENTER, &n.name, egui::FontId::proportional(13.0), pal.text);
-        if resp.clicked() {
-            io.open = Some(n.path.clone());
-        }
-        resp.context_menu(|ui| {
-            crate::style::menu_item_look(ui);
-            if ui.button(crate::i18n::text("Öffnen")).clicked() {
-                io.open = Some(n.path.clone());
-                ui.close();
-            }
-            if ui.button(crate::i18n::text("Umbenennen …")).clicked() {
-                io.dlg = Some(ExplorerDlg::Rename { path: n.path.clone(), name: n.name.clone() });
-                ui.close();
-            }
-            if ui.button(crate::i18n::text("Löschen")).clicked() {
-                io.dlg = Some(ExplorerDlg::Delete { path: n.path.clone() });
-                ui.close();
-            }
-            ui.separator();
-            if ui.button(crate::i18n::text("Pfad kopieren")).clicked() {
-                ui.ctx().copy_text(n.path.display().to_string());
-                ui.close();
-            }
-            if ui.button(crate::i18n::text("Im Datei-Explorer zeigen")).clicked() {
-                if let Some(d) = n.path.parent() {
-                    open_path(d);
-                }
-                ui.close();
-            }
-        });
     }
 }
 
-fn dir_menu(resp: &egui::Response, n: &Node, dlg: &mut Option<ExplorerDlg>) {
+/// Kontextmenue einer Datei bzw. eines Ordners. Die Befehle gelten fuer die ganze Auswahl, wenn die Zeile dazugehoert.
+fn item_menu(resp: &egui::Response, n: &Node, io: &mut TreeIo) {
+    let targets: Vec<PathBuf> = if io.sel.contains(&n.path) { io.sel.to_vec() } else { vec![n.path.clone()] };
+    let dir = if n.is_dir { n.path.clone() } else { n.path.parent().map(Path::to_path_buf).unwrap_or_default() };
+    let (connected, can_paste) = (io.connected, io.can_paste);
+    let cmd = &mut io.cmd;
     resp.context_menu(|ui| {
         crate::style::menu_item_look(ui);
-        if ui.button(crate::i18n::text("Neue Datei …")).clicked() {
-            *dlg = Some(ExplorerDlg::NewFile(Box::new(super::create::NewFile::new(n.path.clone()))));
-            ui.close();
-        }
-        if ui.button(crate::i18n::text("Neuer Ordner …")).clicked() {
-            *dlg = Some(ExplorerDlg::NewFolder { dir: n.path.clone(), name: String::new() });
+        ui.set_min_width(240.0);
+        icons::submenu(ui, Some(Icon::Plus), crate::i18n::tr("Neu", "New"), |ui| new_menu(ui, &dir, connected, cmd));
+        if !n.is_dir && icons::menu_item(ui, Some(Icon::External), crate::i18n::text("Öffnen"), "Enter").clicked() {
+            *cmd = Some(TreeCmd::Open(targets.clone()));
             ui.close();
         }
         ui.separator();
-        if ui.button(crate::i18n::text("Umbenennen …")).clicked() {
-            *dlg = Some(ExplorerDlg::Rename { path: n.path.clone(), name: n.name.clone() });
+        if icons::menu_item(ui, Some(Icon::Scissors), crate::i18n::tr("Ausschneiden", "Cut"), "Strg+X").clicked() {
+            *cmd = Some(TreeCmd::Cut(targets.clone()));
             ui.close();
         }
-        if ui.button(crate::i18n::text("Löschen")).clicked() {
-            *dlg = Some(ExplorerDlg::Delete { path: n.path.clone() });
+        if icons::menu_item(ui, Some(Icon::Copy), crate::i18n::text("Kopieren"), "Strg+C").clicked() {
+            *cmd = Some(TreeCmd::Copy(targets.clone()));
             ui.close();
         }
-        if ui.button(crate::i18n::text("Im Datei-Explorer zeigen")).clicked() {
-            open_path(&n.path);
+        if ui.add_enabled_ui(can_paste, |ui| icons::menu_item(ui, Some(Icon::Clipboard), crate::i18n::tr("Einfügen", "Paste"), "Strg+V")).inner.clicked() {
+            *cmd = Some(TreeCmd::Paste(dir.clone()));
+            ui.close();
+        }
+        ui.separator();
+        if ui.add_enabled_ui(targets.len() == 1, |ui| icons::menu_item(ui, Some(Icon::Edit), crate::i18n::text("Umbenennen …"), "F2")).inner.clicked() {
+            *cmd = Some(TreeCmd::Rename(n.path.clone()));
+            ui.close();
+        }
+        let del = if targets.len() > 1 { crate::tr_format!("{} Elemente löschen", "Delete {} items", targets.len()) } else { crate::i18n::text("Löschen").to_string() };
+        if icons::menu_item_colored(ui, Some((Icon::Trash, Some(style::pal().error_text))), &del, "Entf").clicked() {
+            *cmd = Some(TreeCmd::Delete(targets.clone()));
+            ui.close();
+        }
+        ui.separator();
+        if icons::menu_item(ui, Some(Icon::Link), crate::i18n::text("Pfad kopieren"), "").clicked() {
+            *cmd = Some(TreeCmd::CopyPath(n.path.clone(), false));
+            ui.close();
+        }
+        if icons::menu_item(ui, None, crate::i18n::tr("Relativen Pfad kopieren", "Copy relative path"), "").clicked() {
+            *cmd = Some(TreeCmd::CopyPath(n.path.clone(), true));
+            ui.close();
+        }
+        if icons::menu_item(ui, Some(Icon::FolderInput), crate::i18n::text("Im Datei-Explorer zeigen"), "").clicked() {
+            *cmd = Some(TreeCmd::Reveal(n.path.clone()));
+            ui.close();
+        }
+        if icons::menu_item(ui, Some(Icon::Terminal), crate::i18n::tr("Terminal hier öffnen", "Open terminal here"), "").clicked() {
+            *cmd = Some(TreeCmd::Terminal(dir.clone()));
             ui.close();
         }
     });

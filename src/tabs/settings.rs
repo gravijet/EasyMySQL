@@ -37,12 +37,61 @@ pub const SECTIONS: &[(&str, &str)] = &[
     ("tastenkuerzel", "Tastenkürzel"),
 ];
 
+/// Gruppen der Navigation (wie in IntelliJ IDEA)
+const GROUPS: &[(&str, &[&str])] = &[
+    ("Allgemein", &["darstellung", "start", "updates", "maus", "dateien", "speicherorte"]),
+    ("Editor", &["editor", "abfragen", "tastenkuerzel"]),
+    ("Programmieren", &["ausfuehren", "java", "python", "javascript", "sprachserver", "git", "terminal"]),
+    ("Datenbank", &["verbindung", "server", "sicherungen"]),
+];
+
+fn section_icon(id: &str) -> crate::icons::Icon {
+    use crate::icons::Icon;
+    match id {
+        "darstellung" => Icon::Sparkles,
+        "start" => Icon::Play,
+        "updates" => Icon::CloudDownload,
+        "editor" => Icon::Edit,
+        "abfragen" => Icon::Table,
+        "ausfuehren" => Icon::Terminal,
+        "java" => Icon::Coffee,
+        "python" | "javascript" => Icon::Script,
+        "sprachserver" => Icon::Braces,
+        "git" => Icon::GitBranch,
+        "terminal" => Icon::Terminal,
+        "maus" => Icon::ArrowUp,
+        "speicherorte" => Icon::Folder,
+        "dateien" => Icon::File,
+        "verbindung" => Icon::Link,
+        "server" => Icon::Database,
+        "sicherungen" => Icon::Shield,
+        "tastenkuerzel" => Icon::Key,
+        _ => Icon::Settings,
+    }
+}
+
+/// Eintrag der Navigation: Symbol und Text, gewaehlt in der Auswahlfarbe
+fn nav_row(ui: &mut egui::Ui, icon: crate::icons::Icon, title: &str, active: bool) -> egui::Response {
+    let pal = style::pal();
+    let (r, resp) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 28.0), egui::Sense::click());
+    if active || resp.hovered() {
+        ui.painter().rect_filled(r, style::RADIUS as f32, if active { pal.selection } else { pal.hover });
+    }
+    let fg = if active && pal.dark { egui::Color32::WHITE } else { pal.text };
+    let ir = egui::Rect::from_center_size(egui::pos2(r.left() + 18.0, r.center().y), egui::vec2(15.0, 15.0));
+    // Sprachen mit ihrem Dateisymbol (wie im Explorer)
+    match title {
+        "Java" => crate::icons::paint_file(ui.painter(), ir, "x.java"),
+        "Python" => crate::icons::paint_file(ui.painter(), ir, "x.py"),
+        "JavaScript" => crate::icons::paint_file(ui.painter(), ir, "x.js"),
+        _ => crate::icons::paint(ui.painter(), ir, icon, if active { fg } else { pal.text_weak }),
+    }
+    ui.painter().text(egui::pos2(r.left() + 34.0, r.center().y), egui::Align2::LEFT_CENTER, title, egui::FontId::proportional(13.0), fg);
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
 pub struct SettingsTab {
-    goto: Option<String>,
     active_section: String,
-    scroll_offset: Option<f32>,
-    pinned_section: bool,
-    headings: Vec<(String, f32)>,
     conn: Option<(ConnInfo, bool)>,
     ssh: Option<crate::ssh::SshConfig>,
     keymap: Keymap,
@@ -62,11 +111,7 @@ pub struct SettingsTab {
 impl SettingsTab {
     pub fn new() -> Self {
         Self {
-            goto: None,
             active_section: "darstellung".into(),
-            scroll_offset: None,
-            pinned_section: false,
-            headings: Vec::new(),
             conn: None,
             ssh: None,
             keymap: keymap::current(),
@@ -80,15 +125,16 @@ impl SettingsTab {
         }
     }
 
+    /// Titel der Seite mit Symbol
     fn heading(&mut self, ui: &mut egui::Ui, id: &str, title: &str) {
-        ui.add_space(22.0);
-        let r = ui.label(RichText::new(title).size(18.0).strong());
-        self.headings.push((id.to_string(), r.rect.top()));
         ui.add_space(6.0);
-        if self.goto.as_deref() == Some(id) {
-            r.scroll_to_me_animation(Some(egui::Align::TOP), egui::style::ScrollAnimation::none());
-            self.goto = None;
-        }
+        ui.horizontal(|ui| {
+            let (r, _) = ui.allocate_exact_size(egui::vec2(22.0, 22.0), egui::Sense::hover());
+            crate::icons::paint(ui.painter(), r, section_icon(id), style::pal().accent);
+            ui.add_space(4.0);
+            ui.label(RichText::new(title).size(19.0));
+        });
+        ui.add_space(12.0);
     }
 
     fn keys_ui(&mut self, ui: &mut egui::Ui) {
@@ -218,9 +264,7 @@ impl TabView for SettingsTab {
     }
 
     fn show_section(&mut self, id: &str) {
-        self.goto = Some(id.to_string());
         self.active_section = id.to_string();
-        self.pinned_section = true;
     }
 
     fn on_close(&mut self) -> bool {
@@ -231,7 +275,6 @@ impl TabView for SettingsTab {
     fn ui(&mut self, ui: &mut egui::Ui, cx: &mut Ctx) {
         let pal = style::pal();
         let before = cx.settings.clone();
-        self.headings.clear();
         if ui.available_width() < 700.0 {
             // Schmales Fenster: die Abschnitte als Reihe von Schaltflaechen ueber dem Inhalt
             let items: Vec<(String, String)> = SECTIONS.iter().map(|(id, name)| (id.to_string(), crate::i18n::text(name).to_string())).collect();
@@ -241,21 +284,30 @@ impl TabView for SettingsTab {
             }
             ui.add_space(6.0);
         } else {
-            egui::Panel::left("settings-nav").resizable(false).show_separator_line(false).exact_size(190.0).frame(egui::Frame::new().fill(pal.sidebar_bg).corner_radius(style::RADIUS + 3).inner_margin(egui::Margin::symmetric(8, 12))).show(ui, |ui| {
+            // Wie der Einstellungsdialog von IntelliJ IDEA: Gruppen links, rechts nur die gewaehlte Seite
+            egui::Panel::left("settings-nav").resizable(false).show_separator_line(false).exact_size(210.0).frame(egui::Frame::new().fill(pal.sidebar_bg).corner_radius(style::RADIUS + 3).inner_margin(egui::Margin::symmetric(8, 10))).show(ui, |ui| {
                 egui::ScrollArea::vertical().id_salt("settings-nav-scroll").show(ui, |ui| {
-                    for (id, name) in SECTIONS {
-                        if style::nav_item(ui, crate::i18n::text(name), self.active_section == *id, 0.0).clicked() {
-                            self.show_section(id);
+                    ui.spacing_mut().item_spacing.y = 1.0;
+                    for (group, ids) in GROUPS {
+                        ui.add_space(8.0);
+                        ui.horizontal(|ui| {
+                            ui.add_space(10.0);
+                            ui.label(RichText::new(crate::i18n::text(group).to_uppercase()).size(10.5).color(pal.text_weak));
+                        });
+                        ui.add_space(2.0);
+                        for id in *ids {
+                            let name = SECTIONS.iter().find(|(i, _)| i == id).map(|(_, n)| crate::i18n::text(n)).unwrap_or(id);
+                            if nav_row(ui, section_icon(id), name, self.active_section == *id).clicked() {
+                                self.show_section(id);
+                            }
                         }
                     }
                 });
             });
         }
-        let jumping = self.goto.is_some();
-        let mut offset = 0.0;
         crate::tabs::page_keys(ui);
-        let body = egui::ScrollArea::vertical().id_salt("settings").auto_shrink([false, false]).show_viewport(ui, |ui, viewport| {
-            offset = viewport.min.y;
+        // Eigene Bildlaufposition je Seite
+        egui::ScrollArea::vertical().id_salt(("settings", self.active_section.clone())).auto_shrink([false, false]).show(ui, |ui| {
             egui::Frame::new().inner_margin(egui::Margin { left: 20, right: 24, top: 12, bottom: 12 }).show(ui, |ui| {
                 ui.set_max_width(ui.available_width().min(760.0));
                 let s = &mut *cx.settings;
@@ -269,454 +321,470 @@ impl TabView for SettingsTab {
 
                 };
 
-                self.heading(ui, "darstellung", crate::i18n::text("Darstellung"));
-                grid(ui, "g-look", &mut |ui| {
-                    crate::widgets::row(ui, crate::i18n::text("Sprache"), |ui| {
-                        crate::widgets::segmented(ui, &mut s.language, &[(crate::i18n::Language::English, "English"), (crate::i18n::Language::German, "Deutsch")]);
-                    });
-                    crate::widgets::row(ui, crate::i18n::text("Design"), |ui| {
-                        crate::widgets::segmented(ui, &mut s.dark, &[(true, crate::i18n::text("Dunkel")), (false, crate::i18n::text("Hell"))]);
-                    });
-
-                    crate::widgets::row(ui, crate::i18n::text("Seitenleiste"), |ui| {
-                        crate::widgets::switch(ui, &mut s.sidebar, crate::i18n::text("Explorer, Suche, Datenbanken und Verlauf zeigen"));
-                    });
-                    crate::widgets::row(ui, crate::i18n::text("Systemdatenbanken zeigen"), |ui| {
-                        crate::widgets::switch(ui, &mut s.show_system_dbs, "information_schema, mysql, …");
-                    });
-                });
-
-                self.heading(ui, "start", crate::i18n::text("Start"));
-                grid(ui, "g-start", &mut |ui| {
-                    crate::widgets::row(ui, crate::i18n::text("Registerkarten"), |ui| {
-                        crate::widgets::switch(ui, &mut s.restore_tabs, crate::i18n::text("Beim Start wieder öffnen"))
-                            .on_hover_text(crate::i18n::text("Ungespeicherte Abfragen bleiben immer erhalten."));
-                    });
-                    if crate::platform::CAN_ASSOCIATE {
-                        crate::widgets::row(ui, crate::i18n::text("Schließen"), |ui| {
-                            crate::widgets::switch(ui, &mut s.background, crate::i18n::text("Im Infobereich weiterlaufen"))
-                                .on_hover_text(crate::i18n::text("Sonst beendet das Schließen des Fensters EasyMySQL und den Server."));
-                        });
-                    }
-                });
-
-                self.heading(ui, "updates", "Updates");
-                grid(ui, "g-update", &mut |ui| {
-                    crate::widgets::row(ui, crate::i18n::text("Installierte Version"), |ui| {
-                        ui.label(RichText::new(env!("CARGO_PKG_VERSION")).monospace());
-                    });
-                    crate::widgets::row(ui, crate::i18n::text("Stand"), |ui| {
-                        ui.vertical(|ui| {
-                            use crate::updates::Phase;
-                            let st = &cx.update;
-                            let text = match st.phase {
-                                Phase::Idle => crate::tr_format!("Die Suche läuft beim Start und danach alle {} Stunden.", "The check runs at startup and every {} hours after that.", s.app_update_hours),
-                                _ => st.text.clone(),
-                            };
-                            ui.label(RichText::new(text).color(match st.phase {
-                                Phase::Failed => pal.error_text,
-                                Phase::Installed => pal.ok_text,
-                                _ => pal.text_weak,
-                            }));
-                            if st.phase == Phase::Downloading {
-                                ui.add(egui::ProgressBar::new(st.progress).desired_width(260.0).desired_height(8.0).corner_radius(4));
-                            }
-                            ui.horizontal(|ui| match st.phase {
-                                Phase::Installed => {
-                                    if crate::widgets::primary(ui, crate::i18n::text("Jetzt neu starten")).clicked() {
-                                        cx.actions.push(Action::UpdateRestart);
-                                    }
-                                }
-                                Phase::Available => {
-                                    if crate::widgets::primary(ui, crate::i18n::text("Installieren")).clicked() {
-                                        cx.actions.push(Action::UpdateInstall);
-                                    }
-                                }
-                                Phase::Checking | Phase::Downloading => {
-                                    ui.spinner();
-                                }
-                                _ => {
-                                    if ui.button(crate::i18n::text("Jetzt nach Updates suchen")).clicked() {
-                                        cx.actions.push(Action::Run(Cmd::CheckUpdates));
-                                    }
-                                }
-                            });
-                        });
-                    });
-                    crate::widgets::row(ui, crate::i18n::tr("Suchen alle", "Check every"), |ui| {
-                        crate::widgets::drag(ui, &mut s.app_update_hours, 1..=720, crate::i18n::tr(" Stunden", " hours"));
-                    });
-                    crate::widgets::row(ui, crate::i18n::text("Automatisch aktualisieren"), |ui| {
-                        crate::widgets::switch(ui, &mut s.auto_install, crate::i18n::text("Updates im Hintergrund laden und installieren"))
-                            .on_hover_text(crate::i18n::text("Aus: Neue Versionen werden gemeldet und erst nach Ihrer Zustimmung geladen. Nach dem Installieren fragt EasyMySQL, ob es neu starten soll."));
-                    });
-                });
-
-                self.heading(ui, "editor", "Editor");
-                grid(ui, "g-editor", &mut |ui| {
-                    crate::widgets::row(ui, crate::i18n::text("Schriftgröße"), |ui| {
-                        crate::widgets::slider(ui, &mut s.editor_font, crate::settings::MIN_FONT..=crate::settings::MAX_FONT, 1.0, " px");
-                    });
-                    crate::widgets::row(ui, crate::i18n::text("Vorschläge beim Tippen"), |ui| {
-                        crate::widgets::switch(ui, &mut s.auto_suggest, crate::i18n::text("Automatisch Vorschläge zeigen"))
-                            .on_hover_text(crate::tr_format!("sonst nur mit {}", "otherwise only with {}", keymap::text(Cmd::Suggest)));
-                    });
-                    crate::widgets::row(ui, crate::i18n::text("Speichern"), |ui| {
-                        crate::widgets::switch(ui, &mut s.autosave, crate::i18n::text("Dateien automatisch speichern"))
-                            .on_hover_text(crate::tr_format!("sonst nur mit {}; beim Schließen wird dann nachgefragt", "otherwise only with {}; closing then asks first", keymap::text(Cmd::Save)));
-                    });
-                    crate::widgets::row(ui, crate::i18n::text("Fehler im SQL"), |ui| {
-                        crate::widgets::switch(ui, &mut s.lint, crate::i18n::text("Tippfehler und unbekannte Namen markieren"))
-                            .on_hover_text(crate::tr_format!("Mit {} werden sie automatisch korrigiert", "{} corrects them automatically", keymap::text(Cmd::FixAll)));
-                    });
-                    crate::widgets::row(ui, crate::i18n::text("Klammern schließen"), |ui| {
-                        crate::widgets::switch(ui, &mut s.auto_close, crate::i18n::text("( [ { ' \" ` automatisch schließen"));
-                    });
-                    editor_settings(ui, s);
-                });
-
-                self.heading(ui, "abfragen", crate::i18n::tr("Abfragen und Daten", "Queries and data"));
-                grid(ui, "g-data", &mut |ui| {
-                    let pal = style::pal();
-                    crate::widgets::row(ui, crate::i18n::tr("Zeilen je Ergebnis", "Rows per result"), |ui| {
-                        ui.horizontal(|ui| {
-                            crate::widgets::drag(ui, &mut s.result_max_rows, 100..=10_000_000, "");
-                            ui.label(RichText::new(crate::i18n::tr("mehr werden nicht geladen (der Hinweis zeigt, dass es mehr gibt)", "more are not loaded (a note shows that there are more)")).small().color(pal.text_weak));
-                        });
-                    });
-                    crate::widgets::row(ui, crate::i18n::tr("Zeilen je Seite", "Rows per page"), |ui| {
-                        ui.horizontal(|ui| {
-                            crate::widgets::drag(ui, &mut s.data_page_rows, 10..=100_000, "");
-                            ui.label(RichText::new(crate::i18n::tr("in der Datenansicht einer Tabelle", "in the data view of a table")).small().color(pal.text_weak));
-                        });
-                    });
-                    crate::widgets::row(ui, crate::i18n::tr("Verlauf", "History"), |ui| {
-                        crate::widgets::drag(ui, &mut s.history_max, 10..=1_000_000, crate::i18n::tr(" Anweisungen", " statements"));
-                    });
-                    crate::widgets::row(ui, crate::i18n::tr("Vor dem Löschen", "Before deleting"), |ui| {
-                        crate::widgets::switch(ui, &mut s.backup_before_delete, crate::i18n::tr("Betroffene Tabellen sichern (DROP, TRUNCATE, DELETE ohne WHERE)", "Back up the affected tables (DROP, TRUNCATE, DELETE without WHERE)"));
-                    });
-                });
-
                 let ctx = ui.ctx().clone();
-                self.heading(ui, "ausfuehren", crate::i18n::tr("Ausführen", "Running programs"));
-                grid(ui, "g-run", &mut |ui| run_settings(ui, &ctx, s));
-                self.heading(ui, "java", "Java");
-                grid(ui, "g-java", &mut |ui| java_settings(ui, &ctx, s));
-                self.heading(ui, "python", "Python");
-                grid(ui, "g-python", &mut |ui| python_settings(ui, &ctx, s));
-                self.heading(ui, "javascript", "JavaScript & TypeScript");
-                grid(ui, "g-js", &mut |ui| node_settings(ui, &ctx, s));
-                self.heading(ui, "sprachserver", crate::i18n::tr("Sprachserver", "Language servers"));
-                grid(ui, "g-lsp", &mut |ui| lsp_settings(ui, &ctx, s));
-                self.heading(ui, "git", "Git & GitHub");
-                let actions = &mut *cx.actions;
-                grid(ui, "g-git", &mut |ui| git_settings(ui, &ctx, s, actions));
-                self.heading(ui, "terminal", "Terminal");
-                let profiles = crate::terminal::profiles(None, &s.conn.clone());
-                grid(ui, "g-term", &mut |ui| terminal_settings(ui, s, &profiles));
+                let page = self.active_section.clone();
+                let page = page.as_str();
+                if page == "darstellung" {
+                    self.heading(ui, "darstellung", crate::i18n::text("Darstellung"));
+                    grid(ui, "g-look", &mut |ui| {
+                        crate::widgets::row(ui, crate::i18n::text("Sprache"), |ui| {
+                            crate::widgets::segmented(ui, &mut s.language, &[(crate::i18n::Language::English, "English"), (crate::i18n::Language::German, "Deutsch")]);
+                        });
+                        crate::widgets::row(ui, crate::i18n::text("Design"), |ui| {
+                            crate::widgets::segmented(ui, &mut s.dark, &[(true, crate::i18n::text("Dunkel")), (false, crate::i18n::text("Hell"))]);
+                        });
 
-                self.heading(ui, "maus", crate::i18n::text("Maus"));
-                grid(ui, "g-mouse", &mut |ui| {
-                    crate::widgets::row(ui, crate::i18n::text("Scrollgeschwindigkeit"), |ui| {
-                        crate::widgets::slider(ui, &mut s.scroll_speed, 0.5..=5.0, 0.25, "×");
-                    });
-                    crate::widgets::row(ui, crate::i18n::text("Mittlere Maustaste"), |ui| {
-                        crate::widgets::switch(ui, &mut s.autoscroll, crate::i18n::text("gedrückt halten und ziehen = schnell scrollen"));
-                    });
-                });
-
-                self.heading(ui, "speicherorte", crate::i18n::text("Speicherorte"));
-                let root = workspace::storage_root();
-                let mut pick_root = false;
-                let mut reset_root = false;
-                grid(ui, "g-paths", &mut |ui| {
-                    crate::widgets::row(ui, crate::i18n::text("Speicherordner"), |ui| {
-                        ui.vertical(|ui| {
-                            { let t = root.display().to_string(); ui.add(egui::Label::new(RichText::new(&t).monospace()).truncate()).on_hover_text(&t); }
-                            ui.horizontal(|ui| {
-                                if ui.button(crate::i18n::text("Ändern …")).clicked() {
-                                    pick_root = true;
-                                }
-                                if !s.storage_dir.is_empty() && ui.button(crate::i18n::text("Standard")).clicked() {
-                                    reset_root = true;
-                                }
-                                if ui.button(crate::i18n::text("Öffnen")).clicked() {
-                                    let _ = std::fs::create_dir_all(&root);
-                                    crate::app::open_path(&root);
-                                }
-                            });
+                        crate::widgets::row(ui, crate::i18n::text("Seitenleiste"), |ui| {
+                            crate::widgets::switch(ui, &mut s.sidebar, crate::i18n::text("Explorer, Suche, Datenbanken und Verlauf zeigen"));
+                        });
+                        crate::widgets::row(ui, crate::i18n::text("Systemdatenbanken zeigen"), |ui| {
+                            crate::widgets::switch(ui, &mut s.show_system_dbs, "information_schema, mysql, …");
                         });
                     });
-                    crate::widgets::row(ui, crate::i18n::text("Sicherungen"), |ui| {
-                        ui.vertical(|ui| {
-                            { let t = self.backup.dir().display().to_string(); ui.add(egui::Label::new(RichText::new(&t).monospace()).truncate()).on_hover_text(&t); }
+                }
+                if page == "start" {
+                    self.heading(ui, "start", crate::i18n::text("Start"));
+                    grid(ui, "g-start", &mut |ui| {
+                        crate::widgets::row(ui, crate::i18n::text("Registerkarten"), |ui| {
+                            crate::widgets::switch(ui, &mut s.restore_tabs, crate::i18n::text("Beim Start wieder öffnen"))
+                                .on_hover_text(crate::i18n::text("Ungespeicherte Abfragen bleiben immer erhalten."));
+                        });
+                        if crate::platform::CAN_ASSOCIATE {
+                            crate::widgets::row(ui, crate::i18n::text("Schließen"), |ui| {
+                                crate::widgets::switch(ui, &mut s.background, crate::i18n::text("Im Infobereich weiterlaufen"))
+                                    .on_hover_text(crate::i18n::text("Sonst beendet das Schließen des Fensters EasyMySQL und den Server."));
+                            });
+                        }
+                    });
+                }
+                if page == "updates" {
+                    self.heading(ui, "updates", "Updates");
+                    grid(ui, "g-update", &mut |ui| {
+                        crate::widgets::row(ui, crate::i18n::text("Installierte Version"), |ui| {
+                            ui.label(RichText::new(env!("CARGO_PKG_VERSION")).monospace());
+                        });
+                        crate::widgets::row(ui, crate::i18n::text("Stand"), |ui| {
+                            ui.vertical(|ui| {
+                                use crate::updates::Phase;
+                                let st = &cx.update;
+                                let text = match st.phase {
+                                    Phase::Idle => crate::tr_format!("Die Suche läuft beim Start und danach alle {} Stunden.", "The check runs at startup and every {} hours after that.", s.app_update_hours),
+                                    _ => st.text.clone(),
+                                };
+                                ui.label(RichText::new(text).color(match st.phase {
+                                    Phase::Failed => pal.error_text,
+                                    Phase::Installed => pal.ok_text,
+                                    _ => pal.text_weak,
+                                }));
+                                if st.phase == Phase::Downloading {
+                                    ui.add(egui::ProgressBar::new(st.progress).desired_width(260.0).desired_height(8.0).corner_radius(4));
+                                }
+                                ui.horizontal(|ui| match st.phase {
+                                    Phase::Installed => {
+                                        if crate::widgets::primary(ui, crate::i18n::text("Jetzt neu starten")).clicked() {
+                                            cx.actions.push(Action::UpdateRestart);
+                                        }
+                                    }
+                                    Phase::Available => {
+                                        if crate::widgets::primary(ui, crate::i18n::text("Installieren")).clicked() {
+                                            cx.actions.push(Action::UpdateInstall);
+                                        }
+                                    }
+                                    Phase::Checking | Phase::Downloading => {
+                                        ui.spinner();
+                                    }
+                                    _ => {
+                                        if ui.button(crate::i18n::text("Jetzt nach Updates suchen")).clicked() {
+                                            cx.actions.push(Action::Run(Cmd::CheckUpdates));
+                                        }
+                                    }
+                                });
+                            });
+                        });
+                        crate::widgets::row(ui, crate::i18n::tr("Suchen alle", "Check every"), |ui| {
+                            crate::widgets::drag(ui, &mut s.app_update_hours, 1..=720, crate::i18n::tr(" Stunden", " hours"));
+                        });
+                        crate::widgets::row(ui, crate::i18n::text("Automatisch aktualisieren"), |ui| {
+                            crate::widgets::switch(ui, &mut s.auto_install, crate::i18n::text("Updates im Hintergrund laden und installieren"))
+                                .on_hover_text(crate::i18n::text("Aus: Neue Versionen werden gemeldet und erst nach Ihrer Zustimmung geladen. Nach dem Installieren fragt EasyMySQL, ob es neu starten soll."));
+                        });
+                    });
+                }
+                if page == "editor" {
+                    self.heading(ui, "editor", "Editor");
+                    grid(ui, "g-editor", &mut |ui| {
+                        crate::widgets::row(ui, crate::i18n::text("Schriftgröße"), |ui| {
+                            crate::widgets::slider(ui, &mut s.editor_font, crate::settings::MIN_FONT..=crate::settings::MAX_FONT, 1.0, " px");
+                        });
+                        crate::widgets::row(ui, crate::i18n::text("Vorschläge beim Tippen"), |ui| {
+                            crate::widgets::switch(ui, &mut s.auto_suggest, crate::i18n::text("Automatisch Vorschläge zeigen"))
+                                .on_hover_text(crate::tr_format!("sonst nur mit {}", "otherwise only with {}", keymap::text(Cmd::Suggest)));
+                        });
+                        crate::widgets::row(ui, crate::i18n::text("Speichern"), |ui| {
+                            crate::widgets::switch(ui, &mut s.autosave, crate::i18n::text("Dateien automatisch speichern"))
+                                .on_hover_text(crate::tr_format!("sonst nur mit {}; beim Schließen wird dann nachgefragt", "otherwise only with {}; closing then asks first", keymap::text(Cmd::Save)));
+                        });
+                        crate::widgets::row(ui, crate::i18n::text("Fehler im SQL"), |ui| {
+                            crate::widgets::switch(ui, &mut s.lint, crate::i18n::text("Tippfehler und unbekannte Namen markieren"))
+                                .on_hover_text(crate::tr_format!("Mit {} werden sie automatisch korrigiert", "{} corrects them automatically", keymap::text(Cmd::FixAll)));
+                        });
+                        crate::widgets::row(ui, crate::i18n::text("Klammern schließen"), |ui| {
+                            crate::widgets::switch(ui, &mut s.auto_close, crate::i18n::text("( [ { ' \" ` automatisch schließen"));
+                        });
+                        editor_settings(ui, s);
+                    });
+                }
+                if page == "abfragen" {
+                    self.heading(ui, "abfragen", crate::i18n::tr("Abfragen und Daten", "Queries and data"));
+                    grid(ui, "g-data", &mut |ui| {
+                        let pal = style::pal();
+                        crate::widgets::row(ui, crate::i18n::tr("Zeilen je Ergebnis", "Rows per result"), |ui| {
                             ui.horizontal(|ui| {
-                                if ui.button(crate::i18n::text("Ändern …")).clicked()
-                                    && let Some(p) = rfd::FileDialog::new().pick_folder() {
-                                        self.backup.dir = p.display().to_string();
+                                crate::widgets::drag(ui, &mut s.result_max_rows, 100..=10_000_000, "");
+                                ui.label(RichText::new(crate::i18n::tr("mehr werden nicht geladen (der Hinweis zeigt, dass es mehr gibt)", "more are not loaded (a note shows that there are more)")).small().color(pal.text_weak));
+                            });
+                        });
+                        crate::widgets::row(ui, crate::i18n::tr("Zeilen je Seite", "Rows per page"), |ui| {
+                            ui.horizontal(|ui| {
+                                crate::widgets::drag(ui, &mut s.data_page_rows, 10..=100_000, "");
+                                ui.label(RichText::new(crate::i18n::tr("in der Datenansicht einer Tabelle", "in the data view of a table")).small().color(pal.text_weak));
+                            });
+                        });
+                        crate::widgets::row(ui, crate::i18n::tr("Verlauf", "History"), |ui| {
+                            crate::widgets::drag(ui, &mut s.history_max, 10..=1_000_000, crate::i18n::tr(" Anweisungen", " statements"));
+                        });
+                        crate::widgets::row(ui, crate::i18n::tr("Vor dem Löschen", "Before deleting"), |ui| {
+                            crate::widgets::switch(ui, &mut s.backup_before_delete, crate::i18n::tr("Betroffene Tabellen sichern (DROP, TRUNCATE, DELETE ohne WHERE)", "Back up the affected tables (DROP, TRUNCATE, DELETE without WHERE)"));
+                        });
+                    });
+                }
+                if page == "ausfuehren" {
+                    self.heading(ui, "ausfuehren", crate::i18n::tr("Ausführen", "Running programs"));
+                    grid(ui, "g-run", &mut |ui| run_settings(ui, &ctx, s));
+                }
+                if page == "java" {
+                    self.heading(ui, "java", "Java");
+                    grid(ui, "g-java", &mut |ui| java_settings(ui, &ctx, s));
+                }
+                if page == "python" {
+                    self.heading(ui, "python", "Python");
+                    grid(ui, "g-python", &mut |ui| python_settings(ui, &ctx, s));
+                }
+                if page == "javascript" {
+                    self.heading(ui, "javascript", "JavaScript & TypeScript");
+                    grid(ui, "g-js", &mut |ui| node_settings(ui, &ctx, s));
+                }
+                if page == "sprachserver" {
+                    self.heading(ui, "sprachserver", crate::i18n::tr("Sprachserver", "Language servers"));
+                    grid(ui, "g-lsp", &mut |ui| lsp_settings(ui, &ctx, s));
+                }
+                if page == "git" {
+                    self.heading(ui, "git", "Git & GitHub");
+                    let actions = &mut *cx.actions;
+                    grid(ui, "g-git", &mut |ui| git_settings(ui, &ctx, s, actions));
+                }
+                if page == "terminal" {
+                    self.heading(ui, "terminal", "Terminal");
+                    let profiles = crate::terminal::profiles(None, &s.conn.clone());
+                    grid(ui, "g-term", &mut |ui| terminal_settings(ui, s, &profiles));
+                }
+                if page == "maus" {
+                    self.heading(ui, "maus", crate::i18n::text("Maus"));
+                    grid(ui, "g-mouse", &mut |ui| {
+                        crate::widgets::row(ui, crate::i18n::text("Scrollgeschwindigkeit"), |ui| {
+                            crate::widgets::slider(ui, &mut s.scroll_speed, 0.5..=5.0, 0.25, "×");
+                        });
+                        crate::widgets::row(ui, crate::i18n::text("Mittlere Maustaste"), |ui| {
+                            crate::widgets::switch(ui, &mut s.autoscroll, crate::i18n::text("gedrückt halten und ziehen = schnell scrollen"));
+                        });
+                    });
+                }
+                if page == "speicherorte" {
+                    self.heading(ui, "speicherorte", crate::i18n::text("Speicherorte"));
+                    let root = workspace::storage_root();
+                    let mut pick_root = false;
+                    let mut reset_root = false;
+                    grid(ui, "g-paths", &mut |ui| {
+                        crate::widgets::row(ui, crate::i18n::text("Speicherordner"), |ui| {
+                            ui.vertical(|ui| {
+                                { let t = root.display().to_string(); ui.add(egui::Label::new(RichText::new(&t).monospace()).truncate()).on_hover_text(&t); }
+                                ui.horizontal(|ui| {
+                                    if ui.button(crate::i18n::text("Ändern …")).clicked() {
+                                        pick_root = true;
+                                    }
+                                    if !s.storage_dir.is_empty() && ui.button(crate::i18n::text("Standard")).clicked() {
+                                        reset_root = true;
+                                    }
+                                    if ui.button(crate::i18n::text("Öffnen")).clicked() {
+                                        let _ = std::fs::create_dir_all(&root);
+                                        crate::app::open_path(&root);
+                                    }
+                                });
+                            });
+                        });
+                        crate::widgets::row(ui, crate::i18n::text("Sicherungen"), |ui| {
+                            ui.vertical(|ui| {
+                                { let t = self.backup.dir().display().to_string(); ui.add(egui::Label::new(RichText::new(&t).monospace()).truncate()).on_hover_text(&t); }
+                                ui.horizontal(|ui| {
+                                    if ui.button(crate::i18n::text("Ändern …")).clicked()
+                                        && let Some(p) = rfd::FileDialog::new().pick_folder() {
+                                            self.backup.dir = p.display().to_string();
+                                            self.backup.save();
+                                        }
+                                    if !self.backup.dir.is_empty() && ui.button(crate::i18n::text("Standard")).clicked() {
+                                        self.backup.dir.clear();
                                         self.backup.save();
                                     }
-                                if !self.backup.dir.is_empty() && ui.button(crate::i18n::text("Standard")).clicked() {
-                                    self.backup.dir.clear();
-                                    self.backup.save();
+                                    if ui.button(crate::i18n::text("Öffnen")).clicked() {
+                                        let d = self.backup.dir();
+                                        let _ = std::fs::create_dir_all(&d);
+                                        crate::app::open_path(&d);
+                                    }
+                                });
+                            });
+                        });
+                        if let Some(p) = &cx.server.paths() {
+                            crate::widgets::row(ui, crate::i18n::text("Datenbanken (MariaDB)"), |ui| {
+                                if path_with_open(ui, &p.data.display().to_string()) {
+                                    crate::app::open_path(&p.data);
                                 }
-                                if ui.button(crate::i18n::text("Öffnen")).clicked() {
-                                    let d = self.backup.dir();
-                                    let _ = std::fs::create_dir_all(&d);
-                                    crate::app::open_path(&d);
+                            });
+                        }
+                        crate::widgets::row(ui, crate::i18n::text("Einstellungen und Log"), |ui| {
+                            let d = crate::server::app_data_dir();
+                            if path_with_open(ui, &d.display().to_string()) {
+                                crate::app::open_path(&d);
+                            }
+                        });
+                    });
+                    if pick_root
+                        && let Some(p) = rfd::FileDialog::new().set_directory(&root).pick_folder()
+                            && p != root {
+                                self.pending_root = Some(p);
+                            }
+                    if reset_root && workspace::default_root() != root {
+                        self.pending_root = Some(workspace::default_root());
+                    }
+                    if let Some(new) = self.pending_root.clone() {
+                        egui::Frame::group(ui.style()).show(ui, |ui| {
+                            ui.label(crate::tr_format!("Neuer Speicherordner: {}", "New storage folder: {}", new.display()));
+                            ui.horizontal(|ui| {
+                                let apply = |move_files: bool, s: &mut crate::settings::Settings, actions: &mut Vec<Action>| -> Result<(), String> {
+                                    if move_files {
+                                        workspace::move_storage(&root, &new)?;
+                                        actions.push(Action::FilesMoved { from: root.clone(), to: new.clone() });
+                                    }
+                                    s.storage_dir = if new == workspace::default_root() { String::new() } else { new.display().to_string() };
+                                    Ok(())
+                                };
+                                let mut res = None;
+                                if ui.button(crate::i18n::text("Inhalt mitnehmen")).clicked() {
+                                    res = Some(apply(true, s, cx.actions));
+                                }
+                                if ui.button(crate::i18n::text("Nur umstellen")).clicked() {
+                                    res = Some(apply(false, s, cx.actions));
+                                }
+                                if ui.button(crate::i18n::text("Abbrechen")).clicked() {
+                                    self.pending_root = None;
+                                }
+                                match res {
+                                    Some(Ok(())) => self.pending_root = None,
+                                    Some(Err(e)) => cx.actions.push(Action::Error(e)),
+                                    None => {}
                                 }
                             });
                         });
-                    });
-                    if let Some(p) = &cx.server.paths() {
-                        crate::widgets::row(ui, crate::i18n::text("Datenbanken (MariaDB)"), |ui| {
-                            if path_with_open(ui, &p.data.display().to_string()) {
-                                crate::app::open_path(&p.data);
-                            }
-                        });
-                    }
-                    crate::widgets::row(ui, crate::i18n::text("Einstellungen und Log"), |ui| {
-                        let d = crate::server::app_data_dir();
-                        if path_with_open(ui, &d.display().to_string()) {
-                            crate::app::open_path(&d);
-                        }
-                    });
-                });
-                if pick_root
-                    && let Some(p) = rfd::FileDialog::new().set_directory(&root).pick_folder()
-                        && p != root {
-                            self.pending_root = Some(p);
-                        }
-                if reset_root && workspace::default_root() != root {
-                    self.pending_root = Some(workspace::default_root());
-                }
-                if let Some(new) = self.pending_root.clone() {
-                    egui::Frame::group(ui.style()).show(ui, |ui| {
-                        ui.label(crate::tr_format!("Neuer Speicherordner: {}", "New storage folder: {}", new.display()));
-                        ui.horizontal(|ui| {
-                            let apply = |move_files: bool, s: &mut crate::settings::Settings, actions: &mut Vec<Action>| -> Result<(), String> {
-                                if move_files {
-                                    workspace::move_storage(&root, &new)?;
-                                    actions.push(Action::FilesMoved { from: root.clone(), to: new.clone() });
-                                }
-                                s.storage_dir = if new == workspace::default_root() { String::new() } else { new.display().to_string() };
-                                Ok(())
-                            };
-                            let mut res = None;
-                            if ui.button(crate::i18n::text("Inhalt mitnehmen")).clicked() {
-                                res = Some(apply(true, s, cx.actions));
-                            }
-                            if ui.button(crate::i18n::text("Nur umstellen")).clicked() {
-                                res = Some(apply(false, s, cx.actions));
-                            }
-                            if ui.button(crate::i18n::text("Abbrechen")).clicked() {
-                                self.pending_root = None;
-                            }
-                            match res {
-                                Some(Ok(())) => self.pending_root = None,
-                                Some(Err(e)) => cx.actions.push(Action::Error(e)),
-                                None => {}
-                            }
-                        });
-                    });
-                }
-
-                self.heading(ui, "dateien", crate::i18n::text("Dateien"));
-                let mut associate = false;
-                grid(ui, "g-files", &mut |ui| {
-                    crate::widgets::row(ui, crate::i18n::text("SQL-Dateien (.sql)"), |ui| {
-                        ui.vertical(|ui| {
-                            ui.label(RichText::new(crate::i18n::text("Ein Doppelklick auf eine .sql-Datei öffnet sie in EasyMySQL.")).color(style::pal().text_weak));
-                            if crate::platform::CAN_ASSOCIATE && ui.button(crate::i18n::text("Mit EasyMySQL verknüpfen")).clicked() {
-                                associate = true;
-                            }
-                        });
-                    });
-                });
-                if associate {
-                    match crate::platform::register_sql_association() {
-                        Ok(()) => cx.actions.push(Action::Status(crate::i18n::text("Verknüpft. Falls Windows ein anderes Programm bevorzugt, hier EasyMySQL für .sql wählen.").into())),
-                        Err(e) => cx.actions.push(Action::Error(e)),
                     }
                 }
-
-                self.heading(ui, "verbindung", crate::i18n::text("Verbindung"));
-                let (info, save_pw) = self.conn.get_or_insert_with(|| (s.conn.clone(), s.save_password));
-                grid(ui, "g-conn", &mut |ui| {
-                    crate::widgets::row(ui, "Server", |ui| {
-                        ui.add(crate::widgets::edit(&mut info.host));
-                    });
-                    crate::widgets::row(ui, "Port", |ui| {
-                        ui.add(egui::DragValue::new(&mut info.port).range(1..=65535));
-                    });
-                    crate::widgets::row(ui, crate::i18n::text("Benutzer"), |ui| {
-                        ui.add(crate::widgets::edit(&mut info.user));
-                    });
-                    crate::widgets::row(ui, crate::i18n::text("Passwort"), |ui| {
-                        ui.add(crate::widgets::edit(&mut info.password).password(true));
-                    });
-                    crate::widgets::row(ui, "", |ui| {
-                        crate::widgets::switch(ui, save_pw, crate::i18n::text("Passwort speichern"));
-                    });
-                });
-                let ssh = self.ssh.get_or_insert_with(|| s.ssh.clone());
-                ssh_form(ui, "g-ssh", ssh);
-                ui.horizontal(|ui| {
-                    if ui.button(crate::i18n::text("Verbinden")).clicked() {
-                        s.conn = info.clone();
-                        s.save_password = *save_pw;
-                        s.ssh = ssh.clone();
-                        cx.actions.push(Action::Connect);
-                    }
-                    if ui.button(crate::i18n::text("Standard")).clicked() {
-                        *info = ConnInfo::default();
-                        *ssh = Default::default();
-                    }
-                    let connected = cx.db.map(|d| d.info.label()).unwrap_or_else(|| crate::i18n::text("nicht verbunden").into());
-                    ui.label(RichText::new(connected).color(pal.text_weak));
-                });
-
-                ui.add_space(14.0);
-                ui.label(RichText::new(crate::i18n::tr("Weitere Server", "More servers")).strong());
-                ui.label(RichText::new(crate::i18n::tr("Jede SQL-Datei kann einen dieser Server wählen. Ohne Auswahl gilt der Server oben.", "Each SQL file can pick one of these servers. Without a choice the server above is used.")).small().color(pal.text_weak));
-                ui.add_space(4.0);
-                let mut delete = None;
-                let mut edit = None;
-                for (i, p) in self.servers.iter().enumerate() {
-                    crate::widgets::card().inner_margin(egui::Margin::symmetric(14, 8)).show(ui, |ui| {
-                        ui.set_min_width(ui.available_width());
-                        ui.horizontal(|ui| {
+                if page == "dateien" {
+                    self.heading(ui, "dateien", crate::i18n::text("Dateien"));
+                    let mut associate = false;
+                    grid(ui, "g-files", &mut |ui| {
+                        crate::widgets::row(ui, crate::i18n::text("SQL-Dateien (.sql)"), |ui| {
                             ui.vertical(|ui| {
-                                ui.label(RichText::new(&p.name).strong());
-                                ui.label(RichText::new(p.label()).small().color(pal.text_weak));
-                            });
-                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                if crate::icons::button(ui, crate::icons::Icon::Trash, crate::i18n::text("Löschen")).clicked() {
-                                    delete = Some(i);
-                                }
-                                if ui.button(crate::i18n::tr("Bearbeiten", "Edit")).clicked() {
-                                    edit = Some(i);
+                                ui.label(RichText::new(crate::i18n::text("Ein Doppelklick auf eine .sql-Datei öffnet sie in EasyMySQL.")).color(style::pal().text_weak));
+                                if crate::platform::CAN_ASSOCIATE && ui.button(crate::i18n::text("Mit EasyMySQL verknüpfen")).clicked() {
+                                    associate = true;
                                 }
                             });
                         });
                     });
-                    ui.add_space(4.0);
+                    if associate {
+                        match crate::platform::register_sql_association() {
+                            Ok(()) => cx.actions.push(Action::Status(crate::i18n::text("Verknüpft. Falls Windows ein anderes Programm bevorzugt, hier EasyMySQL für .sql wählen.").into())),
+                            Err(e) => cx.actions.push(Action::Error(e)),
+                        }
+                    }
                 }
-                if let Some(i) = edit {
-                    self.server_edit = Some((Some(i), self.servers[i].clone()));
-                }
-                if let Some(i) = delete {
-                    self.servers.remove(i);
-                    crate::profiles::set(self.servers.clone(), s.save_password);
-                    self.server_edit = None;
-                }
-                if let Some((index, p)) = &mut self.server_edit {
-                    let mut save = false;
-                    let mut cancel = false;
-                    let taken = self.servers.iter().enumerate().any(|(i, o)| Some(i) != *index && o.name == p.name.trim());
-                    crate::widgets::card().show(ui, |ui| {
-                        ui.set_min_width(ui.available_width());
-                        ui.spacing_mut().item_spacing.y = 10.0;
-                        crate::widgets::row(ui, crate::i18n::text("Name"), |ui| {
-                            ui.add_enabled(index.is_none(), crate::widgets::edit(&mut p.name).hint_text(crate::i18n::tr("z. B. Produktion", "e.g. Production")));
-                        });
+                if page == "verbindung" {
+                    self.heading(ui, "verbindung", crate::i18n::text("Verbindung"));
+                    let (info, save_pw) = self.conn.get_or_insert_with(|| (s.conn.clone(), s.save_password));
+                    grid(ui, "g-conn", &mut |ui| {
                         crate::widgets::row(ui, "Server", |ui| {
-                            ui.add(crate::widgets::edit(&mut p.conn.host));
+                            ui.add(crate::widgets::edit(&mut info.host));
                         });
                         crate::widgets::row(ui, "Port", |ui| {
-                            ui.add(egui::DragValue::new(&mut p.conn.port).range(1..=65535));
+                            ui.add(egui::DragValue::new(&mut info.port).range(1..=65535));
                         });
                         crate::widgets::row(ui, crate::i18n::text("Benutzer"), |ui| {
-                            ui.add(crate::widgets::edit(&mut p.conn.user));
+                            ui.add(crate::widgets::edit(&mut info.user));
                         });
                         crate::widgets::row(ui, crate::i18n::text("Passwort"), |ui| {
-                            ui.add(crate::widgets::edit(&mut p.conn.password).password(true));
+                            ui.add(crate::widgets::edit(&mut info.password).password(true));
                         });
-                        ssh_form(ui, "g-srv-ssh", &mut p.ssh);
-                        if taken {
-                            ui.label(RichText::new(crate::i18n::tr("Diesen Namen gibt es schon.", "This name already exists.")).small().color(pal.error_text));
-                        }
-                        ui.horizontal(|ui| {
-                            let ok = !p.name.trim().is_empty() && !taken && !p.conn.host.trim().is_empty();
-                            if ui.add_enabled(ok, egui::Button::new(crate::i18n::text("Speichern"))).clicked() {
-                                save = true;
-                            }
-                            if ui.button(crate::i18n::text("Abbrechen")).clicked() {
-                                cancel = true;
-                            }
-                            if !s.save_password {
-                                ui.label(RichText::new(crate::i18n::tr("Passwörter werden nur gespeichert, wenn oben „Passwort speichern“ an ist.", "Passwords are only saved when “Save password” above is on.")).small().color(pal.text_weak));
-                            }
+                        crate::widgets::row(ui, "", |ui| {
+                            crate::widgets::switch(ui, save_pw, crate::i18n::text("Passwort speichern"));
                         });
                     });
-                    if save {
-                        let mut p = p.clone();
-                        p.name = p.name.trim().to_string();
-                        match *index {
-                            Some(i) => self.servers[i] = p,
-                            None => self.servers.push(p),
+                    let ssh = self.ssh.get_or_insert_with(|| s.ssh.clone());
+                    ssh_form(ui, "g-ssh", ssh);
+                    ui.horizontal(|ui| {
+                        if ui.button(crate::i18n::text("Verbinden")).clicked() {
+                            s.conn = info.clone();
+                            s.save_password = *save_pw;
+                            s.ssh = ssh.clone();
+                            cx.actions.push(Action::Connect);
                         }
+                        if ui.button(crate::i18n::text("Standard")).clicked() {
+                            *info = ConnInfo::default();
+                            *ssh = Default::default();
+                        }
+                        let connected = cx.db.map(|d| d.info.label()).unwrap_or_else(|| crate::i18n::text("nicht verbunden").into());
+                        ui.label(RichText::new(connected).color(pal.text_weak));
+                    });
+
+                    ui.add_space(14.0);
+                    ui.label(RichText::new(crate::i18n::tr("Weitere Server", "More servers")).strong());
+                    ui.label(RichText::new(crate::i18n::tr("Jede SQL-Datei kann einen dieser Server wählen. Ohne Auswahl gilt der Server oben.", "Each SQL file can pick one of these servers. Without a choice the server above is used.")).small().color(pal.text_weak));
+                    ui.add_space(4.0);
+                    let mut delete = None;
+                    let mut edit = None;
+                    for (i, p) in self.servers.iter().enumerate() {
+                        crate::widgets::card().inner_margin(egui::Margin::symmetric(14, 8)).show(ui, |ui| {
+                            ui.set_min_width(ui.available_width());
+                            ui.horizontal(|ui| {
+                                ui.vertical(|ui| {
+                                    ui.label(RichText::new(&p.name).strong());
+                                    ui.label(RichText::new(p.label()).small().color(pal.text_weak));
+                                });
+                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                    if crate::icons::button(ui, crate::icons::Icon::Trash, crate::i18n::text("Löschen")).clicked() {
+                                        delete = Some(i);
+                                    }
+                                    if ui.button(crate::i18n::tr("Bearbeiten", "Edit")).clicked() {
+                                        edit = Some(i);
+                                    }
+                                });
+                            });
+                        });
+                        ui.add_space(4.0);
+                    }
+                    if let Some(i) = edit {
+                        self.server_edit = Some((Some(i), self.servers[i].clone()));
+                    }
+                    if let Some(i) = delete {
+                        self.servers.remove(i);
                         crate::profiles::set(self.servers.clone(), s.save_password);
                         self.server_edit = None;
-                    } else if cancel {
-                        self.server_edit = None;
                     }
-                } else if ui.button(crate::i18n::tr("+ Server hinzufügen", "+ Add server")).clicked() {
-                    let mut p = crate::profiles::Profile::new("");
-                    p.conn.host = String::new();
-                    self.server_edit = Some((None, p));
+                    if let Some((index, p)) = &mut self.server_edit {
+                        let mut save = false;
+                        let mut cancel = false;
+                        let taken = self.servers.iter().enumerate().any(|(i, o)| Some(i) != *index && o.name == p.name.trim());
+                        crate::widgets::card().show(ui, |ui| {
+                            ui.set_min_width(ui.available_width());
+                            ui.spacing_mut().item_spacing.y = 10.0;
+                            crate::widgets::row(ui, crate::i18n::text("Name"), |ui| {
+                                ui.add_enabled(index.is_none(), crate::widgets::edit(&mut p.name).hint_text(crate::i18n::tr("z. B. Produktion", "e.g. Production")));
+                            });
+                            crate::widgets::row(ui, "Server", |ui| {
+                                ui.add(crate::widgets::edit(&mut p.conn.host));
+                            });
+                            crate::widgets::row(ui, "Port", |ui| {
+                                ui.add(egui::DragValue::new(&mut p.conn.port).range(1..=65535));
+                            });
+                            crate::widgets::row(ui, crate::i18n::text("Benutzer"), |ui| {
+                                ui.add(crate::widgets::edit(&mut p.conn.user));
+                            });
+                            crate::widgets::row(ui, crate::i18n::text("Passwort"), |ui| {
+                                ui.add(crate::widgets::edit(&mut p.conn.password).password(true));
+                            });
+                            ssh_form(ui, "g-srv-ssh", &mut p.ssh);
+                            if taken {
+                                ui.label(RichText::new(crate::i18n::tr("Diesen Namen gibt es schon.", "This name already exists.")).small().color(pal.error_text));
+                            }
+                            ui.horizontal(|ui| {
+                                let ok = !p.name.trim().is_empty() && !taken && !p.conn.host.trim().is_empty();
+                                if ui.add_enabled(ok, egui::Button::new(crate::i18n::text("Speichern"))).clicked() {
+                                    save = true;
+                                }
+                                if ui.button(crate::i18n::text("Abbrechen")).clicked() {
+                                    cancel = true;
+                                }
+                                if !s.save_password {
+                                    ui.label(RichText::new(crate::i18n::tr("Passwörter werden nur gespeichert, wenn oben „Passwort speichern“ an ist.", "Passwords are only saved when “Save password” above is on.")).small().color(pal.text_weak));
+                                }
+                            });
+                        });
+                        if save {
+                            let mut p = p.clone();
+                            p.name = p.name.trim().to_string();
+                            match *index {
+                                Some(i) => self.servers[i] = p,
+                                None => self.servers.push(p),
+                            }
+                            crate::profiles::set(self.servers.clone(), s.save_password);
+                            self.server_edit = None;
+                        } else if cancel {
+                            self.server_edit = None;
+                        }
+                    } else if ui.button(crate::i18n::tr("+ Server hinzufügen", "+ Add server")).clicked() {
+                        let mut p = crate::profiles::Profile::new("");
+                        p.conn.host = String::new();
+                        self.server_edit = Some((None, p));
+                    }
                 }
-
-                self.heading(ui, "server", "Server");
-                let server = cx.server;
-                let actions = &mut *cx.actions;
-                let pending_data = &mut self.pending_data;
-                grid(ui, "g-server", &mut |ui| {
-                    server_settings(ui, s, server, actions, pending_data);
-                    crate::widgets::row(ui, crate::i18n::text("Anweisungen mitschreiben"), |ui| {
-                        crate::widgets::switch(ui, &mut s.query_log, crate::i18n::text("jede Anweisung im Server-Log"));
-                    });
-                });
-
-                self.heading(ui, "sicherungen", crate::i18n::text("Sicherungen"));
-                let old = self.backup.clone();
-                grid(ui, "g-backup", &mut |ui| {
-                    crate::widgets::row(ui, crate::i18n::text("Automatisch sichern"), |ui| {
-                        ui.horizontal(|ui| {
-                            crate::widgets::switch(ui, &mut self.backup.auto, crate::i18n::text("alle"));
-                            ui.add(egui::DragValue::new(&mut self.backup.interval_hours).range(1..=168).suffix(" h"));
+                if page == "server" {
+                    self.heading(ui, "server", "Server");
+                    let server = cx.server;
+                    let actions = &mut *cx.actions;
+                    let pending_data = &mut self.pending_data;
+                    grid(ui, "g-server", &mut |ui| {
+                        server_settings(ui, s, server, actions, pending_data);
+                        crate::widgets::row(ui, crate::i18n::text("Anweisungen mitschreiben"), |ui| {
+                            crate::widgets::switch(ui, &mut s.query_log, crate::i18n::text("jede Anweisung im Server-Log"));
                         });
                     });
-                    crate::widgets::row(ui, crate::i18n::text("Aufbewahren"), |ui| {
-                        ui.horizontal(|ui| {
-                            ui.add(egui::DragValue::new(&mut self.backup.keep_count).range(1..=200));
-                            ui.label(crate::i18n::text("neueste, dazu eine je Tag für"));
-                            ui.add(egui::DragValue::new(&mut self.backup.keep_days).range(0..=365).suffix(crate::i18n::text(" Tage")));
+                }
+                if page == "sicherungen" {
+                    self.heading(ui, "sicherungen", crate::i18n::text("Sicherungen"));
+                    let old = self.backup.clone();
+                    grid(ui, "g-backup", &mut |ui| {
+                        crate::widgets::row(ui, crate::i18n::text("Automatisch sichern"), |ui| {
+                            ui.horizontal(|ui| {
+                                crate::widgets::switch(ui, &mut self.backup.auto, crate::i18n::text("alle"));
+                                ui.add(egui::DragValue::new(&mut self.backup.interval_hours).range(1..=168).suffix(" h"));
+                            });
+                        });
+                        crate::widgets::row(ui, crate::i18n::text("Aufbewahren"), |ui| {
+                            ui.horizontal(|ui| {
+                                ui.add(egui::DragValue::new(&mut self.backup.keep_count).range(1..=200));
+                                ui.label(crate::i18n::text("neueste, dazu eine je Tag für"));
+                                ui.add(egui::DragValue::new(&mut self.backup.keep_days).range(0..=365).suffix(crate::i18n::text(" Tage")));
+                            });
                         });
                     });
-                });
-                if self.backup != old {
-                    self.backup.save();
+                    if self.backup != old {
+                        self.backup.save();
+                    }
                 }
-
-                self.heading(ui, "tastenkuerzel", crate::i18n::text("Tastenkürzel"));
-                self.keys_ui(ui);
+                if page == "tastenkuerzel" {
+                    self.heading(ui, "tastenkuerzel", crate::i18n::text("Tastenkürzel"));
+                    self.keys_ui(ui);
+                }
                 ui.add_space(30.0);
             });
         });
-        // Nach einem Sprung die angeklickte Kategorie behalten, auch wenn der
-        // letzte Abschnitt wegen der Fensterhoehe nicht bis nach oben scrollt.
-        if ui.input(|i| i.pointer.hover_pos().is_some_and(|p| egui::Rect::from_min_max(body.inner_rect.min, body.inner_rect.max + egui::vec2(16.0, 0.0)).contains(p))
-            && (i.smooth_scroll_delta != egui::Vec2::ZERO || i.pointer.any_down())) {
-            self.pinned_section = false;
-        }
-        if !jumping && !self.pinned_section && self.scroll_offset != Some(offset)
-            && let Some((id, _)) = self.headings.iter().rev().find(|(_, y)| *y <= body.inner_rect.top() + 36.0).or(self.headings.first()) {
-                self.active_section = id.clone();
-            }
-        self.scroll_offset = Some(offset);
-        self.pinned_section |= jumping;
         if *cx.settings != before {
             cx.actions.push(Action::SettingsChanged);
         }
@@ -1593,7 +1661,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn navigation_keeps_clicked_section_selected_at_bottom_and_tracks_scrolling() {
+    fn only_the_chosen_page_is_drawn() {
         let ctx = egui::Context::default();
         style::apply(&ctx, true);
         let mut tab = SettingsTab::new();
@@ -1601,57 +1669,21 @@ mod tests {
         let mut settings = crate::settings::Settings::default();
         let mut schemas = super::super::SchemaCache::default();
         let mut actions = Vec::new();
-        let mut render = |tab: &mut SettingsTab, events: Vec<egui::Event>| {
-            ctx.run_ui(
-                egui::RawInput {
-                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(760.0, 480.0))),
-                    events,
-                    ..Default::default()
-                },
-                |ui| {
+        // Jede Seite laesst sich zeichnen, und die gewaehlte bleibt gewaehlt
+        for (id, _) in SECTIONS {
+            tab.show_section(id);
+            for _ in 0..2 {
+                let _ = ctx.run_ui(egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(900.0, 600.0))), ..Default::default() }, |ui| {
                     egui::CentralPanel::default().show(ui, |ui| {
-                        tab.ui(
-                            ui,
-                            &mut Ctx {
-                                db: None,
-                                schemas: &mut schemas,
-                                databases: &[],
-                                server: &server,
-                                project: None,
-                                settings: &mut settings,
-                                history: &[],
-                                update: Default::default(),
-                                actions: &mut actions,
-                            },
-                        );
+                        tab.ui(ui, &mut Ctx { db: None, schemas: &mut schemas, databases: &[], server: &server, project: None, settings: &mut settings, history: &[], update: Default::default(), actions: &mut actions });
                     });
-                },
-            )
-        };
-        for _ in 0..3 {
-            let _ = render(&mut tab, vec![]);
+                });
+            }
+            assert_eq!(tab.active_section, *id);
         }
-        tab.show_section("tastenkuerzel");
-        for _ in 0..5 {
-            let _ = render(&mut tab, vec![]);
+        // Jeder Abschnitt steht in genau einer Gruppe
+        for (id, _) in SECTIONS {
+            assert_eq!(GROUPS.iter().filter(|(_, ids)| ids.contains(id)).count(), 1, "{id}");
         }
-        assert_eq!(tab.active_section, "tastenkuerzel", "Ein Klick muss auch den letzten Abschnitt dauerhaft markieren");
-        assert!(tab.scroll_offset.unwrap() > 0.0);
-        let _ = render(
-            &mut tab,
-            vec![
-                egui::Event::PointerMoved(egui::pos2(500.0, 250.0)),
-                egui::Event::MouseWheel {
-                    phase: egui::TouchPhase::Move,
-                    unit: egui::MouseWheelUnit::Point,
-                    delta: egui::vec2(0.0, 10000.0),
-                    modifiers: egui::Modifiers::NONE,
-                },
-            ],
-        );
-        for _ in 0..5 {
-            let _ = render(&mut tab, vec![]);
-        }
-        assert_eq!(tab.active_section, "darstellung", "Manuelles Scrollen muss die aktive Kategorie nachführen");
     }
 }

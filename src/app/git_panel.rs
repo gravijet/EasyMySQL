@@ -209,6 +209,12 @@ impl EasyApp {
 
     /// Aenderungen des Sprachservers (Umbenennen) auf offene Registerkarten und Dateien anwenden
     pub(super) fn apply_workspace_edit(&mut self, edit: crate::dev::lsp::WorkspaceEdit) {
+        let changed = self.write_edit(&edit);
+        self.toast(crate::tr_format!("In {changed} Datei(en) umbenannt.", "Renamed in {changed} file(s)."));
+    }
+
+    /// Textaenderungen in offenen Registerkarten bzw. Dateien und Umbenennungen; liefert die Zahl der Dateien
+    pub(super) fn write_edit(&mut self, edit: &crate::dev::lsp::WorkspaceEdit) -> usize {
         let mut changed = 0;
         for f in &edit.files {
             let applied = self.tabs.iter_mut().find(|t| t.file().is_some_and(|p| p == f.path)).is_some_and(|t| t.apply_edits(&f.edits));
@@ -240,7 +246,7 @@ impl EasyApp {
             }
         }
         self.tree_scan = None;
-        self.toast(crate::tr_format!("In {changed} Datei(en) umbenannt.", "Renamed in {changed} file(s)."));
+        changed
     }
 
     // ------------------------------------------------------------------

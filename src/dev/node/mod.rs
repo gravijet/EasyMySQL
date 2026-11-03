@@ -67,7 +67,7 @@ fn exe_in(home: &Path) -> Option<PathBuf> {
 }
 
 fn npm_in(home: &Path) -> Option<PathBuf> {
-    [home.join("bin").join("npm"), home.join("npm.cmd")].into_iter().find(|p| p.is_file() || p.is_symlink())
+    npm_in_dir(&home.join("bin")).or_else(|| npm_in_dir(home))
 }
 
 pub(super) fn detect(dir: &Path, cfg: &Config, t: &mut Tools) {
@@ -111,8 +111,10 @@ pub(super) fn detect(dir: &Path, cfg: &Config, t: &mut Tools) {
     }
 }
 
+/// Unter Windows nur `npm.cmd`: `npm` ohne Endung ist ein Shell-Skript ("keine zulaessige Win32-Anwendung", os error 193)
 fn npm_in_dir(bin: &Path) -> Option<PathBuf> {
-    [bin.join("npm"), bin.join("npm.cmd")].into_iter().find(|p| p.is_file())
+    let name = if cfg!(windows) { "npm.cmd" } else { "npm" };
+    Some(bin.join(name)).filter(|p| p.is_file() || p.is_symlink())
 }
 
 // ---------------------------------------------------------------------------

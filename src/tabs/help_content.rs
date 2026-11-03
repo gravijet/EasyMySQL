@@ -169,13 +169,14 @@ pub const CHAPTERS: &[Chapter] = &[
                 blocks: &[
                     List(&[
                         "Klick auf eine Datei öffnet sie, Klick auf einen Ordner klappt ihn auf oder zu.",
-                        "Die Symbole oben: neue Datei, neuer Ordner, aktualisieren, alle Ordner zuklappen, Projektmenü.",
-                        "Rechtsklick auf Datei oder Ordner: umbenennen, löschen, Pfad kopieren, im Datei-Explorer zeigen.",
+                        "Mehrere wählen: Strg+Klick für einzelne Einträge, Umschalt+Klick oder Umschalt+Pfeil für einen Bereich, Strg+A für alle.",
+                        "Tasten im Explorer: Strg+C kopieren, Strg+X ausschneiden, Strg+V einfügen, Entf löschen, F2 umbenennen, Enter öffnen, Pfeiltasten bewegen, ← und → klappen Ordner zu und auf.",
+                        "Das Plus oben öffnet „Neu“: Datei, Ordner, Java-Klasse, SQL-, Python-, JavaScript-, TypeScript- oder Markdown-Datei und eine neue Datenbank – in jedem Projekt, egal welche Sprache. Neues entsteht im gewählten Ordner (bzw. im Ordner der gewählten Datei).",
+                        "Rechtsklick auf Datei oder Ordner: Neu, ausschneiden, kopieren, einfügen, umbenennen, löschen, Pfad kopieren, Terminal hier öffnen. Mit mehreren gewählten Einträgen gilt der Befehl für alle.",
                         "Rechtsklick oder Doppelklick auf die freie Fläche: neue Datei oder neuer Ordner im Projekt.",
-                        "Neue Datei: den ganzen Dateinamen mit Endung tippen, wie in IntelliJ IDEA – etwa „Main.java“, „liste.md“ oder „seite.html“. Die Endung bestimmt die Art; bei Java, Python und JavaScript erscheint darunter die Vorlage (Standard: mit Datenbankverbindung im Code). Ohne Endung wird die zum Ordner passende ergänzt. SQL-Dateien beginnen mit USE der aktuellen Datenbank.",
-                        "Java-Dateien bekommen gleich das passende Gerüst: Klasse, mit main, mit Datenbankverbindung, Record, Interface oder Enum – samt Paket aus dem Ordner.",
+                        "Neue Datei: den ganzen Dateinamen mit Endung tippen, wie in IntelliJ IDEA – etwa „Main.java“, „liste.md“ oder „seite.html“. Die Endung bestimmt die Art; bei Java, Python und JavaScript erscheint darunter die Vorlage. Ohne Endung wird die zum Ordner passende ergänzt. SQL-Dateien beginnen mit USE der aktuellen Datenbank.",
                         "Löschen verschiebt in den Ordner „.papierkorb“ im Projekt. Von dort lässt sich jede Datei zurückholen.",
-                        "Die Datei der aktiven Registerkarte ist im Explorer hervorgehoben.",
+                        "Die Datei der aktiven Registerkarte ist im Explorer gewählt.",
                     ]),
                     Keys(&[Cmd::NewFile]),
                 ],
@@ -1272,6 +1273,28 @@ pub const CHAPTERS: &[Chapter] = &[
     Chapter {
         title: "Fehlerbehebung",
         sections: &[
+            Section {
+                id: "autofix",
+                title: "Fehler automatisch beheben",
+                blocks: &[
+                    P("EasyMySQL liest die Ausgabe von Programmen, Compilern und SQL-Anweisungen mit. Erkannte Fehler erscheinen über dem Terminal bzw. unter der Meldung mit einer Erklärung und, wo möglich, einem Knopf zum Beheben. „Alle beheben“ wendet alle Vorschläge auf einmal an, „Erneut ausführen“ startet das Programm danach neu."),
+                    Table(&[
+                        ("Unknown database", "Datenbank anlegen"),
+                        ("Table … doesn't exist", "Tabelle im Designer anlegen"),
+                        ("Server nicht erreichbar", "eigenen Server starten bzw. Verbindung prüfen"),
+                        ("com.mysql.jdbc.Driver", "veraltete Treiberklasse im ganzen Projekt durch com.mysql.cj.jdbc.Driver ersetzen"),
+                        ("No suitable driver", "Adresse auf jdbc:mariadb:// umstellen, Treiber laden, Class.forName entfernen"),
+                        ("Public Key Retrieval", "allowPublicKeyRetrieval=true an die Adresse anhängen"),
+                        ("';' expected", "Semikolon am Zeilenende ergänzen"),
+                        ("cannot find symbol", "fehlenden Import ergänzen (Scanner, List, Connection, LocalDate …)"),
+                        ("unreported exception", "throws … an der Methode ergänzen"),
+                        ("class … should be declared in a file named", "Klasse wie die Datei benennen"),
+                        ("No module named", "Python-Paket in requirements.txt bzw. pyproject.toml eintragen"),
+                        ("Cannot find module", "npm-Paket in package.json eintragen"),
+                    ]),
+                    Tip("Dateiverweise in der Ausgabe (z. B. Main.java:13 oder File \"main.py\", line 5) sind anklickbar und öffnen die Datei an der Zeile."),
+                ],
+            },
             Section {
                 id: "fehler",
                 title: "Häufige Fehlermeldungen",
