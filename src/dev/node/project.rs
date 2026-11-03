@@ -233,21 +233,6 @@ fn package_json(s: &Spec) -> String {
     serde_json::to_string_pretty(&v).unwrap_or_default() + "\n"
 }
 
-fn readme(s: &Spec) -> String {
-    if en() {
-        format!(
-            "# {name}\n\nNode.js program for the database `{db}`.\n\n- `index.js` – start here (▶ in EasyMySQL or F5, or `npm start`)\n- `db.json` – connection settings for starting outside EasyMySQL\n- `repos.js` – one repository class per table\n- `test/` – tests (`npm test`)\n\nEasyMySQL runs `npm install` itself when `package.json` changes.\n",
-            name = s.name,
-            db = s.database
-        )
-    } else {
-        format!(
-            "# {name}\n\nNode.js-Programm für die Datenbank `{db}`.\n\n- `index.js` – hier geht es los (▶ in EasyMySQL oder F5, oder `npm start`)\n- `db.json` – Verbindungsdaten für den Start außerhalb von EasyMySQL\n- `repos.js` – je Tabelle eine Repository-Klasse\n- `test/` – Tests (`npm test`)\n\nEasyMySQL führt `npm install` selbst aus, wenn sich `package.json` ändert.\n",
-            name = s.name,
-            db = s.database
-        )
-    }
-}
 
 pub fn files(s: &Spec) -> Vec<(PathBuf, String)> {
     let mut out = vec![
@@ -255,7 +240,6 @@ pub fn files(s: &Spec) -> Vec<(PathBuf, String)> {
         (PathBuf::from("index.js"), index_js(s)),
         (PathBuf::from("db.js"), db_module(s.driver)),
         (PathBuf::from("db.json"), db_json(s)),
-        (PathBuf::from("README.md"), readme(s)),
         (PathBuf::from(".gitignore"), "node_modules/\ndist/\n.env\n".into()),
     ];
     if !s.tables.is_empty() {

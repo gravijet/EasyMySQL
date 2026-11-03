@@ -91,7 +91,10 @@ pub const TOOL_H: f32 = 28.0;
 pub fn tool_button(ui: &mut egui::Ui, lead: Lead, text: &str, color: Color32, chevron: bool) -> egui::Response {
     let pal = style::pal();
     let font = egui::FontId::proportional(13.0);
-    let galley = ui.painter().layout_no_wrap(text.to_string(), font, color);
+    // Lange Namen (Projekt, Branch) mit "…" kuerzen, damit die Leiste nicht ueberlaeuft
+    let mut job = egui::text::LayoutJob::simple_singleline(text.to_string(), font, color);
+    job.wrap = egui::text::TextWrapping { max_width: (ui.ctx().content_rect().width() * 0.18).clamp(90.0, 260.0), max_rows: 1, break_anywhere: true, overflow_character: Some('…') };
+    let galley = ui.painter().layout_job(job);
     // Breite des Vorspanns (ohne Abstand zum Text)
     let lead_w = match &lead {
         Lead::Icon(..) => 16.0,
@@ -117,8 +120,7 @@ pub fn tool_button(ui: &mut egui::Ui, lead: Lead, text: &str, color: Color32, ch
         Lead::Icon(icon, c) => icons::paint(p, Rect::from_center_size(pos2(x + 8.0, cy), vec2(16.0, 16.0)), icon, c),
         Lead::Badge(t, c) => {
             let b = Rect::from_center_size(pos2(x + 10.0, cy), vec2(20.0, 20.0));
-            p.rect_filled(b, 5.0, c);
-            p.text(b.center() + vec2(0.0, 0.5), egui::Align2::CENTER_CENTER, t, egui::FontId::proportional(10.0), Color32::WHITE);
+            icons::badge(p, b, &t, c, Color32::WHITE, 5.0);
         }
         Lead::Dot(c) => {
             p.circle_filled(pos2(x + 4.0, cy), 4.0, c);

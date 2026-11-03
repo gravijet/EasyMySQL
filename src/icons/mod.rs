@@ -90,6 +90,11 @@ pub enum Icon {
     GitMerge,
     CircleDot,
     RotateCcw,
+    Code,
+    Scissors,
+    Clipboard,
+    FolderInput,
+    Power,
 }
 
 impl Icon {
@@ -174,6 +179,11 @@ impl Icon {
             Icon::GitMerge => "git-merge",
             Icon::CircleDot => "circle-dot",
             Icon::RotateCcw => "rotate-ccw",
+            Icon::Code => "code-xml",
+            Icon::Scissors => "scissors",
+            Icon::Clipboard => "clipboard-paste",
+            Icon::FolderInput => "folder-input",
+            Icon::Power => "power",
         }
     }
 
@@ -220,6 +230,147 @@ pub fn paint(p: &egui::Painter, r: Rect, icon: Icon, color: Color32) {
             p.circle_filled(b, width / 2.0, color);
         }
     }
+}
+
+/// Text genau mittig um `center` (nach den sichtbaren Zeichen, nicht nach der Zeilenhoehe der Schrift:
+/// sonst sitzen Grossbuchstaben zu tief).
+pub fn text_centered(p: &egui::Painter, center: Pos2, text: &str, font: egui::FontId, color: Color32) {
+    let g = p.layout_no_wrap(text.to_string(), font, color);
+    let b = g.mesh_bounds;
+    let pos = center - b.center().to_vec2();
+    p.galley(pos2(pos.x.round(), pos.y.round()), g, color);
+}
+
+/// Farbiges Kaestchen mit Kuerzel (Projekte, Dateiarten)
+pub fn badge(p: &egui::Painter, r: Rect, text: &str, fill: Color32, fg: Color32, radius: f32) {
+    p.rect_filled(r, radius, fill);
+    let size = (r.height() * if text.chars().count() > 1 { 0.5 } else { 0.62 }).round();
+    text_centered(p, r.center(), text, egui::FontId::proportional(size), fg);
+    // Etwas kraeftiger (es gibt nur den normalen Schnitt)
+    text_centered(p, r.center() + vec2(0.35, 0.0), text, egui::FontId::proportional(size), fg);
+}
+
+/// Art einer Datei nach Name und Endung: Symbol bzw. Kuerzel und Farbe (wie die Dateisymbole von IntelliJ IDEA)
+pub enum FileGlyph {
+    Sym(Icon, Color32),
+    Badge(&'static str, Color32, Color32),
+}
+
+pub fn file_glyph(name: &str) -> FileGlyph {
+    use FileGlyph::*;
+    let lower = name.to_lowercase();
+    let ext = lower.rsplit_once('.').map(|(_, e)| e).unwrap_or("");
+    let white = Color32::WHITE;
+    match lower.as_str() {
+        "package.json" | "package-lock.json" => return Sym(Icon::Package, Color32::from_rgb(0x8B, 0xC3, 0x4A)),
+        "requirements.txt" | "pyproject.toml" | "pom.xml" | "build.gradle" | "build.gradle.kts" | "settings.gradle" | "settings.gradle.kts" => return Sym(Icon::Package, Color32::from_rgb(0xB0, 0x8B, 0x5B)),
+        ".gitignore" | ".gitattributes" => return Sym(Icon::GitBranch, Color32::from_rgb(0xE8, 0x6A, 0x4A)),
+        "dockerfile" => return Sym(Icon::Package, Color32::from_rgb(0x2D, 0x9C, 0xDB)),
+        _ => {}
+    }
+    match ext {
+        "sql" => Sym(Icon::Database, Color32::from_rgb(0xE3, 0x8C, 0x3B)),
+        "java" => Badge("J", Color32::from_rgb(0xD9, 0x6B, 0x3E), white),
+        "class" | "jar" => Sym(Icon::Package, Color32::from_rgb(0xB0, 0x8B, 0x5B)),
+        "py" | "pyw" => Badge("Py", Color32::from_rgb(0x35, 0x72, 0xA5), Color32::from_rgb(0xFF, 0xDA, 0x4A)),
+        "js" | "mjs" | "cjs" => Badge("JS", Color32::from_rgb(0xE8, 0xC9, 0x3A), Color32::from_rgb(0x2A, 0x2A, 0x2A)),
+        "jsx" | "tsx" => Badge("R", Color32::from_rgb(0x2B, 0xA9, 0xC9), white),
+        "ts" | "mts" | "cts" => Badge("TS", Color32::from_rgb(0x31, 0x78, 0xC6), white),
+        "kt" | "kts" => Badge("K", Color32::from_rgb(0x8E, 0x5B, 0xE8), white),
+        "html" | "htm" => Sym(Icon::Code, Color32::from_rgb(0xE4, 0x6F, 0x3C)),
+        "css" | "scss" => Badge("#", Color32::from_rgb(0x3D, 0x8F, 0xD6), white),
+        "properties" | "ini" | "cfg" | "conf" | "toml" | "env" => Sym(Icon::Settings, Color32::from_rgb(0x8A, 0x93, 0x9E)),
+        "md" | "markdown" => Sym(Icon::FileText, Color32::from_rgb(0x51, 0x9A, 0xBA)),
+        "txt" | "log" => Sym(Icon::FileText, Color32::from_rgb(0x8A, 0x93, 0x9E)),
+        "csv" | "tsv" | "xlsx" | "xls" | "ods" => Sym(Icon::FileSheet, Color32::from_rgb(0x4C, 0xAF, 0x50)),
+        "json" | "jsonc" => Sym(Icon::Braces, Color32::from_rgb(0xD6, 0xB8, 0x4E)),
+        "xml" | "yml" | "yaml" => Sym(Icon::Code, Color32::from_rgb(0xC0, 0x8F, 0x4E)),
+        "png" | "jpg" | "jpeg" | "jfif" | "gif" | "bmp" | "webp" | "ico" | "svg" => Sym(Icon::FileImage, Color32::from_rgb(0xA0, 0x7C, 0xD6)),
+        "pdf" => Badge("P", Color32::from_rgb(0xD9, 0x4B, 0x43), white),
+        "sh" | "bat" | "cmd" | "ps1" => Sym(Icon::Terminal, Color32::from_rgb(0x6C, 0xBE, 0x6A)),
+        "zip" | "gz" | "tar" | "7z" => Sym(Icon::Package, Color32::from_rgb(0x8A, 0x93, 0x9E)),
+        _ => Sym(Icon::File, style::pal().text_weak),
+    }
+}
+
+/// Dateisymbol in `r` (16 x 16) zeichnen
+pub fn paint_file(p: &egui::Painter, r: Rect, name: &str) {
+    match file_glyph(name) {
+        FileGlyph::Sym(icon, c) => paint(p, r, icon, c),
+        FileGlyph::Badge(t, bg, fg) => badge(p, r.shrink(1.0), t, bg, fg, 3.0),
+    }
+}
+
+/// Farbe eines Ordners: Quellen blau, Tests gruen, Ressourcen gelb (wie in IntelliJ IDEA), sonst neutral
+pub fn folder_color(name: &str) -> Color32 {
+    match name {
+        "src" | "java" | "main" => Color32::from_rgb(0x5C, 0x9D, 0xE8),
+        "test" | "tests" | "__tests__" | "spec" => Color32::from_rgb(0x5F, 0xB8, 0x65),
+        "resources" | "assets" | "static" | "public" => Color32::from_rgb(0xD6, 0xB8, 0x4E),
+        "lib" | "libs" | "target" | "build" | "bin" | "out" | "dist" => Color32::from_rgb(0xA0, 0x8A, 0x70),
+        _ => Color32::from_rgb(0xDC, 0xB6, 0x7A),
+    }
+}
+
+/// Menueeintrag mit Symbol (Platz bleibt auch ohne Symbol frei, damit alle Texte buendig stehen) und Tastenkuerzel
+pub fn menu_item(ui: &mut egui::Ui, icon: Option<Icon>, text: &str, keys: &str) -> Response {
+    menu_item_colored(ui, icon.map(|i| (i, None)), text, keys)
+}
+
+pub fn menu_item_colored(ui: &mut egui::Ui, icon: Option<(Icon, Option<Color32>)>, text: &str, keys: &str) -> Response {
+    menu_row(ui, icon, text, keys, false)
+}
+
+/// Untermenue mit Symbol und Pfeil, buendig mit den anderen Eintraegen
+pub fn submenu<R>(ui: &mut egui::Ui, icon: Option<Icon>, text: &str, content: impl FnOnce(&mut egui::Ui) -> R) -> Response {
+    use egui::containers::menu::{MenuState, SubMenu};
+    let id = ui.next_auto_id();
+    let open = MenuState::from_ui(ui, |st, _| st.open_item == Some(SubMenu::id_from_widget_id(id)));
+    let resp = menu_row(ui, icon.map(|i| (i, None)), text, "", open);
+    let c = if open && style::pal().dark { Color32::WHITE } else { style::pal().text_weak };
+    paint(ui.painter(), Rect::from_center_size(pos2(resp.rect.right() - 14.0, resp.rect.center().y), vec2(13.0, 13.0)), Icon::ChevronRight, c);
+    SubMenu::new().show(ui, &resp, |ui| {
+        style::menu_item_look(ui);
+        content(ui)
+    });
+    resp
+}
+
+fn menu_row(ui: &mut egui::Ui, icon: Option<(Icon, Option<Color32>)>, text: &str, keys: &str, force_hot: bool) -> Response {
+    let pal = style::pal();
+    let enabled = ui.is_enabled();
+    let font = egui::FontId::proportional(13.0);
+    let g = ui.painter().layout_no_wrap(text.to_string(), font, pal.text);
+    let kg = (!keys.is_empty()).then(|| ui.painter().layout_no_wrap(keys.to_string(), egui::FontId::proportional(12.0), pal.text_weak));
+    let w = 34.0 + g.size().x + kg.as_ref().map(|k| k.size().x + 28.0).unwrap_or(0.0) + 24.0;
+    let resp = ui.allocate_response(vec2(w, 26.0), Sense::click());
+    let r = resp.rect;
+    let hot = enabled && (resp.hovered() || resp.has_focus() || force_hot);
+    if hot {
+        ui.painter().rect_filled(r, style::RADIUS as f32, pal.selection);
+    }
+    let fg = if !enabled { pal.text_weak.gamma_multiply(0.6) } else if hot && pal.dark { Color32::WHITE } else { pal.text };
+    if let Some((i, tint)) = icon {
+        let c = if !enabled { fg } else { tint.unwrap_or(if hot { fg } else { pal.text_weak }) };
+        paint(ui.painter(), Rect::from_center_size(pos2(r.left() + 17.0, r.center().y), vec2(15.0, 15.0)), i, c);
+    }
+    ui.painter().galley_with_override_text_color(pos2(r.left() + 34.0, r.center().y - g.size().y / 2.0), g, fg);
+    if let Some(k) = kg {
+        let kc = if hot && pal.dark { Color32::from_white_alpha(170) } else { pal.text_weak };
+        ui.painter().galley_with_override_text_color(pos2(r.right() - 10.0 - k.size().x, r.center().y - k.size().y / 2.0), k, kc);
+    }
+    resp
+}
+
+/// Kleine Ueberschrift in einem Menue (z. B. "Zuletzt geoeffnet")
+pub fn menu_heading(ui: &mut egui::Ui, text: &str) {
+    let pal = style::pal();
+    ui.add_space(4.0);
+    ui.horizontal(|ui| {
+        ui.add_space(10.0);
+        ui.label(egui::RichText::new(text.to_uppercase()).size(10.5).color(pal.text_weak));
+    });
+    ui.add_space(1.0);
 }
 
 /// Kleiner Knopf nur mit Symbol (ohne Rahmen, Hervorhebung bei Maus darueber).
@@ -302,6 +453,7 @@ mod tests {
             FileJson, Table, Columns, Key, Link, Settings, Book, Terminal, Shield, Save, Download, Alert, Check, Info,
             Sparkles, Layers, ArrowLeft, ArrowRight, Undo, Redo, Explain, Upload, Users, ArrowUp, ArrowDown, Lock, Edit, Copy, Coffee, Package, Minus,
             Bug, Flask, Braces, Script, StepOver, StepInto, StepOut, Stop, GitBranch, GitCommit, GitPullRequest, Github, CloudUpload, CloudDownload, GitMerge, CircleDot, RotateCcw,
+            Code, Scissors, Clipboard, FolderInput, Power,
         ] {
             let polys = shapes(icon);
             assert!(!polys.is_empty(), "{icon:?}");

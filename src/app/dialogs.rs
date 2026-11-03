@@ -55,20 +55,31 @@ impl EasyApp {
             ui.set_max_width(520.0);
             match dlg {
                 Dialog::Message { title, text, error } => {
-                    ui.label(RichText::new(title.as_str()).strong());
-                    ui.add_space(4.0);
-                    egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
-                        let t = RichText::new(text.as_str());
-                        ui.label(if *error { t.color(pal.error_text) } else { t });
-                    });
-                    ui.add_space(6.0);
+                    ui.set_max_width(560.0);
                     ui.horizontal(|ui| {
-                        if ui.button("OK").clicked() || ui.input(|i| i.key_pressed(Key::Enter)) {
-                            close = true;
+                        let (r, _) = ui.allocate_exact_size(egui::vec2(20.0, 20.0), egui::Sense::hover());
+                        let (icon, c) = if *error { (crate::icons::Icon::Alert, pal.error_text) } else { (crate::icons::Icon::Info, pal.accent) };
+                        crate::icons::paint(ui.painter(), r, icon, c);
+                        ui.label(RichText::new(title.as_str()).strong().size(15.0));
+                    });
+                    ui.add_space(8.0);
+                    egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
+                        if *error {
+                            crate::widgets::error_label(ui, text);
+                        } else {
+                            ui.label(text.as_str());
                         }
-                        if *error && ui.button(crate::i18n::text("Kopieren")).clicked() {
+                    });
+                    ui.add_space(12.0);
+                    ui.horizontal(|ui| {
+                        if *error && crate::icons::text_button(ui, crate::icons::Icon::Copy, crate::i18n::text("Kopieren")).clicked() {
                             ui.ctx().copy_text(text.clone());
                         }
+                        ui.allocate_ui_with_layout(egui::vec2(ui.available_width(), 28.0), egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if ui.add(egui::Button::new(RichText::new("OK").color(egui::Color32::WHITE)).fill(pal.accent).min_size(egui::vec2(84.0, 28.0))).clicked() || ui.input(|i| i.key_pressed(Key::Enter)) {
+                                close = true;
+                            }
+                        });
                     });
                 }
                 Dialog::Confirm { text, db, sql } => {

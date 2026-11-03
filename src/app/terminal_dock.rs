@@ -11,6 +11,17 @@ struct TermTab {
     session: Session,
     /// Von "Ausfuehren" gestartetes Programm (Java) statt einer Shell
     program: bool,
+    /// Erkannte Fehler mit Behebung; Laenge der Ausgabe bei der letzten Untersuchung
+    fixes: Vec<crate::dev::autofix::Suggestion>,
+    analyzed: (usize, Option<Instant>),
+    /// Schon angewendete Behebungen (Index in `fixes`)
+    applied: Vec<usize>,
+}
+
+impl TermTab {
+    fn new(uid: usize, title: String, session: Session, program: bool) -> Self {
+        TermTab { uid, title, session, program, fixes: Vec::new(), analyzed: (0, None), applied: Vec::new() }
+    }
 }
 
 #[derive(Default)]
@@ -38,11 +49,16 @@ impl EasyApp {
 
     /// Neues Terminal in der gewaehlten Shell (None = Standard) im Projektordner
     pub(super) fn new_terminal(&mut self, ctx: &egui::Context, profile: Option<Profile>) {
+        self.new_terminal_in(ctx, profile, None);
+    }
+
+    /// Neues Terminal in einem bestimmten Ordner (None = Projektordner)
+    pub(super) fn new_terminal_in(&mut self, ctx: &egui::Context, profile: Option<Profile>, dir: Option<PathBuf>) {
         let profile = profile.or_else(|| self.terminal_profiles().into_iter().next());
         let Some(profile) = profile else { return };
-        let cwd = self
-            .project
-            .clone()
+        let cwd = dir
+            .filter(|p| p.is_dir())
+            .or_else(|| self.project.clone())
             .filter(|p| p.is_dir())
             .or_else(|| std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")).map(PathBuf::from))
             .unwrap_or_else(std::env::temp_dir);
@@ -55,7 +71,7 @@ impl EasyApp {
         let same = d.tabs.iter().filter(|t| t.session.profile.name == profile.name && !t.program).count();
         let title = if same == 0 { profile.name.clone() } else { format!("{} {}", profile.name, same + 1) };
         d.next_uid += 1;
-        d.tabs.push(TermTab { uid: d.next_uid, title, session: Session::spawn(ctx, profile, cwd, prefix), program: false });
+        d.tabs.push(TermTab::new(d.next_uid, title, Session::spawn(ctx, profile, cwd, prefix), false));
         d.active = d.tabs.len() - 1;
         d.open = true;
         d.focus = true;
@@ -79,7 +95,7 @@ impl EasyApp {
         let session = Session::spawn(ctx, profile, launch.cwd, prefix);
         let d = &mut self.terminal;
         d.next_uid += 1;
-        let tab = TermTab { uid: d.next_uid, title: launch.title.clone(), session, program: true };
+        let tab = TermTab::new(d.next_uid, launch.title.clone(), session, true);
         let reuse = crate::dev::config().reuse_terminal;
         match d.tabs.iter().position(|t| reuse && t.program && t.title == launch.title) {
             Some(i) => {
@@ -110,10 +126,11 @@ impl EasyApp {
     pub(super) fn terminal_panel(&mut self, ui: &mut egui::Ui) {
         let pal = style::pal();
         let ctx = ui.ctx().clone();
-        let profiles = self.terminal_profiles();
         let mut new_profile: Option<Option<Profile>> = None;
         let mut close: Option<usize> = None;
         let mut hide = false;
+        let mut fixes: Vec<crate::dev::autofix::Fix> = Vec::new();
+        let mut link: Option<(String, usize, String, PathBuf)> = None;
         let frame = egui::Frame::new().fill(pal.bg);
         egui::Panel::bottom("terminal-dock").resizable(true).show_separator_line(true).default_size(280.0).min_size(110.0).frame(frame).show(ui, |ui| {
           style::panel_card(ui, pal.bg, egui::Margin::symmetric(8, 6), |ui| {
@@ -171,8 +188,9 @@ impl EasyApp {
             let more = icons::button(&mut right, Icon::ChevronDown, crate::i18n::text("Shell wählen"));
             egui::Popup::menu(&more).show(|ui| {
                 crate::style::menu_item_look(ui);
-                for p in &profiles {
-                    if ui.button(&p.name).clicked() {
+                // Erst beim Oeffnen ermitteln (sucht Programme auf der Platte)
+                for p in &self.terminal_profiles() {
+                    if icons::menu_item(ui, Some(Icon::Terminal), &p.name, "").clicked() {
                         new_profile = Some(Some(p.clone()));
                         ui.close();
                     }
@@ -182,10 +200,43 @@ impl EasyApp {
                 new_profile = Some(None);
             }
 
+            // Erkannte Fehler eines Programms: Erklaerung und Behebung
+            let local = self.is_local();
+            let project = self.project.clone();
+            if let Some(t) = self.terminal.tabs.get_mut(active)
+                && t.program
+            {
+                let len = t.session.log.lock().map(|l| l.len()).unwrap_or(0);
+                let due = t.session.exited() || t.analyzed.1.is_none_or(|at| at.elapsed() >= Duration::from_millis(1500));
+                if len != t.analyzed.0 && due {
+                    let log = t.session.log.lock().map(|l| l.clone()).unwrap_or_default();
+                    t.fixes = crate::dev::autofix::analyze_output(&log, project.as_deref(), None, local);
+                    t.analyzed = (len, Some(Instant::now()));
+                    t.applied.clear();
+                } else if len != t.analyzed.0 {
+                    ctx.request_repaint_after(Duration::from_millis(500));
+                }
+                if !t.fixes.is_empty() {
+                    let (apply, rerun) = fix_bar(ui, &t.fixes, &t.applied, t.session.exited());
+                    for i in apply {
+                        if let Some(f) = t.fixes[i].fix.clone() {
+                            fixes.push(f);
+                            t.applied.push(i);
+                        }
+                    }
+                    if rerun {
+                        t.session.restart(&ctx);
+                        t.fixes.clear();
+                        t.analyzed = (0, None);
+                    }
+                }
+            }
             // Inhalt
             if let Some(t) = self.terminal.tabs.get_mut(active) {
                 let focus = std::mem::take(&mut self.terminal.focus);
-                terminal::show(ui, egui::Id::new(("terminal", t.uid)), &mut t.session, focus);
+                if let Some((file, line, text)) = terminal::show(ui, egui::Id::new(("terminal", t.uid)), &mut t.session, focus) {
+                    link = Some((file, line, text, t.session.cwd().to_path_buf()));
+                }
             }
           });
         });
@@ -205,5 +256,86 @@ impl EasyApp {
         if let Some(p) = new_profile {
             self.new_terminal(&ctx, p);
         }
+        for f in fixes {
+            self.apply_fix(f);
+        }
+        if let Some((file, line, text, cwd)) = link {
+            match crate::dev::autofix::resolve(self.project.as_deref(), Some(&cwd), &text, &file) {
+                Some(path) => self.handle_actions(vec![Action::OpenFileAt { path, line }]),
+                None => self.toast(crate::tr_format!("„{file}“ wurde im Projekt nicht gefunden.", "“{file}” was not found in the project.")),
+            }
+        }
     }
+
+    /// Erkannten Fehler beheben (aus dem Terminal oder der Ausgabe eines Editors)
+    pub(super) fn apply_fix(&mut self, fix: crate::dev::autofix::Fix) {
+        use crate::dev::autofix::Fix;
+        match fix {
+            Fix::Edit(edit) => {
+                let n = self.write_edit(&edit);
+                self.toast(crate::tr_format!("Behoben in {n} Datei(en).", "Fixed in {n} file(s)."));
+            }
+            Fix::CreateDatabase(name) => match &self.db {
+                Some(dbc) => match dbc.exec(&format!("CREATE DATABASE IF NOT EXISTS {} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci", crate::db::q(&name)), ()) {
+                    Ok(_) => {
+                        self.toast(crate::tr_format!("Datenbank {name} erstellt.", "Database {name} created."));
+                        self.refresh_all();
+                        self.current_db = name;
+                    }
+                    Err(e) => self.error(e),
+                },
+                None => self.error(crate::i18n::text("Nicht verbunden").to_string()),
+            },
+            Fix::NewTable(db) => self.handle_actions(vec![Action::NewTable(db)]),
+            Fix::StartServer => {
+                if let Some(ctx) = CTX.lock().unwrap().clone() {
+                    self.start_server(&ctx);
+                }
+            }
+            Fix::ConnectionSettings => self.handle_actions(vec![Action::OpenSettings(Some("verbindung".into()))]),
+            Fix::Install(tool) => {
+                if let Some(ctx) = CTX.lock().unwrap().clone() {
+                    crate::dev::install::install(&[tool], &ctx);
+                }
+            }
+        }
+    }
+}
+
+/// Leiste mit erkannten Fehlern ueber dem Terminal. Liefert die angeklickten Behebungen und "Erneut ausfuehren".
+fn fix_bar(ui: &mut egui::Ui, fixes: &[crate::dev::autofix::Suggestion], applied: &[usize], exited: bool) -> (Vec<usize>, bool) {
+    let pal = style::pal();
+    let mut apply = Vec::new();
+    let mut rerun = false;
+    let open: Vec<usize> = (0..fixes.len()).filter(|i| fixes[*i].fix.is_some() && !applied.contains(i)).collect();
+    let tone = if open.is_empty() && !applied.is_empty() { pal.ok_text } else if fixes.iter().any(|s| s.fix.is_some()) { pal.error_text } else { pal.warn_text };
+    egui::Frame::new().fill(tone.gamma_multiply(0.07)).stroke(Stroke::new(1.0, tone.gamma_multiply(0.35))).corner_radius(style::RADIUS).inner_margin(egui::Margin::symmetric(10, 6)).show(ui, |ui| {
+        ui.set_min_width(ui.available_width());
+        ui.spacing_mut().item_spacing.y = 4.0;
+        for (i, s) in fixes.iter().enumerate().take(5) {
+            ui.horizontal(|ui| {
+                ui.set_min_height(24.0);
+                let done = applied.contains(&i);
+                let (icon, color) = if done { (Icon::Check, pal.ok_text) } else if s.fix.is_some() { (Icon::Alert, pal.error_text) } else { (Icon::Info, pal.text_weak) };
+                let (r, _) = ui.allocate_exact_size(vec2(16.0, 16.0), Sense::hover());
+                icons::paint(ui.painter(), r, icon, color);
+                ui.add(egui::Label::new(egui::RichText::new(&s.problem).color(if done { pal.text_weak } else { pal.text })).truncate());
+                if s.fix.is_some() && !done && icons::text_button(ui, Icon::Wizard, &s.label).clicked() {
+                    apply.push(i);
+                }
+            });
+        }
+        if open.len() > 1 || (exited && !applied.is_empty()) {
+            ui.horizontal(|ui| {
+                if open.len() > 1 && icons::primary_button(ui, Icon::Sparkles, crate::i18n::tr("Alle beheben", "Fix all")).clicked() {
+                    apply.extend(open.iter().copied());
+                }
+                if exited && !applied.is_empty() && icons::run_button(ui, crate::i18n::tr("Erneut ausführen", "Run again")).clicked() {
+                    rerun = true;
+                }
+            });
+        }
+    });
+    ui.add_space(6.0);
+    (apply, rerun)
 }

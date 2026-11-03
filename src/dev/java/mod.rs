@@ -66,8 +66,8 @@ impl Driver {
     /// Version, die in neue Maven/Gradle-Projekte geschrieben wird, wenn nichts heruntergeladen werden kann
     pub fn fallback_version(self) -> &'static str {
         match self {
-            Driver::MariaDb => "3.5.11",
-            Driver::MySql => "9.4.0",
+            Driver::MariaDb => "4.0.0",
+            Driver::MySql => "26.10.0",
         }
     }
 }

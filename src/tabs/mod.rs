@@ -84,6 +84,8 @@ pub enum Action {
     ApplyEdit(crate::dev::lsp::WorkspaceEdit),
     /// Anmeldedialog fuer GitHub oeffnen
     GitHubLogin,
+    /// Erkannten Fehler beheben
+    AutoFix(crate::dev::autofix::Fix),
     /// Eigenen Server auf diese MariaDB-Version aktualisieren
     MariaDbUpdate(crate::mariadb_update::Release),
 }

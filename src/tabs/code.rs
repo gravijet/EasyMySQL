@@ -88,6 +88,8 @@ pub struct CodeTab {
     run_next_frame: Option<Goal>,
     failure: Option<Failure>,
     show_output: bool,
+    /// Behebungen zur letzten Ausgabe: Schluessel (Meldungen, Ausgabe, Text), je Meldung, allgemein
+    fix_cache: Option<FixCache>,
     libs: Option<LibDialog>,
     /// Sprachserver: Verbindung, gemeldeter Stand des Textes und zuletzt uebernommene Meldungen
     lsp: Option<Arc<lsp::Server>>,
@@ -100,6 +102,8 @@ pub struct CodeTab {
     debug_eval: String,
     lsp_note: Option<String>,
 }
+
+type FixCache = ((usize, usize, usize), Vec<Option<dev::autofix::Suggestion>>, Vec<dev::autofix::Suggestion>);
 
 fn file_key(p: &Path) -> String {
     p.to_string_lossy().to_lowercase()
@@ -210,6 +214,7 @@ impl CodeTab {
             run_next_frame: None,
             failure: None,
             show_output: false,
+            fix_cache: None,
             libs: None,
             lsp: None,
             lsp_synced: None,
@@ -1376,17 +1381,64 @@ impl CodeTab {
                         }
                     });
                 });
+                // Behebungen je Meldung (Compilerfehler) und fuer die Ausgabe (z. B. fehlende Pakete)
+                let key = (f.diags.len(), f.output.len(), self.text.len());
+                if self.fix_cache.as_ref().is_none_or(|c| c.0 != key) {
+                    let per: Vec<Option<dev::autofix::Suggestion>> = f.diags.iter().map(|d| {
+                        let text = if same_file(&d.file, &self.file) { Some(self.text.clone()) } else { std::fs::read_to_string(&d.file).ok() };
+                        text.and_then(|t| dev::autofix::fix_for_diag(d, &t))
+                    }).collect();
+                    self.fix_cache = Some((key, per, dev::autofix::analyze_output(&f.output, self.project.as_deref(), Some(&self.file), false)));
+                }
+                let (_, fixes, general) = self.fix_cache.clone().unwrap_or_default();
+                let fixable: Vec<usize> = (0..fixes.len()).filter(|i| fixes[*i].as_ref().is_some_and(|s| s.fix.is_some())).collect();
+                let mut apply: Vec<usize> = Vec::new();
                 egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-                    for d in &f.diags {
+                    ui.spacing_mut().item_spacing.y = 2.0;
+                    for (i, d) in f.diags.iter().enumerate() {
                         let name = d.file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
                         let color = if d.error { pal.error_text } else { pal.warn_text };
-                        let text = RichText::new(format!("{name}:{}  {}", d.line + 1, d.message)).monospace().color(color);
-                        if ui.add(egui::Button::new(text).frame(false)).on_hover_text(d.file.display().to_string()).clicked() {
-                            if same_file(&d.file, &self.file) {
-                                self.pending_line = Some(d.line);
-                            } else {
-                                cx.actions.push(Action::OpenFileAt { path: d.file.clone(), line: d.line });
+                        ui.horizontal(|ui| {
+                            ui.set_min_height(24.0);
+                            let (r, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
+                            icons::paint(ui.painter(), r, if d.error { Icon::Alert } else { Icon::Info }, color);
+                            let loc = RichText::new(format!("{name}:{}", d.line + 1)).monospace().color(pal.accent).underline();
+                            if ui.add(egui::Label::new(loc).sense(egui::Sense::click())).on_hover_text(d.file.display().to_string()).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                                if same_file(&d.file, &self.file) {
+                                    self.pending_line = Some(d.line);
+                                } else {
+                                    cx.actions.push(Action::OpenFileAt { path: d.file.clone(), line: d.line });
+                                }
                             }
+                            ui.label(RichText::new(&d.message).monospace().color(color));
+                            if let Some(s) = &fixes[i] {
+                                if s.fix.is_some() {
+                                    if icons::text_button(ui, Icon::Wizard, &s.label).on_hover_text(&s.problem).clicked() {
+                                        apply.push(i);
+                                    }
+                                } else {
+                                    ui.label(RichText::new(&s.problem).small().color(pal.text_weak));
+                                }
+                            }
+                        });
+                    }
+                    for s in &general {
+                        ui.horizontal(|ui| {
+                            ui.set_min_height(24.0);
+                            let (r, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
+                            icons::paint(ui.painter(), r, Icon::Info, pal.warn_text);
+                            ui.label(RichText::new(&s.problem).color(pal.text));
+                            if let Some(fix) = &s.fix
+                                && icons::text_button(ui, Icon::Wizard, &s.label).clicked()
+                            {
+                                cx.actions.push(Action::AutoFix(fix.clone()));
+                            }
+                        });
+                    }
+                    if fixable.len() > 1 {
+                        ui.add_space(4.0);
+                        if icons::primary_button(ui, Icon::Sparkles, &crate::tr_format!("Alle {} beheben", "Fix all {}", fixable.len())).clicked() {
+                            apply = fixable.clone();
                         }
                     }
                     if f.diags.is_empty() && !f.output.is_empty() {
@@ -1397,6 +1449,41 @@ impl CodeTab {
                         });
                     }
                 });
+                if !apply.is_empty() {
+                    // Alle Aenderungen beziehen sich auf denselben Text: je Datei zusammenfassen
+                    let mut edit = dev::lsp::WorkspaceEdit::default();
+                    for i in &apply {
+                        if let Some(dev::autofix::Fix::Edit(e)) = fixes[*i].as_ref().and_then(|s| s.fix.clone()) {
+                            for fe in e.files {
+                                match edit.files.iter_mut().find(|x| x.path == fe.path) {
+                                    // Gleiche Aenderung (z. B. derselbe Import fuer zwei Meldungen) nur einmal
+                                    Some(x) => {
+                                        for te in fe.edits {
+                                            if !x.edits.contains(&te) {
+                                                x.edits.push(te);
+                                            }
+                                        }
+                                    }
+                                    None => edit.files.push(fe),
+                                }
+                            }
+                        } else if let Some(fix) = fixes[*i].as_ref().and_then(|s| s.fix.clone()) {
+                            cx.actions.push(Action::AutoFix(fix));
+                        }
+                    }
+                    if !edit.files.is_empty() {
+                        cx.actions.push(Action::AutoFix(dev::autofix::Fix::Edit(edit)));
+                    }
+                    if let Some(fail) = self.failure.as_mut() {
+                        let mut n = 0;
+                        fail.diags.retain(|_| {
+                            n += 1;
+                            !apply.contains(&(n - 1))
+                        });
+                    }
+                    let mine: Vec<(usize, Option<usize>, String, bool)> = self.failure.iter().flat_map(|f| f.diags.iter()).filter(|d| same_file(&d.file, &self.file)).map(|d| (d.line, d.col, d.message.clone(), d.error)).collect();
+                    self.editor.set_diagnostics(&self.text, &mine);
+                }
             });
         });
     }

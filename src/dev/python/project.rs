@@ -273,34 +273,13 @@ fn pyproject(s: &Spec) -> String {
     )
 }
 
-fn readme(s: &Spec) -> String {
-    let deps = match s.kind {
-        Kind::Requirements => "requirements.txt",
-        Kind::Pyproject => "pyproject.toml",
-    };
-    if en() {
-        format!(
-            "# {name}\n\nPython program for the database `{db}`.\n\n- `main.py` – start here (▶ in EasyMySQL or F5)\n- `db.ini` – connection settings for starting outside EasyMySQL\n- `models.py`, `repos.py` – one dataclass and one repository per table\n- `{deps}` – packages; EasyMySQL installs them into `.venv` itself\n- `tests/` – tests (Run tests in EasyMySQL or `python -m unittest`)\n",
-            name = s.name,
-            db = s.database
-        )
-    } else {
-        format!(
-            "# {name}\n\nPython-Programm für die Datenbank `{db}`.\n\n- `main.py` – hier geht es los (▶ in EasyMySQL oder F5)\n- `db.ini` – Verbindungsdaten für den Start außerhalb von EasyMySQL\n- `models.py`, `repos.py` – je Tabelle eine dataclass und ein Repository\n- `{deps}` – Pakete; EasyMySQL installiert sie selbst in die `.venv`\n- `tests/` – Tests (Tests ausführen in EasyMySQL oder `python -m unittest`)\n",
-            name = s.name,
-            db = s.database
-        )
-    }
-}
 
 pub fn files(s: &Spec) -> Vec<(PathBuf, String)> {
     let mut out = vec![
         (PathBuf::from("main.py"), main_py(s)),
         (PathBuf::from("db.py"), db_module(s.driver)),
         (PathBuf::from("db.ini"), db_ini(s)),
-        (PathBuf::from("README.md"), readme(s)),
         (PathBuf::from(".gitignore"), ".venv/\n__pycache__/\n*.pyc\n.pytest_cache/\n".into()),
-        (PathBuf::from(".vscode/settings.json"), "{\n  \"python.defaultInterpreterPath\": \".venv\",\n  \"python.testing.unittestEnabled\": true\n}\n".into()),
     ];
     if !s.tables.is_empty() {
         out.push((PathBuf::from("models.py"), models_module(&s.tables)));

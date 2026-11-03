@@ -200,7 +200,7 @@ pub fn primary(ui: &mut egui::Ui, text: &str) -> Response {
 /// Hoehe aller Eingabefelder und Schaltflaechen in Formularen
 pub const CONTROL_H: f32 = 28.0;
 /// Breite der Beschriftungsspalte
-pub const LABEL_W: f32 = 176.0;
+pub const LABEL_W: f32 = 196.0;
 /// Ab dieser Breite stehen Beschriftung und Feld nebeneinander
 const ROW_WIDE: f32 = 460.0;
 
@@ -296,4 +296,78 @@ pub fn drag<N: egui::emath::Numeric>(ui: &mut egui::Ui, value: &mut N, range: st
 /// Einzeiliges Textfeld in der einheitlichen Hoehe (Text mittig); Breite wie bei `TextEdit` einstellbar
 pub fn edit(text: &mut String) -> egui::TextEdit<'_> {
     egui::TextEdit::singleline(text).margin(Margin::symmetric(8, 6)).vertical_align(egui::Align::Center)
+}
+
+/// Fehlermeldung formatiert: erste Zeile kraeftig in Fehlerfarbe, Namen in Anfuehrungszeichen hervorgehoben,
+/// Stacktrace und Fehlernummern gedaempft. `max_width`: Umbruchbreite.
+pub fn error_job(text: &str, max_width: f32) -> egui::text::LayoutJob {
+    use crate::dev::autofix::{LineKind, classify};
+    let p = style::pal();
+    let font = FontId::proportional(13.0);
+    let mono = FontId::monospace(12.0);
+    let base = egui::TextFormat { font_id: font.clone(), color: p.text, line_height: Some(19.0), ..Default::default() };
+    let mut job = egui::text::LayoutJob { wrap: egui::text::TextWrapping { max_width, ..Default::default() }, ..Default::default() };
+    let lines: Vec<&str> = text.trim_end().lines().collect();
+    for (n, line) in lines.iter().enumerate() {
+        let kind = classify(line);
+        let (fmt, quote) = if n == 0 {
+            (egui::TextFormat { color: p.error_text, ..base.clone() }, true)
+        } else {
+            match kind {
+                LineKind::Frame => (egui::TextFormat { font_id: mono.clone(), color: p.text_weak, ..base.clone() }, false),
+                LineKind::Cause | LineKind::Error => (egui::TextFormat { color: p.error_text, ..base.clone() }, true),
+                LineKind::Warning => (egui::TextFormat { color: p.warn_text, ..base.clone() }, true),
+                LineKind::Plain => (base.clone(), true),
+            }
+        };
+        if quote {
+            append_quoted(&mut job, line, &fmt);
+        } else {
+            job.append(line, 0.0, fmt);
+        }
+        if n + 1 < lines.len() {
+            job.append("\n", 0.0, base.clone());
+        }
+    }
+    job
+}
+
+/// Text anhaengen; Teile in '…', „…“, `…` oder "…" erscheinen als Code (Tabellen-, Spalten-, Dateinamen)
+fn append_quoted(job: &mut egui::text::LayoutJob, line: &str, fmt: &egui::TextFormat) {
+    let p = style::pal();
+    let code = egui::TextFormat {
+        font_id: FontId::monospace(12.5),
+        color: if p.dark { egui::Color32::WHITE } else { p.text },
+        background: if p.dark { egui::Color32::from_white_alpha(18) } else { egui::Color32::from_black_alpha(14) },
+        ..fmt.clone()
+    };
+    let mut rest = line;
+    while let Some(i) = rest.find(['\'', '`', '„', '"', '“']) {
+        let open = rest[i..].chars().next().unwrap_or('\'');
+        let close = match open {
+            '„' => '“',
+            '“' => '”',
+            c => c,
+        };
+        let after = &rest[i + open.len_utf8()..];
+        match after.find(close) {
+            Some(j) if j > 0 && j <= 80 => {
+                job.append(&rest[..i + open.len_utf8()], 0.0, fmt.clone());
+                job.append(&after[..j], 0.0, code.clone());
+                job.append(&after[j..j + close.len_utf8()], 0.0, fmt.clone());
+                rest = &after[j + close.len_utf8()..];
+            }
+            _ => {
+                job.append(&rest[..i + open.len_utf8()], 0.0, fmt.clone());
+                rest = after;
+            }
+        }
+    }
+    job.append(rest, 0.0, fmt.clone());
+}
+
+/// Fehlermeldung als Label (umbrechend, markierbar)
+pub fn error_label(ui: &mut egui::Ui, text: &str) -> Response {
+    let job = error_job(text, ui.available_width());
+    ui.add(egui::Label::new(job).selectable(true))
 }

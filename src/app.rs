@@ -129,6 +129,8 @@ pub struct EasyApp {
     tree_job: Option<Receiver<(PathBuf, crate::workspace::Node)>>,
     side_view: SideView,
     explorer_dlg: Option<ExplorerDlg>,
+    /// Auswahl und Zwischenablage im Explorer
+    explorer: side::ExplorerState,
     /// Dialog "Neues Java-Projekt"
     project_dlg: Option<create::ProjectDlg>,
     /// Git-Bereich in der Seitenleiste
@@ -238,6 +240,7 @@ impl EasyApp {
             tree_job: None,
             side_view: SideView::Explorer,
             explorer_dlg: None,
+            explorer: Default::default(),
             project_dlg: None,
             git: Default::default(),
             session_saved: Instant::now(),
@@ -776,6 +779,7 @@ impl EasyApp {
                     self.auto_connect = true;
                     crate::mariadb_update::run(self.server.clone(), self.settings.conn.clone(), rel, self.settings.mariadb_copy_data, &ctx);
                 }
+                Action::AutoFix(f) => self.apply_fix(f),
                 Action::GitHubLogin => self.git.dialog = Some(git_panel::GitDialog::Login { token: String::new(), error: None, job: None }),
             }
         }
@@ -866,7 +870,9 @@ impl EasyApp {
                     self.pick_project();
                 }
                 if let Some(p) = self.project.clone() {
-                    self.explorer_dlg = Some(ExplorerDlg::NewFile(Box::new(create::NewFile::new(p))));
+                    // Wie in IntelliJ IDEA: im gewaehlten Ordner des Explorers
+                    let dir = self.explorer.target_dir(&p);
+                    self.explorer_dlg = Some(ExplorerDlg::NewFile(Box::new(create::NewFile::new(dir))));
                 }
             }
             Cmd::OpenFile => self.open_sql_file(false),
@@ -1029,6 +1035,10 @@ impl EasyApp {
         let in_terminal = crate::terminal::focused();
         for c in GLOBAL {
             if in_terminal && !matches!(c, Cmd::ToggleTerminal | Cmd::NewTerminal | Cmd::CommandPalette) {
+                continue;
+            }
+            // Im Explorer ist F2 "Umbenennen" der Datei
+            if self.explorer.focused && self.side_view == SideView::Explorer && *c == Cmd::RenameSymbol {
                 continue;
             }
             if keymap::take_ctx(ctx, *c) {
@@ -1349,7 +1359,7 @@ impl eframe::App for EasyApp {
             self.activity_bar(ui);
         });
         if self.settings.sidebar {
-            egui::Panel::left("sidebar").resizable(true).show_separator_line(true).default_size((ctx.content_rect().width() * 0.22).clamp(200.0, 280.0)).min_size(180.0).max_size((ctx.content_rect().width() * 0.45).max(190.0)).frame(flat(pal.sidebar_bg, egui::Margin::ZERO)).show(ui, |ui| {
+            egui::Panel::left("sidebar").resizable(true).show_separator_line(true).default_size((ctx.content_rect().width() * 0.22).clamp(200.0, 280.0)).min_size(170.0).max_size((ctx.content_rect().width() * 0.36).max(180.0)).frame(flat(pal.sidebar_bg, egui::Margin::ZERO)).show(ui, |ui| {
                 style::panel_card(ui, pal.sidebar_bg, egui::Margin { left: 4, right: 4, top: 2, bottom: 6 }, |ui| {
                     self.side_panel(ui, &mut actions);
                 });

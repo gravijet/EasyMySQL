@@ -34,6 +34,8 @@ enum Pane {
 enum HistoryAct {
     Insert(String),
     Run(String),
+    /// Erkannten Fehler beheben
+    Fix(crate::dev::autofix::Fix),
 }
 
 type JobResult = (Option<Conn>, Vec<StmtResult>, Option<String>, Option<String>);
@@ -539,6 +541,7 @@ impl SqlTab {
                     ui.label(RichText::new(n).small().color(pal.text_weak));
                 }
                 let mut jump = None;
+                let mut fixes = Vec::new();
                 egui::ScrollArea::vertical().id_salt(self.editor.id.with("msgs")).auto_shrink([false, false]).show(ui, |ui| {
                     for r in &self.results {
                         let (ok, msg) = match &r.error {
@@ -557,13 +560,33 @@ impl SqlTab {
                             ui.label(RichText::new(&r.preview).monospace().small());
                         });
                         egui::Frame::new().inner_margin(egui::Margin { left: 16, right: 0, top: 0, bottom: 6 }).show(ui, |ui| {
-                            ui.label(RichText::new(msg).color(color));
+                            if ok {
+                                ui.label(RichText::new(msg).color(color));
+                            } else {
+                                crate::widgets::error_label(ui, &msg);
+                                // Erkannte Fehler: Erklaerung und Behebung (Datenbank anlegen, Tabelle anlegen …)
+                                for sug in crate::dev::autofix::analyze_output(&msg, None, None, false) {
+                                    ui.horizontal(|ui| {
+                                        let (r, _) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
+                                        crate::icons::paint(ui.painter(), r, crate::icons::Icon::Info, pal.text_weak);
+                                        ui.label(RichText::new(&sug.problem).small().color(pal.text_weak));
+                                        if let Some(f) = &sug.fix
+                                            && crate::icons::text_button(ui, crate::icons::Icon::Wizard, &sug.label).clicked()
+                                        {
+                                            fixes.push(f.clone());
+                                        }
+                                    });
+                                }
+                            }
                         });
                     }
                 });
                 if let Some(l) = jump {
                     let ctx = ui.ctx().clone();
                     self.editor.goto_line(&ctx, &self.text, l, row_h);
+                }
+                if let Some(f) = fixes.into_iter().next() {
+                    act = Some(HistoryAct::Fix(f));
                 }
             }
             Pane::History => {
@@ -1011,6 +1034,7 @@ impl TabView for SqlTab {
                 self.last_edit = Instant::now();
             }
             Some(HistoryAct::Run(sql)) => self.run(cx, sql, 0),
+            Some(HistoryAct::Fix(f)) => cx.actions.push(Action::AutoFix(f)),
             None => {}
         }
         let h = (ui.available_height() - 8.0).max(100.0);
