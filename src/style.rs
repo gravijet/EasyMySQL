@@ -176,25 +176,26 @@ fn load_font(candidates: &[&str]) -> Option<Vec<u8>> {
 }
 
 pub fn apply(ctx: &egui::Context, dark: bool) {
-    // Systemschriften laden (Segoe UI / Consolas wie in VS Code unter Windows)
+    // Eingebettete Schriften (Inter und JetBrains Mono, SIL OFL, Lizenzen in assets/fonts): auf jedem System gleich.
+    // Die Systemschriften folgen danach als Reserve fuer Zeichen, die sie nicht enthalten.
     let mut fonts = FontDefinitions::default();
-    let prop = load_font(&[
-        "C:\\Windows\\Fonts\\segoeui.ttf",
-        "C:\\Windows\\Fonts\\tahoma.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    ]);
-    let mono = load_font(&[
-        "C:\\Windows\\Fonts\\consola.ttf",
-        "C:\\Windows\\Fonts\\cour.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
-    ]);
+    let embedded: [(&str, &'static [u8], FontFamily); 2] = [
+        ("inter", include_bytes!("../assets/fonts/Inter-Regular.otf"), FontFamily::Proportional),
+        ("jetbrains-mono", include_bytes!("../assets/fonts/JetBrainsMono-Regular.ttf"), FontFamily::Monospace),
+    ];
+    for (name, bytes, family) in embedded {
+        fonts.font_data.insert(name.into(), Arc::new(FontData::from_static(bytes)));
+        fonts.families.entry(family).or_default().insert(0, name.into());
+    }
+    let prop = load_font(&["C:\\Windows\\Fonts\\segoeui.ttf", "C:\\Windows\\Fonts\\tahoma.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"]);
+    let mono = load_font(&["C:\\Windows\\Fonts\\consola.ttf", "C:\\Windows\\Fonts\\cour.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"]);
     if let Some(data) = prop {
         fonts.font_data.insert("sys".into(), Arc::new(FontData::from_owned(data)));
-        fonts.families.entry(FontFamily::Proportional).or_default().insert(0, "sys".into());
+        fonts.families.entry(FontFamily::Proportional).or_default().insert(1, "sys".into());
     }
     if let Some(data) = mono {
         fonts.font_data.insert("sysmono".into(), Arc::new(FontData::from_owned(data)));
-        fonts.families.entry(FontFamily::Monospace).or_default().insert(0, "sysmono".into());
+        fonts.families.entry(FontFamily::Monospace).or_default().insert(1, "sysmono".into());
     }
     ctx.set_fonts(fonts);
     set_theme(ctx, dark);
@@ -240,7 +241,8 @@ pub fn set_theme(ctx: &egui::Context, dark: bool) {
             ..egui::style::ScrollStyle::solid()
         };
         sp.combo_width = 160.0;
-        style.animation_time = 0.0;
+        // Kurze Uebergaenge (Auf-/Zuklappen, Schalter) statt harter Spruenge
+        style.animation_time = 0.12;
         style.visuals = visuals(pal());
     });
 }
