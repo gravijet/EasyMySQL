@@ -6,7 +6,7 @@ Static site plus a small Cloudflare Worker (`src/worker.js`) for `mysql.benjamin
 - `/api/release` returns the newest release (version, size, SHA-256) as JSON. It is cached at the edge for five minutes and falls back to the last known value.
 - `/download/setup` and `/download/portable` stream the files of the newest release. Visitors only ever see this domain.
 
-Deploy:
+Deploy (automatic via `.github/workflows/website.yml` once the secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` exist; by hand:)
 
 ```console
 cd website

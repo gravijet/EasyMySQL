@@ -175,6 +175,11 @@ pub fn start(jdb: &Path, port: u16, roots: Vec<PathBuf>, ctx: &eframe::egui::Con
                 }
             };
             if !attached {
+                // Was jdb gemeldet hat, steht in der Konsole (hilft bei der Fehlersuche)
+                let note = seen.trim();
+                if !note.is_empty() {
+                    session.state.lock().unwrap().console.push(format!("jdb: {}", note.lines().last().unwrap_or(note)));
+                }
                 let _ = child.kill();
                 let _ = child.wait();
                 if let Some(r) = reader {

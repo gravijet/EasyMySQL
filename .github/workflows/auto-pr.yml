@@ -1,4 +1,4 @@
-# Oeffnet fuer jeden gepushten Branch (ausser main) automatisch einen Pull Request gegen main,
+# Oeffnet fuer jeden gepushten Branch (ausser main, z. B. fix/*, feature/*) automatisch einen Pull Request gegen main,
 # falls es noch keinen gibt. So muss man fertige Arbeit nur noch mergen.
 name: Pull Request automatisch öffnen
 

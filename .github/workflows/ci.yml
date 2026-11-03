@@ -1,13 +1,10 @@
-# Tests fuer jeden Branch ausser main (main baut release.yml). Laeuft auch fuer Pull Requests,
+# Tests fuer jeden Branch ausser main (main baut release.yml). Auch Docs/Website: auto-merge.yml wartet darauf. Laeuft auch fuer Pull Requests,
 # die der Workflow auto-pr.yml anlegt, weil sie aus einem Push entstehen.
 name: Tests
 
 on:
   push:
     branches-ignore: [main]
-    paths-ignore:
-      - "**.md"
-      - "website/**"
   workflow_dispatch:
 
 permissions:
