@@ -1,0 +1,48 @@
+# Oeffnet fuer jeden gepushten Branch (ausser main) automatisch einen Pull Request gegen main,
+# falls es noch keinen gibt. So muss man fertige Arbeit nur noch mergen.
+name: Pull Request automatisch öffnen
+
+on:
+  push:
+    branches-ignore: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: auto-pr-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  open:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Pull Request anlegen
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [ -n "$(gh pr list --head "$BRANCH" --state open --json number --jq '.[].number')" ]; then
+            echo "Es gibt schon einen offenen Pull Request für $BRANCH."
+            exit 0
+          fi
+          if [ -z "$(git log --oneline origin/main..HEAD)" ]; then
+            echo "Keine Commits gegenüber main."
+            exit 0
+          fi
+          title=$(git log -1 --pretty=%s)
+          {
+            echo "Automatisch geöffnet für den Branch \`$BRANCH\`."
+            echo
+            echo "### Commits"
+            git log --reverse --pretty='- %s' origin/main..HEAD
+            echo
+            echo "### Geänderte Dateien"
+            git diff --stat origin/main...HEAD | tail -n 1
+          } > body.md
+          gh pr create --base main --head "$BRANCH" --title "$title" --body-file body.md

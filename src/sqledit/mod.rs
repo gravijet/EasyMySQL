@@ -10,10 +10,13 @@ use std::time::{Duration, Instant};
 
 mod complete;
 mod highlight;
+mod lang;
 mod lint;
+mod scan;
 mod text;
 
 pub use highlight::*;
+pub use lang::Lang;
 pub use lint::*;
 pub use text::*;
 
@@ -23,8 +26,45 @@ pub static AUTO_SUGGEST: std::sync::atomic::AtomicBool = std::sync::atomic::Atom
 /// SQL-Fehler markieren (Einstellung)
 pub static LINT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
 
-/// So lange muss das Tippen pausieren, bevor geprueft wird
-const LINT_DELAY: Duration = Duration::from_millis(350);
+/// Einstellungen des Editors (fuer alle Editoren gleich)
+#[derive(Clone, Debug, PartialEq)]
+pub struct Prefs {
+    /// Einrueckung in Leerzeichen (0 = je nach Sprache: Java/Python 4, sonst 2)
+    pub indent: usize,
+    pub line_numbers: bool,
+    /// Zeile mit dem Cursor hinterlegen
+    pub highlight_line: bool,
+    /// Zusammengehoerige Klammer markieren
+    pub match_brackets: bool,
+    /// Nach Enter einruecken (und nach `}` ausruecken)
+    pub auto_indent: bool,
+    /// SQL in Zeichenketten von Java, Python und JavaScript pruefen
+    pub sql_in_strings: bool,
+    /// So lange muss das Tippen pausieren, bevor geprueft wird
+    pub lint_delay_ms: u64,
+    /// Ueber die letzte Zeile hinaus scrollen
+    pub scroll_past_end: bool,
+}
+
+impl Default for Prefs {
+    fn default() -> Self {
+        Prefs { indent: 0, line_numbers: true, highlight_line: true, match_brackets: true, auto_indent: true, sql_in_strings: true, lint_delay_ms: 350, scroll_past_end: true }
+    }
+}
+
+static PREFS: std::sync::RwLock<Option<Prefs>> = std::sync::RwLock::new(None);
+
+pub fn prefs() -> Prefs {
+    PREFS.read().unwrap().clone().unwrap_or_default()
+}
+
+pub fn set_prefs(p: Prefs) {
+    *PREFS.write().unwrap() = Some(p);
+}
+
+fn lint_delay() -> Duration {
+    Duration::from_millis(prefs().lint_delay_ms.clamp(0, 5000))
+}
 
 /// Klammern automatisch schliessen (Einstellung)
 pub static AUTO_CLOSE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
@@ -88,6 +128,10 @@ struct LintState {
 
 pub struct SqlEditor {
     pub id: egui::Id,
+    /// Sprache der Datei (SQL, Java, …): Hervorhebung, Pruefung und Vorschlaege richten sich danach
+    pub lang: Lang,
+    /// Java: Gibt es im Paket eine Klasse `Database` (Vorlage "connection" nutzt sie dann)?
+    pub has_database_class: bool,
     /// Ansicht (Zeilen je Seite, Zeilenhoehe, Scrollstand, Inhalts- und Fensterhoehe) fuer Bild rauf/runter
     view: (usize, f32, f32, f32, f32),
     /// Struktur der gewaehlten Datenbank (fuer die Pruefung) und alle Datenbanknamen
@@ -109,6 +153,17 @@ pub struct SqlEditor {
     pub cursor: usize,
     /// Suchen/Ersetzen/Gehe zu, von aussen angefordert (Menue, Befehle)
     pub pending: Option<crate::keymap::Cmd>,
+    /// Der Cursor wurde nach der Eingabe versetzt (Einruecken); gilt fuer dieses Bild
+    cursor_moved: Option<()>,
+    /// Meldungen des Compilers (bis zur naechsten Aenderung am Text)
+    diagnostics: Vec<Problem>,
+    /// Meldungen des Sprachservers (gelten fuer den Text, zu dem sie kamen)
+    external: Vec<Problem>,
+    /// Haltepunkte (Zeilen, 0-basiert) und ob man sie per Klick setzen kann
+    pub breakpoints: Vec<usize>,
+    pub breakpoints_enabled: bool,
+    /// Zeile, an der der Debugger gerade steht
+    pub exec_line: Option<usize>,
 }
 
 #[derive(Default)]
@@ -116,12 +171,20 @@ pub struct EditorOutput {
     pub format: bool,
     pub changed: bool,
     pub selection: Option<String>,
+    /// Klick neben eine Zeilennummer: Haltepunkt umschalten
+    pub toggle_breakpoint: Option<usize>,
+    /// Strg+Klick auf diese Stelle (Zeichenindex)
+    pub ctrl_click: Option<usize>,
+    /// Zeichen unter dem Mauszeiger
+    pub hover: Option<usize>,
 }
 
 impl SqlEditor {
     pub fn new(id: egui::Id) -> Self {
         Self {
             id,
+            lang: Lang::Sql,
+            has_database_class: false,
             view: (10, 16.0, 0.0, 0.0, 0.0),
             schema: None,
             databases: Vec::new(),
@@ -137,6 +200,12 @@ impl SqlEditor {
             line_col: (1, 1),
             cursor: 0,
             pending: None,
+            cursor_moved: None,
+            diagnostics: Vec::new(),
+            external: Vec::new(),
+            breakpoints: Vec::new(),
+            breakpoints_enabled: false,
+            exec_line: None,
         }
     }
 
@@ -162,7 +231,10 @@ impl SqlEditor {
     pub fn goto_line(&mut self, ctx: &egui::Context, text: &str, line: usize, row_h: f32) {
         let pos = line_start(text, line);
         self.set_cursor(ctx, pos);
-        self.scroll_to = Some((line as f32 * row_h - 80.0).max(0.0));
+        // Zeilen weit oben brauchen kein Scrollen (sonst verschwinden bei kurzen Dateien die ersten Zeilen)
+        let y = line as f32 * row_h;
+        let visible = if self.view.4 > 0.0 { self.view.4 * 0.6 } else { 300.0 };
+        self.scroll_to = Some(if y < visible { 0.0 } else { y - 80.0 });
         ctx.memory_mut(|m| m.request_focus(self.id));
     }
 
@@ -171,18 +243,97 @@ impl SqlEditor {
         let Some(item) = p.items.get(p.selected) else { return };
         let a = byte_of(text, p.word_start);
         let b = byte_of(text, p.cursor);
-        text.replace_range(a..b, &item.insert);
-        let end = p.word_start + item.insert.chars().count() - item.back;
+        // Mehrzeilige Vorlagen in Java & Co. bekommen die Einrueckung der aktuellen Zeile
+        let indent: String = if self.lang != Lang::Sql {
+            let line_start = text[..a].rfind('\n').map_or(0, |i| i + 1);
+            text[line_start..a].chars().take_while(|c| *c == ' ' || *c == '\t').collect()
+        } else {
+            String::new()
+        };
+        let indented = |s: &str| if indent.is_empty() { s.to_string() } else { s.replace('\n', &format!("\n{indent}")) };
+        let insert = indented(&item.insert);
+        // `back` zaehlt vom Ende der Vorlage: hinter dem Cursor steht derselbe Rest, ebenfalls eingerueckt
+        let rest: String = item.insert.chars().skip(item.insert.chars().count() - item.back).collect();
+        text.replace_range(a..b, &insert);
+        let end = p.word_start + insert.chars().count() - indented(&rest).chars().count();
         self.set_cursor(ctx, end);
         self.prev_text = text.clone();
         // Nach "alias." gleich die Spalten anbieten
         if item.insert.ends_with('.') {
-            self.popup = complete::suggest(text, end, &self.lint_env(), true).map(|s| Popup { items: s.items, selected: 0, word_start: s.word_start, cursor: end });
+            self.popup = self.suggest(text, end, true).map(|s| Popup { items: s.items, selected: 0, word_start: s.word_start, cursor: end });
         }
     }
 
     fn lint_env(&self) -> Env<'_> {
         Env { schema: self.schema.as_deref(), databases: &self.databases }
+    }
+
+    /// Vorschlaege passend zur Sprache
+    fn suggest(&self, text: &str, cursor: usize, force: bool) -> Option<complete::Suggestion> {
+        match self.lang {
+            Lang::Sql => complete::suggest(text, cursor, &self.lint_env(), force),
+            Lang::Java => lang::suggest_java(text, cursor, &self.lint_env(), force, self.has_database_class),
+            Lang::Python | Lang::JavaScript | Lang::TypeScript => lang::suggest_script(self.lang, text, cursor, &self.lint_env(), force, self.has_database_class),
+            _ => None,
+        }
+    }
+
+    /// Probleme passend zur Sprache (Java: das SQL in den Zeichenketten) und Meldungen des Compilers
+    fn problems(&self, text: &str) -> Vec<Problem> {
+        let mut v = match self.lang {
+            Lang::Sql => lint(text, &self.lint_env()),
+            Lang::Java | Lang::Python | Lang::JavaScript | Lang::TypeScript if prefs().sql_in_strings => lang::code_sql_problems(text, &self.lint_env(), self.lang),
+            _ => Vec::new(),
+        };
+        v.extend(self.diagnostics.iter().cloned());
+        v.extend(self.external.iter().cloned());
+        v.sort_by_key(|p| p.start);
+        v
+    }
+
+    /// Meldungen des Compilers zeigen: (Zeile, Spalte, beide 0-basiert, Text, Fehler?)
+    pub fn set_diagnostics(&mut self, text: &str, list: &[(usize, Option<usize>, String, bool)]) {
+        let chars: Vec<char> = text.chars().collect();
+        self.diagnostics = list
+            .iter()
+            .map(|(line, col, message, error)| {
+                let ls = line_start(text, *line);
+                let le = chars[ls.min(chars.len())..].iter().position(|c| *c == '\n').map_or(chars.len(), |p| ls + p);
+                let first = chars[ls.min(le)..le].iter().position(|c| !c.is_whitespace()).map_or(ls, |p| ls + p);
+                let start = col.map(|c| (ls + c).min(le)).unwrap_or(first);
+                // Bis zum Ende des Wortes, sonst bis zum Zeilenende
+                let mut end = start;
+                while end < le && is_word_char(chars[end]) {
+                    end += 1;
+                }
+                if end == start {
+                    end = if col.is_some() { start + 1 } else { le.max(start + 1) };
+                }
+                Problem { start, end, severity: if *error { Severity::Error } else { Severity::Warning }, message: message.clone(), fix: None }
+            })
+            .collect();
+        self.lint.computed = false;
+        self.lint.seen_at = None;
+    }
+
+    /// Meldungen des Sprachservers: (von, bis als Zeichenindex, Text, Fehler?)
+    pub fn set_external(&mut self, list: Vec<(usize, usize, String, bool)>) {
+        let new: Vec<Problem> = list
+            .into_iter()
+            .map(|(start, end, message, error)| Problem { start, end: end.max(start + 1), severity: if error { Severity::Error } else { Severity::Warning }, message, fix: None })
+            .collect();
+        if new != self.external {
+            self.external = new;
+            self.lint.computed = false;
+        }
+    }
+
+    /// Einrueckung je Ebene: Einstellung, sonst je nach Sprache
+    fn indent_step(&self) -> String {
+        match prefs().indent {
+            0 => self.lang.indent().to_string(),
+            n => " ".repeat(n.min(16)),
+        }
     }
 
     /// Pruefung auffrischen: erst wenn kurz nicht getippt wurde.
@@ -202,13 +353,14 @@ impl SqlEditor {
             self.lint.seen = text.to_string();
             self.lint.seen_at = Some(Instant::now());
         }
-        let waited = self.lint.seen_at.map_or(LINT_DELAY, |t| t.elapsed());
-        if self.lint.computed && self.lint.schema == schema && waited < LINT_DELAY {
+        let delay = lint_delay();
+        let waited = self.lint.seen_at.map_or(delay, |t| t.elapsed());
+        if self.lint.computed && self.lint.schema == schema && waited < delay {
             self.lint.shown = false;
-            ctx.request_repaint_after(LINT_DELAY - waited);
+            ctx.request_repaint_after(delay - waited);
             return;
         }
-        let problems = lint(text, &self.lint_env());
+        let problems = self.problems(text);
         // Zeilenanfaenge einmal bestimmen: Zeile und Ende der Wellenlinie je Problem
         let mut starts = vec![0usize];
         let mut n = 0;
@@ -253,7 +405,7 @@ impl SqlEditor {
     pub fn fix_all(&mut self, text: &mut String) -> usize {
         let mut total = 0;
         for _ in 0..3 {
-            let problems = lint(text, &self.lint_env());
+            let problems = self.problems(text);
             let (fixed, n) = apply_fixes(text, &problems);
             if n == 0 {
                 break;
@@ -340,8 +492,10 @@ impl SqlEditor {
             this.prev_text = t.to_string();
         };
 
-        if take(ui, Cmd::ToggleComment) {
-            *text = toggle_comment(text, first, last);
+        if let Some(prefix) = self.lang.comment()
+            && take(ui, Cmd::ToggleComment)
+        {
+            *text = toggle_comment_with(text, first, last, prefix);
             self.set_selection(&ctx, line_start(text, first), line_start(text, last + 1).saturating_sub(if last + 1 < text.split('\n').count() { 1 } else { 0 }));
             changed(self, text, out);
         }
@@ -389,18 +543,90 @@ impl SqlEditor {
             }
         }
         // Tab / Umschalt+Tab bei mehrzeiliger Auswahl: Block einruecken
+        let step = self.indent_step();
+        let step = step.as_str();
         if self.popup.is_none() && last > first && take(ui, Cmd::Indent) {
-            *text = map_lines(text, first, last, |l| format!("  {l}"));
+            *text = map_lines(text, first, last, |l| format!("{step}{l}"));
             self.set_selection(&ctx, line_start(text, first), line_start(text, last + 1).saturating_sub(1));
             changed(self, text, out);
         }
         if take(ui, Cmd::Outdent) {
             *text = map_lines(text, first, last, |l| {
-                let n = l.chars().take(2).take_while(|c| *c == ' ').count();
+                let n = l.chars().take(step.len()).take_while(|c| *c == ' ').count();
                 l.strip_prefix('\t').unwrap_or(&l[n..]).to_string()
             });
             self.set_selection(&ctx, line_start(text, first), line_start(text, last + 1).saturating_sub(1).max(line_start(text, first)));
             changed(self, text, out);
+        }
+    }
+
+    /// Einruecken in Java & Co.: Enter uebernimmt die Einrueckung (nach `{` eine Ebene mehr, zwischen `{}` steht die
+    /// schliessende Klammer danach auf eigener Zeile), Tab fuegt Leerzeichen ein, `}` auf leerer Zeile rueckt aus.
+    /// Liefert true, wenn der Text geaendert wurde.
+    fn auto_indent(&mut self, ctx: &egui::Context, text: &mut String, cursor: usize) -> bool {
+        let chars: Vec<char> = text.chars().collect();
+        if !typed_before_cursor(&self.prev_text, &chars, cursor) {
+            return false;
+        }
+        let step = self.indent_step();
+        let step = step.as_str();
+        let typed_from = cursor - (chars.len() - self.prev_text.chars().count());
+        // Enter, auch wenn im selben Bild schon weitergetippt wurde: Einrueckung hinter den letzten Zeilenumbruch
+        if let Some(nl) = (typed_from..cursor).rev().find(|&i| chars[i] == '\n') {
+            let at = nl + 1;
+            let line_start = chars[..nl].iter().rposition(|c| *c == '\n').map_or(0, |i| i + 1);
+            let indent: String = chars[line_start..nl].iter().take_while(|c| **c == ' ' || **c == '\t').collect();
+            let before = chars[line_start..nl].iter().rev().find(|c| !c.is_whitespace()).copied();
+            let after = chars.get(at).copied();
+            let opens = self.lang.braces() && matches!(before, Some('{' | '[' | '(')) || self.lang == Lang::Python && before == Some(':');
+            let mut insert = indent.clone();
+            if opens {
+                insert.push_str(step);
+            }
+            let closing = at == cursor && opens && matches!((before, after), (Some('{'), Some('}')) | (Some('['), Some(']')) | (Some('('), Some(')')));
+            let caret = cursor + insert.chars().count();
+            if closing {
+                insert.push('\n');
+                insert.push_str(&indent);
+            }
+            if insert.is_empty() {
+                return false;
+            }
+            text.insert_str(byte_of(text, at), &insert);
+            self.set_cursor(ctx, caret);
+            self.cursor = caret;
+            self.cursor_moved = Some(());
+            return true;
+        }
+        let typed = chars[cursor - 1];
+        let line_start = chars[..cursor - 1].iter().rposition(|c| *c == '\n').map_or(0, |i| i + 1);
+        match typed {
+            '\t' => {
+                let col = cursor - 1 - line_start;
+                let n = step.len() - col % step.len();
+                let b = byte_of(text, cursor - 1);
+                text.replace_range(b..b + 1, &" ".repeat(n));
+                let caret = cursor - 1 + n;
+                self.set_cursor(ctx, caret);
+                self.cursor = caret;
+                self.cursor_moved = Some(());
+                true
+            }
+            '}' | ']' if self.lang.braces() => {
+                let before: String = chars[line_start..cursor - 1].iter().collect();
+                if before.is_empty() || !before.chars().all(|c| c == ' ') {
+                    return false;
+                }
+                let remove = before.len().min(step.len());
+                let b = byte_of(text, line_start);
+                text.replace_range(b..b + remove, "");
+                let caret = cursor - remove;
+                self.set_cursor(ctx, caret);
+                self.cursor = caret;
+                self.cursor_moved = Some(());
+                true
+            }
+            _ => false,
         }
     }
 
@@ -659,17 +885,20 @@ impl SqlEditor {
         let height = (height - (ui.cursor().top() - top0)).max(60.0);
         let lines = text.split('\n').count().max(1);
         let digits = lines.to_string().len().max(2);
-        let gutter_w = digits as f32 * 8.0 + 18.0;
+        let prefs = prefs();
+        let marks = self.breakpoints_enabled || !self.breakpoints.is_empty();
+        let gutter_w = if prefs.line_numbers { digits as f32 * 8.0 + 18.0 } else { 12.0 } + if marks { 12.0 } else { 0.0 };
         // Wie in VS Code laesst sich ueber die letzte Zeile hinaus scrollen: unter dem Text bleibt Platz
         // fuer die Hoehe des Fensters abzueglich einer Zeile.
         let visible_rows = (((height - 8.0) / row_h).floor().max(3.0)) as usize;
-        let total_rows = lines + visible_rows - 1;
+        let total_rows = if prefs.scroll_past_end { lines + visible_rows - 1 } else { lines };
         self.view.0 = visible_rows;
         self.view.1 = row_h;
 
         let mut layout_cache = std::mem::take(&mut self.layout_cache);
+        let lang = self.lang;
         let mut layouter = |ui: &egui::Ui, buf: &dyn egui::TextBuffer, _wrap: f32| -> Arc<egui::Galley> {
-            layout_cache.layout(ui, buf.as_str(), &font)
+            layout_cache.layout_lang(ui, buf.as_str(), &font, lang)
         };
 
         let frame = egui::Frame::new().fill(pal.bg).stroke(egui::Stroke::new(1.0, pal.border)).corner_radius(crate::style::RADIUS + 1).inner_margin(egui::Margin::same(3));
@@ -692,9 +921,9 @@ impl SqlEditor {
                 let so = sa.show(ui, |ui| {
                     ui.horizontal_top(|ui| {
                         ui.spacing_mut().item_spacing.x = 0.0;
-                        let (gutter, _) = ui.allocate_exact_size(
+                        let (gutter, gutter_resp) = ui.allocate_exact_size(
                             egui::vec2(gutter_w, (total_rows as f32 * row_h + 8.0).max(height - 4.0)),
-                            egui::Sense::hover(),
+                            if self.breakpoints_enabled { egui::Sense::click() } else { egui::Sense::hover() },
                         );
                         // Platzhalter fuer Hintergrund (aktuelle Zeile, Klammern, Treffer)
                         let bg_idx = ui.painter().add(egui::Shape::Noop);
@@ -714,16 +943,31 @@ impl SqlEditor {
                         let mut bg = Vec::new();
                         let cur = o.cursor_range.map(|r| r.primary.index.0);
                         let pos_of = |i: usize| o.galley.pos_from_cursor(CCursor::new(i)).translate(gp.to_vec2());
+                        // Zeile, an der der Debugger steht
+                        if let Some(l) = self.exec_line {
+                            let r = pos_of(line_start(text, l));
+                            bg.push(egui::Shape::rect_filled(egui::Rect::from_x_y_ranges(text_rect.x_range(), r.y_range()), 0.0, pal.exec_bg));
+                        }
                         if let (Some(c), true) = (cur, o.response.response.has_focus()) {
                             let r = pos_of(c);
-                            bg.push(egui::Shape::rect_filled(
-                                egui::Rect::from_x_y_ranges(text_rect.x_range(), r.y_range()),
-                                0.0,
-                                pal.current_line,
-                            ));
+                            if prefs.highlight_line {
+                                bg.push(egui::Shape::rect_filled(
+                                    egui::Rect::from_x_y_ranges(text_rect.x_range(), r.y_range()),
+                                    0.0,
+                                    pal.current_line,
+                                ));
+                            }
                             // Klammerpaar
                             let chars: Vec<char> = text.chars().collect();
-                            let at = if c > 0 && matching_bracket(&chars, c - 1).is_some() { Some(c - 1) } else if matching_bracket(&chars, c).is_some() { Some(c) } else { None };
+                            let at = if !prefs.match_brackets {
+                                None
+                            } else if c > 0 && matching_bracket(&chars, c - 1).is_some() {
+                                Some(c - 1)
+                            } else if matching_bracket(&chars, c).is_some() {
+                                Some(c)
+                            } else {
+                                None
+                            };
                             if let Some(i) = at
                                 && let Some(j) = matching_bracket(&chars, i) {
                                     for k in [i, j] {
@@ -784,24 +1028,58 @@ impl SqlEditor {
                         let clip = ui.clip_rect().expand(row_h);
                         let first = o.galley.rows.partition_point(|row| gp.y + row.pos.y + row_h < clip.top());
                         let last = o.galley.rows.partition_point(|row| gp.y + row.pos.y <= clip.bottom());
+                        // Haltepunkt setzen: Klick links neben die Zeilennummer
+                        if gutter_resp.clicked()
+                            && let Some(pos) = gutter_resp.interact_pointer_pos()
+                        {
+                            let line = ((pos.y - gp.y) / row_h).floor().max(0.0) as usize;
+                            if line < lines {
+                                out.toggle_breakpoint = Some(line);
+                            }
+                        }
+                        if gutter_resp.hovered() && self.breakpoints_enabled {
+                            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                        }
+                        let dot_x = gutter.left() + if marks { 7.0 } else { 6.0 };
+                        let lint_x = if marks { gutter.left() + 16.0 } else { gutter.left() + 6.0 };
                         for (index, row) in o.galley.rows[first..last].iter().enumerate() {
                             let n = first + index + 1;
                             {
                                 let active = cur_line == Some(n - 1);
                                 let err = self.error_line == Some(n - 1);
+                                let cy = gp.y + row.pos.y + row_h / 2.0;
+                                if self.breakpoints.contains(&(n - 1)) {
+                                    p.circle_filled(egui::pos2(dot_x, cy), 4.5, pal.breakpoint_fg);
+                                }
+                                if self.exec_line == Some(n - 1) {
+                                    let x = dot_x - 4.0;
+                                    p.add(egui::Shape::convex_polygon(vec![egui::pos2(x, cy - 5.0), egui::pos2(x + 8.0, cy), egui::pos2(x, cy + 5.0)], pal.exec_fg, egui::Stroke::NONE));
+                                }
                                 if self.lint.shown
                                     && let Ok(k) = self.lint.lines.binary_search_by_key(&(n - 1), |(l, _)| *l)
                                 {
                                     let color = if self.lint.lines[k].1 == Severity::Error { pal.error_text } else { pal.warn_text };
-                                    p.circle_filled(egui::pos2(gutter.left() + 6.0, gp.y + row.pos.y + row_h / 2.0), 2.5, color);
+                                    p.circle_filled(egui::pos2(lint_x, cy), 2.5, color);
                                 }
-                                p.text(
-                                    egui::pos2(gutter.right() - 8.0, gp.y + row.pos.y),
-                                    egui::Align2::RIGHT_TOP,
-                                    n.to_string(),
-                                    font.clone(),
-                                    if err { pal.error_text } else if active { pal.text } else { pal.syn_gutter },
-                                );
+                                if prefs.line_numbers {
+                                    p.text(
+                                        egui::pos2(gutter.right() - 8.0, gp.y + row.pos.y),
+                                        egui::Align2::RIGHT_TOP,
+                                        n.to_string(),
+                                        font.clone(),
+                                        if err { pal.error_text } else if active { pal.text } else { pal.syn_gutter },
+                                    );
+                                }
+                            }
+                        }
+                        // Zeichen unter dem Mauszeiger (Strg+Klick: Gehe zu Definition, Hinweise des Sprachservers)
+                        if let Some(pos) = ui.ctx().pointer_hover_pos()
+                            && text_rect.contains(pos)
+                        {
+                            let c = o.galley.cursor_from_pos(pos - gp).index.0;
+                            out.hover = Some(c);
+                            if o.response.response.clicked() && ui.input(|i| i.modifiers.command) {
+                                out.ctrl_click = Some(c);
                             }
                         }
                         result = Some(o);
@@ -853,7 +1131,9 @@ impl SqlEditor {
 
         if o.response.response.changed() {
             out.changed = true;
-            if let Some(c) = cursor
+            let indented = self.lang != Lang::Sql && prefs.auto_indent && cursor.is_some_and(|c| self.auto_indent(&ctx, text, c));
+            if !indented
+                && let Some(c) = cursor
                 && AUTO_CLOSE.load(std::sync::atomic::Ordering::Relaxed) {
                     self.auto_close(&ctx, text, c);
                 }
@@ -861,13 +1141,19 @@ impl SqlEditor {
         }
         if out.changed {
             self.prev_text = text.clone();
+            // Meldungen des Compilers gelten nur fuer den uebersetzten Stand
+            if !self.diagnostics.is_empty() {
+                self.diagnostics.clear();
+                self.lint.computed = false;
+            }
         }
 
         // Vorschlaege aktualisieren
         let auto = AUTO_SUGGEST.load(std::sync::atomic::Ordering::Relaxed);
         if (o.response.response.changed() && auto) || force {
-            self.popup = cursor
-                .and_then(|c| complete::suggest(text, c, &self.lint_env(), force).map(|s| Popup { items: s.items, selected: 0, word_start: s.word_start, cursor: c }));
+            // Nach dem Einruecken steht der Cursor woanders als im Ergebnis des Editors
+            let c = cursor.map(|c| if self.cursor_moved.take().is_some() { self.cursor } else { c });
+            self.popup = c.and_then(|c| self.suggest(text, c, force).map(|s| Popup { items: s.items, selected: 0, word_start: s.word_start, cursor: c }));
         } else if let (Some(p), Some(c)) = (&self.popup, cursor)
             && p.cursor != c {
                 self.popup = None;
@@ -939,6 +1225,18 @@ impl SqlEditor {
     }
 }
 
+/// Wurde seit `old` nur etwas eingefuegt, das genau vor dem Cursor endet? (auch mehrere Zeichen in einem Bild,
+/// etwa ";" und Enter bei schnellem Tippen)
+fn typed_before_cursor(old: &str, new: &[char], cursor: usize) -> bool {
+    let old: Vec<char> = old.chars().collect();
+    if cursor == 0 || cursor > new.len() || new.len() <= old.len() {
+        return false;
+    }
+    // Neu = Alt mit k Zeichen, die genau vor dem Cursor eingefuegt wurden
+    let k = new.len() - old.len();
+    cursor >= k && new[..cursor - k] == old[..cursor - k] && new[cursor..] == old[cursor - k..]
+}
+
 /// Wellenlinie unter Text von `x0` bis `x1` auf Hoehe `y`
 fn squiggle(x0: f32, x1: f32, y: f32, color: Color32) -> egui::Shape {
     let mut pts = Vec::new();
@@ -984,9 +1282,23 @@ mod edit_tests {
     #[test]
     fn comment_toggle() {
         let t = "SELECT 1;\n  SELECT 2;\nSELECT 3;";
-        let c = toggle_comment(t, 0, 1);
+        let c = toggle_comment_with(t, 0, 1, "--");
         assert_eq!(c, "-- SELECT 1;\n  -- SELECT 2;\nSELECT 3;");
-        assert_eq!(toggle_comment(&c, 0, 1), t);
+        assert_eq!(toggle_comment_with(&c, 0, 1, "--"), t);
+        assert_eq!(toggle_comment_with("int a;\n", 0, 0, "//"), "// int a;\n");
+    }
+
+    #[test]
+    fn typing_is_recognised_before_the_cursor() {
+        let new: Vec<char> = "a;\nb".chars().collect();
+        assert!(typed_before_cursor("ab", &new, 3), "zwei Zeichen in einem Bild");
+        assert!(!typed_before_cursor("ab", &new, 4), "Cursor nicht hinter der Eingabe");
+        let new: Vec<char> = "xx\n".chars().collect();
+        assert!(typed_before_cursor("xx", &new, 3));
+        // Enter vor einem vorhandenen Zeilenumbruch
+        let new: Vec<char> = "}\n\nab".chars().collect();
+        assert!(typed_before_cursor("}\nab", &new, 2));
+        assert!(!typed_before_cursor("xy", &new, 3), "Ersetzt statt eingefuegt");
     }
 
     #[test]
@@ -1065,5 +1377,38 @@ mod performance_tests {
         let start = std::time::Instant::now();
         for _ in 0..10 { render(); }
         println!("5,000 SQL lines: {:.3} ms/frame", start.elapsed().as_secs_f64() * 1000.0 / 10.0);
+    }
+}
+
+#[cfg(test)]
+mod indent_tests {
+    use super::*;
+
+    /// Tippen im echten Editor: Enter nach `{` rueckt ein, zwischen `{}` steht die Klammer danach auf eigener Zeile.
+    #[test]
+    fn enter_keeps_and_adds_indentation_in_java() {
+        let ctx = egui::Context::default();
+        let mut ed = SqlEditor::new(egui::Id::new("indent-test"));
+        ed.lang = Lang::Java;
+        let mut text = String::from("class A {\n    void m() {}\n}");
+        let frame = |ed: &mut SqlEditor, text: &mut String, events: Vec<egui::Event>| {
+            let _ = ctx.run_ui(egui::RawInput { events, screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0))), ..Default::default() }, |ui| {
+                ed.show(ui, text, 500.0);
+            });
+        };
+        frame(&mut ed, &mut text, vec![]);
+        // Cursor zwischen {}
+        let pos = text.find("{}").unwrap() + 1;
+        ctx.memory_mut(|m| m.request_focus(ed.id));
+        ed.set_cursor(&ctx, text[..pos].chars().count());
+        frame(&mut ed, &mut text, vec![]);
+        let enter = egui::Event::Key { key: Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: Modifiers::NONE };
+        frame(&mut ed, &mut text, vec![enter.clone()]);
+        assert_eq!(text, "class A {\n    void m() {\n        \n    }\n}");
+        frame(&mut ed, &mut text, vec![egui::Event::Text("x;".into()), enter.clone()]);
+        assert_eq!(text, "class A {\n    void m() {\n        x;\n        \n    }\n}");
+        // Enter und der naechste Buchstabe im selben Bild
+        frame(&mut ed, &mut text, vec![egui::Event::Text("y;".into()), enter, egui::Event::Text("z".into())]);
+        assert_eq!(text, "class A {\n    void m() {\n        x;\n        y;\n        z\n    }\n}");
     }
 }

@@ -12,6 +12,7 @@ pub enum SideView {
     Search,
     Databases,
     History,
+    Git,
 }
 
 impl SideView {
@@ -21,6 +22,7 @@ impl SideView {
             SideView::Search => "suche",
             SideView::Databases => "datenbanken",
             SideView::History => "verlauf",
+            SideView::Git => "git",
         }
     }
     pub fn from_name(s: &str) -> SideView {
@@ -28,13 +30,14 @@ impl SideView {
             "datenbanken" => SideView::Databases,
             "suche" => SideView::Search,
             "verlauf" => SideView::History,
+            "git" => SideView::Git,
             _ => SideView::Explorer,
         }
     }
 }
 
 pub enum ExplorerDlg {
-    NewFile { dir: PathBuf, name: String },
+    NewFile(Box<super::create::NewFile>),
     NewFolder { dir: PathBuf, name: String },
     Rename { path: PathBuf, name: String },
     Delete { path: PathBuf },
@@ -164,7 +167,7 @@ fn search_files_cancellable(files: &[PathBuf], query: &str, case: bool, cancelle
     (out, false)
 }
 
-fn section_header(ui: &mut egui::Ui, title: &str, add_buttons: impl FnOnce(&mut egui::Ui)) {
+pub(super) fn section_header(ui: &mut egui::Ui, title: &str, add_buttons: impl FnOnce(&mut egui::Ui)) {
     ui.horizontal(|ui| {
         ui.add_space(10.0);
         ui.label(RichText::new(title).small().strong().color(style::pal().text_weak));
@@ -176,10 +179,6 @@ fn section_header(ui: &mut egui::Ui, title: &str, add_buttons: impl FnOnce(&mut 
     });
 }
 
-/// Freier Vorschlag fuer einen neuen Dateinamen
-pub fn new_name(dir: &Path) -> String {
-    workspace::unique_file(dir, crate::i18n::text("Neue Abfrage"), "sql").file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default()
-}
 
 impl EasyApp {
     pub(super) fn side_panel(&mut self, ui: &mut egui::Ui, actions: &mut Vec<Action>) {
@@ -189,6 +188,7 @@ impl EasyApp {
             SideView::Search => self.search_side(ui, actions),
             SideView::Databases => self.databases_side(ui, actions),
             SideView::History => self.history_side(ui, actions),
+            SideView::Git => self.git_side(ui, actions),
         }
     }
 
@@ -232,6 +232,12 @@ impl EasyApp {
                 }
                 if ui.add_sized([w, 26.0], egui::Button::new(crate::i18n::text("Neues Projekt"))).clicked() {
                     self.explorer_dlg = Some(ExplorerDlg::NewProject { name: String::new() });
+                }
+                if ui.add_sized([w, 26.0], egui::Button::new(crate::i18n::tr("Neues Programmierprojekt", "New coding project"))).on_hover_text("Java, Python, JavaScript").clicked() {
+                    self.open_project_dialog(super::create::ProjectLang::Java);
+                }
+                if ui.add_sized([w, 26.0], egui::Button::new(crate::i18n::tr("Repository klonen", "Clone repository"))).clicked() {
+                    self.open_clone_dialog();
                 }
                 if !self.settings.recent.is_empty() {
                     ui.add_space(8.0);
@@ -278,6 +284,22 @@ impl EasyApp {
                     self.explorer_dlg = Some(ExplorerDlg::NewProject { name: String::new() });
                     ui.close();
                 }
+                if ui.button(crate::i18n::tr("Neues Java-Projekt …", "New Java project …")).clicked() {
+                    self.open_project_dialog(super::create::ProjectLang::Java);
+                    ui.close();
+                }
+                if ui.button(crate::i18n::tr("Neues Python-Projekt …", "New Python project …")).clicked() {
+                    self.open_project_dialog(super::create::ProjectLang::Python);
+                    ui.close();
+                }
+                if ui.button(crate::i18n::tr("Neues JavaScript-Projekt …", "New JavaScript project …")).clicked() {
+                    self.open_project_dialog(super::create::ProjectLang::Node);
+                    ui.close();
+                }
+                if ui.button(crate::i18n::tr("Repository klonen …", "Clone repository …")).clicked() {
+                    self.open_clone_dialog();
+                    ui.close();
+                }
                 ui.menu_button(crate::i18n::text("Zuletzt geöffnet"), |ui| {
                     for p in self.settings.recent.clone() {
                         if p != project && ui.button(workspace::dir_name(&p)).on_hover_text(p.display().to_string()).clicked() {
@@ -301,7 +323,7 @@ impl EasyApp {
             self.tree_scan = None;
         }
         if new_file {
-            self.explorer_dlg = Some(ExplorerDlg::NewFile { name: new_name(&project), dir: project.clone() });
+            self.explorer_dlg = Some(ExplorerDlg::NewFile(Box::new(super::create::NewFile::new(project.clone()))));
         }
         if new_folder {
             self.explorer_dlg = Some(ExplorerDlg::NewFolder { dir: project.clone(), name: String::new() });
@@ -323,11 +345,11 @@ impl EasyApp {
             let rest = ui.allocate_response(ui.available_size().max(vec2(10.0, 40.0)), Sense::click());
             io.target(ui, &rest, rest.rect, &tree.path);
             if rest.double_clicked() {
-                io.dlg = Some(ExplorerDlg::NewFile { dir: tree.path.clone(), name: new_name(&tree.path) });
+                io.dlg = Some(ExplorerDlg::NewFile(Box::new(super::create::NewFile::new(tree.path.clone()))));
             }
             rest.context_menu(|ui| {
                 if ui.button(crate::i18n::text("Neue Datei …")).clicked() {
-                    io.dlg = Some(ExplorerDlg::NewFile { dir: tree.path.clone(), name: new_name(&tree.path) });
+                    io.dlg = Some(ExplorerDlg::NewFile(Box::new(super::create::NewFile::new(tree.path.clone()))));
                     ui.close();
                 }
                 if ui.button(crate::i18n::text("Neuer Ordner …")).clicked() {
@@ -763,11 +785,15 @@ impl EasyApp {
     // Dialoge des Explorers
 
     pub(super) fn explorer_dialogs(&mut self, ctx: &egui::Context) {
+        if matches!(self.explorer_dlg, Some(ExplorerDlg::NewFile(_))) {
+            self.new_file_dialog(ctx);
+            return;
+        }
         let Some(dlg) = self.explorer_dlg.as_mut() else { return };
         let mut ok = false;
         let mut cancel = false;
         let title = match dlg {
-            ExplorerDlg::NewFile { .. } => crate::i18n::text("Neue Datei"),
+            ExplorerDlg::NewFile(_) => crate::i18n::text("Neue Datei"),
             ExplorerDlg::NewFolder { .. } => crate::i18n::text("Neuer Ordner"),
             ExplorerDlg::Rename { .. } => crate::i18n::text("Umbenennen"),
             ExplorerDlg::Delete { .. } => crate::i18n::text("Löschen"),
@@ -778,7 +804,8 @@ impl EasyApp {
             ui.label(RichText::new(title).strong());
             ui.add_space(6.0);
             match dlg {
-                ExplorerDlg::NewFile { name, .. } | ExplorerDlg::NewFolder { name, .. } | ExplorerDlg::Rename { name, .. } | ExplorerDlg::NewProject { name } => {
+                ExplorerDlg::NewFile(_) => {}
+                ExplorerDlg::NewFolder { name, .. } | ExplorerDlg::Rename { name, .. } | ExplorerDlg::NewProject { name } => {
                     crate::tabs::name_field(ui, egui::Id::new("explorer-dlg-name"), name, 300.0, true);
                     if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                         ok = true;
@@ -811,7 +838,7 @@ impl EasyApp {
         }
         let dlg = self.explorer_dlg.take().unwrap();
         let res: Result<Option<PathBuf>, String> = match dlg {
-            ExplorerDlg::NewFile { dir, name } => workspace::create_file(&dir, &name, "").map(Some),
+            ExplorerDlg::NewFile(_) => Ok(None),
             ExplorerDlg::NewFolder { dir, name } => workspace::create_folder(&dir, &name).map(|_| None),
             ExplorerDlg::NewProject { name } => {
                 let root = workspace::storage_root();
@@ -900,6 +927,10 @@ fn file_icon(name: &str) -> (Icon, Color32) {
     let ext = name.rsplit('.').next().unwrap_or("").to_lowercase();
     match ext.as_str() {
         "sql" => (Icon::FileCode, Color32::from_rgb(0xE3, 0x8C, 0x3B)),
+        "java" => (Icon::Coffee, Color32::from_rgb(0xE7, 0x6F, 0x51)),
+        "jar" | "class" => (Icon::Package, Color32::from_rgb(0xB0, 0x8B, 0x5B)),
+        "gradle" | "kts" => (Icon::FileCode, Color32::from_rgb(0x4D, 0xB6, 0xAC)),
+        "properties" => (Icon::Settings, style::pal().text_weak),
         "md" | "txt" | "log" => (Icon::FileText, Color32::from_rgb(0x51, 0x9A, 0xBA)),
         "csv" | "tsv" | "xlsx" | "xls" => (Icon::FileSheet, Color32::from_rgb(0x6C, 0xBE, 0x6A)),
         "json" | "xml" | "yml" | "yaml" => (Icon::FileJson, Color32::from_rgb(0xD6, 0xB8, 0x4E)),
@@ -1000,7 +1031,7 @@ fn draw_node(ui: &mut egui::Ui, n: &Node, depth: usize, io: &mut TreeIo) {
 fn dir_menu(resp: &egui::Response, n: &Node, dlg: &mut Option<ExplorerDlg>) {
     resp.context_menu(|ui| {
         if ui.button(crate::i18n::text("Neue Datei …")).clicked() {
-            *dlg = Some(ExplorerDlg::NewFile { dir: n.path.clone(), name: new_name(&n.path) });
+            *dlg = Some(ExplorerDlg::NewFile(Box::new(super::create::NewFile::new(n.path.clone()))));
             ui.close();
         }
         if ui.button(crate::i18n::text("Neuer Ordner …")).clicked() {

@@ -4,9 +4,9 @@ MariaDB server and database manager for Windows. Includes an SQL editor, table e
 
 ## Install
 
-Download the installer or portable ZIP from [mysql.benjaminberger.at](https://mysql.benjaminberger.at). MariaDB is included. Launch EasyMySQL to initialize the server.
+Download the installer or portable ZIP from [mysql.benjaminberger.at](https://mysql.benjaminberger.at). MariaDB is included (each release bundles the newest stable long-term-support version). Launch EasyMySQL to initialize the server.
 
-The default connection uses port `3306`, user `root` and an empty password. The server accepts connections from the same PC only. The installer adds the command-line tools to `PATH`:
+The default connection uses port `3306`, user `root` and an empty password. The server accepts connections from the same PC only (both can be changed under *Settings → Server*). The installer adds the command-line tools to `PATH`:
 
 ```console
 mysql -u root
@@ -27,7 +27,17 @@ Closing the window quits EasyMySQL and shuts the server down cleanly. If you pre
 - ER diagrams for large databases: layered layout with few crossings, right-angled lines that share a track where they start at the same column, unlimited zoom out with names that stay readable. Export as SVG or SQL.
 - Build queries visually, including INSERT, UPDATE and DELETE, with undo and a live preview.
 - Open an integrated terminal (**View → New terminal**, `Ctrl+\``) with several tabs; PowerShell, Command Prompt or the MariaDB console.
-- Preview images and PDF files directly from the project explorer; copy a table or a query as ready-to-run Java (JDBC) code.
+- Preview images and PDF files directly from the project explorer.
+- **Java**: *File → New Java project* creates a simple, Maven or Gradle project with a ready connection (`Database.connect()`) and a record plus DAO class for every chosen table. ▶ Run compiles it and starts it in the terminal (input works too); compile errors are underlined in the code. EasyMySQL downloads whatever is missing – the Temurin JDK (newest LTS), MariaDB and MySQL Connector/J, Maven and Gradle – always the newest stable version with checksum verification, and looks for updates once a week (*Settings → Java*). In Java files, SQL inside strings is highlighted, completed and checked against the chosen database, and *Insert* adds code for a connection or a table. Terminals have `java`, `javac`, `mvn`, `gradle` and both drivers on the class path. Tables and queries can also be copied as ready-to-run JDBC code.
+- **Python**: *File → New Python project* creates a project with `requirements.txt` or `pyproject.toml`, a connection module and a dataclass plus repository for every chosen table. ▶ Run creates a `.venv`, installs the packages, checks every file for syntax errors and starts the program. EasyMySQL downloads Python (newest stable, python-build-standalone) and PyMySQL or MySQL Connector/Python when missing; scripts without a project find the driver on `PYTHONPATH`.
+- **JavaScript and TypeScript**: *File → New JavaScript project* creates a Node.js project with `mysql2` or the MariaDB connector, a connection pool and a repository class per table. ▶ Run runs `npm install` when `package.json` changes, checks the syntax and starts the file; `.ts` files run directly. Node.js (newest LTS) and the driver download themselves; npm, pnpm and yarn are supported.
+- **Coding features** for all three languages: run tests (JUnit, pytest/unittest, `node --test`), a Java debugger with breakpoints, stepping, variables and expression evaluation, a self-contained `.jar` (`dist/<project>.jar`), adding libraries from Maven Central, PyPI or npm through a search dialog, and language servers (Eclipse JDT LS, Pyright, TypeScript) for errors while typing, go to definition (`F12`, `Ctrl+click`), project-wide rename (`F2`), hover hints and formatting. SQL inside strings is highlighted, completed and checked in every language.
+- **Git and GitHub**: the *Source control* sidebar shows changes and diffs, stages, commits, switches/creates/merges branches, pulls and pushes, and shows the history. Sign in to GitHub (personal token or GitHub CLI) to publish a project as a new repository, clone your repositories, create and merge pull requests, create issues and watch Actions runs. On Windows, Git (MinGit) downloads itself.
+- **Everything is configurable**: per language which runtime to use (automatic, own download, system or a path), compiler/JVM/Python/Node/pip/Maven/Gradle options, program arguments, environment variables, working folder, syntax check, terminal reuse, tool update interval, language servers per language, editor indentation and display, terminal font/scrollback/shell, Git identity and pull mode, rows per result and page, history length and more.
+- New files: type the name, pick the extension that stays on the right (SQL, Java, Python, JavaScript, TypeScript with a skeleton, Markdown, JSON …).
+- Configure the built-in server under *Settings → Server*: port, access from this PC only or the network, data folder (moved with its data), memory, connections, packet size, default collation, event scheduler, extra `my.ini` lines and whether it starts with EasyMySQL.
+- **Encryption (TLS)** for the built-in server with its own certificate authority: EasyMySQL, JDBC, Python and Node programs connect encrypted and verify the certificate; *Encrypted only* rejects unencrypted network connections. The CA certificate can be saved for other computers.
+- **MariaDB updates in existing installations** without administrator rights: EasyMySQL finds the newest stable LTS version, backs up all databases and copies the data folder, switches the server to the new version and goes back automatically if it does not start.
 - Manage automatic backups and restores under **Server → Backups & repair**.
 - Updates download and install in the background without closing the app (switch on *Settings → Updates → Update automatically* to skip the question); afterwards a button restarts EasyMySQL.
 - Open the searchable manual with `F1`.

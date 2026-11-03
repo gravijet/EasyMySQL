@@ -172,7 +172,8 @@ pub const CHAPTERS: &[Chapter] = &[
                         "Die Symbole oben: neue Datei, neuer Ordner, aktualisieren, alle Ordner zuklappen, Projektmenü.",
                         "Rechtsklick auf Datei oder Ordner: umbenennen, löschen, Pfad kopieren, im Datei-Explorer zeigen.",
                         "Rechtsklick oder Doppelklick auf die freie Fläche: neue Datei oder neuer Ordner im Projekt.",
-                        "Neue Dateien ohne Endung bekommen automatisch „.sql“.",
+                        "Neue Datei: links den Namen eingeben, rechts daneben steht die Endung. Ein Klick darauf wählt die Art (SQL, Java, Markdown, JSON …). Tippt man eine bekannte Endung mit, etwa „liste.md“, wird sie übernommen.",
+                        "Java-Dateien bekommen gleich das passende Gerüst: Klasse, mit main, mit Datenbankverbindung, Record, Interface oder Enum – samt Paket aus dem Ordner.",
                         "Löschen verschiebt in den Ordner „.papierkorb“ im Projekt. Von dort lässt sich jede Datei zurückholen.",
                         "Die Datei der aktiven Registerkarte ist im Explorer hervorgehoben.",
                     ]),
@@ -655,13 +656,71 @@ pub const CHAPTERS: &[Chapter] = &[
                 title: "Java mit der Datenbank verbinden",
                 blocks: &[
                     P("Java spricht über JDBC mit der Datenbank. Dafür braucht das Projekt einen Treiber, den MariaDB Connector/J – eine einzelne JAR-Datei."),
+                    Tip("In EasyMySQL selbst ist nichts einzurichten: Datei → Neues Java-Projekt legt ein fertiges Projekt an, und ▶ Ausführen lädt JDK und Treiber beim ersten Mal selbst."),
+                    Open("Neues Java-Projekt", Cmd(Cmd::NewJavaProject)),
+                    P("Für andere Programme wie IntelliJ, Eclipse oder VS Code:"),
                     Steps(&[
                         "Treiber hinzufügen: Mit Maven die Abhängigkeit unten eintragen. Ohne Maven die Datei „mariadb-java-client“ von mariadb.com/downloads/connectors herunterladen und dem Projekt als Bibliothek hinzufügen (IntelliJ: Projektstruktur → Bibliotheken, Eclipse: Build Path → Add External JARs).",
-                        "Die Verbindungsadresse lautet jdbc:mariadb://localhost:3306/datenbankname. Der Datenbankname am Ende ist optional.",
+                        "Die Verbindungsadresse lautet jdbc:mariadb://localhost:3306/datenbankname?sslMode=disable. Der Datenbankname ist optional; sslMode=disable braucht der MariaDB-Treiber ab Version 4 für den Server auf diesem PC.",
                         "Benutzer und Passwort angeben. In EasyMySQL ist es standardmäßig der Benutzer root ohne Passwort. EasyMySQL muss laufen, denn der Server startet mit dem Programm.",
                     ]),
-                    Source("<dependency>\n  <groupId>org.mariadb.jdbc</groupId>\n  <artifactId>mariadb-java-client</artifactId>\n  <version>3.5.3</version>\n</dependency>"),
+                    Source("<dependency>\n  <groupId>org.mariadb.jdbc</groupId>\n  <artifactId>mariadb-java-client</artifactId>\n  <version>4.0.0</version>\n</dependency>"),
                     Tip("Auch der „MySQL Connector/J“ funktioniert. Die Adresse beginnt dann mit jdbc:mysql://."),
+                    Tip("Die neueste stabile Version beider Treiber steht unter Einstellungen → Java."),
+                ],
+            },
+            Section {
+                id: "java-projekt",
+                title: "Java-Projekt anlegen und ausführen",
+                blocks: &[
+                    Steps(&[
+                        "Datei → Neues Java-Projekt (oder im Explorer über das Menü mit den drei Punkten).",
+                        "Name, Aufbau (einfach, Maven oder Gradle), Paket und Datenbank wählen. Für die angehakten Tabellen entstehen je ein Record und eine DAO-Klasse.",
+                        "Main.java öffnet sich. ▶ Ausführen (oder F5) übersetzt das Projekt und startet es im Terminal unten – dort funktionieren auch Eingaben mit Scanner.",
+                        "Erneutes Ausführen beendet den vorherigen Lauf und startet neu; es sammeln sich keine Terminals an.",
+                    ]),
+                    Table(&[
+                        ("Einfach", "Ordner src und lib mit dem Treiber. Läuft ohne weitere Werkzeuge, auch in VS Code."),
+                        ("Maven", "pom.xml mit dem Treiber als Abhängigkeit. Läuft in IntelliJ, Eclipse und mit mvn compile exec:java."),
+                        ("Gradle", "build.gradle(.kts) mit dem Treiber. Läuft in IntelliJ und mit gradle run."),
+                    ]),
+                    P("Die Verbindung steht in db.properties. Beim Ausführen aus EasyMySQL gibt EasyMySQL Server, Datenbank (Auswahl oben im Reiter) und Passwort selbst mit – das Passwort muss deshalb nicht in die Datei."),
+                    Keys(&[Cmd::NewJavaProject, Cmd::RunAll]),
+                    Open("Neues Java-Projekt …", Cmd(Cmd::NewJavaProject)),
+                ],
+            },
+            Section {
+                id: "java-editor",
+                title: "Java im Editor",
+                blocks: &[
+                    List(&[
+                        "SQL in Zeichenketten wird wie im SQL-Editor eingefärbt und gegen die oben gewählte Datenbank geprüft: Tippfehler in Tabellen- und Spaltennamen sind unterstrichen, Strg+. korrigiert sie.",
+                        "In einer SQL-Zeichenkette schlägt die Vervollständigung Tabellen und Spalten vor, in einer leeren Zeichenkette mit Strg+Leertaste auch Befehle.",
+                        "Nach rs., ps. oder con. erscheinen die passenden JDBC-Methoden (getString, setInt, executeQuery …).",
+                        "Vorlagen: main, sout, fori, foreach, try, scanner, connection, query, update, transaction.",
+                        "„Einfügen“ setzt Code für die Datenbank ein: eine Verbindung, das Lesen aller Zeilen einer Tabelle (mit passenden Typen und Imports) oder Record und DAO-Klasse als neue Dateien.",
+                        "Fehler beim Übersetzen sind im Code rot unterstrichen; die Liste darunter springt per Klick zur Stelle, auch in anderen Dateien.",
+                        "Enter rückt automatisch ein, nach { eine Ebene mehr, } rückt wieder aus. Strg+# kommentiert mit //.",
+                    ]),
+                    Tip("Hat die geöffnete Datei keine main-Methode, startet ▶ die Klasse mit main im Projekt (bei mehreren die namens Main)."),
+                ],
+            },
+            Section {
+                id: "java-werkzeuge",
+                title: "JDK, Treiber, Maven und Gradle",
+                blocks: &[
+                    P("EasyMySQL lädt alles, was zum Ausführen fehlt, selbst – immer die neueste stabile Version, geprüft mit der Prüfsumme des Herstellers. Vorabversionen (Beta, RC) werden nie genommen."),
+                    Table(&[
+                        ("JDK", "Eclipse Temurin in der neuesten LTS-Version. Ein vorhandenes JDK ab Version 17 wird ebenfalls erkannt."),
+                        ("Treiber", "MariaDB Connector/J und MySQL Connector/J von Maven Central. Beide stehen beim Ausführen im Klassenpfad."),
+                        ("Maven, Gradle", "Werden erst geladen, wenn ein Maven- bzw. Gradle-Projekt ausgeführt wird. Hat das Projekt mvnw oder gradlew, wird das verwendet."),
+                    ]),
+                    List(&[
+                        "Im Terminal von EasyMySQL stehen java, javac, mvn und gradle bereit; JAVA_HOME und der Klassenpfad mit den Treibern sind gesetzt. java Main.java läuft so ohne weitere Angaben.",
+                        "Einmal pro Woche sieht EasyMySQL nach neueren Versionen und installiert sie im Hintergrund. Einstellungen → Java zeigt den Stand und sucht auf Wunsch sofort.",
+                        "Treiber im Code: MariaDB (jdbc:mariadb://) oder MySQL (jdbc:mysql://) für erzeugten Code und neue Projekte.",
+                    ]),
+                    Open("Java-Einstellungen", Settings("java")),
                 ],
             },
             Section {
@@ -669,7 +728,7 @@ pub const CHAPTERS: &[Chapter] = &[
                 title: "Daten abfragen",
                 blocks: &[
                     P("Eine Abfrage hat immer drei Schritte: verbinden, Anweisung vorbereiten, das Ergebnis Zeile für Zeile lesen. „try (…)“ schließt alles automatisch wieder."),
-                    Source("import java.sql.*;\n\npublic class Beispiel {\n    public static void main(String[] args) throws SQLException {\n        String url = \"jdbc:mariadb://localhost:3306/schule\";\n        String sql = \"SELECT id, vorname FROM schueler WHERE klasse_id = ?\";\n\n        try (Connection con = DriverManager.getConnection(url, \"root\", \"\");\n             PreparedStatement ps = con.prepareStatement(sql)) {\n            ps.setInt(1, 3);\n            try (ResultSet rs = ps.executeQuery()) {\n                while (rs.next()) {\n                    int id = rs.getInt(\"id\");\n                    String vorname = rs.getString(\"vorname\");\n                    System.out.println(id + \" \" + vorname);\n                }\n            }\n        }\n    }\n}"),
+                    Source("import java.sql.*;\n\npublic class Beispiel {\n    public static void main(String[] args) throws SQLException {\n        String url = \"jdbc:mariadb://localhost:3306/schule?sslMode=disable\";\n        String sql = \"SELECT id, vorname FROM schueler WHERE klasse_id = ?\";\n\n        try (Connection con = DriverManager.getConnection(url, \"root\", \"\");\n             PreparedStatement ps = con.prepareStatement(sql)) {\n            ps.setInt(1, 3);\n            try (ResultSet rs = ps.executeQuery()) {\n                while (rs.next()) {\n                    int id = rs.getInt(\"id\");\n                    String vorname = rs.getString(\"vorname\");\n                    System.out.println(id + \" \" + vorname);\n                }\n            }\n        }\n    }\n}"),
                     List(&[
                         "Immer PreparedStatement mit ? verwenden und die Werte mit setInt, setString oder setObject einsetzen. Werte nie mit + in den SQL-Text kleben – das öffnet SQL-Injection.",
                         "rs.next() springt zur nächsten Zeile und liefert false, wenn keine mehr kommt.",
@@ -712,6 +771,7 @@ pub const CHAPTERS: &[Chapter] = &[
                         "Rechtsklick auf eine Tabelle in der Seitenleiste → Java-Klasse kopieren. In der Zwischenablage liegen ein Record mit passenden Feldern und eine DAO-Klasse mit findAll, findById, insert, update und delete.",
                         "Im SQL-Editor kopiert der Befehl „Als Java-Code kopieren“ die markierte Anweisung (sonst die unter dem Cursor) als fertige Klasse mit main-Methode.",
                         "Host, Port und Benutzer stammen aus der Verbindung. Das Passwort wird nie eingetragen – dort steht ein leerer Text, den man anpasst.",
+                        "In einer Java-Datei: Einfügen → Record und DAO-Klasse anlegen schreibt beides als eigene Dateien mit Paket neben die Datei.",
                     ]),
                     Keys(&[Cmd::CopyJava]),
                 ],
@@ -722,9 +782,215 @@ pub const CHAPTERS: &[Chapter] = &[
                 blocks: &[
                     Table(&[
                         ("No suitable driver found", "Die Treiber-JAR fehlt im Klassenpfad bzw. in der Maven-Abhängigkeit. Die Adresse muss mit jdbc:mariadb:// beginnen."),
+                        ("Trying to connect with ssl, but ssl not enabled", "Der MariaDB-Treiber ab Version 4 verschlüsselt immer. Für den Server auf diesem PC ?sslMode=disable an die Adresse hängen – EasyMySQL macht das in erzeugtem Code selbst."),
+                        ("Übersetzen fehlgeschlagen", "Die rot unterstrichene Stelle ansehen; ein Klick auf die Meldung unter dem Code springt dorthin."),
                         ("Communications link failure", "EasyMySQL bzw. der Server läuft nicht, oder Host und Port stimmen nicht (Standard: localhost, 3306)."),
                         ("Access denied for user", "Benutzer oder Passwort stimmen nicht. Standard: root ohne Passwort."),
                         ("Unknown database", "Den Datenbanknamen am Ende der Adresse prüfen oder die Datenbank zuerst anlegen."),
+                    ]),
+                ],
+            },
+        ],
+    },
+    Chapter {
+        title: "Python",
+        sections: &[
+            Section {
+                id: "python-verbinden",
+                title: "Python mit der Datenbank verbinden",
+                blocks: &[
+                    P("Python spricht über einen Treiber mit MariaDB. EasyMySQL nimmt PyMySQL (reines Python, läuft überall) oder MySQL Connector/Python – einstellbar unter Einstellungen → Python."),
+                    Tip("Nichts einzurichten: ▶ Ausführen lädt beim ersten Mal Python (neueste stabile Version) und den Treiber selbst. Ein Python des Systems ab 3.9 mit venv und pip wird ebenfalls erkannt."),
+                    Source("import pymysql\n\nwith pymysql.connect(host=\"127.0.0.1\", user=\"root\", password=\"\", database=\"schule\",\n                     cursorclass=pymysql.cursors.DictCursor) as con:\n    with con.cursor() as cur:\n        cur.execute(\"SELECT id, vorname FROM schueler WHERE klasse_id = %s\", (3,))\n        for row in cur.fetchall():\n            print(row[\"id\"], row[\"vorname\"])"),
+                    List(&[
+                        "Werte immer mit %s-Platzhaltern und einem Tupel übergeben, nie in den SQL-Text einsetzen (SQL-Injection).",
+                        "Änderungen (INSERT, UPDATE, DELETE) gelten erst nach con.commit().",
+                        "Beim Start aus EasyMySQL stehen Server, Datenbank und Passwort in EASYMYSQL_DB_HOST, EASYMYSQL_DB_NAME, EASYMYSQL_DB_PASSWORD usw.",
+                    ]),
+                ],
+            },
+            Section {
+                id: "python-projekt",
+                title: "Python-Projekt anlegen und ausführen",
+                blocks: &[
+                    Steps(&[
+                        "Datei → Neues Python-Projekt.",
+                        "Pakete in requirements.txt oder pyproject.toml, Treiber und Datenbank wählen. Für die angehakten Tabellen entstehen dataclasses (models.py) und Repository-Klassen (repos.py).",
+                        "main.py öffnet sich. ▶ Ausführen legt beim ersten Mal eine .venv an, installiert die Pakete und startet das Programm im Terminal (mit Eingaben über input()).",
+                        "Ändert sich requirements.txt, installiert EasyMySQL die Pakete vor dem nächsten Start neu.",
+                    ]),
+                    P("Vor dem Start prüft EasyMySQL alle .py-Dateien des Projekts auf Syntaxfehler. Fehler sind im Code rot unterstrichen; die Liste darunter springt zur Stelle."),
+                    Keys(&[Cmd::NewPythonProject, Cmd::RunAll, Cmd::RunTests]),
+                    Open("Neues Python-Projekt …", Cmd(Cmd::NewPythonProject)),
+                ],
+            },
+            Section {
+                id: "python-editor",
+                title: "Python im Editor",
+                blocks: &[
+                    List(&[
+                        "SQL in Zeichenketten wird eingefärbt und gegen die oben gewählte Datenbank geprüft – auch mit %s- und %(name)s-Platzhaltern. Strg+. korrigiert Tippfehler.",
+                        "Nach cur. und con. erscheinen die Methoden von Cursor und Verbindung (execute, fetchall, commit …).",
+                        "Vorlagen: main, ifmain, def, class, dataclass, for, with, try, connection, query, update, transaction, test.",
+                        "Enter nach einem Doppelpunkt rückt eine Ebene ein. Strg+# kommentiert mit #.",
+                        "Einfügen → dataclass und Repository fügt Code für eine Tabelle an der Cursorstelle ein.",
+                    ]),
+                ],
+            },
+        ],
+    },
+    Chapter {
+        title: "JavaScript und TypeScript",
+        sections: &[
+            Section {
+                id: "node-projekt",
+                title: "Node.js-Projekt anlegen und ausführen",
+                blocks: &[
+                    P("JavaScript und TypeScript laufen mit Node.js. Als Treiber dient mysql2 oder der MariaDB Connector/Node.js. EasyMySQL lädt Node.js (neueste LTS-Version) und den Treiber beim ersten Start selbst."),
+                    Steps(&[
+                        "Datei → Neues JavaScript-Projekt: package.json mit dem Treiber, index.js, db.js (Verbindungspool) und je Tabelle eine Repository-Klasse in repos.js.",
+                        "▶ Ausführen führt bei Bedarf npm install aus, prüft die Syntax (node --check) und startet die Datei im Terminal.",
+                        "TypeScript-Dateien (.ts) laufen direkt mit Node.js, ohne Übersetzen.",
+                    ]),
+                    Source("const db = require('./db');\n\nasync function main() {\n  const rows = await db.query('SELECT id, vorname FROM schueler WHERE klasse_id = ?', [3]);\n  for (const row of rows) console.log(row.id, row.vorname);\n}\n\nmain().finally(() => db.close());"),
+                    Keys(&[Cmd::NewNodeProject, Cmd::RunAll, Cmd::RunTests]),
+                    Open("Neues JavaScript-Projekt …", Cmd(Cmd::NewNodeProject)),
+                ],
+            },
+            Section {
+                id: "node-editor",
+                title: "JavaScript im Editor",
+                blocks: &[
+                    List(&[
+                        "SQL in Zeichenketten und Template-Strings ohne ${…} wird eingefärbt und geprüft.",
+                        "Nach pool., conn. und db. erscheinen die passenden Methoden (query, execute, getConnection, beginTransaction …).",
+                        "Vorlagen: main, function, arrow, class, for, try, log, require, connection, query, update, transaction, test.",
+                        "Paketverwaltung: npm, pnpm oder yarn (Einstellungen → JavaScript). Eine pnpm-lock.yaml oder yarn.lock im Projekt hat Vorrang.",
+                    ]),
+                    Open("JavaScript-Einstellungen", Settings("javascript")),
+                ],
+            },
+        ],
+    },
+    Chapter {
+        title: "Programmieren in EasyMySQL",
+        sections: &[
+            Section {
+                id: "programme-ausfuehren",
+                title: "Ausführen und Einstellungen",
+                blocks: &[
+                    P("▶ Ausführen startet Java, Python und JavaScript im Terminal unten. Was dabei geschieht, ist unter Einstellungen → Ausführen einstellbar:"),
+                    List(&[
+                        "Programmargumente und eigene Umgebungsvariablen für jedes Programm.",
+                        "Ob die Verbindung zur gewählten Datenbank als EASYMYSQL_DB_* mitgegeben wird.",
+                        "Vorher speichern, Syntax prüfen, Arbeitsordner (Projekt oder Ordner der Datei), Terminal wiederverwenden.",
+                        "Werkzeuge ohne Nachfrage laden und wie oft nach neueren Versionen gesucht wird (nie, täglich, wöchentlich, monatlich).",
+                        "Je Sprache: welches JDK, Python bzw. Node.js (automatisch, eigenes, vom System oder ein Pfad), Compiler- und Laufzeitoptionen.",
+                    ]),
+                    Open("Einstellungen zum Ausführen", Settings("ausfuehren")),
+                ],
+            },
+            Section {
+                id: "tests",
+                title: "Tests",
+                blocks: &[
+                    P("Tests ausführen startet die Tests des Projekts im Terminal: JUnit bei Java (Maven, Gradle oder einfache Projekte), pytest oder unittest bei Python, npm test bzw. node --test bei JavaScript."),
+                    List(&[
+                        "Neue Projekte bekommen gleich einen Test, der die Verbindung und das Lesen der Tabellen prüft.",
+                        "Weitere → Test anlegen erstellt einen Test für die geöffnete Datei am richtigen Ort und trägt JUnit bei Bedarf in pom.xml bzw. build.gradle ein.",
+                    ]),
+                    Keys(&[Cmd::RunTests]),
+                ],
+            },
+            Section {
+                id: "debugger",
+                title: "Debugger (Java)",
+                blocks: &[
+                    Steps(&[
+                        "Links neben die Zeilennummer klicken (oder F9): ein roter Punkt markiert den Haltepunkt.",
+                        "Debuggen (Käfer-Knopf) übersetzt und startet das Programm im Terminal; es hält am Haltepunkt an.",
+                        "Unten stehen die Variablen und die Aufrufliste. Ein Klick auf ein Objekt zeigt seine Felder, ein Klick in die Aufrufliste springt zur Stelle.",
+                        "Weiter, nächste Zeile, hineinspringen, herausspringen – oder einen Ausdruck auswerten (z. B. x * 2).",
+                    ]),
+                    Keys(&[Cmd::DebugStart, Cmd::ToggleBreakpoint, Cmd::DebugContinue, Cmd::StepOver, Cmd::StepInto, Cmd::StepOut, Cmd::DebugStop]),
+                ],
+            },
+            Section {
+                id: "jar",
+                title: "Programmdatei (.jar)",
+                blocks: &[
+                    P("Weitere → Programmdatei (.jar) erzeugen schreibt dist/<Projekt>.jar mit allen eigenen Klassen, Ressourcen und Bibliotheken samt JDBC-Treiber. Sie läuft überall, wo Java installiert ist:"),
+                    Shell("java -jar dist/Projekt.jar"),
+                    Keys(&[Cmd::BuildJar]),
+                ],
+            },
+            Section {
+                id: "bibliotheken",
+                title: "Bibliotheken einbinden",
+                blocks: &[
+                    P("Weitere → Bibliothek einbinden sucht auf Maven Central, PyPI bzw. npm und trägt die neueste stabile Version ein – ohne pom.xml, build.gradle, requirements.txt oder package.json von Hand zu bearbeiten."),
+                    Table(&[
+                        ("Maven, Gradle", "Eintrag in pom.xml bzw. build.gradle(.kts); geladen wird beim nächsten Start."),
+                        ("Einfaches Java-Projekt", "Die .jar samt ihren Abhängigkeiten kommt nach lib/."),
+                        ("Python", "Eintrag in requirements.txt bzw. pyproject.toml; ohne Projektdatei für alle Skripte."),
+                        ("JavaScript", "npm install trägt das Paket in package.json ein."),
+                    ]),
+                    Keys(&[Cmd::AddLibrary]),
+                ],
+            },
+            Section {
+                id: "sprachserver",
+                title: "Fehler beim Tippen, Gehe zu Definition, Umbenennen",
+                blocks: &[
+                    P("Sprachserver verstehen den ganzen Code des Projekts: Eclipse JDT LS für Java, Pyright für Python, der TypeScript-Server für JavaScript und TypeScript. EasyMySQL lädt sie bei Bedarf selbst."),
+                    List(&[
+                        "Fehler und Warnungen erscheinen schon beim Tippen, nicht erst beim Ausführen.",
+                        "Strg+Klick oder F12 springt zur Definition, auch in andere Dateien.",
+                        "F2 benennt eine Variable, Methode oder Klasse im ganzen Projekt um – bei Java-Klassen samt Datei.",
+                        "Zeigt man mit der Maus auf einen Namen, erscheinen Typ und Beschreibung.",
+                        "Ein- und ausschalten je Sprache, Speicher und Wartezeit: Einstellungen → Sprachserver.",
+                    ]),
+                    Keys(&[Cmd::GotoDefinition, Cmd::RenameSymbol, Cmd::Format]),
+                    Open("Sprachserver-Einstellungen", Settings("sprachserver")),
+                ],
+            },
+        ],
+    },
+    Chapter {
+        title: "Git und GitHub",
+        sections: &[
+            Section {
+                id: "git",
+                title: "Git im Projekt",
+                blocks: &[
+                    P("Die Seitenleiste Quellcodeverwaltung zeigt den Stand des Projektordners: geänderte, neue und vorgemerkte Dateien. Ein Klick auf eine Datei zeigt die Unterschiede."),
+                    List(&[
+                        "+ merkt eine Datei für den Commit vor, ↺ verwirft ihre Änderungen (mit Rückfrage).",
+                        "Beschreibung eingeben und Commit. Ist nichts vorgemerkt, werden alle Änderungen übernommen (einstellbar).",
+                        "Ein Klick auf den Branch wechselt ihn, legt einen neuen an, führt zusammen oder löscht.",
+                        "Pull und Push mit den Wolken-Knöpfen; ↓/↑ zeigt, wie viele Commits fehlen bzw. noch nicht gepusht sind.",
+                        "Weitere → Verlauf zeigt die letzten Commits; ein Klick zeigt ihre Änderungen.",
+                        "Neue Projekte bekommen auf Wunsch gleich ein Repository mit erstem Commit.",
+                    ]),
+                    Tip("Git fehlt unter Windows? Ein Klick lädt MinGit (ohne Installation). Unter Linux und macOS kommt Git aus der Paketverwaltung."),
+                    Keys(&[Cmd::ShowGit, Cmd::GitCommit, Cmd::GitPull, Cmd::GitPush]),
+                    Open("Git-Einstellungen", Settings("git")),
+                ],
+            },
+            Section {
+                id: "github",
+                title: "GitHub",
+                blocks: &[
+                    Steps(&[
+                        "Bei GitHub anmelden: ein persönliches Token einfügen (die Seite dafür öffnet sich mit den richtigen Rechten) oder über die GitHub CLI im Browser.",
+                        "Auf GitHub veröffentlichen legt ein Repository an (privat oder öffentlich) und pusht das Projekt.",
+                        "Repository klonen: Adresse eingeben oder aus den eigenen Repositorys wählen.",
+                    ]),
+                    List(&[
+                        "Pull Requests: Liste der offenen, neuen erstellen (der Branch wird vorher gepusht) und zusammenführen (Squash, Merge oder Rebase).",
+                        "Issues: offene ansehen und neue anlegen.",
+                        "Actions: die letzten Läufe mit Ergebnis; ein Klick öffnet sie im Browser.",
+                        "Das Token liegt in einer eigenen Datei im Programmdatenordner und wird nur für den jeweiligen Git-Aufruf mitgegeben, nicht in der Git-Konfiguration gespeichert.",
                     ]),
                 ],
             },
@@ -917,6 +1183,9 @@ pub const CHAPTERS: &[Chapter] = &[
                         Cmd::Explain,
                         Cmd::NewQuery,
                         Cmd::NewFile,
+                        Cmd::NewJavaProject,
+                        Cmd::NewPythonProject,
+                        Cmd::NewNodeProject,
                         Cmd::OpenFile,
                         Cmd::OpenFolder,
                         Cmd::Save,
@@ -962,6 +1231,22 @@ pub const CHAPTERS: &[Chapter] = &[
                         Cmd::CopyLineDown,
                         Cmd::Indent,
                         Cmd::Outdent,
+                        Cmd::RunTests,
+                        Cmd::BuildJar,
+                        Cmd::AddLibrary,
+                        Cmd::GotoDefinition,
+                        Cmd::RenameSymbol,
+                        Cmd::DebugStart,
+                        Cmd::DebugContinue,
+                        Cmd::StepOver,
+                        Cmd::StepInto,
+                        Cmd::StepOut,
+                        Cmd::DebugStop,
+                        Cmd::ToggleBreakpoint,
+                        Cmd::ShowGit,
+                        Cmd::GitCommit,
+                        Cmd::GitPush,
+                        Cmd::GitPull,
                     ]),
                 ],
             },
@@ -1001,6 +1286,33 @@ pub const CHAPTERS: &[Chapter] = &[
                         ("1452 Cannot add or update a child row", "der Fremdschlüssel verweist auf einen Datensatz, den es nicht gibt"),
                         ("1005/1215 Foreign key constraint", "beide Spalten brauchen denselben Datentyp, das Ziel einen Primärschlüssel oder eindeutigen Index"),
                     ]),
+                ],
+            },
+            Section {
+                id: "tls",
+                title: "Verschlüsselung (TLS)",
+                blocks: &[
+                    P("Unter Einstellungen → Server → Verschlüsselung bekommt der eigene Server ein dauerhaftes Zertifikat einer eigenen Zertifizierungsstelle (CA)."),
+                    Table(&[
+                        ("Standard", "Ab Version 11.4 verschlüsselt MariaDB mit einem bei jedem Start neuen Zertifikat, das Programme nicht prüfen können."),
+                        ("Eigenes Zertifikat", "EasyMySQL und daraus gestartete Programme verbinden sich verschlüsselt und prüfen das Zertifikat."),
+                        ("Nur verschlüsselt", "Verbindungen über das Netz müssen verschlüsselt sein. Empfohlen, sobald der Server im Netzwerk erreichbar ist."),
+                    ]),
+                    P("Für andere Rechner: CA-Zertifikat speichern und dort angeben, z. B. mariadb --ssl-ca=easymysql-ca.pem oder in JDBC serverSslCert=…."),
+                    Open("Server-Einstellungen", Settings("server")),
+                ],
+            },
+            Section {
+                id: "mariadb-update",
+                title: "MariaDB aktualisieren",
+                blocks: &[
+                    P("Updates von EasyMySQL tauschen nur das Programm. Den Server aktualisiert man unter Einstellungen → Server → MariaDB-Version – ohne Administratorrechte."),
+                    Steps(&[
+                        "Nach Updates suchen: EasyMySQL nimmt die neueste stabile Langzeitversion (oder auf Wunsch die neueste stabile).",
+                        "Beim Aktualisieren werden alle Datenbanken gesichert und der Datenordner kopiert; die neue Version kommt in den Programmdatenordner.",
+                        "Der Server startet mit der neuen Version, die Systemtabellen werden angepasst. Klappt der Start nicht, läuft wieder die bisherige Version mit den gesicherten Daten.",
+                    ]),
+                    Tip("Neue Versionen können gemeldet (Standard), automatisch installiert oder gar nicht gesucht werden."),
                 ],
             },
             Section {

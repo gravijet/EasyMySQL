@@ -127,25 +127,26 @@ pub(super) fn map_lines(text: &str, first: usize, last: usize, f: impl Fn(&str) 
         .join("\n")
 }
 
-/// Kommentar (-- ) fuer Zeilen umschalten.
-pub fn toggle_comment(text: &str, first: usize, last: usize) -> String {
+/// Zeilenkommentar mit `prefix` (`--`, `//`, `#`) umschalten.
+pub fn toggle_comment_with(text: &str, first: usize, last: usize, prefix: &str) -> String {
     let lines: Vec<&str> = text.split('\n').collect();
     let all_commented = lines
         .iter()
         .enumerate()
         .filter(|(i, l)| *i >= first && *i <= last && !l.trim().is_empty())
-        .all(|(_, l)| l.trim_start().starts_with("--"));
+        .all(|(_, l)| l.trim_start().starts_with(prefix));
+    let spaced = format!("{prefix} ");
     map_lines(text, first, last, |l| {
         if l.trim().is_empty() {
             l.to_string()
         } else if all_commented {
             let indent = l.len() - l.trim_start().len();
             let rest = &l[indent..];
-            let rest = rest.strip_prefix("-- ").or_else(|| rest.strip_prefix("--")).unwrap_or(rest);
+            let rest = rest.strip_prefix(spaced.as_str()).or_else(|| rest.strip_prefix(prefix)).unwrap_or(rest);
             format!("{}{}", &l[..indent], rest)
         } else {
             let indent = l.len() - l.trim_start().len();
-            format!("{}-- {}", &l[..indent], &l[indent..])
+            format!("{}{spaced}{}", &l[..indent], &l[indent..])
         }
     })
 }

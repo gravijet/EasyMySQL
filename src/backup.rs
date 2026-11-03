@@ -35,6 +35,9 @@ pub fn env() -> Option<Env> {
     ENV.get_or_init(|| Mutex::new(None)).lock().unwrap().clone()
 }
 
+/// Vor DROP/TRUNCATE/DELETE ohne WHERE automatisch sichern (Einstellung)
+pub static BEFORE_DELETE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
 pub fn default_dir() -> PathBuf {
     crate::server::app_data_dir().join("backups")
 }
@@ -126,6 +129,7 @@ pub fn reason_text(r: &str) -> &str {
         "absturz" => crate::i18n::text("nach Absturz"),
         "rettung" => crate::i18n::text("Server-Rettung"),
         "vor-reparatur" => crate::i18n::text("vor der Reparatur"),
+        "vor-mariadb-update" => crate::i18n::tr("vor dem MariaDB-Update", "before the MariaDB update"),
         other => other,
     }
 }

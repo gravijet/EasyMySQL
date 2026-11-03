@@ -291,7 +291,7 @@ impl SqlTab {
                     }
             }
             // Vor DROP/TRUNCATE/DELETE ohne WHERE automatisch sichern
-            let targets = crate::backup::destructive_targets(&sql, Some(&database));
+            let targets = if crate::backup::BEFORE_DELETE.load(std::sync::atomic::Ordering::Relaxed) { crate::backup::destructive_targets(&sql, Some(&database)) } else { Vec::new() };
             let mut note = None;
             if !targets.is_empty()
                 && let Some(env) = crate::backup::env() {
@@ -532,7 +532,7 @@ impl SqlTab {
                 ui.horizontal(|ui| {
                     let mut info = crate::tr_format!("{} Zeile(n)", "{} row(s)", set.rows.len());
                     if set.truncated {
-                        info.push_str(&crate::tr_format!(" (die ersten {})", " (first {})", db::MAX_ROWS));
+                        info.push_str(&crate::tr_format!(" (die ersten {})", " (first {})", db::max_rows()));
                     }
                     ui.label(RichText::new(info).color(pal.ok_text));
                     grid::export_menu(ui, "ergebnis", &set.columns, &set.rows);

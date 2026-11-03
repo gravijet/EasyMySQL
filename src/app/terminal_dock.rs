@@ -9,6 +9,8 @@ struct TermTab {
     uid: usize,
     title: String,
     session: Session,
+    /// Von "Ausfuehren" gestartetes Programm (Java) statt einer Shell
+    program: bool,
 }
 
 #[derive(Default)]
@@ -31,7 +33,7 @@ impl EasyApp {
     fn terminal_profiles(&self) -> Vec<Profile> {
         // Mit SSH-Tunnel gilt die Adresse des Tunnels
         let conn = self.db.as_ref().map(|d| d.info.clone()).unwrap_or_else(|| self.settings.conn.clone());
-        terminal::profiles(self.server.paths.as_ref().map(|p| p.bin.as_path()), &conn)
+        terminal::profiles(self.server.paths().as_ref().map(|p| p.bin.as_path()), &conn)
     }
 
     /// Neues Terminal in der gewaehlten Shell (None = Standard) im Projektordner
@@ -44,13 +46,51 @@ impl EasyApp {
             .filter(|p| p.is_dir())
             .or_else(|| std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")).map(PathBuf::from))
             .unwrap_or_else(std::env::temp_dir);
-        let prefix = self.server.paths.as_ref().map(|p| p.bin.clone());
+        let mut profile = profile;
+        // Java, javac, mvn und gradle stehen in jedem Terminal bereit (wenn vorhanden)
+        let tools = crate::dev::tools();
+        profile.env.extend(tools.shell_env());
+        let prefix = self.path_prefix();
         let d = &mut self.terminal;
-        let same = d.tabs.iter().filter(|t| t.session.profile == profile).count();
+        let same = d.tabs.iter().filter(|t| t.session.profile.name == profile.name && !t.program).count();
         let title = if same == 0 { profile.name.clone() } else { format!("{} {}", profile.name, same + 1) };
         d.next_uid += 1;
-        d.tabs.push(TermTab { uid: d.next_uid, title, session: Session::spawn(ctx, profile, cwd, prefix) });
+        d.tabs.push(TermTab { uid: d.next_uid, title, session: Session::spawn(ctx, profile, cwd, prefix), program: false });
         d.active = d.tabs.len() - 1;
+        d.open = true;
+        d.focus = true;
+    }
+
+    /// Ordner vorne in PATH: MariaDB-Programme und die Java-Werkzeuge
+    fn path_prefix(&self) -> Vec<PathBuf> {
+        let mut v: Vec<PathBuf> = self.server.paths().map(|p| p.bin).into_iter().collect();
+        v.extend(crate::dev::tools().path_dirs());
+        v
+    }
+
+    /// Programm im Terminal starten. Ein frueherer Lauf desselben Programms wird beendet und ersetzt,
+    /// so sammeln sich bei jedem Klick auf "Ausfuehren" keine Registerkarten an.
+    pub(super) fn run_program(&mut self, ctx: &egui::Context, launch: crate::dev::process::Launch, mut env: Vec<(String, String)>) {
+        // Die Umgebung des Starts (z. B. PYTHONPATH einer .venv) hat Vorrang
+        env.retain(|(k, _)| !launch.env.iter().any(|(k2, _)| k2 == k));
+        env.extend(launch.env.iter().cloned());
+        let profile = Profile { name: launch.title.clone(), program: launch.program.display().to_string(), args: launch.args, env };
+        let prefix = self.path_prefix();
+        let session = Session::spawn(ctx, profile, launch.cwd, prefix);
+        let d = &mut self.terminal;
+        d.next_uid += 1;
+        let tab = TermTab { uid: d.next_uid, title: launch.title.clone(), session, program: true };
+        let reuse = crate::dev::config().reuse_terminal;
+        match d.tabs.iter().position(|t| reuse && t.program && t.title == launch.title) {
+            Some(i) => {
+                d.tabs[i] = tab;
+                d.active = i;
+            }
+            None => {
+                d.tabs.push(tab);
+                d.active = d.tabs.len() - 1;
+            }
+        }
         d.open = true;
         d.focus = true;
     }
@@ -97,7 +137,8 @@ impl EasyApp {
                     painter.rect_filled(r, style::RADIUS as f32, pal.hover);
                 }
                 let color = if sel { pal.text } else { pal.text_weak };
-                icons::paint(&painter, egui::Rect::from_center_size(pos2(r.left() + 16.0, r.center().y), vec2(14.0, 14.0)), Icon::Terminal, color);
+                let icon = if t.program { Icon::Play } else { Icon::Terminal };
+                icons::paint(&painter, egui::Rect::from_center_size(pos2(r.left() + 16.0, r.center().y), vec2(14.0, 14.0)), icon, if t.program && !t.session.exited() { pal.ok_text } else { color });
                 painter.galley(pos2(r.left() + 30.0, r.center().y - galley.size().y / 2.0), galley, color);
                 let cr = egui::Rect::from_center_size(pos2(r.right() - 14.0, r.center().y), vec2(16.0, 16.0));
                 let over_close = ctx.pointer_hover_pos().is_some_and(|p| cr.contains(p));

@@ -117,7 +117,7 @@ fn ordered(sel: ((u16, u16), (u16, u16))) -> ((u16, u16), (u16, u16)) {
 /// `want_focus`: Tastaturfokus jetzt auf dieses Terminal setzen.
 pub fn show(ui: &mut egui::Ui, id: egui::Id, s: &mut Session, want_focus: bool) {
     let pal = crate::style::pal();
-    let font = FontId::monospace(crate::sqledit::font_size());
+    let font = FontId::monospace(super::font_size());
     let ctx = ui.ctx().clone();
     let (cw, ch) = ctx.fonts_mut(|f| (f.glyph_width(&font, 'M').max(1.0), f.row_height(&font).max(1.0)));
     let avail = ui.available_size();

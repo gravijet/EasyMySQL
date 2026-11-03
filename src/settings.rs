@@ -40,6 +40,44 @@ pub struct Settings {
     pub restore_tabs: bool,
     /// Seitenleiste (Explorer, Suche, Datenbanken, Verlauf) zeigen
     pub sidebar: bool,
+    /// Zuletzt gewaehlte Endung im Dialog "Neue Datei"
+    pub new_file_ext: String,
+    /// Zuletzt gewaehlter Aufbau neuer Java-Projekte
+    pub java_project_kind: String,
+    /// Eigener Server: Port, Netzwerk, Datenordner, Speicher, …
+    pub server: crate::server::Config,
+    /// Server beim Start von EasyMySQL starten
+    pub server_autostart: bool,
+    /// Zuletzt gewaehlter Aufbau neuer Python-Projekte
+    pub python_project_kind: String,
+    /// Neue Projekte bekommen ein Git-Repository
+    pub git_init_projects: bool,
+    /// Java, Python, JavaScript, Ausfuehren, Sprachserver
+    pub dev: crate::dev::Config,
+    /// Editor: Einrueckung, Zeilennummern, …
+    pub editor: crate::sqledit::Prefs,
+    /// Automatisch speichern nach so vielen Millisekunden ohne Tippen
+    pub autosave_ms: u64,
+    pub terminal: crate::terminal::Prefs,
+    pub git: crate::git::Config,
+    /// Git-Bereich: Stand automatisch auffrischen, wenn er sichtbar ist
+    pub git_panel_refresh: bool,
+    /// Neue MariaDB-Versionen: "aus", "melden" (Standard) oder "automatisch"
+    pub mariadb_updates: String,
+    /// Welche Versionen: "lts" (Standard) oder "stable"
+    pub mariadb_track: String,
+    /// Vor dem Update den Datenordner zusaetzlich kopieren
+    pub mariadb_copy_data: bool,
+    /// Hoechstens so viele Zeilen je Abfrageergebnis
+    pub result_max_rows: usize,
+    /// Zeilen je Seite in der Datenansicht
+    pub data_page_rows: usize,
+    /// Eintraege im Verlauf
+    pub history_max: usize,
+    /// Vor DROP/TRUNCATE/DELETE ohne WHERE sichern
+    pub backup_before_delete: bool,
+    /// Nach neuen EasyMySQL-Versionen alle so viele Stunden suchen
+    pub app_update_hours: u64,
 }
 
 /// Schriftgroesse im SQL-Editor (Pixel): Standard und Grenzen
@@ -74,6 +112,26 @@ impl Default for Settings {
             background: false,
             restore_tabs: false,
             sidebar: true,
+            new_file_ext: "sql".into(),
+            java_project_kind: "einfach".into(),
+            server: crate::server::Config::default(),
+            server_autostart: true,
+            python_project_kind: "requirements".into(),
+            git_init_projects: true,
+            dev: crate::dev::Config::default(),
+            editor: crate::sqledit::Prefs::default(),
+            autosave_ms: 1000,
+            terminal: crate::terminal::Prefs::default(),
+            git: crate::git::Config::default(),
+            git_panel_refresh: true,
+            mariadb_updates: "melden".into(),
+            mariadb_track: "lts".into(),
+            mariadb_copy_data: true,
+            result_max_rows: 50_000,
+            data_page_rows: 500,
+            history_max: 3000,
+            backup_before_delete: true,
+            app_update_hours: 6,
         }
     }
 }
@@ -118,6 +176,57 @@ impl Settings {
                 "background" => s.background = on,
                 "restore_tabs" => s.restore_tabs = on,
                 "sidebar" => s.sidebar = on,
+                "new_file_ext" => s.new_file_ext = v,
+                "java_driver" => s.dev.java_driver = crate::dev::java::Driver::from_id(&v),
+                "java_project_kind" => s.java_project_kind = v,
+                "server_port" => s.server.port = v.parse().ok().filter(|p| *p > 0).unwrap_or(crate::server::DEFAULT_PORT),
+                "server_network" => s.server.network = on,
+                "server_data_dir" => s.server.data_dir = Some(PathBuf::from(&v)).filter(|_| !v.is_empty()),
+                "server_buffer_mb" => s.server.buffer_pool_mb = v.parse().unwrap_or(128),
+                "server_max_connections" => s.server.max_connections = v.parse().unwrap_or(151),
+                "server_packet_mb" => s.server.packet_mb = v.parse().unwrap_or(64),
+                "server_collation" if !v.is_empty() => s.server.collation = v,
+                "server_events" => s.server.event_scheduler = on,
+                "server_extra" => s.server.extra = unescape(&v),
+                "server_tls" => s.server.tls = crate::tls::Mode::from_id(&v),
+                "server_tls_names" => s.server.tls_names = unescape(&v),
+                "server_bin_dir" => s.server.bin_dir = (!v.is_empty()).then(|| PathBuf::from(&v)),
+                "mariadb_updates" => s.mariadb_updates = v,
+                "mariadb_track" => s.mariadb_track = v,
+                "mariadb_copy_data" => s.mariadb_copy_data = on,
+                "result_max_rows" => s.result_max_rows = v.parse().unwrap_or(50_000).clamp(100, 10_000_000),
+                "data_page_rows" => s.data_page_rows = v.parse().unwrap_or(500).clamp(10, 100_000),
+                "history_max" => s.history_max = v.parse().unwrap_or(3000).clamp(10, 1_000_000),
+                "backup_before_delete" => s.backup_before_delete = on,
+                "app_update_hours" => s.app_update_hours = v.parse().unwrap_or(6).clamp(1, 720),
+                "server_autostart" => s.server_autostart = on,
+                "python_project_kind" => s.python_project_kind = v,
+                "git_init_projects" => s.git_init_projects = on,
+                "autosave_ms" => s.autosave_ms = v.parse().unwrap_or(1000).clamp(200, 60_000),
+                "editor_indent" => s.editor.indent = v.parse().unwrap_or(0).min(16),
+                "editor_line_numbers" => s.editor.line_numbers = on,
+                "editor_highlight_line" => s.editor.highlight_line = on,
+                "editor_match_brackets" => s.editor.match_brackets = on,
+                "editor_auto_indent" => s.editor.auto_indent = on,
+                "editor_sql_in_strings" => s.editor.sql_in_strings = on,
+                "editor_lint_delay_ms" => s.editor.lint_delay_ms = v.parse().unwrap_or(350).min(5000),
+                "editor_scroll_past_end" => s.editor.scroll_past_end = on,
+                "terminal_font" => s.terminal.font_size = v.parse().unwrap_or(0),
+                "terminal_scrollback" => s.terminal.scrollback = v.parse().unwrap_or(5000).clamp(100, 200_000),
+                "terminal_default_shell" => s.terminal.default_shell = unescape(&v),
+                "terminal_custom_shell" => s.terminal.custom_shell = unescape(&v),
+                "git_user_name" => s.git.user_name = unescape(&v),
+                "git_user_email" => s.git.user_email = unescape(&v),
+                "git_pull_mode" if !v.is_empty() => s.git.pull_mode = v,
+                "git_push_after_commit" => s.git.push_after_commit = on,
+                "git_auto_stage" => s.git.auto_stage = on,
+                "git_auto_fetch_secs" => s.git.auto_fetch_secs = v.parse().unwrap_or(0).min(86_400),
+                "git_default_branch" if !v.is_empty() => s.git.default_branch = unescape(&v),
+                "git_private_repos" => s.git.private_repos = on,
+                "git_panel_refresh" => s.git_panel_refresh = on,
+                k if k.starts_with("dev_") => {
+                    s.dev.set(&k[4..], &v);
+                }
                 _ => {}
             }
         }
@@ -154,6 +263,69 @@ impl Settings {
             b(self.restore_tabs),
             b(self.sidebar),
         );
+        text.push_str(&format!("new_file_ext={}\njava_project_kind={}\n", self.new_file_ext, self.java_project_kind));
+        let sv = &self.server;
+        text.push_str(&format!(
+            "server_port={}\nserver_network={}\nserver_data_dir={}\nserver_buffer_mb={}\nserver_max_connections={}\nserver_packet_mb={}\nserver_collation={}\nserver_events={}\nserver_extra={}\nserver_autostart={}\n",
+            sv.port,
+            b(sv.network),
+            sv.data_dir.as_ref().map(|p| p.display().to_string()).unwrap_or_default(),
+            sv.buffer_pool_mb,
+            sv.max_connections,
+            sv.packet_mb,
+            sv.collation,
+            b(sv.event_scheduler),
+            escape(&sv.extra),
+            b(self.server_autostart)
+        ));
+        text.push_str(&format!(
+            "server_tls={}\nserver_tls_names={}\nserver_bin_dir={}\nmariadb_updates={}\nmariadb_track={}\nmariadb_copy_data={}\n",
+            sv.tls.id(),
+            escape(&sv.tls_names),
+            sv.bin_dir.as_ref().map(|p| p.display().to_string()).unwrap_or_default(),
+            self.mariadb_updates,
+            self.mariadb_track,
+            b(self.mariadb_copy_data)
+        ));
+        let e = &self.editor;
+        text.push_str(&format!(
+            "python_project_kind={}\ngit_init_projects={}\nautosave_ms={}\neditor_indent={}\neditor_line_numbers={}\neditor_highlight_line={}\neditor_match_brackets={}\neditor_auto_indent={}\neditor_sql_in_strings={}\neditor_lint_delay_ms={}\neditor_scroll_past_end={}\n",
+            self.python_project_kind,
+            b(self.git_init_projects),
+            self.autosave_ms,
+            e.indent,
+            b(e.line_numbers),
+            b(e.highlight_line),
+            b(e.match_brackets),
+            b(e.auto_indent),
+            b(e.sql_in_strings),
+            e.lint_delay_ms,
+            b(e.scroll_past_end)
+        ));
+        let t = &self.terminal;
+        text.push_str(&format!("terminal_font={}\nterminal_scrollback={}\nterminal_default_shell={}\nterminal_custom_shell={}\n", t.font_size, t.scrollback, escape(&t.default_shell), escape(&t.custom_shell)));
+        let g = &self.git;
+        text.push_str(&format!(
+            "git_user_name={}\ngit_user_email={}\ngit_pull_mode={}\ngit_push_after_commit={}\ngit_auto_stage={}\ngit_auto_fetch_secs={}\ngit_default_branch={}\ngit_private_repos={}\ngit_panel_refresh={}\n",
+            escape(&g.user_name),
+            escape(&g.user_email),
+            g.pull_mode,
+            b(g.push_after_commit),
+            b(g.auto_stage),
+            g.auto_fetch_secs,
+            escape(&g.default_branch),
+            b(g.private_repos),
+            b(self.git_panel_refresh)
+        ));
+        text.push_str(&format!(
+            "result_max_rows={}\ndata_page_rows={}\nhistory_max={}\nbackup_before_delete={}\napp_update_hours={}\n",
+            self.result_max_rows,
+            self.data_page_rows,
+            self.history_max,
+            b(self.backup_before_delete),
+            self.app_update_hours
+        ));
+        text.push_str(&self.dev.to_lines());
         for r in &self.recent {
             text.push_str(&format!("recent={}\n", r.display()));
         }
@@ -173,9 +345,50 @@ impl Settings {
     }
 }
 
+/// Mehrzeiliger Wert in einer Zeile der Datei
+pub fn escape(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('\n', "\\n").replace('\r', "")
+}
+
+pub fn unescape(s: &str) -> String {
+    let mut out = String::new();
+    let mut it = s.chars();
+    while let Some(c) = it.next() {
+        if c == '\\' {
+            match it.next() {
+                Some('n') => out.push('\n'),
+                Some(o) => out.push(o),
+                None => out.push('\\'),
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn server_settings_roundtrip() {
+        let mut s = Settings::default();
+        s.server.port = 3307;
+        s.server.network = true;
+        s.server.data_dir = Some(PathBuf::from("D:\\db\\daten"));
+        s.server.extra = "sql_mode=ANSI\nlong_query_time=2\\x".into();
+        s.server_autostart = false;
+        s.dev.python_venv = false;
+        s.dev.node_args = "--max-old-space-size=4096".into();
+        s.editor.indent = 3;
+        s.terminal.custom_shell = "C:\\Git\\bin\\bash.exe --login".into();
+        s.git.user_name = "Ada".into();
+        s.git.pull_mode = "rebase".into();
+        assert_eq!(Settings::from_text(&s.to_text()), s);
+        assert_eq!(Settings::from_text("java_driver=mysql\n").dev.java_driver, crate::dev::java::Driver::MySql);
+        assert_eq!(Settings::from_text("").server, crate::server::Config::default());
+    }
 
     #[test]
     fn defaults_legacy_settings_and_language_roundtrip() {

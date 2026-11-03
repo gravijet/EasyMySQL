@@ -46,9 +46,25 @@ pub fn kill_query(info: &ConnInfo, connection_id: u32) {
     }
 }
 
+/// Eigener Server mit eigenem Zertifikat: (Port, CA-Datei). Verbindungen dorthin laufen verschluesselt.
+static LOCAL_TLS: std::sync::RwLock<Option<(u16, std::path::PathBuf)>> = std::sync::RwLock::new(None);
+
+pub fn set_local_tls(v: Option<(u16, std::path::PathBuf)>) {
+    *LOCAL_TLS.write().unwrap() = v;
+}
+
+/// CA-Datei, wenn Verbindungen zu `host:port` mit dem eigenen Zertifikat verschluesselt werden
+pub fn local_tls_ca(host: &str, port: u16) -> Option<std::path::PathBuf> {
+    let g = LOCAL_TLS.read().unwrap();
+    let (p, ca) = g.as_ref()?;
+    (*p == port && crate::dev::is_local(host)).then(|| ca.clone())
+}
+
 impl ConnInfo {
     pub fn opts(&self) -> Opts {
+        let ssl = local_tls_ca(&self.host, self.port).map(|ca| mysql::SslOpts::default().with_root_cert_path(Some(ca)));
         OptsBuilder::new()
+            .ssl_opts(ssl)
             .ip_or_hostname(Some(self.host.clone()))
             .tcp_port(self.port)
             .user(Some(self.user.clone()))

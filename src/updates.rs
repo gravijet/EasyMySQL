@@ -22,7 +22,12 @@ use std::time::{Duration, Instant};
 
 const SITE: &str = "https://mysql.benjaminberger.at";
 pub const DOWNLOAD_PAGE: &str = "https://mysql.benjaminberger.at/#download";
-const INTERVAL: Duration = Duration::from_secs(6 * 60 * 60);
+/// Abstand der Suche nach neuen Versionen in Stunden (Einstellung)
+pub static INTERVAL_HOURS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(6);
+
+fn interval() -> Duration {
+    Duration::from_secs(INTERVAL_HOURS.load(std::sync::atomic::Ordering::Relaxed).clamp(1, 24 * 30) * 3600)
+}
 const MAX_APP: u64 = 256 * 1024 * 1024;
 /// Umgebungsvariable: der neue Prozess wartet, bis dieser Prozess beendet ist (Neustart nach dem Update)
 pub const WAIT_PID: &str = "EASYMYSQL_WAIT_PID";
@@ -484,7 +489,7 @@ impl Updater {
 
     /// Regelmaessig pruefen; bei eingeschaltetem automatischem Update gleich herunterladen und installieren.
     pub fn poll(&mut self, ctx: &egui::Context, auto_install: bool) {
-        if self.last_check.is_none_or(|t| t.elapsed() >= INTERVAL) && self.phase() != Phase::Installed {
+        if self.last_check.is_none_or(|t| t.elapsed() >= interval()) && self.phase() != Phase::Installed {
             self.check_now(ctx, false);
         }
         ctx.request_repaint_after(Duration::from_secs(60));

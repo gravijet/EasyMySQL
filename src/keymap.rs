@@ -13,6 +13,9 @@ pub enum Cmd {
     // Datei
     NewQuery,
     NewFile,
+    NewJavaProject,
+    NewPythonProject,
+    NewNodeProject,
     OpenFile,
     OpenFolder,
     Save,
@@ -64,13 +67,31 @@ pub enum Cmd {
     CopyLineDown,
     Indent,
     Outdent,
+    // Programmieren
+    RunTests,
+    BuildJar,
+    AddLibrary,
+    GotoDefinition,
+    RenameSymbol,
+    DebugStart,
+    DebugContinue,
+    StepOver,
+    StepInto,
+    StepOut,
+    DebugStop,
+    ToggleBreakpoint,
+    // Git
+    ShowGit,
+    GitCommit,
+    GitPush,
+    GitPull,
 }
 
 use Cmd::*;
 
 pub const GROUPS: &[(&str, &[Cmd])] = &[
     ("Ausführen", &[RunAll, RunStatement, Explain]),
-    ("Dateien und Registerkarten", &[NewQuery, NewFile, OpenFile, OpenFolder, Save, SaveAll, CloseTab, CloseAllTabs, ReopenTab, NextTab, PrevTab]),
+    ("Dateien und Registerkarten", &[NewQuery, NewFile, NewJavaProject, NewPythonProject, NewNodeProject, OpenFile, OpenFolder, Save, SaveAll, CloseTab, CloseAllTabs, ReopenTab, NextTab, PrevTab]),
     (
         "Ansicht",
         &[CommandPalette, QuickOpen, ToggleSidebar, ToggleTerminal, NewTerminal, FontLarger, FontSmaller, FontReset, ShowExplorer, ShowSearch, ShowDatabases, ShowHistory, Settings, Help, CheckUpdates, ServerLog, ErDiagram, QueryBuilder, Backups, Import, Export, Users],
@@ -82,6 +103,8 @@ pub const GROUPS: &[(&str, &[Cmd])] = &[
             CopyLineUp, CopyLineDown, Indent, Outdent,
         ],
     ),
+    ("Programmieren", &[RunTests, BuildJar, AddLibrary, GotoDefinition, RenameSymbol, DebugStart, DebugContinue, StepOver, StepInto, StepOut, DebugStop, ToggleBreakpoint]),
+    ("Git", &[ShowGit, GitCommit, GitPush, GitPull]),
 ];
 
 impl Cmd {
@@ -97,6 +120,9 @@ impl Cmd {
             Explain => "explain",
             NewQuery => "neue_abfrage",
             NewFile => "neue_datei",
+            NewJavaProject => "neues_java_projekt",
+            NewPythonProject => "neues_python_projekt",
+            NewNodeProject => "neues_node_projekt",
             OpenFile => "datei_oeffnen",
             OpenFolder => "ordner_oeffnen",
             Save => "speichern",
@@ -146,6 +172,22 @@ impl Cmd {
             CopyLineDown => "zeile_kopieren_runter",
             Indent => "einruecken",
             Outdent => "ausruecken",
+            RunTests => "tests_ausfuehren",
+            BuildJar => "jar_erzeugen",
+            AddLibrary => "bibliothek_einbinden",
+            GotoDefinition => "gehe_zu_definition",
+            RenameSymbol => "umbenennen",
+            DebugStart => "debuggen",
+            DebugContinue => "debug_weiter",
+            StepOver => "debug_ueberspringen",
+            StepInto => "debug_hinein",
+            StepOut => "debug_heraus",
+            DebugStop => "debug_beenden",
+            ToggleBreakpoint => "haltepunkt",
+            ShowGit => "zeige_git",
+            GitCommit => "git_commit",
+            GitPush => "git_push",
+            GitPull => "git_pull",
         }
     }
 
@@ -156,6 +198,9 @@ impl Cmd {
             Explain => crate::i18n::text("Ausführungsplan (EXPLAIN)"),
             NewQuery => crate::i18n::text("Neue Abfrage"),
             NewFile => crate::i18n::text("Neue Datei im Projekt"),
+            NewJavaProject => crate::i18n::tr("Neues Java-Projekt", "New Java project"),
+            NewPythonProject => crate::i18n::tr("Neues Python-Projekt", "New Python project"),
+            NewNodeProject => crate::i18n::tr("Neues JavaScript-Projekt (Node.js)", "New JavaScript project (Node.js)"),
             OpenFile => crate::i18n::text("Datei öffnen"),
             OpenFolder => crate::i18n::text("Ordner öffnen"),
             Save => crate::i18n::text("Speichern"),
@@ -205,6 +250,22 @@ impl Cmd {
             CopyLineDown => crate::i18n::text("Zeile nach unten kopieren"),
             Indent => crate::i18n::text("Einrücken (mehrere Zeilen)"),
             Outdent => crate::i18n::text("Ausrücken"),
+            RunTests => crate::i18n::tr("Tests ausführen", "Run tests"),
+            BuildJar => crate::i18n::tr("Programmdatei (.jar) erzeugen", "Build program file (.jar)"),
+            AddLibrary => crate::i18n::tr("Bibliothek einbinden …", "Add library …"),
+            GotoDefinition => crate::i18n::tr("Gehe zu Definition", "Go to definition"),
+            RenameSymbol => crate::i18n::tr("Umbenennen (im ganzen Projekt)", "Rename (across the project)"),
+            DebugStart => crate::i18n::tr("Debuggen", "Start debugging"),
+            DebugContinue => crate::i18n::tr("Debugger: weiter", "Debugger: continue"),
+            StepOver => crate::i18n::tr("Debugger: nächste Zeile", "Debugger: step over"),
+            StepInto => crate::i18n::tr("Debugger: hineinspringen", "Debugger: step into"),
+            StepOut => crate::i18n::tr("Debugger: herausspringen", "Debugger: step out"),
+            DebugStop => crate::i18n::tr("Debugger beenden", "Stop debugging"),
+            ToggleBreakpoint => crate::i18n::tr("Haltepunkt setzen/entfernen", "Toggle breakpoint"),
+            ShowGit => crate::i18n::tr("Quellcodeverwaltung (Git)", "Source control (Git)"),
+            GitCommit => crate::i18n::tr("Git: Commit", "Git: commit"),
+            GitPush => crate::i18n::tr("Git: Push", "Git: push"),
+            GitPull => crate::i18n::tr("Git: Pull", "Git: pull"),
         }
     }
 
@@ -221,6 +282,7 @@ impl Cmd {
             Explain => vec![c(Key::E)],
             NewQuery => vec![c(Key::N)],
             NewFile => vec![ca(Key::N)],
+            NewJavaProject | NewPythonProject | NewNodeProject => vec![],
             OpenFile => vec![c(Key::O)],
             OpenFolder => vec![cs(Key::O)],
             Save => vec![c(Key::S)],
@@ -269,6 +331,20 @@ impl Cmd {
             CopyLineDown => vec![sa(Key::ArrowDown)],
             Indent => vec![n(Key::Tab)],
             Outdent => vec![Binding::new(false, true, false, Key::Tab)],
+            RunTests => vec![cs(Key::F10)],
+            BuildJar | AddLibrary => vec![],
+            GotoDefinition => vec![n(Key::F12)],
+            RenameSymbol => vec![n(Key::F2)],
+            DebugStart => vec![n(Key::F6)],
+            DebugContinue => vec![n(Key::F8)],
+            StepOver => vec![n(Key::F10)],
+            StepInto => vec![n(Key::F11)],
+            StepOut => vec![n(Key::F11).with_shift()],
+            DebugStop => vec![n(Key::F5).with_shift()],
+            ToggleBreakpoint => vec![n(Key::F9)],
+            ShowGit => vec![cs(Key::G)],
+            GitCommit => vec![c(Key::Enter).with_shift()],
+            GitPush | GitPull => vec![],
         }
     }
 }

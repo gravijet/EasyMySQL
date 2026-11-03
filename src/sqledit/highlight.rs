@@ -39,7 +39,7 @@ pub const FUNCTIONS: &[&str] = &[
     "WEEKDAY", "YEAR", "YEARWEEK",
 ];
 
-pub(super) fn is_word_char(c: char) -> bool {
+pub fn is_word_char(c: char) -> bool {
     c.is_alphanumeric() || c == '_' || c == '$'
 }
 
@@ -188,6 +188,7 @@ pub struct SqlLayoutCache {
 }
 
 pub(super) struct SqlLayout {
+    pub(super) lang: super::Lang,
     pub(super) text: String,
     pub(super) font: FontId,
     pub(super) dark: bool,
@@ -197,16 +198,20 @@ pub(super) struct SqlLayout {
 
 impl SqlLayoutCache {
     pub fn layout(&mut self, ui: &egui::Ui, text: &str, font: &FontId) -> Arc<egui::Galley> {
+        self.layout_lang(ui, text, font, super::Lang::Sql)
+    }
+
+    pub fn layout_lang(&mut self, ui: &egui::Ui, text: &str, font: &FontId, lang: super::Lang) -> Arc<egui::Galley> {
         let dark = crate::style::pal().dark;
         let scale = ui.ctx().pixels_per_point();
         if let Some(entry) = &self.entry
-            && entry.text == text && entry.font == *font && entry.dark == dark && entry.scale == scale {
+            && entry.lang == lang && entry.text == text && entry.font == *font && entry.dark == dark && entry.scale == scale {
                 return Arc::clone(&entry.galley);
             }
-        let mut job = highlight(text, font.clone());
+        let mut job = super::lang::highlight_lang(text, font.clone(), lang);
         job.wrap.max_width = f32::INFINITY;
         let galley = ui.fonts_mut(|fonts| fonts.layout_job(job));
-        self.entry = Some(SqlLayout { text: text.to_owned(), font: font.clone(), dark, scale, galley: Arc::clone(&galley) });
+        self.entry = Some(SqlLayout { lang, text: text.to_owned(), font: font.clone(), dark, scale, galley: Arc::clone(&galley) });
         #[cfg(test)] { self.builds += 1; }
         galley
     }

@@ -17,7 +17,7 @@ impl Target {
     }
 
     fn url(&self) -> String {
-        format!("jdbc:mariadb://{}:{}/{}", self.host, self.port, self.database)
+        crate::dev::java::jdbc_url(crate::dev::java::driver(), &self.host, self.port, &self.database)
     }
 }
 
@@ -114,30 +114,35 @@ fn imports(cols: &[&ColumnInfo]) -> String {
     out
 }
 
-/// Record, DAO-Klasse und `main` fuer eine Tabelle.
-pub fn table_class(table: &TableInfo, target: &Target) -> String {
+/// Klassenname fuer eine Tabelle: `schueler_klasse` -> `SchuelerKlasse`
+pub fn class_name(table: &str) -> String {
+    camel(table, true)
+}
+
+fn package_line(package: Option<&str>) -> String {
+    match package {
+        Some(p) if !p.is_empty() => format!("package {p};\n\n"),
+        _ => String::new(),
+    }
+}
+
+fn record_decl(table: &TableInfo, public: bool) -> String {
+    let record = camel(&table.name, true);
+    let comps = table.columns.iter().map(|c| format!("{} {}", java_type(c).0, camel(&c.name, false))).collect::<Vec<_>>().join(", ");
+    format!("{}record {record}({comps}) {{}}\n", if public { "public " } else { "" })
+}
+
+/// Methoden der DAO-Klasse (lesen, einfuegen, aendern, loeschen), eingerueckt fuer den Klassenrumpf
+fn dao_methods(table: &TableInfo) -> String {
     let en = english();
     let record = camel(&table.name, true);
-    let dao = format!("{record}Dao");
     let cols: Vec<&ColumnInfo> = table.columns.iter().collect();
     let fields: Vec<String> = cols.iter().map(|c| camel(&c.name, false)).collect();
     let sql_table = sql_name(&table.name);
     let all_columns = cols.iter().map(|c| sql_name(&c.name)).collect::<Vec<_>>().join(", ");
     let pk: Vec<usize> = cols.iter().enumerate().filter(|(_, c)| c.is_pk()).map(|(i, _)| i).collect();
     let auto = cols.iter().position(|c| c.extra.to_ascii_lowercase().contains("auto_increment"));
-
-    let mut o = imports(&cols);
-    o.push_str("import java.util.*;\n\n");
-    o.push_str(&format!(
-        "record {record}({}) {{}}\n\n",
-        cols.iter().zip(&fields).map(|(c, f)| format!("{} {f}", java_type(c).0)).collect::<Vec<_>>().join(", ")
-    ));
-    o.push_str(&format!("public class {dao} {{\n"));
-    o.push_str(&format!(
-        "    // {}\n    static final String URL = \"{}\";\n\n    private final Connection con;\n\n    {dao}(Connection con) {{\n        this.con = con;\n    }}\n\n",
-        if en { "Connection settings: adjust user and password" } else { "Verbindungsdaten: Benutzer und Passwort anpassen" },
-        target.url()
-    ));
+    let mut o = String::new();
 
     // Zeile -> Record
     o.push_str(&format!("    private static {record} map(ResultSet rs) throws SQLException {{\n        return new {record}(\n"));
@@ -158,10 +163,11 @@ pub fn table_class(table: &TableInfo, target: &Target) -> String {
 
     // Alle lesen
     o.push_str(&format!(
-        "    List<{record}> findAll() throws SQLException {{\n        String sql = \"SELECT {all_columns} FROM {sql_table}\";\n        try (PreparedStatement ps = con.prepareStatement(sql);\n             ResultSet rs = ps.executeQuery()) {{\n            List<{record}> list = new ArrayList<>();\n            while (rs.next()) {{\n                list.add(map(rs));\n            }}\n            return list;\n        }}\n    }}\n\n"
+        "    public List<{record}> findAll() throws SQLException {{\n        String sql = \"SELECT {all_columns} FROM {sql_table}\";\n        try (PreparedStatement ps = con.prepareStatement(sql);\n             ResultSet rs = ps.executeQuery()) {{\n            List<{record}> list = new ArrayList<>();\n            while (rs.next()) {{\n                list.add(map(rs));\n            }}\n            return list;\n        }}\n    }}\n"
     ));
 
     if !pk.is_empty() && !table.is_view {
+        o.push('\n');
         let params = pk.iter().map(|&i| format!("{} {}", java_type(cols[i]).0, fields[i])).collect::<Vec<_>>().join(", ");
         let where_sql = pk.iter().map(|&i| format!("{} = ?", sql_name(&cols[i].name))).collect::<Vec<_>>().join(" AND ");
         let set_pk = |first: usize| -> String {
@@ -169,7 +175,7 @@ pub fn table_class(table: &TableInfo, target: &Target) -> String {
         };
         // Eine Zeile ueber den Primaerschluessel
         o.push_str(&format!(
-            "    Optional<{record}> findById({params}) throws SQLException {{\n        String sql = \"SELECT {all_columns} FROM {sql_table} WHERE {where_sql}\";\n        try (PreparedStatement ps = con.prepareStatement(sql)) {{\n{}            try (ResultSet rs = ps.executeQuery()) {{\n                return rs.next() ? Optional.of(map(rs)) : Optional.empty();\n            }}\n        }}\n    }}\n\n",
+            "    public Optional<{record}> findById({params}) throws SQLException {{\n        String sql = \"SELECT {all_columns} FROM {sql_table} WHERE {where_sql}\";\n        try (PreparedStatement ps = con.prepareStatement(sql)) {{\n{}            try (ResultSet rs = ps.executeQuery()) {{\n                return rs.next() ? Optional.of(map(rs)) : Optional.empty();\n            }}\n        }}\n    }}\n\n",
             set_pk(1)
         ));
         // Einfuegen (ohne AUTO_INCREMENT-Spalte)
@@ -179,12 +185,12 @@ pub fn table_class(table: &TableInfo, target: &Target) -> String {
         let sets: String = ins.iter().enumerate().map(|(n, &i)| format!("            ps.setObject({}, row.{}());\n", n + 1, fields[i])).collect();
         if auto.is_some() {
             o.push_str(&format!(
-                "    /** {} */\n    long insert({record} row) throws SQLException {{\n        String sql = \"INSERT INTO {sql_table} ({ins_cols}) VALUES ({marks})\";\n        try (PreparedStatement ps = con.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {{\n{sets}            ps.executeUpdate();\n            try (ResultSet keys = ps.getGeneratedKeys()) {{\n                return keys.next() ? keys.getLong(1) : -1;\n            }}\n        }}\n    }}\n\n",
+                "    /** {} */\n    public long insert({record} row) throws SQLException {{\n        String sql = \"INSERT INTO {sql_table} ({ins_cols}) VALUES ({marks})\";\n        try (PreparedStatement ps = con.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {{\n{sets}            ps.executeUpdate();\n            try (ResultSet keys = ps.getGeneratedKeys()) {{\n                return keys.next() ? keys.getLong(1) : -1;\n            }}\n        }}\n    }}\n\n",
                 if en { "Inserts the row and returns the new AUTO_INCREMENT value." } else { "Fügt die Zeile ein und liefert den neuen AUTO_INCREMENT-Wert." }
             ));
         } else {
             o.push_str(&format!(
-                "    void insert({record} row) throws SQLException {{\n        String sql = \"INSERT INTO {sql_table} ({ins_cols}) VALUES ({marks})\";\n        try (PreparedStatement ps = con.prepareStatement(sql)) {{\n{sets}            ps.executeUpdate();\n        }}\n    }}\n\n"
+                "    public void insert({record} row) throws SQLException {{\n        String sql = \"INSERT INTO {sql_table} ({ins_cols}) VALUES ({marks})\";\n        try (PreparedStatement ps = con.prepareStatement(sql)) {{\n{sets}            ps.executeUpdate();\n        }}\n    }}\n\n"
             ));
         }
         // Aendern (alle Nicht-Schluessel-Spalten)
@@ -196,20 +202,111 @@ pub fn table_class(table: &TableInfo, target: &Target) -> String {
                 sets.push_str(&format!("            ps.setObject({}, row.{}());\n", upd.len() + 1 + n, fields[i]));
             }
             o.push_str(&format!(
-                "    int update({record} row) throws SQLException {{\n        String sql = \"UPDATE {sql_table} SET {set_sql} WHERE {where_sql}\";\n        try (PreparedStatement ps = con.prepareStatement(sql)) {{\n{sets}            return ps.executeUpdate();\n        }}\n    }}\n\n"
+                "    public int update({record} row) throws SQLException {{\n        String sql = \"UPDATE {sql_table} SET {set_sql} WHERE {where_sql}\";\n        try (PreparedStatement ps = con.prepareStatement(sql)) {{\n{sets}            return ps.executeUpdate();\n        }}\n    }}\n\n"
             ));
         }
         o.push_str(&format!(
-            "    int delete({params}) throws SQLException {{\n        String sql = \"DELETE FROM {sql_table} WHERE {where_sql}\";\n        try (PreparedStatement ps = con.prepareStatement(sql)) {{\n{}            return ps.executeUpdate();\n        }}\n    }}\n\n",
+            "    public int delete({params}) throws SQLException {{\n        String sql = \"DELETE FROM {sql_table} WHERE {where_sql}\";\n        try (PreparedStatement ps = con.prepareStatement(sql)) {{\n{}            return ps.executeUpdate();\n        }}\n    }}\n",
             set_pk(1)
         ));
     }
+    o
+}
 
+/// Record, DAO-Klasse und `main` fuer eine Tabelle (eine Datei zum Kopieren).
+pub fn table_class(table: &TableInfo, target: &Target) -> String {
+    let en = english();
+    let record = camel(&table.name, true);
+    let dao = format!("{record}Dao");
+    let cols: Vec<&ColumnInfo> = table.columns.iter().collect();
+    let mut o = imports(&cols);
+    o.push_str("import java.util.*;\n\n");
+    o.push_str(&record_decl(table, false));
+    o.push('\n');
+    o.push_str(&format!("public class {dao} {{\n"));
     o.push_str(&format!(
-        "    public static void main(String[] args) throws SQLException {{\n        try (Connection con = DriverManager.getConnection(URL, \"{}\", \"\")) {{\n            for ({record} row : new {dao}(con).findAll()) {{\n                System.out.println(row);\n            }}\n        }}\n    }}\n}}\n",
+        "    // {}\n    static final String URL = \"{}\";\n\n    private final Connection con;\n\n    {dao}(Connection con) {{\n        this.con = con;\n    }}\n\n",
+        if en { "Connection settings: adjust user and password" } else { "Verbindungsdaten: Benutzer und Passwort anpassen" },
+        target.url()
+    ));
+    o.push_str(&dao_methods(table));
+    o.push_str(&format!(
+        "\n    public static void main(String[] args) throws SQLException {{\n        try (Connection con = DriverManager.getConnection(URL, \"{}\", \"\")) {{\n            for ({record} row : new {dao}(con).findAll()) {{\n                System.out.println(row);\n            }}\n        }}\n    }}\n}}\n",
         java_text(&target.user)
     ));
     o
+}
+
+/// Eigene Datei mit dem Record einer Tabelle (fuer Projekte)
+pub fn record_file(table: &TableInfo, package: Option<&str>) -> String {
+    let cols: Vec<&ColumnInfo> = table.columns.iter().collect();
+    let mut o = package_line(package);
+    let imp = imports(&cols).replace("import java.sql.*;\n", "");
+    if !imp.is_empty() {
+        o.push_str(&imp);
+        o.push('\n');
+    }
+    let comment = if english() { format!("/** One row of the table `{}`. */\n", table.name) } else { format!("/** Eine Zeile der Tabelle `{}`. */\n", table.name) };
+    o.push_str(&comment);
+    o.push_str(&record_decl(table, true));
+    o
+}
+
+/// Eigene Datei mit der DAO-Klasse einer Tabelle (fuer Projekte)
+pub fn dao_file(table: &TableInfo, package: Option<&str>) -> String {
+    let record = camel(&table.name, true);
+    let dao = format!("{record}Dao");
+    let cols: Vec<&ColumnInfo> = table.columns.iter().collect();
+    let mut o = package_line(package);
+    o.push_str(&imports(&cols));
+    o.push_str("import java.util.*;\n\n");
+    let comment = if english() {
+        format!("/** Reads and changes rows of the table `{}`. */\n", table.name)
+    } else {
+        format!("/** Liest und ändert Zeilen der Tabelle `{}`. */\n", table.name)
+    };
+    o.push_str(&comment);
+    o.push_str(&format!("public class {dao} {{\n    private final Connection con;\n\n    public {dao}(Connection con) {{\n        this.con = con;\n    }}\n\n"));
+    o.push_str(&dao_methods(table));
+    o.push_str("}\n");
+    o
+}
+
+/// Code, der alle Zeilen einer Tabelle liest (zum Einfuegen in eine Methode mit `con`)
+pub fn select_snippet(table: &TableInfo) -> String {
+    let cols: Vec<&ColumnInfo> = table.columns.iter().collect();
+    let names = cols.iter().map(|c| sql_name(&c.name)).collect::<Vec<_>>().join(", ");
+    let mut o = format!(
+        "try (PreparedStatement ps = con.prepareStatement(\"SELECT {names} FROM {}\");\n     ResultSet rs = ps.executeQuery()) {{\n    while (rs.next()) {{\n",
+        sql_name(&table.name)
+    );
+    let mut vars = Vec::new();
+    for c in &cols {
+        let (ty, boxed) = java_type(c);
+        let var = camel(&c.name, false);
+        let name = java_text(&c.name);
+        let read = match ty {
+            "String" => format!("rs.getString(\"{name}\")"),
+            "int" => format!("rs.getInt(\"{name}\")"),
+            "long" => format!("rs.getLong(\"{name}\")"),
+            "boolean" => format!("rs.getBoolean(\"{name}\")"),
+            "double" => format!("rs.getDouble(\"{name}\")"),
+            "float" => format!("rs.getFloat(\"{name}\")"),
+            "BigDecimal" => format!("rs.getBigDecimal(\"{name}\")"),
+            "byte[]" => format!("rs.getBytes(\"{name}\")"),
+            _ => format!("rs.getObject(\"{name}\", {boxed}.class)"),
+        };
+        o.push_str(&format!("        {ty} {var} = {read};\n"));
+        vars.push(var);
+    }
+    o.push_str(&format!("        System.out.println({});\n    }}\n}}\n", if vars.is_empty() { "\"\"".to_string() } else { vars.join(" + \" | \" + ") }));
+    o
+}
+
+/// Benoetigte Imports fuer `select_snippet` ("java.sql.*", "java.time.*", …)
+pub fn select_imports(table: &TableInfo) -> Vec<String> {
+    let cols: Vec<&ColumnInfo> = table.columns.iter().collect();
+    imports(&cols).lines().filter_map(|l| l.strip_prefix("import ")?.strip_suffix(';').map(str::to_string)).collect()
 }
 
 /// Fertige Klasse, die eine einzelne Abfrage ausfuehrt und das Ergebnis ausgibt.
