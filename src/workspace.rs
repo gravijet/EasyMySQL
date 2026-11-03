@@ -311,20 +311,48 @@ pub fn trash(project: &Path, path: &Path) -> Result<PathBuf, String> {
 /// Sicheres Speichern: erst Zwischendatei schreiben und auf die Platte bringen, dann umbenennen.
 /// So bleibt bei einem Absturz immer entweder die alte oder die neue Fassung vollstaendig erhalten.
 pub fn atomic_write(path: &Path, content: &str) -> std::io::Result<()> {
+    write_atomic(path, content, false)
+}
+
+/// Wie `atomic_write`, aber die Datei gehoert von Anfang an nur dem Benutzer (Unix: 0600) - fuer Passwoerter und Tokens.
+pub fn atomic_write_private(path: &Path, content: &str) -> std::io::Result<()> {
+    write_atomic(path, content, true)
+}
+
+fn write_atomic(path: &Path, content: &str, private: bool) -> std::io::Result<()> {
     use std::io::Write;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static N: AtomicU64 = AtomicU64::new(0);
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
+    // Eigener Name je Aufruf: zwei gleichzeitige Speichervorgaenge schreiben nie in dieselbe Zwischendatei
     let tmp = path.with_extension(format!(
-        "{}.tmp",
-        path.extension().map(|e| e.to_string_lossy().into_owned()).unwrap_or_default()
+        "{}.{}.{}.tmp",
+        path.extension().map(|e| e.to_string_lossy().into_owned()).unwrap_or_default(),
+        std::process::id(),
+        N.fetch_add(1, Ordering::Relaxed)
     ));
-    {
-        let mut f = std::fs::File::create(&tmp)?;
+    let written = (|| {
+        let mut opts = std::fs::OpenOptions::new();
+        opts.write(true).create_new(true);
+        #[cfg(unix)]
+        if private {
+            use std::os::unix::fs::OpenOptionsExt;
+            opts.mode(0o600);
+        }
+        let _ = private;
+        let mut f = opts.open(&tmp)?;
         f.write_all(content.as_bytes())?;
-        f.sync_all()?;
+        f.sync_all()
+    })();
+    match written.and_then(|_| std::fs::rename(&tmp, path)) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let _ = std::fs::remove_file(&tmp);
+            Err(e)
+        }
     }
-    std::fs::rename(&tmp, path)
 }
 
 // ---------------------------------------------------------------------------

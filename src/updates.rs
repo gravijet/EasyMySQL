@@ -181,10 +181,28 @@ fn app_file() -> &'static str {
     if cfg!(windows) { "EasyMySQL.exe" } else { "easymysql" }
 }
 
+/// Schreibt und rechnet dabei die SHA-256 der geschriebenen Bytes aus
+struct HashingWriter<W: Write> {
+    inner: W,
+    hash: Sha256,
+}
+
+impl<W: Write> Write for HashingWriter<W> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let n = self.inner.write(buf)?;
+        self.hash.update(&buf[..n]);
+        Ok(n)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.inner.flush()
+    }
+}
+
 /// Programmdatei aus dem ZIP in `dir` entpacken. Nur genau diese eine Datei wird gelesen.
-fn extract_app(zip_path: &Path, dir: &Path) -> Result<PathBuf, String> {
-    let file = std::fs::File::open(zip_path).map_err(|e| e.to_string())?;
-    let mut zip = zip::ZipArchive::new(file).map_err(|e| e.to_string())?;
+/// Liefert den Pfad und die SHA-256 der entpackten Datei (die der Helfer vor dem Kopieren noch einmal prueft).
+fn extract_app<R: Read + std::io::Seek>(archive: R, dir: &Path) -> Result<(PathBuf, String), String> {
+    let mut zip = zip::ZipArchive::new(archive).map_err(|e| e.to_string())?;
     let wanted = app_file().to_lowercase();
     let index = (0..zip.len())
         .find(|&i| zip.by_index(i).ok().is_some_and(|f| !f.is_dir() && f.name().ok().is_some_and(|n| n.rsplit(['/', '\\']).next().is_some_and(|n| n.to_lowercase() == wanted))))
@@ -194,23 +212,22 @@ fn extract_app(zip_path: &Path, dir: &Path) -> Result<PathBuf, String> {
         return Err(crate::i18n::text("Die Größe des Updates ist ungültig.").into());
     }
     let out = dir.join(app_file());
-    let mut f = std::fs::File::create(&out).map_err(|e| e.to_string())?;
-    std::io::copy(&mut entry, &mut f).map_err(|e| e.to_string())?;
-    f.sync_all().map_err(|e| e.to_string())?;
-    drop(f);
+    let f = std::fs::File::create(&out).map_err(|e| e.to_string())?;
+    let mut w = HashingWriter { inner: f, hash: Sha256::new() };
+    std::io::copy(&mut entry.by_ref().take(MAX_APP), &mut w).map_err(|e| e.to_string())?;
+    w.inner.sync_all().map_err(|e| e.to_string())?;
+    let sha = format!("{:x}", w.hash.finalize());
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         let _ = std::fs::set_permissions(&out, std::fs::Permissions::from_mode(0o755));
     }
-    Ok(out)
+    Ok((out, sha))
 }
 
-/// Sieht die Datei wie ein Programm aus? (Windows: "MZ", Linux: ELF)
-fn looks_like_program(p: &Path) -> bool {
-    let mut head = [0u8; 4];
-    let ok = std::fs::File::open(p).and_then(|mut f| f.read_exact(&mut head)).is_ok();
-    ok && (head.starts_with(b"MZ") || head == *b"\x7fELF")
+/// Sehen die Bytes wie ein Programm aus? (Windows: "MZ", Linux: ELF)
+fn looks_like_program(bytes: &[u8]) -> bool {
+    bytes.starts_with(b"MZ") || bytes.starts_with(b"\x7fELF")
 }
 
 fn old_path(target: &Path) -> PathBuf {
@@ -219,17 +236,46 @@ fn old_path(target: &Path) -> PathBuf {
     target.with_file_name(name)
 }
 
-/// Laufende Programmdatei austauschen: die alte wird umbenannt (das geht auch, solange sie laeuft),
-/// die neue an ihren Platz kopiert. Schlaegt das Kopieren fehl, kommt die alte zurueck.
-pub fn replace_program(new: &Path, target: &Path) -> std::io::Result<()> {
-    if !looks_like_program(new) {
-        return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "not a program file"));
+/// Laufende Programmdatei austauschen: die neue Datei wird erst vollstaendig neben das Ziel geschrieben, dann wird die
+/// alte umbenannt (das geht auch, solange sie laeuft) und die neue an ihren Platz gesetzt. Schlaegt das fehl, kommt die
+/// alte zurueck. `sha256`: erwarteter Hash der neuen Datei; sie wird hier aus dem Speicher geprueft, nicht noch einmal
+/// vom Datentraeger gelesen (sonst koennte sie dazwischen ausgetauscht werden).
+pub fn replace_program(new: &Path, target: &Path, sha256: Option<&str>) -> std::io::Result<()> {
+    let bad = |m: &str| std::io::Error::new(std::io::ErrorKind::InvalidData, m.to_string());
+    let bytes = std::fs::read(new)?;
+    if !looks_like_program(&bytes) {
+        return Err(bad("not a program file"));
+    }
+    if let Some(want) = sha256
+        && !format!("{:x}", Sha256::digest(&bytes)).eq_ignore_ascii_case(want)
+    {
+        return Err(bad("checksum mismatch"));
+    }
+    let staged = target.with_file_name(format!("{}.neu", target.file_name().unwrap_or_default().to_string_lossy()));
+    let _ = std::fs::remove_file(&staged);
+    let written = (|| {
+        let mut f = std::fs::OpenOptions::new().write(true).create_new(true).open(&staged)?;
+        f.write_all(&bytes)?;
+        f.sync_all()?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&staged, std::fs::Permissions::from_mode(0o755))?;
+        }
+        Ok::<(), std::io::Error>(())
+    })();
+    if let Err(e) = written {
+        let _ = std::fs::remove_file(&staged);
+        return Err(e);
     }
     let old = old_path(target);
     let _ = std::fs::remove_file(&old);
-    std::fs::rename(target, &old)?;
-    if let Err(e) = std::fs::copy(new, target) {
-        let _ = std::fs::remove_file(target);
+    if let Err(e) = std::fs::rename(target, &old) {
+        let _ = std::fs::remove_file(&staged);
+        return Err(e);
+    }
+    if let Err(e) = std::fs::rename(&staged, target) {
+        let _ = std::fs::remove_file(&staged);
         let _ = std::fs::rename(&old, target);
         return Err(e);
     }
@@ -263,17 +309,17 @@ fn can_self_update() -> bool {
 }
 
 /// Neue Programmdatei an die Stelle der laufenden setzen; braucht der Ordner Administratorrechte, fragt Windows danach.
-fn install(new: &Path) -> Result<(), String> {
+fn install(new: &Path, sha256: &str) -> Result<(), String> {
     let target = install_target();
-    match replace_program(new, &target) {
+    match replace_program(new, &target, Some(sha256)) {
         Ok(()) => Ok(()),
-        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => install_elevated(new, &target),
+        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => install_elevated(new, &target, sha256),
         Err(e) => Err(crate::tr_format!("Das Update konnte nicht installiert werden: {e}", "The update could not be installed: {e}")),
     }
 }
 
 #[cfg(windows)]
-fn install_elevated(new: &Path, target: &Path) -> Result<(), String> {
+fn install_elevated(new: &Path, target: &Path, sha256: &str) -> Result<(), String> {
     use std::os::windows::ffi::OsStrExt;
     use windows_sys::Win32::Foundation::CloseHandle;
     use windows_sys::Win32::System::Threading::{GetExitCodeProcess, INFINITE, WaitForSingleObject};
@@ -282,7 +328,7 @@ fn install_elevated(new: &Path, target: &Path) -> Result<(), String> {
     let wide = |s: &std::ffi::OsStr| -> Vec<u16> { s.encode_wide().chain(Some(0)).collect() };
     let exe = wide(exe_path().as_os_str());
     let verb = wide("runas".as_ref());
-    let params = wide(format!("--apply-update \"{}\" \"{}\"", new.display(), target.display()).as_ref());
+    let params = wide(format!("--apply-update \"{}\" \"{}\" {sha256}", new.display(), target.display()).as_ref());
     // SAFETY: Die Puffer leben bis zum Ende des Aufrufs; die Struktur wird vollstaendig initialisiert.
     unsafe {
         let mut info: SHELLEXECUTEINFOW = std::mem::zeroed();
@@ -307,14 +353,16 @@ fn install_elevated(new: &Path, target: &Path) -> Result<(), String> {
 }
 
 #[cfg(not(windows))]
-fn install_elevated(_new: &Path, _target: &Path) -> Result<(), String> {
+fn install_elevated(_new: &Path, _target: &Path, _sha256: &str) -> Result<(), String> {
     Err(crate::i18n::text("Das Programm darf seine Datei nicht ersetzen. Bitte die Download-Seite öffnen.").into())
 }
 
-/// Mit `--apply-update <neu> <ziel>` gestartet (erhoehter Helfer): Datei tauschen und beenden.
+/// Mit `--apply-update <neu> <ziel> <sha256>` gestartet (erhoehter Helfer): Hash pruefen, Datei tauschen und beenden.
+/// Ohne Hash wird nichts getauscht.
 pub fn run_helper(args: &[std::ffi::OsString]) -> Option<i32> {
-    if args.first().is_some_and(|a| a == "--apply-update") && args.len() == 3 {
-        return Some(if replace_program(Path::new(&args[1]), Path::new(&args[2])).is_ok() { 0 } else { 1 });
+    if args.first().is_some_and(|a| a == "--apply-update") {
+        let ok = args.len() == 4 && args[3].to_str().is_some_and(|h| h.len() == 64 && h.bytes().all(|b| b.is_ascii_hexdigit())) && replace_program(Path::new(&args[1]), Path::new(&args[2]), args[3].to_str()).is_ok();
+        return Some(if ok { 0 } else { 1 });
     }
     None
 }
@@ -473,8 +521,14 @@ impl Updater {
             let r = (|| {
                 let zip = download(&asset, &p)?;
                 let dir = zip.parent().map(Path::to_path_buf).unwrap_or_default();
-                let exe = extract_app(&zip, &dir)?;
-                let r = install(&exe);
+                let r = (|| {
+                    // Die Datei einmal in den Speicher lesen, dort noch einmal pruefen und entpacken: so kann sie nach der
+                    // Pruefung nicht mehr im Temp-Ordner ausgetauscht werden.
+                    let bytes = std::fs::read(&zip).map_err(|e| e.to_string())?;
+                    verify_download(bytes.len() as u64, &format!("{:x}", Sha256::digest(&bytes)), &asset)?;
+                    let (exe, sha) = extract_app(std::io::Cursor::new(bytes), &dir)?;
+                    install(&exe, &sha)
+                })();
                 let _ = std::fs::remove_dir_all(&dir);
                 r
             })();
@@ -734,17 +788,24 @@ mod tests {
         let new = dir.join("new");
         std::fs::write(&target, fake_program(1)).unwrap();
         std::fs::write(&new, fake_program(2)).unwrap();
-        replace_program(&new, &target).unwrap();
+        replace_program(&new, &target, None).unwrap();
         assert_eq!(std::fs::read(&target).unwrap(), fake_program(2));
         assert_eq!(std::fs::read(old_path(&target)).unwrap(), fake_program(1));
         // zweites Update ueberschreibt die alte Sicherung
         std::fs::write(&new, fake_program(3)).unwrap();
-        replace_program(&new, &target).unwrap();
+        replace_program(&new, &target, None).unwrap();
         assert_eq!(std::fs::read(old_path(&target)).unwrap(), fake_program(2));
         // keine Programmdatei: nichts wird veraendert
         std::fs::write(&new, b"hello").unwrap();
-        assert!(replace_program(&new, &target).is_err());
+        assert!(replace_program(&new, &target, None).is_err());
         assert_eq!(std::fs::read(&target).unwrap(), fake_program(3));
+        // falscher Hash (die Datei wurde nach der Pruefung ausgetauscht): nichts wird veraendert
+        std::fs::write(&new, fake_program(4)).unwrap();
+        assert!(replace_program(&new, &target, Some(&format!("{:x}", Sha256::digest(fake_program(5))))).is_err());
+        assert_eq!(std::fs::read(&target).unwrap(), fake_program(3));
+        assert!(!dir.join("easymysql.neu").exists());
+        replace_program(&new, &target, Some(&format!("{:x}", Sha256::digest(fake_program(4))))).unwrap();
+        assert_eq!(std::fs::read(&target).unwrap(), fake_program(4));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -761,11 +822,12 @@ mod tests {
             zw.write_all(&fake_program(7)).unwrap();
             zw.finish().unwrap();
         }
-        let out = extract_app(&zip_path, &dir).unwrap();
+        let (out, sha) = extract_app(std::fs::File::open(&zip_path).unwrap(), &dir).unwrap();
         assert_eq!(std::fs::read(out).unwrap(), fake_program(7));
+        assert_eq!(sha, format!("{:x}", Sha256::digest(fake_program(7))));
         let empty = dir.join("empty.zip");
         zip::ZipWriter::new(std::fs::File::create(&empty).unwrap()).finish().unwrap();
-        assert!(extract_app(&empty, &dir).is_err());
+        assert!(extract_app(std::fs::File::open(&empty).unwrap(), &dir).is_err());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -774,5 +836,7 @@ mod tests {
         assert_eq!(run_helper(&[]), None);
         assert_eq!(run_helper(&["--other".into()]), None);
         assert_eq!(run_helper(&["--apply-update".into(), "/nonexistent/a".into(), "/nonexistent/b".into()]), Some(1));
+        // ohne gueltigen Hash wird nie getauscht
+        assert_eq!(run_helper(&["--apply-update".into(), "/nonexistent/a".into(), "/nonexistent/b".into(), "xyz".into()]), Some(1));
     }
 }

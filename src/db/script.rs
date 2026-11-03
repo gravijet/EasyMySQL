@@ -145,6 +145,8 @@ pub fn split_statements(text: &str) -> Vec<Stmt> {
     let mut line = 0usize;
     let mut start_line = 0usize;
     let at_line_start = |i: usize| i == 0 || chars[i - 1] == '\n';
+    // "--" ist nur mit Leerraum danach ein Kommentar (SELECT 5--3 rechnet), "#" immer
+    let is_comment = |i: usize| chars[i] == '#' || (chars[i] == '-' && chars.get(i + 1) == Some(&'-') && chars.get(i + 2).is_none_or(|c| c.is_whitespace() || c.is_control()));
     let push = |out: &mut Vec<Stmt>, s: usize, e: usize, l: usize| {
         let sql: String = chars[s..e].iter().collect();
         if !sql.trim().is_empty() && !is_only_comments(&sql) {
@@ -178,7 +180,7 @@ pub fn split_statements(text: &str) -> Vec<Stmt> {
         }
         if start.is_none() && !c.is_whitespace() {
             // Kommentarzeilen vor einer Anweisung gehoeren nicht dazu
-            if (c == '-' && nx == '-') || c == '#' {
+            if is_comment(i) {
                 while i < n && chars[i] != '\n' {
                     i += 1;
                 }
@@ -187,7 +189,7 @@ pub fn split_statements(text: &str) -> Vec<Stmt> {
             start = Some(i);
             start_line = line;
         }
-        if (c == '-' && nx == '-') || c == '#' {
+        if is_comment(i) {
             while i < n && chars[i] != '\n' {
                 i += 1;
             }
@@ -235,7 +237,7 @@ pub fn split_statements(text: &str) -> Vec<Stmt> {
 fn is_only_comments(sql: &str) -> bool {
     sql.lines().all(|l| {
         let t = l.trim();
-        t.is_empty() || t.starts_with("--") || t.starts_with('#')
+        t.is_empty() || t.starts_with("-- ") || t == "--" || t.starts_with("--\t") || t.starts_with('#')
     }) && !sql.contains("/*!")
 }
 

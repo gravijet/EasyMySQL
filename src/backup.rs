@@ -145,6 +145,19 @@ pub fn human_size(b: u64) -> String {
 }
 
 /// Alle Sicherungen, neueste zuerst.
+/// Genau "JJJJ-MM-TT_hh-mm-ss" (und danach nichts oder "_anlass"): andere Ordner gehoeren nicht zu den Sicherungen
+/// und werden weder angezeigt noch beim Aufraeumen geloescht.
+fn is_backup_name(name: &str) -> bool {
+    let b = name.as_bytes();
+    b.len() >= 19
+        && (b.len() == 19 || b[19] == b'_')
+        && b[..19].iter().enumerate().all(|(i, c)| match i {
+            4 | 7 | 13 | 16 => *c == b'-',
+            10 => *c == b'_',
+            _ => c.is_ascii_digit(),
+        })
+}
+
 pub fn list(dir: &Path) -> Vec<BackupInfo> {
     let mut out = Vec::new();
     let Ok(rd) = std::fs::read_dir(dir) else { return out };
@@ -155,7 +168,7 @@ pub fn list(dir: &Path) -> Vec<BackupInfo> {
         }
         let name = e.file_name().to_string_lossy().into_owned();
         // Name: JJJJ-MM-TT_hh-mm-ss_anlass
-        if name.len() < 19 || !name.as_bytes()[0].is_ascii_digit() {
+        if !is_backup_name(&name) {
             continue;
         }
         let (ts, reason) = (&name[..19], name.get(20..).unwrap_or(""));
@@ -439,6 +452,22 @@ mod tests {
         assert_eq!(destructive_targets("DELETE FROM kunde", Some("shop")), vec!["shop"]);
         assert_eq!(destructive_targets("ALTER TABLE kunde DROP COLUMN email", Some("shop")), vec!["shop"]);
         assert!(destructive_targets("DROP DATABASE mysql", None).is_empty());
+    }
+
+    #[test]
+    fn only_real_backup_folders_are_listed_and_rotated() {
+        assert!(is_backup_name("2026-09-10_10-00-00_auto") && is_backup_name("2026-09-10_10-00-00"));
+        for bad in ["2024-tax-documents-scans", "2026-09-10_10-00-00x", "1ääääääääääääääääää", "tmp", "2026-09-10 10-00-00_auto"] {
+            assert!(!is_backup_name(bad), "{bad}");
+        }
+        let dir = std::env::temp_dir().join(format!("easymysql-rot-fremd-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("2024-tax-documents-scans")).unwrap();
+        std::fs::create_dir_all(dir.join("2026-09-10_10-00-00_auto")).unwrap();
+        rotate(&dir, 0, 0);
+        assert!(dir.join("2024-tax-documents-scans").is_dir());
+        assert!(!dir.join("2026-09-10_10-00-00_auto").exists());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

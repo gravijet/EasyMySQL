@@ -145,6 +145,7 @@ impl Settings {
         let mut s = Self::default();
         for line in text.lines() {
             let Some((k, v)) = line.split_once('=') else { continue };
+            let raw = v;
             let v = v.trim().to_string();
             let on = v == "1";
             match k.trim() {
@@ -153,13 +154,13 @@ impl Settings {
                 "host" => s.conn.host = v,
                 "port" => s.conn.port = v.parse().unwrap_or(3306),
                 "user" => s.conn.user = v,
-                "password" => s.conn.password = v,
+                "password" => s.conn.password = secret_dec(raw),
                 "ssh" => s.ssh.enabled = on,
                 "ssh_host" => s.ssh.host = v,
                 "ssh_port" => s.ssh.port = v.parse().unwrap_or(22),
                 "ssh_user" => s.ssh.user = v,
                 "ssh_key" => s.ssh.key = v,
-                "ssh_password" => s.ssh.password = v,
+                "ssh_password" => s.ssh.password = secret_dec(raw),
                 "save_password" => s.save_password = on,
                 "show_system_dbs" => s.show_system_dbs = on,
                 "auto_install" => s.auto_install = on,
@@ -234,7 +235,7 @@ impl Settings {
     }
 
     pub fn save(&self) {
-        let _ = crate::workspace::atomic_write(&path(), &self.to_text());
+        let _ = crate::workspace::atomic_write_private(&path(), &self.to_text());
     }
 
     fn to_text(&self) -> String {
@@ -332,7 +333,7 @@ impl Settings {
         let s = &self.ssh;
         text.push_str(&format!("ssh={}\nssh_host={}\nssh_port={}\nssh_user={}\nssh_key={}\n", b(s.enabled), s.host, s.port, s.user, s.key));
         if self.save_password {
-            text.push_str(&format!("password={}\nssh_password={}\n", self.conn.password, s.password));
+            text.push_str(&format!("password={}\nssh_password={}\n", secret_enc(&self.conn.password), secret_enc(&s.password)));
         }
         text
     }
@@ -347,7 +348,23 @@ impl Settings {
 
 /// Mehrzeiliger Wert in einer Zeile der Datei
 pub fn escape(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('\n', "\\n").replace('\r', "")
+    s.replace('\\', "\\\\").replace('\n', "\\n").replace('\t', "\\t").replace('\r', "")
+}
+
+/// Marke vor einem gesicherten Geheimnis (aeltere Dateien haben den Wert roh, ohne Marke)
+const SECRET_MARK: char = '\u{1}';
+
+/// Passwort fuer eine Zeile der Datei: Zeilenumbrueche, Tabs, Backslashes und Leerzeichen am Rand bleiben erhalten
+pub fn secret_enc(s: &str) -> String {
+    format!("{SECRET_MARK}{}", escape(s))
+}
+
+/// Gegenstueck zu `secret_enc`; Werte ohne Marke (alte Dateien) werden wie bisher gelesen
+pub fn secret_dec(raw: &str) -> String {
+    match raw.strip_prefix(SECRET_MARK) {
+        Some(rest) => unescape(rest),
+        None => raw.trim().to_string(),
+    }
 }
 
 pub fn unescape(s: &str) -> String {
@@ -357,6 +374,7 @@ pub fn unescape(s: &str) -> String {
         if c == '\\' {
             match it.next() {
                 Some('n') => out.push('\n'),
+                Some('t') => out.push('\t'),
                 Some(o) => out.push(o),
                 None => out.push('\\'),
             }
@@ -401,6 +419,20 @@ mod tests {
         assert!(!custom.dark);
         assert_eq!(Settings::from_text(&custom.to_text()), custom);
         assert_eq!(Settings::from_text("language=invalid").language, crate::i18n::Language::English);
+    }
+
+    #[test]
+    fn awkward_passwords_survive_a_restart() {
+        for pw in [" leer ", "a\\b", "zwei\nZeilen\nhost=evil", "tab\there", "ende\\"] {
+            let mut s = Settings::default();
+            s.save_password = true;
+            s.conn.password = pw.into();
+            s.ssh.password = pw.into();
+            let back = Settings::from_text(&s.to_text());
+            assert_eq!((back.conn.password.as_str(), back.ssh.password.as_str(), back.conn.host.as_str()), (pw, pw, "127.0.0.1"), "{pw:?}");
+        }
+        // alte Dateien: roh, ohne Marke
+        assert_eq!(Settings::from_text("password=geheim\n").conn.password, "geheim");
     }
 
     #[test]
