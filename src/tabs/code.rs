@@ -770,7 +770,7 @@ impl CodeTab {
                 }
                 let busy = !matches!(self.run, RunState::Idle);
                 ui.add_enabled_ui(!busy, |ui| {
-                    if icons::primary_button(ui, Icon::Play, crate::i18n::text("Ausführen"))
+                    if icons::run_button(ui, crate::i18n::text("Ausführen"))
                         .on_hover_text(crate::tr_format!("Starten im Terminal ({})", "Start in the terminal ({})", crate::keymap::text(Cmd::RunAll)))
                         .clicked()
                     {
@@ -792,7 +792,7 @@ impl CodeTab {
             self.status(ui, cx);
             let more = icons::button(ui, Icon::More, crate::i18n::text("Weitere"));
             egui::Popup::menu(&more).show(|ui| {
-                style::menu_item_look(ui);
+                crate::style::menu_item_look(ui);
                 if self.runnable() {
                     if self.lang == Lang::Java && ui.button(Cmd::BuildJar.label()).on_hover_text(crate::i18n::tr("dist/<Projekt>.jar mit allen Bibliotheken – läuft mit java -jar", "dist/<project>.jar with all libraries – runs with java -jar")).clicked() {
                         self.request(Goal::Jar, cx);
@@ -956,7 +956,7 @@ impl CodeTab {
         let has_db = self.has_db_module();
         let lang = self.lang;
         egui::Popup::menu(&resp).show(|ui| {
-            style::menu_item_look(ui);
+            crate::style::menu_item_look(ui);
             let connect: (String, Vec<String>) = match lang {
                 Lang::Java if has_db => ("try (Connection con = Database.connect()) {\n    \n}".into(), vec!["java.sql.*".into()]),
                 Lang::Java => (
@@ -1504,6 +1504,10 @@ impl TabView for CodeTab {
 
     fn busy(&self) -> bool {
         matches!(self.run, RunState::Preparing(..))
+    }
+
+    fn runnable(&self) -> bool {
+        CodeTab::runnable(self)
     }
 
     fn database(&self) -> Option<String> {

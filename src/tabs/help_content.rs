@@ -68,11 +68,11 @@ pub const CHAPTERS: &[Chapter] = &[
                 title: "Aufbau des Fensters",
                 blocks: &[
                     List(&[
-                        "Titelleiste oben: Menü und Werkzeuge (ER-Diagramm, Abfrage-Assistent), ein farbiger Punkt für den Server (grün = läuft, gelb = startet/stoppt, rot = Fehler; Klick öffnet das Server-Log) und ganz rechts Minimieren, Maximieren und Schließen. Es gibt keine zusätzliche Fensterzeile des Betriebssystems; Ziehen an der freien Fläche verschiebt das Fenster, Doppelklick maximiert, die Fensterkanten ändern die Größe.",
+                        "Obere Leiste wie in IntelliJ IDEA: links die Menüs, das aktuelle Projekt (Klick: anderes Projekt öffnen, neues anlegen, zuletzt geöffnete) und in Git-Projekten der Branch; in der Mitte das Suchfeld (Dateien im Projekt, mit „>“ alle Befehle); rechts der grüne Startknopf für die aktive Datei, neue Abfrage, ER-Diagramm, Abfrage-Assistent und die Verbindung mit farbigem Punkt (grün = läuft, gelb = startet/stoppt, rot = Fehler; Klick zeigt Starten, Stoppen, Server-Log und Verbindung). Ganz rechts Minimieren, Maximieren und Schließen. Ziehen an der freien Fläche verschiebt das Fenster, Doppelklick maximiert, die Fensterkanten ändern die Größe.",
                         "Aktivitätsleiste ganz links: schaltet die Seitenleiste um – Explorer, Suchen, Datenbanken, Verlauf. Die Seitenleiste lässt sich unter Einstellungen → Darstellung → Seitenleiste ein- und ausschalten.",
                         "Seitenleiste: Breite mit der Maus an der rechten Kante ziehen.",
                         "Registerkarten in der Mitte: SQL-Dateien, Daten, Struktur, Diagramme, Einstellungen und so weiter.",
-                        "Ohne offene Registerkarte bleibt die Mitte leer. Doppelklick auf die leere Fläche öffnet eine neue Abfrage.",
+                        "Ohne offene Registerkarte zeigt die Mitte die wichtigsten Befehle mit ihren Kürzeln; ein Klick führt sie aus. Doppelklick auf die freie Fläche öffnet eine neue Abfrage.",
                         "Kurze Meldungen erscheinen unten rechts und verschwinden von selbst (Klick schließt sie sofort). Fehler erscheinen als Fenster.",
                     ]),
                     Keys(&[Cmd::ToggleSidebar, Cmd::ShowExplorer, Cmd::ShowSearch, Cmd::ShowDatabases, Cmd::ShowHistory]),
@@ -189,7 +189,7 @@ pub const CHAPTERS: &[Chapter] = &[
                        Registerkarte zeigt ungespeicherte Änderungen."),
                     List(&[
                         "Unbenannte Abfragen (Neue Abfrage) werden ebenfalls laufend gesichert und sind nach einem Neustart wieder da. Leere unbenannte Abfragen verschwinden beim Schließen.",
-                        "Speichern bei einer unbenannten Abfrage fragt nach einem Namen und legt die Datei im Projekt an („Anderer Ort …“ für einen beliebigen Ordner).",
+                        "Gespeichert wird immer in einem Projekt oder Ordner: Speichern bei einer unbenannten Abfrage fragt nach einem Namen und legt die Datei im geöffneten Projekt an („Anderer Ort …“ für einen anderen Ordner). Ist kein Projekt offen, wählen Sie zuerst einen Ordner – die Abfrage bleibt dabei offen. Auch „Neue Datei“ fragt ohne Projekt zuerst nach dem Ordner.",
                         "Frühere Fassungen (Menü mit den drei Punkten in der Datei): höchstens alle 5 Minuten wird der vorherige Stand aufbewahrt, bis zu 50 je Datei. „Wiederherstellen“ setzt den Text zurück.",
                         "Wird eine offene Datei außerhalb geändert, übernimmt EasyMySQL den neuen Inhalt automatisch.",
                     ]),

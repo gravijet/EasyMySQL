@@ -151,7 +151,7 @@ impl EasyApp {
         self.git.busy = Some((what.to_string(), spawn(&ctx(), f)));
     }
 
-    fn git_status_now(&self) -> Option<git::Status> {
+    pub(super) fn git_status_now(&self) -> Option<git::Status> {
         self.git.status.as_ref().and_then(|s| s.as_ref().ok()).cloned()
     }
 
@@ -350,7 +350,7 @@ impl EasyApp {
             let mut merge_from: Option<String> = None;
             let mut delete: Option<String> = None;
             egui::Popup::menu(&resp).show(|ui| {
-                style::menu_item_look(ui);
+                crate::style::menu_item_look(ui);
                 if ui.button(crate::i18n::tr("Neuer Branch …", "New branch …")).clicked() {
                     self.git.dialog = Some(GitDialog::NewBranch { name: String::new() });
                     ui.close();
@@ -405,7 +405,7 @@ impl EasyApp {
                 ui.spacing_mut().item_spacing.x = 2.0;
                 let more = icons::button(ui, Icon::More, crate::i18n::text("Weitere"));
                 egui::Popup::menu(&more).show(|ui| {
-                    style::menu_item_look(ui);
+                    crate::style::menu_item_look(ui);
                     if ui.button("Fetch").clicked() {
                         let r = root.to_path_buf();
                         self.git_job("Fetch", move || git::fetch(&r).map(|_| String::new()));
@@ -660,6 +660,7 @@ impl EasyApp {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let m = icons::button(ui, Icon::GitMerge, crate::i18n::tr("Zusammenführen", "Merge"));
                     egui::Popup::menu(&m).show(|ui| {
+                        crate::style::menu_item_look(ui);
                         for (method, label) in [("squash", "Squash and merge"), ("merge", "Merge commit"), ("rebase", "Rebase and merge")] {
                             if ui.button(label).clicked() {
                                 let (o, r, n) = (d.owner.clone(), d.repo.clone(), p.number);

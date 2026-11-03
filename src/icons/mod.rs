@@ -231,7 +231,7 @@ pub fn button_sized(ui: &mut egui::Ui, icon: Icon, tip: &str, size: f32) -> Resp
     let (r, resp) = ui.allocate_exact_size(vec2(size, size), Sense::click());
     let pal = style::pal();
     if resp.hovered() {
-        ui.painter().rect_filled(r, 3.0, pal.hover);
+        ui.painter().rect_filled(r, style::RADIUS as f32, pal.hover);
     }
     let color = if ui.is_enabled() { if resp.hovered() { pal.text } else { pal.text_weak } } else { pal.text_weak.gamma_multiply(0.5) };
     paint(ui.painter(), r.shrink(size * 0.15), icon, color);
@@ -248,41 +248,26 @@ pub fn text_button_right(ui: &mut egui::Ui, icon: Icon, text: &str) -> Response 
     labelled_button(ui, icon, text, false, true)
 }
 
-/// Hervorgehobene Hauptaktion (blau gefuellt, z. B. Ausfuehren)
+/// Ausfuehren wie in IntelliJ IDEA: ruhiger Knopf mit gruenem Startsymbol
+pub fn run_button(ui: &mut egui::Ui, text: &str) -> Response {
+    labelled_button_tinted(ui, Icon::Play, text, false, false, Some(style::pal().ok_text))
+}
+
+/// Hervorgehobene Hauptaktion (blau gefuellt)
 pub fn primary_button(ui: &mut egui::Ui, icon: Icon, text: &str) -> Response {
     labelled_button(ui, icon, text, true, false)
 }
 
-/// Hervorgehobener Knopf der oberen Leiste: runde Akzentfläche, Symbol im hellen Kreis, beim Darüberfahren heller
-pub fn accent_button(ui: &mut egui::Ui, icon: Icon, text: &str) -> Response {
-    let pal = style::pal();
-    let galley = ui.painter().layout_no_wrap(text.to_string(), egui::FontId::proportional(13.0), Color32::WHITE);
-    let size = vec2(galley.size().x + 48.0, 30.0);
-    let (r, resp) = ui.allocate_exact_size(size, Sense::click());
-    let fill = if resp.is_pointer_button_down_on() {
-        pal.accent.gamma_multiply(0.82)
-    } else if resp.hovered() {
-        pal.accent.lerp_to_gamma(Color32::WHITE, 0.16)
-    } else {
-        pal.accent
-    };
-    ui.painter().rect_filled(r, 10.0, fill);
-    // Heller Rand oben gibt der Fläche etwas Tiefe
-    ui.painter().rect_stroke(r, 10.0, Stroke::new(1.0, Color32::from_white_alpha(28)), egui::StrokeKind::Inside);
-    let dot = pos2(r.left() + 17.0, r.center().y);
-    ui.painter().circle_filled(dot, 9.0, Color32::from_white_alpha(46));
-    paint(ui.painter(), Rect::from_center_size(dot, vec2(12.0, 12.0)), icon, Color32::WHITE);
-    ui.painter().galley_with_override_text_color(pos2(r.left() + 33.0, r.center().y - galley.size().y / 2.0), galley, Color32::WHITE);
-    if resp.has_focus() {
-        ui.painter().rect_stroke(r, 10.0, Stroke::new(1.5, Color32::WHITE), egui::StrokeKind::Outside);
-    }
-    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+fn labelled_button(ui: &mut egui::Ui, icon: Icon, text: &str, primary: bool, icon_right: bool) -> Response {
+    labelled_button_tinted(ui, icon, text, primary, icon_right, None)
 }
 
-fn labelled_button(ui: &mut egui::Ui, icon: Icon, text: &str, primary: bool, icon_right: bool) -> Response {
+/// `tint`: eigene Farbe des Symbols (nur wenn der Knopf bedienbar ist)
+fn labelled_button_tinted(ui: &mut egui::Ui, icon: Icon, text: &str, primary: bool, icon_right: bool, tint: Option<Color32>) -> Response {
     let pal = style::pal();
     let galley = ui.painter().layout_no_wrap(text.to_string(), egui::FontId::proportional(13.0), pal.text);
-    let size = vec2(galley.size().x + 38.0, ui.spacing().interact_size.y.max(24.0));
+    // Innenabstand links und rechts je 10, Symbol 14, Abstand Symbol–Text 7
+    let size = vec2(galley.size().x + 41.0, ui.spacing().interact_size.y.max(24.0));
     let (r, resp) = ui.allocate_exact_size(size, Sense::click());
     let enabled = ui.is_enabled();
     let visuals = *ui.style().interact(&resp);
@@ -293,11 +278,12 @@ fn labelled_button(ui: &mut egui::Ui, icon: Icon, text: &str, primary: bool, ico
         (visuals.weak_bg_fill, if enabled { visuals.fg_stroke.color } else { pal.text_weak })
     };
     ui.painter().rect(r, style::RADIUS as f32, fill, if primary { Stroke::NONE } else { visuals.bg_stroke }, egui::StrokeKind::Inside);
-    let (icon_x, text_x) = if icon_right { (r.right() - 15.0, r.left() + 11.0) } else { (r.left() + 15.0, r.left() + 28.0) };
-    paint(ui.painter(), Rect::from_center_size(pos2(icon_x, r.center().y), vec2(14.0, 14.0)), icon, fg);
+    let (icon_x, text_x) = if icon_right { (r.right() - 17.0, r.left() + 10.0) } else { (r.left() + 17.0, r.left() + 31.0) };
+    let icon_color = tint.filter(|_| enabled).unwrap_or(fg);
+    paint(ui.painter(), Rect::from_center_size(pos2(icon_x, r.center().y), vec2(14.0, 14.0)), icon, icon_color);
     ui.painter().galley_with_override_text_color(pos2(text_x, r.center().y - galley.size().y / 2.0), galley, fg);
     if resp.has_focus() {
-        ui.painter().rect_stroke(r, 3.0, Stroke::new(1.0, pal.accent), egui::StrokeKind::Outside);
+        ui.painter().rect_stroke(r, style::RADIUS as f32, Stroke::new(1.0, pal.accent), egui::StrokeKind::Outside);
     }
     resp
 }

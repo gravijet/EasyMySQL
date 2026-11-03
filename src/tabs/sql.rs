@@ -492,11 +492,6 @@ impl SqlTab {
                 if icons::button(ui, icon, tip).clicked() {
                     toggle = true;
                 }
-                if icons::button(ui, Icon::History, crate::i18n::text("Verlauf")).clicked() {
-                    self.show_history = true;
-                    pane = Pane::History;
-                    self.results_collapsed = false;
-                }
             });
         });
         if let Some(i) = close_set {
@@ -592,6 +587,7 @@ impl SqlTab {
                             act = Some(HistoryAct::Insert(e.sql.clone()));
                         }
                         resp.context_menu(|ui| {
+                            crate::style::menu_item_look(ui);
                             if ui.button(crate::i18n::text("In Editor einfügen")).clicked() {
                                 act = Some(HistoryAct::Insert(e.sql.clone()));
                                 ui.close();
@@ -613,37 +609,62 @@ impl SqlTab {
     }
 
     fn dialogs(&mut self, ctx: &egui::Context, cx: &mut Ctx) {
+        let pal_weak = || style::pal().text_weak;
         // Speichern unter (fuer unbenannte Abfragen)
         if let Some(name) = self.save_as.as_mut() {
             let mut ok = false;
-            let mut other = cx.project.is_none();
+            let mut other = false;
             let mut cancel = false;
-            if let Some(project) = cx.project {
-                egui::Window::new(crate::i18n::text("Speichern unter"))
-                    .collapsible(false)
-                    .resizable(false)
-                    .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-                    .show(ctx, |ui| {
-                        ui.label(crate::tr_format!("Im Projekt „{}“:", "In project “{}”:", workspace::dir_name(project)));
-                        let r = super::name_field(ui, egui::Id::new("save-as-name"), name, 260.0, true);
-                        if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                            ok = true;
-                        }
-                        ui.horizontal(|ui| {
-                            if ui.button(crate::i18n::text("Speichern")).clicked() {
+            match cx.project {
+                // Gespeichert wird immer in einem Projekt oder Ordner: erst einen waehlen, dann geht es hier weiter
+                None => {
+                    egui::Window::new(crate::i18n::text("Speichern unter"))
+                        .collapsible(false)
+                        .resizable(false)
+                        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                        .show(ctx, |ui| {
+                            ui.set_max_width(360.0);
+                            ui.label(RichText::new(crate::i18n::tr("Kein Projekt geöffnet", "No project open")).strong());
+                            ui.label(RichText::new(crate::i18n::tr("Gespeichert wird immer in einem Projekt oder Ordner. Wähle zuerst einen aus – die Abfrage bleibt dabei offen.", "Files are always saved in a project or folder. Choose one first – the query stays open.")).color(pal_weak()));
+                            ui.add_space(6.0);
+                            ui.horizontal(|ui| {
+                                if icons::primary_button(ui, Icon::Folder, crate::i18n::text("Ordner öffnen …")).clicked() {
+                                    cx.actions.push(Action::Run(Cmd::OpenFolder));
+                                }
+                                if ui.button(crate::i18n::text("Abbrechen")).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                                    cancel = true;
+                                }
+                            });
+                        });
+                }
+                Some(project) => {
+                    egui::Window::new(crate::i18n::text("Speichern unter"))
+                        .collapsible(false)
+                        .resizable(false)
+                        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                        .show(ctx, |ui| {
+                            ui.label(crate::tr_format!("Im Projekt „{}“:", "In project “{}”:", workspace::dir_name(project)));
+                            let r = super::name_field(ui, egui::Id::new("save-as-name"), name, 260.0, true);
+                            if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                                 ok = true;
                             }
-                            if ui.button(crate::i18n::text("Anderer Ort …")).clicked() {
-                                other = true;
-                            }
-                            if ui.button(crate::i18n::text("Abbrechen")).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-                                cancel = true;
-                            }
+                            ui.add_space(4.0);
+                            ui.horizontal(|ui| {
+                                if crate::widgets::primary(ui, crate::i18n::text("Speichern")).clicked() {
+                                    ok = true;
+                                }
+                                if ui.button(crate::i18n::text("Anderer Ort …")).clicked() {
+                                    other = true;
+                                }
+                                if ui.button(crate::i18n::text("Abbrechen")).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                                    cancel = true;
+                                }
+                            });
                         });
-                    });
+                }
             }
             let target = if ok {
-                match workspace::create_file(cx.project.unwrap_or(Path::new(".")), name, &self.text) {
+                match cx.project.ok_or_else(|| crate::i18n::tr("Kein Projekt geöffnet", "No project open").to_string()).and_then(|p| workspace::create_file(p, name, &self.text)) {
                     Ok(p) => Some(p),
                     Err(e) => {
                         cx.error(e);
@@ -651,7 +672,11 @@ impl SqlTab {
                     }
                 }
             } else if other {
-                let p = rfd::FileDialog::new().add_filter(crate::i18n::text("SQL-Datei"), &["sql"]).set_file_name(format!("{name}.sql")).save_file();
+                let mut dlg = rfd::FileDialog::new().add_filter(crate::i18n::text("SQL-Datei"), &["sql"]).set_file_name(format!("{name}.sql"));
+                if let Some(p) = cx.project {
+                    dlg = dlg.set_directory(p);
+                }
+                let p = dlg.save_file();
                 if p.is_none() {
                     cancel = true;
                 }
@@ -753,6 +778,10 @@ impl TabView for SqlTab {
 
     fn busy(&self) -> bool {
         self.job.is_some()
+    }
+
+    fn runnable(&self) -> bool {
+        true
     }
 
     fn execute(&mut self, cx: &mut Ctx) {
@@ -884,7 +913,7 @@ impl TabView for SqlTab {
                 self.set_database(d);
             }
             ui.add_enabled_ui(self.job.is_none(), |ui| {
-                if icons::primary_button(ui, Icon::Play, crate::i18n::text("Ausführen"))
+                if icons::run_button(ui, crate::i18n::text("Ausführen"))
                     .on_hover_text(crate::tr_format!("Datei oder Markierung ausführen ({})", "Run file or selection ({})", crate::keymap::text(Cmd::RunAll)))
                     .clicked()
                 {
@@ -917,8 +946,14 @@ impl TabView for SqlTab {
                     self.fix_all(cx);
                 }
             }
+            if icons::button(ui, Icon::History, crate::i18n::text("Verlauf")).clicked() {
+                self.show_history = !self.show_history || self.pane != Pane::History;
+                self.pane = if self.show_history { Pane::History } else { Pane::Messages };
+                self.results_collapsed = false;
+            }
             let more = icons::button(ui, Icon::More, crate::i18n::text("Weitere"));
             egui::Popup::menu(&more).show(|ui| {
+                crate::style::menu_item_look(ui);
                 if ui.button(crate::i18n::text("Speichern unter …")).clicked() {
                     self.save_as = Some(self.file.as_ref().and_then(|f| f.file_stem()).map(|s| s.to_string_lossy().into_owned()).unwrap_or(crate::i18n::text("Neue Abfrage").into()));
                     ui.close();
@@ -946,29 +981,26 @@ impl TabView for SqlTab {
         }
         // Ergebnisbereich unten (Hoehe verstellbar), Editor darueber
         // Das Ergebnisfenster laesst sich bis auf die Kopfzeile herunterziehen oder mit dem Pfeil einklappen
-        let total = ui.available_height();
-        let panel = if self.results_collapsed {
-            egui::Panel::bottom(self.editor.id.with("results-collapsed")).resizable(false).exact_size(RESULTS_HEADER)
-        } else {
-            egui::Panel::bottom(self.editor.id.with("results"))
-                .resizable(true)
-                .default_size(total * 0.38)
-                .min_size(RESULTS_HEADER)
-                .max_size((total - 90.0).max(RESULTS_HEADER))
-        };
+        // Unten nur dann ein Ergebnisbereich, wenn es etwas zu zeigen gibt (sonst gehoert der Platz dem Editor)
+        let has_output = !self.results.is_empty() || self.show_history || self.job.is_some() || self.note.is_some();
         let mut hist_act = None;
-        // Zwischen Editor und Ausgabe liegt eine Luecke (zugleich der Griff zum Verstellen); die Ausgabe ist eine eigene Karte
-        panel.frame(egui::Frame::new().inner_margin(egui::Margin { left: 0, right: 0, top: 8, bottom: 0 })).show(ui, |ui| {
-            egui::Frame::new()
-                .fill(pal.bg)
-                .stroke(egui::Stroke::new(1.0, pal.border))
-                .corner_radius(style::RADIUS + 1)
-                .inner_margin(egui::Margin::symmetric(8, 6))
-                .show(ui, |ui| {
-                    ui.set_min_size(ui.available_size());
-                    hist_act = self.results_ui(ui, font_row, cx.history);
-                });
-        });
+        if has_output {
+            let total = ui.available_height();
+            let panel = if self.results_collapsed {
+                egui::Panel::bottom(self.editor.id.with("results-collapsed")).resizable(false).exact_size(RESULTS_HEADER)
+            } else {
+                egui::Panel::bottom(self.editor.id.with("results"))
+                    .resizable(true)
+                    .default_size(total * 0.38)
+                    .min_size(RESULTS_HEADER)
+                    .max_size((total - 90.0).max(RESULTS_HEADER))
+            };
+            // Trennlinie zwischen Editor und Ausgabe ist zugleich der Griff zum Verstellen
+            panel.show_separator_line(true).frame(egui::Frame::new().inner_margin(egui::Margin { left: 0, right: 0, top: 6, bottom: 0 })).show(ui, |ui| {
+                ui.set_min_size(ui.available_size());
+                hist_act = self.results_ui(ui, font_row, cx.history);
+            });
+        }
         match hist_act {
             Some(HistoryAct::Insert(sql)) => {
                 if !self.text.is_empty() && !self.text.ends_with('\n') {

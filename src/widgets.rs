@@ -7,7 +7,7 @@ use eframe::egui::{self, Color32, FontId, Frame, Margin, Rect, Response, Sense, 
 /// Kartenflaeche fuer zusammengehoerige Einstellungen
 pub fn card() -> Frame {
     let p = style::pal();
-    Frame::new().fill(if p.dark { Color32::from_rgb(0x22, 0x25, 0x2C) } else { Color32::from_rgb(0xF7, 0xF8, 0xFB) }).stroke(Stroke::new(1.0, p.border)).corner_radius(style::PANEL_RADIUS - 2).inner_margin(Margin::symmetric(18, 14))
+    Frame::new().fill(if p.dark { Color32::from_rgb(0x22, 0x25, 0x2C) } else { Color32::from_rgb(0xF7, 0xF8, 0xFB) }).stroke(Stroke::new(1.0, p.border)).corner_radius(style::PANEL_RADIUS).inner_margin(Margin::symmetric(18, 14))
 }
 
 /// Ankreuzfeld: abgerundetes Quadrat, bei Haken in Akzentfarbe. Beschriftung rechts, mittig zur Zeile.
@@ -26,18 +26,18 @@ pub fn check(ui: &mut egui::Ui, on: &mut bool, label: impl Into<egui::WidgetText
     let b = Rect::from_min_size(pos2(rect.left(), rect.center().y - box_s / 2.0), vec2(box_s, box_s));
     let painter = ui.painter();
     if *on {
-        painter.rect_filled(b, 5.0, if resp.hovered() { p.accent.lerp_to_gamma(Color32::WHITE, 0.12) } else { p.accent });
+        painter.rect_filled(b, 3.5, if resp.hovered() { p.accent.lerp_to_gamma(Color32::WHITE, 0.12) } else { p.accent });
         icons::paint(painter, b.shrink(2.5), Icon::Check, Color32::WHITE);
     } else {
         let edge = if resp.hovered() { p.text_weak } else if p.dark { Color32::from_gray(0x55) } else { Color32::from_gray(0xB0) };
-        painter.rect(b, 5.0, if p.dark { Color32::from_rgb(0x14, 0x16, 0x1A) } else { Color32::WHITE }, Stroke::new(1.2, edge), StrokeKind::Inside);
+        painter.rect(b, 3.5, if p.dark { Color32::from_rgb(0x14, 0x16, 0x1A) } else { Color32::WHITE }, Stroke::new(1.0, edge), StrokeKind::Inside);
     }
     if has_label {
         let color = if ui.is_enabled() { p.text } else { p.text_weak };
         ui.painter().galley(pos2(b.right() + gap, rect.center().y - galley.size().y / 2.0), galley, color);
     }
     if resp.has_focus() {
-        ui.painter().rect_stroke(b.expand(2.0), 6.0, Stroke::new(1.0, p.accent), StrokeKind::Outside);
+        ui.painter().rect_stroke(b.expand(2.0), 5.0, Stroke::new(1.5, p.accent.gamma_multiply(0.7)), StrokeKind::Outside);
     }
     resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Checkbox, ui.is_enabled(), *on, ""));
     resp
@@ -78,9 +78,10 @@ pub fn segmented<T: PartialEq + Clone>(ui: &mut egui::Ui, value: &mut T, items: 
     let galleys: Vec<_> = items.iter().map(|(_, l)| ui.painter().layout_no_wrap(l.to_string(), font.clone(), p.text)).collect();
     let widths: Vec<f32> = galleys.iter().map(|g| g.size().x + 24.0).collect();
     let total: f32 = widths.iter().sum::<f32>() + 4.0;
-    let (rect, _) = ui.allocate_exact_size(vec2(total, 26.0), Sense::hover());
-    let back = if p.dark { Color32::from_gray(0x2F) } else { Color32::from_gray(0xE8) };
-    ui.painter().rect_filled(rect, 6.0, back);
+    let (rect, _) = ui.allocate_exact_size(vec2(total, 28.0), Sense::hover());
+    // Wie die Segmentschalter in IntelliJ: umrandete Leiste, gewaehltes Segment als erhabene Flaeche
+    let (back, raised) = if p.dark { (Color32::from_rgb(0x14, 0x16, 0x1A), Color32::from_rgb(0x36, 0x3B, 0x47)) } else { (Color32::from_rgb(0xE6, 0xE9, 0xEF), Color32::WHITE) };
+    ui.painter().rect(rect, style::RADIUS as f32 + 1.0, back, Stroke::new(1.0, p.border), StrokeKind::Inside);
     let mut changed = false;
     let mut x = rect.left() + 2.0;
     for (((v, label), g), w) in items.iter().zip(galleys).zip(&widths) {
@@ -88,12 +89,12 @@ pub fn segmented<T: PartialEq + Clone>(ui: &mut egui::Ui, value: &mut T, items: 
         let resp = ui.interact(seg, ui.id().with(label), Sense::click());
         let selected = value == v;
         if selected {
-            ui.painter().rect_filled(seg, 5.0, p.accent);
+            ui.painter().rect(seg, style::RADIUS as f32 - 1.0, raised, Stroke::new(1.0, if p.dark { Color32::from_rgb(0x45, 0x4B, 0x57) } else { p.border }), StrokeKind::Inside);
         } else if resp.hovered() {
-            ui.painter().rect_filled(seg, 5.0, p.hover);
+            ui.painter().rect_filled(seg, style::RADIUS as f32 - 1.0, p.hover);
         }
-        let color = if selected { Color32::WHITE } else { p.text };
-        ui.painter().galley(pos2(seg.center().x - g.size().x / 2.0, seg.center().y - g.size().y / 2.0), g, color);
+        let color = if selected { p.text } else { p.text_weak };
+        ui.painter().galley_with_override_text_color(pos2(seg.center().x - g.size().x / 2.0, seg.center().y - g.size().y / 2.0), g, color);
         if resp.clicked() && !selected {
             *value = v.clone();
             changed = true;
@@ -143,6 +144,49 @@ pub fn combo(id: impl std::hash::Hash + std::fmt::Debug) -> egui::ComboBox {
     })
 }
 
+
+/// Schieberegler wie in IntelliJ IDEA: schmale Spur, gefuellt in Akzentfarbe, kleiner runder Griff;
+/// daneben das Zahlenfeld. `step`: Raster (0 = stufenlos).
+pub fn slider<N: egui::emath::Numeric>(ui: &mut egui::Ui, value: &mut N, range: std::ops::RangeInclusive<N>, step: f64, suffix: &str) -> Response {
+    let p = style::pal();
+    let (lo, hi) = (range.start().to_f64(), range.end().to_f64());
+    let w = ui.spacing().slider_width;
+    let (r, mut resp) = ui.allocate_exact_size(vec2(w, CONTROL_H), Sense::click_and_drag());
+    let (x0, x1) = (r.left() + 7.0, r.right() - 7.0);
+    if let Some(pos) = resp.interact_pointer_pos()
+        && (resp.dragged() || resp.clicked())
+    {
+        let t = ((pos.x - x0) / (x1 - x0)).clamp(0.0, 1.0) as f64;
+        let mut v = lo + t * (hi - lo);
+        if step > 0.0 {
+            v = lo + ((v - lo) / step).round() * step;
+        }
+        let v = N::from_f64(v.clamp(lo, hi));
+        if v.to_f64() != value.to_f64() {
+            *value = v;
+            resp.mark_changed();
+        }
+    }
+    let t = if hi > lo { ((value.to_f64() - lo) / (hi - lo)).clamp(0.0, 1.0) as f32 } else { 0.0 };
+    let cy = r.center().y;
+    let kx = x0 + t * (x1 - x0);
+    let rail = Rect::from_min_max(pos2(x0, cy - 2.0), pos2(x1, cy + 2.0));
+    let painter = ui.painter();
+    painter.rect_filled(rail, 2.0, if p.dark { Color32::from_gray(0x3A) } else { Color32::from_gray(0xD4) });
+    painter.rect_filled(Rect::from_min_max(rail.min, pos2(kx, rail.max.y)), 2.0, p.accent);
+    let hot = resp.hovered() || resp.dragged();
+    painter.circle(pos2(kx, cy), if hot { 7.5 } else { 7.0 }, Color32::WHITE, Stroke::new(if hot { 2.0 } else { 1.5 }, p.accent));
+    if resp.has_focus() {
+        painter.circle_stroke(pos2(kx, cy), 10.0, Stroke::new(1.0, p.accent.gamma_multiply(0.6)));
+    }
+    let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+    let mut dv = egui::DragValue::new(value).range(range).suffix(suffix);
+    if step > 0.0 {
+        dv = dv.speed(step).fixed_decimals(if step.fract() == 0.0 { 0 } else { 2 });
+    }
+    let num = ui.add_sized([if suffix.len() > 2 { 78.0 } else { 70.0 }, CONTROL_H], dv);
+    resp | num
+}
 
 /// Hervorgehobene Hauptaktion nur mit Text (Akzentfarbe, weisse Schrift)
 pub fn primary(ui: &mut egui::Ui, text: &str) -> Response {
@@ -227,7 +271,7 @@ pub fn chips<T: PartialEq + Clone>(ui: &mut egui::Ui, value: &mut T, items: &[(T
             let galley = ui.painter().layout_no_wrap(label.clone(), FontId::proportional(13.0), p.text);
             let (r, resp) = ui.allocate_exact_size(vec2(galley.size().x + 26.0, CONTROL_H), Sense::click());
             let (fill, fg, stroke) = if selected {
-                (p.accent, Color32::WHITE, Stroke::NONE)
+                (p.selection, p.text, Stroke::new(1.0, p.accent))
             } else if resp.hovered() {
                 (p.hover, p.text, Stroke::new(1.0, p.border))
             } else {

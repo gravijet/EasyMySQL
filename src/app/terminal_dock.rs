@@ -114,8 +114,8 @@ impl EasyApp {
         let mut new_profile: Option<Option<Profile>> = None;
         let mut close: Option<usize> = None;
         let mut hide = false;
-        let frame = egui::Frame::new().fill(pal.face).inner_margin(egui::Margin { left: 4, right: 8, top: 0, bottom: 8 });
-        egui::Panel::bottom("terminal-dock").resizable(true).show_separator_line(false).default_size(280.0).min_size(110.0).frame(frame).show(ui, |ui| {
+        let frame = egui::Frame::new().fill(pal.bg);
+        egui::Panel::bottom("terminal-dock").resizable(true).show_separator_line(true).default_size(280.0).min_size(110.0).frame(frame).show(ui, |ui| {
           style::panel_card(ui, pal.bg, egui::Margin::symmetric(8, 6), |ui| {
             // Kopfzeile: Registerkarten links, Aktionen rechts
             let (bar, _) = ui.allocate_exact_size(vec2(ui.available_width(), 28.0), Sense::hover());
@@ -170,6 +170,7 @@ impl EasyApp {
             }
             let more = icons::button(&mut right, Icon::ChevronDown, crate::i18n::text("Shell wählen"));
             egui::Popup::menu(&more).show(|ui| {
+                crate::style::menu_item_look(ui);
                 for p in &profiles {
                     if ui.button(&p.name).clicked() {
                         new_profile = Some(Some(p.clone()));

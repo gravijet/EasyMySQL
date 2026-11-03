@@ -1,4 +1,4 @@
-// Aussehen: dunkles Design im Stil von Visual Studio Code (Standard) oder helles Standard-Design.
+// Aussehen: dunkles (Standard) oder helles Design; Aufbau wie IntelliJ IDEA, flache Flaechen mit feinen Trennlinien.
 
 use eframe::egui::{
     self, Color32, CornerRadius, FontData, FontDefinitions, FontFamily, FontId, Margin, Shadow,
@@ -161,9 +161,9 @@ pub static LIGHT_PAL: Pal = Pal {
 };
 
 /// Grundradius der Bedienelemente (Schaltflaechen, Eingabefelder, Listeneintraege)
-pub const RADIUS: u8 = 7;
+pub const RADIUS: u8 = 5;
 /// Radius der grossen Flaechen (Seitenleiste, Inhalt, Karten)
-pub const PANEL_RADIUS: u8 = 12;
+pub const PANEL_RADIUS: u8 = 8;
 
 static DARK: AtomicBool = AtomicBool::new(true);
 
@@ -215,29 +215,30 @@ pub fn set_theme(ctx: &egui::Context, dark: bool) {
         .into();
         let sp = &mut style.spacing;
         sp.item_spacing = egui::vec2(8.0, 6.0);
-        sp.button_padding = egui::vec2(14.0, 5.0);
+        sp.button_padding = egui::vec2(12.0, 4.0);
         sp.interact_size.y = 28.0;
         sp.icon_width = 16.0;
         sp.icon_width_inner = 8.0;
         sp.icon_spacing = 8.0;
         sp.slider_width = 200.0;
         sp.slider_rail_height = 4.0;
-        sp.window_margin = Margin::same(14);
-        sp.menu_margin = Margin::same(6);
-        // Schlanke Bildlaufleisten wie in Visual Studio Code: dezent, ueber dem Inhalt, beim Darueberfahren breiter
+        sp.window_margin = Margin::same(16);
+        sp.menu_margin = Margin::same(5);
+        sp.menu_spacing = 4.0;
+        // Schlanke Bildlaufleisten wie in IntelliJ IDEA: dezent, ueber dem Inhalt, beim Darueberfahren breiter
         sp.scroll = egui::style::ScrollStyle {
             floating: true,
             bar_width: 10.0,
-            floating_width: 6.0,
-            floating_allocated_width: 6.0,
+            floating_width: 7.0,
+            floating_allocated_width: 7.0,
             handle_min_length: 28.0,
             foreground_color: true,
             dormant_background_opacity: 0.0,
             active_background_opacity: 0.0,
-            interact_background_opacity: 0.1,
-            dormant_handle_opacity: 0.3,
-            active_handle_opacity: 0.5,
-            interact_handle_opacity: 0.75,
+            interact_background_opacity: 0.08,
+            dormant_handle_opacity: 0.28,
+            active_handle_opacity: 0.45,
+            interact_handle_opacity: 0.7,
             ..egui::style::ScrollStyle::solid()
         };
         sp.combo_width = 160.0;
@@ -250,16 +251,17 @@ pub fn set_theme(ctx: &egui::Context, dark: bool) {
 fn visuals(p: &Pal) -> Visuals {
     let mut v = if p.dark { Visuals::dark() } else { Visuals::light() };
     let r = CornerRadius::same(RADIUS);
-    v.window_corner_radius = CornerRadius::same(12);
-    v.menu_corner_radius = CornerRadius::same(10);
+    v.window_corner_radius = CornerRadius::same(10);
+    v.menu_corner_radius = CornerRadius::same(8);
     v.slider_trailing_fill = true;
     v.handle_shape = egui::style::HandleShape::Circle;
-    v.window_shadow = Shadow { offset: [0, 8], blur: 24, spread: 0, color: Color32::from_black_alpha(if p.dark { 150 } else { 46 }) };
-    v.popup_shadow = Shadow { offset: [0, 6], blur: 22, spread: 0, color: Color32::from_black_alpha(if p.dark { 90 } else { 30 }) };
+    v.window_shadow = Shadow { offset: [0, 10], blur: 32, spread: 0, color: Color32::from_black_alpha(if p.dark { 120 } else { 40 }) };
+    v.popup_shadow = Shadow { offset: [0, 4], blur: 16, spread: 0, color: Color32::from_black_alpha(if p.dark { 80 } else { 26 }) };
     v.window_fill = p.face_light;
     v.panel_fill = p.face;
     v.window_stroke = Stroke::new(1.0, p.border);
     v.extreme_bg_color = p.bg;
+    // Eingabefelder: im dunklen Design etwas tiefer als die Flaeche, im hellen weiss
     v.text_edit_bg_color = Some(if p.dark { rgb(0x14, 0x16, 0x1A) } else { Color32::WHITE });
     v.faint_bg_color = if p.dark { rgb(0x22, 0x25, 0x2C) } else { rgb(0xF6, 0xF8, 0xFB) };
     v.code_bg_color = p.bg;
@@ -270,31 +272,32 @@ fn visuals(p: &Pal) -> Visuals {
     v.window_highlight_topmost = false;
     v.striped = false;
     v.override_text_color = Some(p.text);
+    v.weak_text_color = Some(p.text_weak);
+    v.widgets.noninteractive.fg_stroke = Stroke::new(1.0, p.text);
 
     let w = &mut v.widgets;
-    // Flache Schaltflaechen: dunkles Grau, beim Darueberfahren heller, beim Druecken blau (wie die Schaltflaechen in VS Code)
+    // Schaltflaechen wie in IntelliJ: ruhige Flaeche mit feinem Rand, beim Darueberfahren heller
     let (btn, btn_hover, btn_active) = if p.dark {
-        (rgb(0x2B, 0x2F, 0x38), rgb(0x36, 0x3B, 0x47), rgb(0x2A, 0x55, 0xA8))
+        (rgb(0x2B, 0x2F, 0x38), rgb(0x36, 0x3B, 0x47), rgb(0x40, 0x46, 0x53))
     } else {
-        (rgb(0xE6, 0xE9, 0xEF), rgb(0xDA, 0xDF, 0xE8), rgb(0xBC, 0xD3, 0xF7))
+        (rgb(0xFF, 0xFF, 0xFF), rgb(0xF0, 0xF2, 0xF6), rgb(0xE3, 0xE7, 0xEE))
     };
-    // Rand der Eingabefelder und Haken: im hellen Design sichtbar, im dunklen unauffaellig
-    let edge = if p.dark { Stroke::new(1.0, rgb(0x37, 0x3C, 0x47)) } else { Stroke::new(1.0, rgb(0xC9, 0xCF, 0xDA)) };
+    let edge = Stroke::new(1.0, if p.dark { rgb(0x37, 0x3C, 0x47) } else { rgb(0xC9, 0xCF, 0xDA) });
+    let edge_hover = Stroke::new(1.0, if p.dark { rgb(0x45, 0x4B, 0x57) } else { rgb(0xAE, 0xB6, 0xC4) });
     w.noninteractive.bg_fill = p.face;
     w.noninteractive.weak_bg_fill = p.face;
     w.noninteractive.bg_stroke = Stroke::new(1.0, p.border);
-    w.noninteractive.fg_stroke = Stroke::new(1.0, p.text);
     w.noninteractive.corner_radius = r;
     for (ws, fill, stroke) in [
         (&mut w.inactive, btn, edge),
-        (&mut w.hovered, btn_hover, edge),
+        (&mut w.hovered, btn_hover, edge_hover),
         (&mut w.active, btn_active, Stroke::new(1.0, p.accent)),
-        (&mut w.open, btn_hover, edge),
+        (&mut w.open, btn_hover, Stroke::new(1.0, p.accent)),
     ] {
         ws.bg_fill = fill;
         ws.weak_bg_fill = fill;
         ws.bg_stroke = stroke;
-        ws.fg_stroke = Stroke::new(1.0, if p.dark { rgb(0xE0, 0xE0, 0xE0) } else { p.text });
+        ws.fg_stroke = Stroke::new(1.0, p.text);
         ws.corner_radius = r;
         ws.expansion = 0.0;
     }
@@ -304,31 +307,40 @@ fn visuals(p: &Pal) -> Visuals {
 /// Einträge in Menüs: mehr Innenabstand, beim Darüberfahren eine abgerundete Fläche in der Auswahlfarbe
 pub fn menu_item_look(ui: &mut egui::Ui) {
     let p = pal();
-    ui.spacing_mut().button_padding = egui::vec2(10.0, 6.0);
+    // Kompakte Eintraege wie in IntelliJ IDEA (26 px hoch, kaum Abstand dazwischen)
+    ui.spacing_mut().button_padding = egui::vec2(10.0, 4.0);
+    ui.spacing_mut().interact_size.y = 26.0;
+    ui.spacing_mut().item_spacing.y = 1.0;
     let w = &mut ui.visuals_mut().widgets;
     w.hovered.weak_bg_fill = p.selection;
     w.hovered.bg_fill = p.selection;
+    w.hovered.bg_stroke = Stroke::NONE;
     w.hovered.fg_stroke = Stroke::new(1.0, if p.dark { Color32::WHITE } else { p.text });
-    w.active.weak_bg_fill = p.selection.gamma_multiply(1.25);
-    w.active.bg_fill = p.selection.gamma_multiply(1.25);
+    w.active.weak_bg_fill = p.selection;
+    w.active.bg_fill = p.selection;
+    w.active.bg_stroke = Stroke::NONE;
+    w.open.weak_bg_fill = p.selection;
+    w.open.bg_fill = p.selection;
+    w.open.bg_stroke = Stroke::NONE;
+    w.inactive.bg_stroke = Stroke::NONE;
 }
 
 /// Umrandeter Inhaltsbereich (wie ein Listenfeld).
 pub fn sunken_frame() -> egui::Frame {
-    egui::Frame::new().fill(pal().bg).stroke(Stroke::new(1.0, pal().border)).corner_radius(CornerRadius::same(RADIUS + 3)).inner_margin(Margin::same(3))
+    egui::Frame::new().fill(pal().bg).stroke(Stroke::new(1.0, pal().border)).corner_radius(CornerRadius::same(RADIUS)).inner_margin(Margin::same(3))
 }
 
-/// Abgerundete Flaeche, die genau den freien Platz fuellt – unabhaengig davon, wie gross der Inhalt
+/// Flache Flaeche, die genau den freien Platz fuellt – unabhaengig davon, wie gross der Inhalt
 /// ist (zu breiter Inhalt wird abgeschnitten statt die Flaeche zu verbreitern).
 pub fn panel_card(ui: &mut egui::Ui, fill: Color32, margin: Margin, add: impl FnOnce(&mut egui::Ui)) {
     let outer = ui.available_rect_before_wrap();
-    ui.painter().rect(outer, CornerRadius::same(PANEL_RADIUS), fill, Stroke::new(1.0, pal().border), egui::StrokeKind::Inside);
+    ui.painter().rect_filled(outer, 0.0, fill);
     let inner = egui::Rect::from_min_max(
-        outer.min + egui::vec2(margin.left as f32 + 1.0, margin.top as f32 + 1.0),
-        outer.max - egui::vec2(margin.right as f32 + 1.0, margin.bottom as f32 + 1.0),
+        outer.min + egui::vec2(margin.left as f32, margin.top as f32),
+        outer.max - egui::vec2(margin.right as f32, margin.bottom as f32),
     );
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner).layout(egui::Layout::top_down(egui::Align::Min)));
-    child.set_clip_rect(outer.shrink(1.0).intersect(ui.clip_rect()));
+    child.set_clip_rect(outer.intersect(ui.clip_rect()));
     add(&mut child);
     ui.advance_cursor_after_rect(outer);
 }

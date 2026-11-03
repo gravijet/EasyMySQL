@@ -81,8 +81,8 @@ impl ImageView {
         let Some(rx) = &self.rx else { return };
         match rx.try_recv() {
             Ok(Ok(d)) => {
-                // Kleine Bilder (Symbole, Pixelgrafik) ohne Glaettung zeigen
-                let opts = if d.orig[0].max(d.orig[1]) <= 256 { TextureOptions::NEAREST } else { TextureOptions::LINEAR };
+                // Immer weich filtern: auch kleine Bilder sollen beim Vergroessern nicht pixelig wirken
+                let opts = TextureOptions::LINEAR;
                 self.full = Some(ctx.load_texture(format!("img-{}", self.path.display()), d.full, opts));
                 self.thumb = d.thumb.map(|t| ctx.load_texture(format!("img-thumb-{}", self.path.display()), t, TextureOptions::LINEAR));
                 self.orig = vec2(d.orig[0] as f32, d.orig[1] as f32);
