@@ -60,23 +60,6 @@ impl FileKind {
         }
     }
 
-    fn label(self) -> &'static str {
-        match self {
-            FileKind::Sql => crate::i18n::tr("SQL-Abfrage", "SQL query"),
-            FileKind::Java => crate::i18n::tr("Java-Klasse", "Java class"),
-            FileKind::Python => crate::i18n::tr("Python-Skript", "Python script"),
-            FileKind::JavaScript => "JavaScript (Node.js)",
-            FileKind::TypeScript => "TypeScript (Node.js)",
-            FileKind::Markdown => crate::i18n::tr("Notiz (Markdown)", "Note (Markdown)"),
-            FileKind::Text => "Text",
-            FileKind::Json => "JSON",
-            FileKind::Csv => crate::i18n::tr("Tabelle (CSV)", "Table (CSV)"),
-            FileKind::Xml => "XML",
-            FileKind::Properties => crate::i18n::tr("Einstellungen (.properties)", "Settings (.properties)"),
-            FileKind::Other => crate::i18n::tr("Andere Endung …", "Other extension …"),
-        }
-    }
-
     fn icon(self) -> Icon {
         match self {
             FileKind::Sql => Icon::FileCode,
@@ -150,7 +133,7 @@ impl ScriptKind {
 }
 
 impl JavaKind {
-    const ALL: [JavaKind; 6] = [JavaKind::Class, JavaKind::Main, JavaKind::Database, JavaKind::Record, JavaKind::Interface, JavaKind::Enum];
+    const ALL: [JavaKind; 6] = [JavaKind::Database, JavaKind::Class, JavaKind::Main, JavaKind::Record, JavaKind::Interface, JavaKind::Enum];
 
     fn label(self) -> &'static str {
         match self {
@@ -166,52 +149,72 @@ impl JavaKind {
 
 pub struct NewFile {
     pub dir: PathBuf,
+    /// Was getippt wurde: der ganze Dateiname, meist mit Endung ("Main.java", "notizen.md", ".gitignore")
     pub name: String,
-    pub kind: FileKind,
-    /// Endung bei `FileKind::Other`
-    pub other_ext: String,
+    /// Art, wenn keine Endung getippt wurde (passend zum Ordner oder zuletzt benutzt)
+    pub fallback: FileKind,
     pub java: JavaKind,
     pub script: ScriptKind,
-    /// Erstes Bild: Art und Namen vorschlagen
+    /// Erstes Bild: Art vorschlagen
     ready: bool,
 }
 
 impl NewFile {
     pub fn new(dir: PathBuf) -> Self {
-        Self { dir, name: String::new(), kind: FileKind::Sql, other_ext: String::new(), java: JavaKind::Class, script: ScriptKind::Database, ready: false }
+        Self { dir, name: String::new(), fallback: FileKind::Sql, java: JavaKind::Database, script: ScriptKind::Database, ready: false }
     }
 
-    fn ext(&self) -> String {
-        if self.kind == FileKind::Other { self.other_ext.trim().trim_start_matches('.').to_string() } else { self.kind.ext().to_string() }
+    /// Getippte Endung (ohne Punkt) und der Name davor. Eine Endung braucht einen Namen davor und Zeichen danach;
+    /// ".gitignore" ist ein ganzer Name.
+    fn typed_ext(&self) -> Option<(&str, &str)> {
+        let (stem, ext) = self.name.trim().rsplit_once('.')?;
+        (!stem.is_empty() && !ext.is_empty()).then_some((stem, ext))
     }
 
-    /// Vollstaendiger Dateiname
-    pub fn file_name(&self) -> String {
-        let ext = self.ext();
-        if ext.is_empty() { self.name.trim().to_string() } else { format!("{}.{ext}", self.name.trim()) }
-    }
-
-    /// Tippt man eine bekannte Endung mit ("liste.md"), wechselt die Art und die Endung verschwindet aus dem Namen.
-    fn take_typed_extension(&mut self) {
-        if let Some((stem, ext)) = self.name.rsplit_once('.')
-            && !stem.is_empty()
-            && let Some(k) = FileKind::from_ext(ext)
-        {
-            self.kind = k;
-            self.name = stem.to_string();
+    /// Name ohne die getippte Endung
+    pub fn stem(&self) -> &str {
+        let n = self.name.trim();
+        match self.typed_ext() {
+            Some((stem, _)) => stem,
+            // "Main." beim Tippen: der Punkt gehoert noch nicht zum Namen
+            None if n.starts_with('.') => n,
+            None => n.trim_end_matches('.'),
         }
+    }
+
+    /// Art der Datei: nach der getippten Endung, ohne Endung nach `fallback`
+    pub fn kind(&self) -> FileKind {
+        match (self.typed_ext(), self.name.trim().starts_with('.')) {
+            (Some((_, e)), _) => FileKind::from_ext(e).unwrap_or(FileKind::Other),
+            (None, true) => FileKind::Other,
+            (None, false) => self.fallback,
+        }
+    }
+
+    /// Hat der Nutzer die Endung selbst getippt?
+    pub fn has_typed_ext(&self) -> bool {
+        self.typed_ext().is_some() || self.name.trim().starts_with('.')
+    }
+
+    /// Vollstaendiger Dateiname: getippt, sonst mit der Endung der Fallback-Art
+    pub fn file_name(&self) -> String {
+        if self.has_typed_ext() {
+            return self.name.trim().to_string();
+        }
+        let ext = self.fallback.ext();
+        if ext.is_empty() { self.stem().to_string() } else { format!("{}.{ext}", self.stem()) }
     }
 
     /// Fehler im Namen (oder None)
     fn problem(&self) -> Option<String> {
-        let name = self.name.trim();
+        let name = self.stem();
         if name.is_empty() {
             return Some(crate::i18n::tr("Bitte einen Namen eingeben.", "Please enter a name.").into());
         }
         if !workspace::valid_name(&self.file_name()) {
             return Some(crate::i18n::tr("Der Name darf / \\ : * ? \" < > | nicht enthalten.", "The name must not contain / \\ : * ? \" < > |.").into());
         }
-        if self.kind == FileKind::Java && !java::source::is_identifier(name) {
+        if self.kind() == FileKind::Java && !java::source::is_identifier(name) {
             return Some(crate::i18n::tr(
                 "Java-Klassen brauchen einen Namen aus Buchstaben, Ziffern und _ – ohne Leerzeichen, nicht mit einer Ziffer am Anfang.",
                 "Java classes need a name made of letters, digits and _ – no spaces, not starting with a digit.",
@@ -225,8 +228,8 @@ impl NewFile {
 
     /// Inhalt der neuen Datei und Zeile (0-basiert), in der der Cursor stehen soll
     pub fn content(&self, conn: &crate::db::ConnInfo, database: &str) -> (String, usize) {
-        let name = self.name.trim();
-        match self.kind {
+        let name = self.stem();
+        match self.kind() {
             FileKind::Java => java_template(name, self.java, package_for(&self.dir).as_deref(), self.dir.join("Database.java").is_file(), conn, database),
             FileKind::Python => {
                 let (t, l) = python::project::template(self.script.id(), dev::config().python_driver, self.dir.join("db.py").is_file());
@@ -236,6 +239,8 @@ impl NewFile {
                 let (t, l) = node::project::template(self.script.id(), dev::config().node_driver, self.dir.join("db.js").is_file());
                 (t.replace("class Name", &format!("class {}", dev::names::pascal(name))).replace("{ Name }", &format!("{{ {} }}", dev::names::pascal(name))), l)
             }
+            // Wie in einem Skript fuer die Schule: die Datenbank wird gleich zu Beginn gewaehlt
+            FileKind::Sql if !database.is_empty() => (format!("USE {};\n\n", crate::db::q(database)), 2),
             FileKind::Markdown => (format!("# {name}\n\n"), 2),
             FileKind::Json => ("{\n  \n}\n".into(), 1),
             FileKind::Xml => ("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n".into(), 1),
@@ -284,18 +289,21 @@ fn java_template(name: &str, kind: JavaKind, package: Option<&str>, has_database
         JavaKind::Database => {
             head.push_str("import java.sql.*;\n\n");
             let connected = crate::i18n::tr("Verbunden mit ", "Connected to ");
-            let open = if has_database {
-                "Database.connect()".to_string()
+            // Wie im Unterricht: Adresse, Benutzer und Passwort stehen direkt im Code (kein Treiber-Laden, keine Umgebungsvariablen)
+            let (open, method) = if has_database {
+                ("Database.connect()", String::new())
             } else {
-                // Beim Start aus EasyMySQL kommen die Verbindungsdaten aus der Umgebung, sonst gelten die Werte hier
-                format!(
-                    "DriverManager.getConnection(\n                System.getenv().getOrDefault(\"EASYMYSQL_DB_URL\", \"{}\"),\n                System.getenv().getOrDefault(\"EASYMYSQL_DB_USER\", \"{}\"),\n                System.getenv().getOrDefault(\"EASYMYSQL_DB_PASSWORD\", \"\"))",
-                    java::jdbc_url(java::driver(), &conn.host, conn.port, database),
-                    conn.user.replace('\\', "\\\\").replace('"', "\\\"")
+                (
+                    "getConnection()",
+                    format!(
+                        "\n    public static Connection getConnection() throws SQLException {{\n        return DriverManager.getConnection(\n                \"{}\",  // DB\n                \"{}\",  // User\n                \"\"  // Passwort\n        );\n    }}\n",
+                        java::jdbc_url(java::driver(), &conn.host, conn.port, database),
+                        conn.user.replace('\\', "\\\\").replace('"', "\\\"")
+                    ),
                 )
             };
             let body = format!(
-                "public class {name} {{\n    public static void main(String[] args) throws SQLException {{\n        try (Connection con = {open}) {{\n            System.out.println(\"{connected}\" + con.getMetaData().getURL());\n            \n        }}\n    }}\n}}\n"
+                "public class {name} {{\n    public static void main(String[] args) {{\n        try (Connection con = {open}) {{\n            System.out.println(\"{connected}\" + con.getMetaData().getURL());\n            \n        }} catch (SQLException e) {{\n            System.err.println(e.getMessage());\n        }}\n    }}\n{method}}}\n"
             );
             let line = body.lines().position(|l| l.trim().is_empty() && l.len() > 8).unwrap_or(3);
             (body, line)
@@ -306,13 +314,13 @@ fn java_template(name: &str, kind: JavaKind, package: Option<&str>, has_database
 }
 
 impl EasyApp {
-    /// Dialog "Neue Datei": Name, daneben fest die Endung (waehlbar); bei Java zusaetzlich die Art der Klasse.
+    /// Dialog "Neue Datei" wie in IntelliJ IDEA: ein Feld fuer den ganzen Dateinamen. Die Endung tippt man selbst
+    /// ("Main.java", "notizen.md", "seite.html"); ohne Endung wird die zum Ordner passende ergaenzt.
     pub(super) fn new_file_dialog(&mut self, ctx: &egui::Context) {
         let Some(side::ExplorerDlg::NewFile(dlg)) = self.explorer_dlg.as_mut() else { return };
         if !dlg.ready {
             dlg.ready = true;
-            dlg.kind = context_kind(&dlg.dir).unwrap_or_else(|| FileKind::from_ext(&self.settings.new_file_ext).unwrap_or(FileKind::Sql));
-            dlg.name = default_name(&dlg.dir, dlg.kind);
+            dlg.fallback = context_kind(&dlg.dir).unwrap_or_else(|| FileKind::from_ext(&self.settings.new_file_ext).unwrap_or(FileKind::Sql));
         }
         let pal = style::pal();
         let mut ok = false;
@@ -320,106 +328,73 @@ impl EasyApp {
         let name_id = egui::Id::new("new-file-name");
         let frame = egui::Frame::window(&ctx.global_style()).inner_margin(egui::Margin::same(16));
         egui::Modal::new(egui::Id::new("new-file-dlg")).frame(frame).show(ctx, |ui| {
-            ui.set_width(440.0);
+            ui.set_width(480.0);
             ui.label(RichText::new(crate::i18n::text("Neue Datei")).strong().size(15.0));
             ui.add_space(10.0);
 
-            // Name und Endung in einem Feld: links der Name, rechts fest die Endung mit Auswahl
+            // Ein Feld fuer den ganzen Namen; der Hinweis zeigt, wie man die Endung tippt
+            let hint = format!("{}.{}", default_name(&dlg.dir, dlg.fallback), dlg.fallback.ext());
+            let focused = ui.memory(|m| m.has_focus(name_id));
             let field = egui::Frame::new()
                 .fill(ui.visuals().extreme_bg_color)
-                .stroke(Stroke::new(1.0, if ui.memory(|m| m.has_focus(name_id)) { pal.accent } else { pal.border }))
+                .stroke(Stroke::new(1.0, if focused { pal.accent } else { pal.border }))
                 .corner_radius(style::RADIUS)
-                .inner_margin(Margin { left: 8, right: 3, top: 0, bottom: 0 });
-            let mut kind_changed = false;
+                .inner_margin(Margin::symmetric(8, 0));
             field.show(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.set_height(crate::widgets::CONTROL_H);
-                    ui.spacing_mut().item_spacing.x = 2.0;
-                    let ext_label = if dlg.kind == FileKind::Other { format!(".{}", dlg.other_ext.trim_start_matches('.')) } else { format!(".{}", dlg.kind.ext()) };
-                    let ext_w = ui.painter().layout_no_wrap(ext_label.clone(), egui::FontId::monospace(13.0), pal.text).size().x + 38.0;
-                    // Beim Oeffnen ist der Name markiert, damit man sofort lostippen kann
-                    if !ui.memory(|m| m.had_focus_last_frame(name_id)) && !ui.memory(|m| m.has_focus(name_id)) && !dlg.name.is_empty() {
-                        let mut st = egui::TextEdit::load_state(ui.ctx(), name_id).unwrap_or_default();
-                        st.cursor.set_char_range(Some(egui::text::CCursorRange::two(egui::text::CCursor::new(0), egui::text::CCursor::new(dlg.name.chars().count()))));
-                        st.store(ui.ctx(), name_id);
+                    let kind_icon = dlg.kind().icon();
+                    let (ir, _) = ui.allocate_exact_size(vec2(16.0, 16.0), Sense::hover());
+                    icons::paint(ui.painter(), ir, kind_icon, pal.text_weak);
+                    let r = ui.add(egui::TextEdit::singleline(&mut dlg.name).id(name_id).hint_text(hint).frame(egui::Frame::NONE).desired_width(f32::INFINITY).vertical_align(egui::Align::Center));
+                    if !ui.memory(|m| m.had_focus_last_frame(name_id)) && !focused {
                         ui.memory_mut(|m| m.request_focus(name_id));
                     }
-                    let r = ui.add(egui::TextEdit::singleline(&mut dlg.name).id(name_id).frame(egui::Frame::NONE).desired_width(ui.available_width() - ext_w).vertical_align(egui::Align::Center));
-                    if r.changed() {
-                        dlg.take_typed_extension();
-                    }
-                    let (er, resp) = ui.allocate_exact_size(vec2(ext_w - 4.0, crate::widgets::CONTROL_H - 6.0), Sense::click());
-                    ui.painter().rect_filled(er, style::RADIUS as f32 - 2.0, if resp.hovered() { pal.hover } else { pal.face_light });
-                    ui.painter().text(er.left_center() + vec2(9.0, 0.0), egui::Align2::LEFT_CENTER, &ext_label, egui::FontId::monospace(13.0), pal.text);
-                    icons::paint(ui.painter(), egui::Rect::from_center_size(er.right_center() - vec2(11.0, 0.0), vec2(12.0, 12.0)), Icon::ChevronDown, pal.text_weak);
-                    let resp = resp.on_hover_text(crate::i18n::tr("Dateiart wählen", "Choose the file type"));
-                    egui::Popup::menu(&resp).show(|ui| {
-                        style::menu_item_look(ui);
-                        for k in FileKind::ALL.into_iter().chain([FileKind::Other]) {
-                            let text = if k == FileKind::Other { k.label().to_string() } else { format!("{}   .{}", k.label(), k.ext()) };
-                            let row = ui.horizontal(|ui| {
-                                let (ir, _) = ui.allocate_exact_size(vec2(16.0, 16.0), Sense::hover());
-                                icons::paint(ui.painter(), ir, k.icon(), pal.text_weak);
-                                ui.selectable_label(dlg.kind == k, text)
-                            });
-                            if row.inner.clicked() {
-                                dlg.kind = k;
-                                kind_changed = true;
-                                ui.close();
-                            }
-                        }
-                    });
+                    let _ = r;
                 });
             });
-            if kind_changed {
-                // Den Vorschlag nur ersetzen, wenn der Name noch der alte Vorschlag ist
-                let suggested = FileKind::ALL.iter().any(|k| default_name(&dlg.dir, *k) == dlg.name) || dlg.name.is_empty();
-                if suggested && dlg.kind != FileKind::Other {
-                    dlg.name = default_name(&dlg.dir, dlg.kind);
-                }
-                ui.memory_mut(|m| m.request_focus(name_id));
-            }
-            if dlg.kind == FileKind::Other {
-                ui.add_space(6.0);
-                ui.horizontal(|ui| {
-                    ui.label(crate::i18n::tr("Endung", "Extension"));
-                    ui.add(crate::widgets::edit(&mut dlg.other_ext).desired_width(120.0).hint_text("html"));
-                });
-            }
-            if dlg.kind == FileKind::Java {
+            let kind = dlg.kind();
+            if kind == FileKind::Java {
                 ui.add_space(8.0);
                 let items: Vec<(JavaKind, &str)> = JavaKind::ALL.iter().map(|k| (*k, k.label())).collect();
                 crate::widgets::segmented(ui, &mut dlg.java, &items);
             }
-            if matches!(dlg.kind, FileKind::Python | FileKind::JavaScript | FileKind::TypeScript) {
+            if matches!(kind, FileKind::Python | FileKind::JavaScript | FileKind::TypeScript) {
                 ui.add_space(8.0);
-                let items: Vec<(ScriptKind, &str)> = ScriptKind::all(dlg.kind).iter().map(|k| (*k, k.label())).collect();
-                if !ScriptKind::all(dlg.kind).contains(&dlg.script) {
+                let items: Vec<(ScriptKind, &str)> = ScriptKind::all(kind).iter().map(|k| (*k, k.label())).collect();
+                if !ScriptKind::all(kind).contains(&dlg.script) {
                     dlg.script = ScriptKind::Database;
                 }
                 crate::widgets::segmented(ui, &mut dlg.script, &items);
             }
             ui.add_space(8.0);
-            // Hinweis: wo die Datei entsteht, bzw. was nicht stimmt
+            // Hinweis: was entsteht und wo, bzw. was nicht stimmt
             let problem = dlg.problem();
             match &problem {
                 Some(p) if !dlg.name.trim().is_empty() => {
                     ui.label(RichText::new(p).small().color(pal.error_text));
-                    if dlg.kind == FileKind::Java && !java::source::is_identifier(dlg.name.trim()) {
-                        let s = java::source::class_name_from(&dlg.name);
+                    if kind == FileKind::Java && !java::source::is_identifier(dlg.stem()) {
+                        let s = java::source::class_name_from(dlg.stem());
                         if java::source::is_identifier(&s) && ui.link(crate::tr_format!("Stattdessen „{s}“ verwenden", "Use “{s}” instead")).clicked() {
-                            dlg.name = s;
+                            dlg.name = format!("{s}.java");
                         }
                     }
                 }
                 _ => {
-                    let mut info = crate::tr_format!("Wird angelegt in {}", "Will be created in {}", workspace::dir_name(&dlg.dir));
-                    if dlg.kind == FileKind::Java {
+                    let mut info = if dlg.name.trim().is_empty() {
+                        crate::tr_format!("Dateiname mit Endung tippen, z. B. {} oder notizen.md", "Type the file name with its extension, e.g. {} or notes.md", hint_example(dlg.fallback))
+                    } else {
+                        crate::tr_format!("Wird angelegt: {} in {}", "Will be created: {} in {}", dlg.file_name(), workspace::dir_name(&dlg.dir))
+                    };
+                    if !dlg.name.trim().is_empty() && !dlg.has_typed_ext() {
+                        info.push_str(&crate::tr_format!(" · Endung .{} ergänzt, oder selbst tippen", " · extension .{} added, or type your own", dlg.fallback.ext()));
+                    }
+                    if kind == FileKind::Java && !dlg.name.trim().is_empty() {
                         match package_for(&dlg.dir) {
                             Some(p) => info.push_str(&crate::tr_format!(" · Paket {p}", " · package {p}")),
                             None => info.push_str(crate::i18n::tr(" · ohne Paket", " · no package")),
                         }
-                        if dlg.name.starts_with(|c: char| c.is_lowercase()) {
+                        if dlg.stem().starts_with(|c: char| c.is_lowercase()) {
                             info.push_str(crate::i18n::tr(" · Klassennamen beginnen üblicherweise groß", " · class names usually start with a capital letter"));
                         }
                     }
@@ -453,8 +428,9 @@ impl EasyApp {
         let Some(side::ExplorerDlg::NewFile(dlg)) = self.explorer_dlg.take() else { return };
         let conn = self.db.as_ref().map(|d| d.info.clone()).unwrap_or_else(|| self.settings.conn.clone());
         let (content, line) = dlg.content(&conn, &self.current_db);
-        if dlg.kind != FileKind::Other && self.settings.new_file_ext != dlg.kind.ext() {
-            self.settings.new_file_ext = dlg.kind.ext().to_string();
+        // Die zuletzt getippte bekannte Endung merken: sie wird ergaenzt, wenn man keine tippt
+        if dlg.has_typed_ext() && dlg.kind() != FileKind::Other && self.settings.new_file_ext != dlg.kind().ext() {
+            self.settings.new_file_ext = dlg.kind().ext().to_string();
             self.settings.save();
         }
         self.tree_scan = None;
@@ -775,6 +751,17 @@ impl EasyApp {
 }
 
 /// Freier Vorschlag fuer den Namen je nach Art
+/// Beispiel fuer die Eingabezeile, passend zum Ordner
+fn hint_example(kind: FileKind) -> &'static str {
+    match kind {
+        FileKind::Java => "Main.java",
+        FileKind::Python => "main.py",
+        FileKind::JavaScript => "index.js",
+        FileKind::TypeScript => "index.ts",
+        _ => "abfrage.sql",
+    }
+}
+
 fn default_name(dir: &Path, kind: FileKind) -> String {
     let base = match kind {
         FileKind::Sql => crate::i18n::text("Neue Abfrage"),
@@ -885,19 +872,33 @@ mod tests {
     }
 
     #[test]
-    fn typed_extension_switches_the_kind() {
+    fn the_typed_extension_decides_the_kind() {
         let mut f = NewFile::new(PathBuf::from("/tmp"));
-        f.name = "liste.md".into();
-        f.take_typed_extension();
-        assert_eq!((f.name.as_str(), f.kind), ("liste", FileKind::Markdown));
-        assert_eq!(f.file_name(), "liste.md");
-        f.name = "a.b".into();
-        f.take_typed_extension();
-        assert_eq!(f.name, "a.b", "unbekannte Endung bleibt im Namen");
-        f.kind = FileKind::Other;
-        f.other_ext = ".html".into();
-        f.name = "seite".into();
-        assert_eq!(f.file_name(), "seite.html");
+        f.fallback = FileKind::Java;
+        for (typed, file, kind, stem) in [
+            ("Main.java", "Main.java", FileKind::Java, "Main"),
+            ("liste.md", "liste.md", FileKind::Markdown, "liste"),
+            ("seite.html", "seite.html", FileKind::Other, "seite"),
+            ("archiv.tar.gz", "archiv.tar.gz", FileKind::Other, "archiv.tar"),
+            (".gitignore", ".gitignore", FileKind::Other, ".gitignore"),
+            ("Kunde", "Kunde.java", FileKind::Java, "Kunde"),
+            ("Kunde.", "Kunde.java", FileKind::Java, "Kunde"),
+            ("  Kunde  ", "Kunde.java", FileKind::Java, "Kunde"),
+            ("DATEN.SQL", "DATEN.SQL", FileKind::Sql, "DATEN"),
+        ] {
+            f.name = typed.into();
+            assert_eq!((f.file_name().as_str(), f.kind(), f.stem()), (file, kind, stem), "{typed:?}");
+        }
+        // Java-Pruefung gilt dem Namen ohne Endung
+        f.name = "Main.java".into();
+        assert!(f.problem().is_none());
+        f.name = "1x.java".into();
+        assert!(f.problem().is_some());
+        f.name = "mein Text.md".into();
+        assert!(f.problem().is_none());
+        // der Inhalt der Vorlage nutzt den Namen ohne Endung
+        f.name = "Kunde.java".into();
+        assert!(f.content(&crate::db::ConnInfo::default(), "").0.contains("public class Kunde {"));
     }
 
     #[test]
@@ -910,7 +911,22 @@ mod tests {
         let (t, line) = java_template("Start", JavaKind::Database, None, true, &conn, "shop");
         assert!(t.contains("Database.connect()") && t.contains("import java.sql.*;"));
         assert_eq!(t.lines().nth(line).map(str::trim), Some(""));
-        let (t, _) = java_template("Start", JavaKind::Database, None, false, &conn, "shop");
+        let (t, line) = java_template("Start", JavaKind::Database, None, false, &conn, "shop");
         assert!(t.contains("jdbc:mariadb://127.0.0.1:3306/shop?sslMode=disable"));
+        // Adresse, Benutzer und Passwort stehen im Code; kein Treiber-Laden, keine Umgebungsvariablen
+        assert!(t.contains("getConnection()") && t.contains("// User") && t.contains("// Passwort"));
+        assert!(!t.contains("forName") && !t.contains("getenv"));
+        assert_eq!(t.lines().nth(line).map(str::trim), Some(""));
+    }
+
+    #[test]
+    fn sql_files_start_with_use_and_new_java_files_default_to_the_database_class() {
+        let mut f = NewFile::new(PathBuf::from("/tmp"));
+        f.name = "abfrage.sql".into();
+        let conn = crate::db::ConnInfo::default();
+        assert_eq!(f.content(&conn, "schule"), ("USE `schule`;\n\n".to_string(), 2));
+        assert_eq!(f.content(&conn, "").0, "");
+        assert_eq!(f.java, JavaKind::Database);
+        assert_eq!(JavaKind::ALL[0], JavaKind::Database);
     }
 }
