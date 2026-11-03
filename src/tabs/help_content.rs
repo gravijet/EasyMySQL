@@ -172,7 +172,7 @@ pub const CHAPTERS: &[Chapter] = &[
                         "Die Symbole oben: neue Datei, neuer Ordner, aktualisieren, alle Ordner zuklappen, Projektmenü.",
                         "Rechtsklick auf Datei oder Ordner: umbenennen, löschen, Pfad kopieren, im Datei-Explorer zeigen.",
                         "Rechtsklick oder Doppelklick auf die freie Fläche: neue Datei oder neuer Ordner im Projekt.",
-                        "Neue Datei: links den Namen eingeben, rechts daneben steht die Endung. Ein Klick darauf wählt die Art (SQL, Java, Markdown, JSON …). Tippt man eine bekannte Endung mit, etwa „liste.md“, wird sie übernommen.",
+                        "Neue Datei: den ganzen Dateinamen mit Endung tippen, wie in IntelliJ IDEA – etwa „Main.java“, „liste.md“ oder „seite.html“. Die Endung bestimmt die Art; bei Java, Python und JavaScript erscheint darunter die Vorlage (Standard: mit Datenbankverbindung im Code). Ohne Endung wird die zum Ordner passende ergänzt. SQL-Dateien beginnen mit USE der aktuellen Datenbank.",
                         "Java-Dateien bekommen gleich das passende Gerüst: Klasse, mit main, mit Datenbankverbindung, Record, Interface oder Enum – samt Paket aus dem Ordner.",
                         "Löschen verschiebt in den Ordner „.papierkorb“ im Projekt. Von dort lässt sich jede Datei zurückholen.",
                         "Die Datei der aktiven Registerkarte ist im Explorer hervorgehoben.",
