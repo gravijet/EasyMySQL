@@ -62,10 +62,16 @@ fn display(v: &str) -> String {
 /// Innenabstand links in jeder Zelle, damit der Text nicht am Rand klebt
 const PAD: f32 = 10.0;
 
-/// Trennstrich zwischen zwei Spaltenkoepfen (kurz, damit die Kopfzeile ruhig bleibt)
-fn header_divider(ui: &egui::Ui) {
+/// Feine Gitterlinien rechts und unten an einer Zelle (wie in DataGrip); `header`: Kopfzelle mit Flaeche
+fn cell_frame(ui: &egui::Ui, header: bool) {
+    let p = style::pal();
     let r = ui.max_rect();
-    ui.painter().vline(r.right() + 3.5, r.center().y - 7.0..=r.center().y + 7.0, Stroke::new(1.0, style::pal().border));
+    let line = Stroke::new(1.0, if header { p.border } else { p.border.gamma_multiply(0.6) });
+    if header {
+        ui.painter().rect_filled(r, 0.0, p.face_light);
+    }
+    ui.painter().vline(r.right() - 0.5, r.y_range(), line);
+    ui.painter().hline(r.x_range(), r.bottom() - 0.5, line);
 }
 
 /// Zeichnet die Tabelle. `editable`: Doppelklick bearbeitet eine Zelle.
@@ -86,9 +92,12 @@ pub fn show(
     let mut commit: Option<(usize, usize, Option<String>)> = None;
     let mut cancel = false;
 
-    style::sunken_frame().show(ui, |ui| {
+    style::sunken_frame().inner_margin(egui::Margin::same(1)).show(ui, |ui| {
         ui.set_min_size(ui.available_size());
         crate::tabs::page_keys(ui);
+        // Zellen ohne Zwischenraum; die Ziehgriffe der Spalten erst beim Darueberfahren zeigen
+        ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
+        ui.visuals_mut().widgets.noninteractive.bg_stroke = Stroke::NONE;
         let mut tb = TableBuilder::new(ui)
             .id_salt(id)
             .striped(true)
@@ -109,16 +118,15 @@ pub fn show(
             let w = (chars as f32 * 7.5 + 2.0 * PAD + 6.0).clamp(60.0, 340.0);
             tb = tb.column(Column::initial(w).at_least(30.0).clip(true).resizable(true));
         }
-        tb.header(30.0, |mut header| {
+        tb.header(28.0, |mut header| {
             header.col(|ui| {
-                ui.painter().rect_filled(ui.max_rect().expand2(egui::vec2(4.0, 2.0)), 0.0, style::pal().face_light);
+                cell_frame(ui, true);
                 ui.add_space(PAD);
                 ui.label(RichText::new("#").color(style::pal().text_weak));
             });
             for (ci, c) in columns.iter().enumerate() {
                 header.col(|ui| {
-                    ui.painter().rect_filled(ui.max_rect().expand2(egui::vec2(4.0, 2.0)), 0.0, style::pal().face_light);
-                    header_divider(ui);
+                    cell_frame(ui, true);
                     ui.add_space(PAD);
                     if edit != Edit::CellsAndColumns {
                         ui.label(RichText::new(c).strong());
@@ -132,6 +140,7 @@ pub fn show(
                         crate::icons::paint(ui.painter(), egui::Rect::from_center_size(egui::pos2(r.right() - 4.0, r.center().y), egui::vec2(12.0, 12.0)), crate::icons::Icon::ChevronDown, style::pal().text_weak);
                     }
                     let mut menu = |ui: &mut egui::Ui| {
+                        crate::style::menu_item_look(ui);
                         use crate::db::Move;
                         let t = crate::i18n::tr;
                         let mut item = |ui: &mut egui::Ui, label: &str, a: ColumnAction| {
@@ -170,6 +179,7 @@ pub fn show(
                 let data = &rows[r];
                 row.set_selected(state.selected == Some(r));
                 row.col(|ui| {
+                    cell_frame(ui, false);
                     ui.add_space(PAD);
                     let resp = ui.add(
                         egui::Label::new(RichText::new((r + 1).to_string()).color(style::pal().text_weak))
@@ -181,6 +191,7 @@ pub fn show(
                 });
                 for (c, val) in data.iter().enumerate() {
                     row.col(|ui| {
+                        cell_frame(ui, false);
                         ui.add_space(PAD);
                         if let Some((er, ec, text, focused)) = state.editing.as_mut()
                             && *er == r && *ec == c {
@@ -229,6 +240,7 @@ pub fn show(
                                 resp.clone().on_hover_text(v.chars().take(2000).collect::<String>());
                             }
                         resp.context_menu(|ui| {
+                            crate::style::menu_item_look(ui);
                             state.selected = Some(r);
                             if ui.button(crate::i18n::text("Wert kopieren")).clicked() {
                                 ui.ctx().copy_text(val.clone().unwrap_or("NULL".into()));
@@ -366,6 +378,7 @@ pub fn export_menu(ui: &mut egui::Ui, name: &str, columns: &[String], rows: &[Ro
     };
     let button = crate::icons::text_button(ui, crate::icons::Icon::Download, "Export");
     egui::Popup::menu(&button).show(|ui| {
+        crate::style::menu_item_look(ui);
         if ui.button(crate::i18n::text("Kopieren (für Excel)")).clicked() {
             ui.ctx().copy_text(to_tsv(columns, rows));
             ui.close();

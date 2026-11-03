@@ -168,21 +168,56 @@ fn search_files_cancellable(files: &[PathBuf], query: &str, case: bool, cancelle
 }
 
 pub(super) fn section_header(ui: &mut egui::Ui, title: &str, add_buttons: impl FnOnce(&mut egui::Ui)) {
+    // Feste Zeilenhoehe: Titel und Knoepfe stehen in jeder Ansicht auf derselben Mittellinie
     ui.horizontal(|ui| {
-        ui.add_space(10.0);
+        ui.set_min_height(30.0);
+        ui.add_space(8.0);
         ui.label(RichText::new(title).small().strong().color(style::pal().text_weak));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.add_space(4.0);
-            ui.spacing_mut().item_spacing.x = 1.0;
+            ui.add_space(2.0);
+            ui.spacing_mut().item_spacing.x = 2.0;
             add_buttons(ui);
         });
     });
 }
 
 
+/// Zeile mit Symbol und Text ueber die ganze Breite (Willkommensansicht)
+fn action_row(ui: &mut egui::Ui, icon: Icon, text: &str, detail: &str) -> egui::Response {
+    let pal = style::pal();
+    let (r, resp) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 30.0), egui::Sense::click());
+    if resp.hovered() {
+        ui.painter().rect_filled(r, style::RADIUS as f32, pal.hover);
+    }
+    let cy = r.center().y;
+    crate::icons::paint(ui.painter(), egui::Rect::from_center_size(egui::pos2(r.left() + 16.0, cy), egui::vec2(16.0, 16.0)), icon, pal.accent);
+    ui.painter().text(egui::pos2(r.left() + 34.0, cy), egui::Align2::LEFT_CENTER, text, egui::FontId::proportional(13.0), pal.text);
+    let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+    if detail.is_empty() { resp } else { resp.on_hover_text(detail) }
+}
+
+/// Zuletzt geoeffnetes Projekt: farbiges Kaestchen, Name und Ordner darunter
+fn recent_row(ui: &mut egui::Ui, p: &Path) -> egui::Response {
+    let pal = style::pal();
+    let (r, resp) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 40.0), egui::Sense::click());
+    if resp.hovered() {
+        ui.painter().rect_filled(r, style::RADIUS as f32, pal.hover);
+    }
+    let name = workspace::dir_name(p);
+    let (initials, color) = super::titlebar::project_badge(&name);
+    let b = egui::Rect::from_center_size(egui::pos2(r.left() + 20.0, r.center().y), egui::vec2(24.0, 24.0));
+    ui.painter().rect_filled(b, 6.0, color);
+    ui.painter().text(b.center() + egui::vec2(0.0, 0.5), egui::Align2::CENTER_CENTER, initials, egui::FontId::proportional(11.0), egui::Color32::WHITE);
+    let x = r.left() + 40.0;
+    let painter = ui.painter_at(r.shrink2(egui::vec2(4.0, 0.0)));
+    painter.text(egui::pos2(x, r.center().y - 8.0), egui::Align2::LEFT_CENTER, &name, egui::FontId::proportional(13.0), pal.text);
+    let dir = p.parent().map(|d| d.display().to_string()).unwrap_or_default();
+    painter.text(egui::pos2(x, r.center().y + 8.0), egui::Align2::LEFT_CENTER, dir, egui::FontId::proportional(11.0), pal.text_weak);
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(p.display().to_string())
+}
+
 impl EasyApp {
     pub(super) fn side_panel(&mut self, ui: &mut egui::Ui, actions: &mut Vec<Action>) {
-        ui.add_space(6.0);
         match self.side_view {
             SideView::Explorer => self.explorer(ui),
             SideView::Search => self.search_side(ui, actions),
@@ -203,7 +238,9 @@ impl EasyApp {
             }
             self.tree_job = None;
         }
-        if self.tree_job.is_none() && self.tree_scan.is_none_or(|t| t.elapsed().as_secs() >= 2) {
+        // Im Hintergrund (Fenster nicht aktiv) nicht laufend den ganzen Ordner lesen
+        let focused = self.was_focused;
+        if self.tree_job.is_none() && (self.tree.is_none() || focused) && self.tree_scan.is_none_or(|t| t.elapsed().as_secs() >= 3) {
             let project = p.clone();
             let (tx, rx) = std::sync::mpsc::channel();
             let ctx = CTX.lock().unwrap().clone();
@@ -224,29 +261,32 @@ impl EasyApp {
         self.rescan_tree();
         let Some(project) = self.project.clone() else {
             section_header(ui, "EXPLORER", |_| {});
-            egui::Frame::new().inner_margin(egui::Margin::symmetric(12, 8)).show(ui, |ui| {
-                ui.spacing_mut().item_spacing.y = 6.0;
-                let w = ui.available_width();
-                if ui.add_sized([w, 26.0], egui::Button::new(crate::i18n::text("Ordner öffnen"))).clicked() {
+            // Wie die Willkommensseite von IntelliJ IDEA: Aktionen als Zeilen mit Symbol, darunter die letzten Projekte
+            // Gemeinsame linke Kante: 8 px wie die Ueberschrift der Seitenleiste
+            egui::Frame::new().inner_margin(egui::Margin::symmetric(0, 2)).show(ui, |ui| {
+                ui.spacing_mut().item_spacing.y = 2.0;
+                egui::Frame::new().inner_margin(egui::Margin { left: 8, right: 8, top: 0, bottom: 0 }).show(ui, |ui| {
+                    ui.label(RichText::new(crate::i18n::tr("Gespeichert wird immer in einem Projekt oder Ordner.", "Files are always saved in a project or folder.")).small().color(style::pal().text_weak));
+                });
+                ui.add_space(6.0);
+                if action_row(ui, Icon::Folder, crate::i18n::text("Ordner öffnen"), "").clicked() {
                     self.pick_project();
                 }
-                if ui.add_sized([w, 26.0], egui::Button::new(crate::i18n::text("Neues Projekt"))).clicked() {
+                if action_row(ui, Icon::NewFolder, crate::i18n::text("Neues Projekt"), "").clicked() {
                     self.explorer_dlg = Some(ExplorerDlg::NewProject { name: String::new() });
                 }
-                if ui.add_sized([w, 26.0], egui::Button::new(crate::i18n::tr("Neues Programmierprojekt", "New coding project"))).on_hover_text("Java, Python, JavaScript").clicked() {
+                if action_row(ui, Icon::FileCode, crate::i18n::tr("Neues Programmierprojekt", "New coding project"), "Java, Python, JavaScript").clicked() {
                     self.open_project_dialog(super::create::ProjectLang::Java);
                 }
-                if ui.add_sized([w, 26.0], egui::Button::new(crate::i18n::tr("Repository klonen", "Clone repository"))).clicked() {
+                if action_row(ui, Icon::GitBranch, crate::i18n::tr("Repository klonen", "Clone repository"), "").clicked() {
                     self.open_clone_dialog();
                 }
-                if !self.settings.recent.is_empty() {
-                    ui.add_space(8.0);
-                    ui.label(RichText::new(crate::i18n::text("Zuletzt geöffnet")).small().color(style::pal().text_weak));
-                    for p in self.settings.recent.clone() {
-                        if !p.is_dir() {
-                            continue;
-                        }
-                        if ui.link(workspace::dir_name(&p)).on_hover_text(p.display().to_string()).clicked() {
+                let recent: Vec<PathBuf> = self.settings.recent.iter().filter(|p| p.is_dir()).cloned().collect();
+                if !recent.is_empty() {
+                    ui.add_space(10.0);
+                    section_header(ui, &crate::i18n::text("Zuletzt geöffnet").to_uppercase(), |_| {});
+                    for p in recent {
+                        if recent_row(ui, &p).clicked() {
                             self.switch_project(Some(p));
                         }
                     }
@@ -276,6 +316,7 @@ impl EasyApp {
         });
         if let Some(r) = &menu_resp {
             egui::Popup::menu(r).show(|ui| {
+                crate::style::menu_item_look(ui);
                 if ui.button(crate::i18n::text("Ordner öffnen …")).clicked() {
                     ui.close();
                     self.pick_project();
@@ -348,6 +389,7 @@ impl EasyApp {
                 io.dlg = Some(ExplorerDlg::NewFile(Box::new(super::create::NewFile::new(tree.path.clone()))));
             }
             rest.context_menu(|ui| {
+                crate::style::menu_item_look(ui);
                 if ui.button(crate::i18n::text("Neue Datei …")).clicked() {
                     io.dlg = Some(ExplorerDlg::NewFile(Box::new(super::create::NewFile::new(tree.path.clone()))));
                     ui.close();
@@ -518,6 +560,7 @@ impl EasyApp {
                     actions.push(Action::OpenSql { db: Some(e.db.clone()), sql: e.sql.clone() + ";\n", run: false });
                 }
                 resp.context_menu(|ui| {
+                    crate::style::menu_item_look(ui);
                     if ui.button(crate::i18n::text("In neuer Abfrage öffnen")).clicked() {
                         actions.push(Action::OpenSql { db: Some(e.db.clone()), sql: e.sql.clone() + ";\n", run: false });
                         ui.close();
@@ -555,7 +598,10 @@ impl EasyApp {
         if new_db {
             self.dialogs.push(Dialog::NewDatabase { name: String::new(), collation: COLLATIONS[0].into() });
         }
-        egui::Frame::new().inner_margin(egui::Margin::symmetric(8, 2)).show(ui, |ui| {
+        // Gleiche Raster wie der Dateibaum: Zeilen 22 px, Pfeil, Symbol und Text auf denselben Positionen
+        egui::Frame::new().inner_margin(egui::Margin::symmetric(6, 2)).show(ui, |ui| {
+            ui.spacing_mut().item_spacing.y = 2.0;
+            ui.spacing_mut().interact_size.y = TREE_ROW;
             self.db_tree(ui, actions);
         });
     }
@@ -625,6 +671,7 @@ impl EasyApp {
                                     actions.push(Action::OpenData { db: d.clone(), table: t.name.clone() });
                                 }
                                 hr.context_menu(|ui| {
+                                    crate::style::menu_item_look(ui);
                                     if ui.button(crate::i18n::text("Daten")).clicked() {
                                         actions.push(Action::OpenData { db: d.clone(), table: t.name.clone() });
                                         ui.close();
@@ -698,6 +745,7 @@ impl EasyApp {
                     self.current_db = d.clone();
                 }
                 hr.context_menu(|ui| {
+                    crate::style::menu_item_look(ui);
                     if ui.button(crate::i18n::text("Neue Abfrage")).clicked() {
                         actions.push(Action::OpenSql { db: Some(d.clone()), sql: String::new(), run: false });
                         ui.close();
@@ -899,12 +947,15 @@ fn tree_node<R>(ui: &mut egui::Ui, id: egui::Id, icon: Icon, tint: Color32, labe
     let row = ui.horizontal(|ui| {
         ui.set_min_height(TREE_ROW);
         ui.spacing_mut().item_spacing.x = 4.0;
+        // Der Aufklappknopf nimmt sonst die volle Hoehe der Bedienelemente (28 px)
+        ui.spacing_mut().interact_size.y = TREE_ROW;
         state.show_toggle_button(ui, move |ui, openness, resp| {
             let r = Rect::from_center_size(resp.rect.center(), vec2(14.0, 14.0));
             icons::paint(ui.painter(), r, if openness > 0.5 { Icon::ChevronDown } else { Icon::ChevronRight }, weak);
         });
         let (r, _) = ui.allocate_exact_size(vec2(16.0, 16.0), Sense::hover());
         icons::paint(ui.painter(), r, icon, tint);
+        ui.add_space(2.0);
         ui.add(egui::Label::new(label).sense(Sense::click()).selectable(false))
     });
     let label_resp = row.inner;
@@ -912,10 +963,11 @@ fn tree_node<R>(ui: &mut egui::Ui, id: egui::Id, icon: Icon, tint: Color32, labe
         ui.ctx().data_mut(|d| d.insert_temp(sel_key, id));
     }
     // Ausgewaehlte Zeile in der Auswahlfarbe, Zeile unter dem Mauszeiger dezent heller (ueber die ganze Breite)
-    let full = egui::Rect::from_min_max(egui::pos2(ui.max_rect().left() - 4.0, row.response.rect.top() - 1.0), egui::pos2(ui.max_rect().right() + 4.0, row.response.rect.bottom() + 1.0));
+    // Ueber die ganze Breite der Seitenleiste, auch bei eingerueckten Eintraegen (wie in IntelliJ IDEA)
+    let full = egui::Rect::from_min_max(egui::pos2(ui.clip_rect().left() + 8.0, row.response.rect.top() - 1.0), egui::pos2(ui.clip_rect().right() - 8.0, row.response.rect.bottom() + 1.0));
     if selected || ui.rect_contains_pointer(row.response.rect) {
         let fill = if selected { pal.selection } else { pal.hover };
-        ui.painter().set(bg, egui::epaint::RectShape::filled(full, style::RADIUS as f32 - 2.0, fill));
+        ui.painter().set(bg, egui::epaint::RectShape::filled(full, 5.0, fill));
     }
     if label_resp.clicked() {
         state.toggle(ui);
@@ -1014,6 +1066,7 @@ fn draw_node(ui: &mut egui::Ui, n: &Node, depth: usize, io: &mut TreeIo) {
             io.open = Some(n.path.clone());
         }
         resp.context_menu(|ui| {
+            crate::style::menu_item_look(ui);
             if ui.button(crate::i18n::text("Öffnen")).clicked() {
                 io.open = Some(n.path.clone());
                 ui.close();
@@ -1043,6 +1096,7 @@ fn draw_node(ui: &mut egui::Ui, n: &Node, depth: usize, io: &mut TreeIo) {
 
 fn dir_menu(resp: &egui::Response, n: &Node, dlg: &mut Option<ExplorerDlg>) {
     resp.context_menu(|ui| {
+        crate::style::menu_item_look(ui);
         if ui.button(crate::i18n::text("Neue Datei …")).clicked() {
             *dlg = Some(ExplorerDlg::NewFile(Box::new(super::create::NewFile::new(n.path.clone()))));
             ui.close();

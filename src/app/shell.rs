@@ -101,47 +101,81 @@ impl EasyApp {
     // ------------------------------------------------------------------
     // Menue
 
+    /// Eintraege fuer den Server (im Menue "Server" und im Verbindungsknopf der Leiste)
+    fn server_items(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, actions: &mut Vec<Action>, cmd: &mut Option<Cmd>) {
+        let st = self.server.state();
+        if ui.add_enabled(!st.is_running() && !st.is_busy(), egui::Button::new(crate::i18n::text("Starten"))).clicked() {
+            self.start_server(ctx);
+            ui.close();
+        }
+        if ui.add_enabled(st == State::Running { own: true }, egui::Button::new(crate::i18n::text("Stoppen"))).clicked() {
+            self.stop_server(ctx);
+            ui.close();
+        }
+        if ui.add_enabled(!st.is_busy(), egui::Button::new(crate::i18n::text("Neu starten"))).clicked() {
+            self.restart_server(ctx);
+            ui.close();
+        }
+        ui.separator();
+        for c in [Cmd::ServerLog, Cmd::Backups, Cmd::Users] {
+            if ui.add(egui::Button::new(c.label()).shortcut_text(keymap::text(c))).clicked() {
+                *cmd = Some(c);
+                ui.close();
+            }
+        }
+        ui.separator();
+        if ui.button(crate::i18n::text("Verbindung …")).clicked() {
+            actions.push(Action::OpenSettings(Some("verbindung".into())));
+            ui.close();
+        }
+    }
+
+    /// Obere Leiste wie die Hauptwerkzeugleiste von IntelliJ IDEA: Menues, Projekt und Branch links,
+    /// Suche in der Mitte, Ausfuehren, Werkzeuge, Verbindung und Fensterknoepfe rechts.
     pub(super) fn menu_bar(&mut self, ui: &mut egui::Ui, actions: &mut Vec<Action>) {
         let ctx = ui.ctx().clone();
+        let pal = style::pal();
         let mut cmd: Option<Cmd> = None;
         let item = |ui: &mut egui::Ui, text: &str, c: Cmd, cmd: &mut Option<Cmd>| {
-            style::menu_item_look(ui);
             if ui.add(egui::Button::new(text).shortcut_text(keymap::text(c))).clicked() {
                 *cmd = Some(c);
                 ui.close();
             }
         };
+        let tip_of = |c: Cmd| match keymap::text(c) {
+            k if k.is_empty() => c.label().to_string(),
+            k => format!("{} ({k})", c.label()),
+        };
         let bar_w = ui.available_width();
         let bar = Rect::from_min_size(ui.next_widget_position(), vec2(bar_w, titlebar::HEIGHT));
         titlebar::drag_area(ui, bar);
-        ui.horizontal(|ui| {
-            ui.set_min_height(titlebar::HEIGHT);
-            ui.spacing_mut().item_spacing.x = 2.0;
-            ui.spacing_mut().button_padding = vec2(11.0, 6.0);
-            // Zeichen und Name des Programms
-            {
-                let pal = style::pal();
-                let (r, _) = ui.allocate_exact_size(vec2(26.0, 26.0), Sense::hover());
-                ui.painter().rect_filled(r, 8.0, pal.accent);
-                icons::paint(ui.painter(), Rect::from_center_size(r.center(), vec2(16.0, 16.0)), Icon::Database, egui::Color32::WHITE);
+        // Duenne senkrechte Trennlinie zwischen Gruppen
+        let divider = |ui: &mut egui::Ui| {
+            let (r, _) = ui.allocate_exact_size(vec2(9.0, 18.0), Sense::hover());
+            ui.painter().vline(r.center().x, r.y_range(), Stroke::new(1.0, pal.border));
+        };
+        let mut left_end = bar.left();
+        let mut right_start = bar.right();
+        egui::MenuBar::new().ui(ui, |ui| {
+                // Volle Leistenhoehe von Anfang an: alles wird auf dieselbe Mittellinie gesetzt
+                ui.set_min_height(titlebar::HEIGHT);
+                ui.spacing_mut().item_spacing.x = 2.0;
+                // Zeichen des Programms
+                let (r, _) = ui.allocate_exact_size(vec2(22.0, 22.0), Sense::hover());
+                ui.painter().rect_filled(r, 6.0, pal.accent);
+                icons::paint(ui.painter(), Rect::from_center_size(r.center(), vec2(14.0, 14.0)), Icon::Database, egui::Color32::WHITE);
                 ui.add_space(6.0);
-                ui.label(egui::RichText::new("EasyMySQL").strong().color(pal.text));
-                ui.add_space(14.0);
-            }
-            egui::MenuBar::new().ui(ui, |ui| {
-                ui.spacing_mut().button_padding = vec2(12.0, 6.0);
-                ui.spacing_mut().item_spacing.x = 4.0;
+                ui.spacing_mut().button_padding = vec2(8.0, 5.0);
+                ui.spacing_mut().item_spacing.x = 0.0;
                 ui.menu_button(crate::i18n::text("Datei"), |ui| {
                     style::menu_item_look(ui);
                     item(ui, crate::i18n::text("Neue Abfrage"), Cmd::NewQuery, &mut cmd);
                     item(ui, crate::i18n::text("Neue Datei …"), Cmd::NewFile, &mut cmd);
+                    ui.separator();
                     item(ui, crate::i18n::text("Datei öffnen …"), Cmd::OpenFile, &mut cmd);
                     item(ui, crate::i18n::text("Ordner öffnen …"), Cmd::OpenFolder, &mut cmd);
-                    item(ui, crate::i18n::tr("Neues Java-Projekt …", "New Java project …"), Cmd::NewJavaProject, &mut cmd);
-                    item(ui, crate::i18n::tr("Neues Python-Projekt …", "New Python project …"), Cmd::NewPythonProject, &mut cmd);
-                    item(ui, crate::i18n::tr("Neues JavaScript-Projekt …", "New JavaScript project …"), Cmd::NewNodeProject, &mut cmd);
                     ui.menu_button(crate::i18n::text("Zuletzt geöffnet"), |ui| {
-                    style::menu_item_look(ui);
+                        style::menu_item_look(ui);
                         for p in self.settings.recent.clone() {
                             if ui.button(workspace::dir_name(&p)).on_hover_text(p.display().to_string()).clicked() {
                                 self.switch_project(Some(p));
@@ -150,7 +184,12 @@ impl EasyApp {
                         }
                     });
                     ui.separator();
+                    item(ui, crate::i18n::tr("Neues Java-Projekt …", "New Java project …"), Cmd::NewJavaProject, &mut cmd);
+                    item(ui, crate::i18n::tr("Neues Python-Projekt …", "New Python project …"), Cmd::NewPythonProject, &mut cmd);
+                    item(ui, crate::i18n::tr("Neues JavaScript-Projekt …", "New JavaScript project …"), Cmd::NewNodeProject, &mut cmd);
+                    ui.separator();
                     item(ui, crate::i18n::text("Speichern"), Cmd::Save, &mut cmd);
+                    item(ui, Cmd::SaveAll.label(), Cmd::SaveAll, &mut cmd);
                     item(ui, crate::i18n::text("Registerkarte schließen"), Cmd::CloseTab, &mut cmd);
                     ui.separator();
                     item(ui, crate::i18n::text("Einstellungen"), Cmd::Settings, &mut cmd);
@@ -161,6 +200,13 @@ impl EasyApp {
                 });
                 ui.menu_button(crate::i18n::text("Ansicht"), |ui| {
                     style::menu_item_look(ui);
+                    item(ui, Cmd::CommandPalette.label(), Cmd::CommandPalette, &mut cmd);
+                    item(ui, Cmd::QuickOpen.label(), Cmd::QuickOpen, &mut cmd);
+                    ui.separator();
+                    for c in [Cmd::ShowExplorer, Cmd::ShowSearch, Cmd::ShowDatabases, Cmd::ShowHistory, Cmd::ShowGit] {
+                        item(ui, c.label(), c, &mut cmd);
+                    }
+                    ui.separator();
                     item(ui, crate::i18n::text("Neues Terminal"), Cmd::NewTerminal, &mut cmd);
                     ui.separator();
                     item(ui, crate::i18n::text("Editor-Schrift vergrößern"), Cmd::FontLarger, &mut cmd);
@@ -197,40 +243,65 @@ impl EasyApp {
                 });
                 ui.menu_button("Server", |ui| {
                     style::menu_item_look(ui);
-                    let st = self.server.state();
-                    if ui.add_enabled(!st.is_running() && !st.is_busy(), egui::Button::new(crate::i18n::text("Starten"))).clicked() {
-                        self.start_server(&ctx);
-                        ui.close();
-                    }
-                    if ui.add_enabled(st == State::Running { own: true }, egui::Button::new(crate::i18n::text("Stoppen"))).clicked() {
-                        self.stop_server(&ctx);
-                        ui.close();
-                    }
-                    if ui.add_enabled(!st.is_busy(), egui::Button::new(crate::i18n::text("Neu starten"))).clicked() {
-                        self.restart_server(&ctx);
-                        ui.close();
-                    }
-                    ui.separator();
-                    item(ui, crate::i18n::text("Server-Log"), Cmd::ServerLog, &mut cmd);
-                    item(ui, crate::i18n::text("Sicherungen & Reparatur"), Cmd::Backups, &mut cmd);
-                    item(ui, crate::i18n::text("Benutzer & Rechte"), Cmd::Users, &mut cmd);
-                    ui.separator();
-                    if ui.button(crate::i18n::text("Verbindung …")).clicked() {
-                        actions.push(Action::OpenSettings(Some("verbindung".into())));
-                        ui.close();
-                    }
+                    self.server_items(ui, &ctx, actions, &mut cmd);
                 });
                 ui.menu_button(crate::i18n::text("Hilfe"), |ui| {
                     style::menu_item_look(ui);
                     item(ui, crate::i18n::text("Handbuch"), Cmd::Help, &mut cmd);
                     item(ui, crate::i18n::text("Nach Updates suchen"), Cmd::CheckUpdates, &mut cmd);
                 });
+            // Die Menueleiste belegt die ganze Breite: Projekt, Branch und die rechte Gruppe gehoeren mit hinein
+            ui.spacing_mut().item_spacing.x = 2.0;
+            ui.add_space(4.0);
+            divider(ui);
+            // Projekt: Kaestchen mit Kuerzel und Name, Klick zeigt zuletzt geoeffnete und neue Projekte
+            let resp = match &self.project {
+                Some(p) => {
+                    let name = workspace::dir_name(p);
+                    let (initials, color) = titlebar::project_badge(&name);
+                    titlebar::tool_button(ui, titlebar::Lead::Badge(initials, color), &name, pal.text, true).on_hover_text(p.display().to_string())
+                }
+                None => titlebar::tool_button(ui, titlebar::Lead::Icon(Icon::Folder, pal.accent), crate::i18n::tr("Projekt öffnen …", "Open project …"), pal.text, true)
+                    .on_hover_text(crate::i18n::tr("Gespeichert wird immer in einem Projekt oder Ordner", "Files are always saved in a project or folder")),
+            };
+            egui::Popup::menu(&resp).show(|ui| {
+                crate::style::menu_item_look(ui);
+                ui.set_min_width(240.0);
+                item(ui, crate::i18n::text("Ordner öffnen …"), Cmd::OpenFolder, &mut cmd);
+                item(ui, crate::i18n::tr("Neues Java-Projekt …", "New Java project …"), Cmd::NewJavaProject, &mut cmd);
+                item(ui, crate::i18n::tr("Neues Python-Projekt …", "New Python project …"), Cmd::NewPythonProject, &mut cmd);
+                item(ui, crate::i18n::tr("Neues JavaScript-Projekt …", "New JavaScript project …"), Cmd::NewNodeProject, &mut cmd);
+                let recent: Vec<PathBuf> = self.settings.recent.iter().filter(|p| Some(*p) != self.project.as_ref()).take(8).cloned().collect();
+                if !recent.is_empty() {
+                    ui.separator();
+                    ui.label(egui::RichText::new(crate::i18n::text("Zuletzt geöffnet")).small().color(pal.text_weak));
+                    for p in recent {
+                        if ui.button(workspace::dir_name(&p)).on_hover_text(p.display().to_string()).clicked() {
+                            self.switch_project(Some(p));
+                            ui.close();
+                        }
+                    }
+                }
+                if self.project.is_some() {
+                    ui.separator();
+                    if ui.button(crate::i18n::tr("Projekt schließen", "Close project")).clicked() {
+                        self.switch_project(None);
+                        ui.close();
+                    }
+                }
             });
-            // Rechts: Neue Abfrage, Werkzeuge und der Serverzustand
+            // Branch (nur in Git-Projekten); Klick oeffnet die Git-Ansicht
+            if let Some(st) = self.git_status_now()
+                && !st.branch.is_empty()
+                && titlebar::tool_button(ui, titlebar::Lead::Icon(Icon::GitBranch, pal.text_weak), &st.branch, pal.text, true).on_hover_text(Cmd::ShowGit.label()).clicked()
+            {
+                cmd = Some(Cmd::ShowGit);
+            }
+            left_end = ui.cursor().left();
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 titlebar::controls(ui);
-                ui.add_space(8.0);
-                ui.spacing_mut().item_spacing.x = 4.0;
+                ui.add_space(6.0);
+                ui.spacing_mut().item_spacing.x = 2.0;
                 // Update installiert: zum Benutzen neu starten
                 if let Some(v) = self.updater.installed_version() {
                     let label = crate::tr_format!("Neu starten ({v})", "Restart ({v})");
@@ -239,8 +310,8 @@ impl EasyApp {
                     }
                     ui.add_space(6.0);
                 }
+                // Verbindung: Zustandspunkt und Benutzer@Server; Klick zeigt die Server-Befehle
                 let st = self.server.state();
-                let pal = style::pal();
                 let color = if st.is_running() {
                     pal.ok_text
                 } else if matches!(st, State::Failed(_) | State::NotFound) {
@@ -248,51 +319,65 @@ impl EasyApp {
                 } else {
                     pal.warn_text
                 };
-                // Zustandsanzeige: Punkt und kurzer Text (bei schmalem Fenster nur der Punkt)
                 let text = match &self.db {
                     Some(d) => d.info.label(),
                     None => st.text().to_string(),
                 };
-                let show_text = bar_w >= 940.0;
-                let galley = ui.painter().layout_no_wrap(if show_text { text } else { String::new() }, egui::FontId::proportional(12.5), pal.text_weak);
-                let (r, resp) = ui.allocate_exact_size(vec2(if show_text { galley.size().x + 36.0 } else { 28.0 }, 28.0), Sense::click());
-                ui.painter().rect(r, 14.0, if resp.hovered() { pal.hover } else { pal.face_light }, egui::Stroke::new(1.0, pal.border), egui::StrokeKind::Inside);
-                ui.painter().circle_filled(if show_text { pos2(r.left() + 15.0, r.center().y) } else { r.center() }, 4.0, color);
-                if show_text {
-                    ui.painter().galley(pos2(r.left() + 26.0, r.center().y - galley.size().y / 2.0), galley, pal.text_weak);
-                }
                 let tip = match &self.db {
                     Some(d) => format!("Server {} – {} (MariaDB {})", st.text(), d.info.label(), d.version.split('-').next().unwrap_or("")),
                     None => format!("Server {}", st.text()),
                 };
-                if resp.on_hover_text(tip).clicked() {
-                    cmd = Some(Cmd::ServerLog);
-                }
-                ui.add_space(6.0);
-                for (icon, c) in [(Icon::Wizard, Cmd::QueryBuilder), (Icon::Diagram, Cmd::ErDiagram)].into_iter().filter(|_| bar_w >= 760.0) {
-                    let tip = match keymap::text(c) {
-                        k if k.is_empty() => c.label().to_string(),
-                        k => format!("{} ({k})", c.label()),
-                    };
-                    if icons::button(ui, icon, &tip).clicked() {
+                let resp = titlebar::tool_button(ui, titlebar::Lead::Dot(color), if bar_w >= 1000.0 { &text } else { "" }, pal.text_weak, bar_w >= 1000.0).on_hover_text(tip);
+                egui::Popup::menu(&resp).show(|ui| {
+                    crate::style::menu_item_look(ui);
+                    ui.set_min_width(220.0);
+                    self.server_items(ui, &ctx, actions, &mut cmd);
+                });
+                divider(ui);
+                // Werkzeuge
+                let tools: &[(Icon, Cmd)] = if bar_w >= 820.0 { &[(Icon::Diagram, Cmd::ErDiagram), (Icon::Wizard, Cmd::QueryBuilder)] } else { &[] };
+                for &(icon, c) in tools {
+                    if titlebar::tool_button(ui, titlebar::Lead::Icon(icon, pal.text_weak), "", pal.text, false).on_hover_text(tip_of(c)).clicked() {
                         cmd = Some(c);
                     }
                 }
-                ui.add_space(6.0);
-                let tip = match keymap::text(Cmd::NewQuery) {
-                    k if k.is_empty() => Cmd::NewQuery.label().to_string(),
-                    k => format!("{} ({k})", Cmd::NewQuery.label()),
-                };
-                let clicked = if bar_w >= 640.0 {
-                    icons::accent_button(ui, Icon::Plus, crate::i18n::tr("Abfrage", "Query")).on_hover_text(tip).clicked()
-                } else {
-                    icons::button_sized(ui, Icon::Plus, &tip, 28.0).clicked()
-                };
-                if clicked {
+                if titlebar::tool_button(ui, titlebar::Lead::Icon(Icon::Plus, pal.text_weak), if bar_w >= 1100.0 { crate::i18n::tr("Abfrage", "Query") } else { "" }, pal.text, false)
+                    .on_hover_text(tip_of(Cmd::NewQuery))
+                    .clicked()
+                {
                     cmd = Some(Cmd::NewQuery);
                 }
+                // Ausfuehren der aktiven Datei (SQL, Java, Python, JavaScript) wie der Startknopf in IntelliJ
+                let (runnable, busy) = self.tabs.get(self.active).map(|t| (t.runnable(), t.busy())).unwrap_or((false, false));
+                if runnable {
+                    divider(ui);
+                    let resp = ui
+                        .add_enabled_ui(!busy, |ui| titlebar::tool_button(ui, titlebar::Lead::Icon(Icon::Play, if busy { pal.text_weak } else { pal.ok_text }), "", pal.text, false))
+                        .inner
+                        .on_hover_text(tip_of(Cmd::RunAll));
+                    if resp.clicked() {
+                        cmd = Some(Cmd::RunAll);
+                    }
+                }
+                right_start = ui.cursor().right();
             });
         });
+        // Suchfeld mittig in der freien Flaeche zwischen links und rechts
+        let (lo, hi) = (left_end + 16.0, right_start - 16.0);
+        if hi - lo >= 180.0 {
+            let w = (hi - lo).min(420.0);
+            let cx = bar.center().x.clamp(lo + w / 2.0, hi - w / 2.0);
+            let r = Rect::from_center_size(pos2(cx, bar.center().y), vec2(w, titlebar::TOOL_H));
+            // Wie die Befehlszentrale von VS Code: mit Projekt die Dateisuche (">" wechselt zu den Befehlen), sonst die Befehle
+            let (c, hint) = if self.project.is_some() {
+                (Cmd::QuickOpen, crate::i18n::tr("Dateien suchen  ·  > für Befehle", "Search files  ·  > for commands"))
+            } else {
+                (Cmd::CommandPalette, crate::i18n::tr("Befehle suchen", "Search commands"))
+            };
+            if titlebar::search_box(ui, r, hint, &keymap::text(c)).clicked() {
+                cmd = Some(c);
+            }
+        }
         if let Some(c) = cmd {
             self.run_cmd(&ctx, c);
         }
@@ -302,27 +387,24 @@ impl EasyApp {
     // Aktivitaetsleiste (nur Seitenleisten)
 
     pub(super) fn activity_bar(&mut self, ui: &mut egui::Ui) {
-        const BTN: f32 = 44.0;
+        const BTN: f32 = 32.0;
         const GAP: f32 = 6.0;
         let pal = style::pal();
         let ctx = ui.ctx().clone();
-        // Ein Knopf der Leiste: runde Flaeche, Symbol mittig, bei Auswahl ein Balken am linken Rand
+        // Ein Knopf der Leiste (wie die Werkzeugfenster-Leiste von IntelliJ IDEA): quadratische Flaeche, Symbol mittig
         let button = |ui: &mut egui::Ui, icon: Icon, active: bool, tip: String| -> bool {
             let (slot, resp) = ui.allocate_exact_size(vec2(ui.available_width(), BTN), Sense::click());
             let r = Rect::from_center_size(slot.center(), vec2(BTN, BTN));
-            let radius = style::RADIUS as f32 + 3.0;
+            let radius = style::RADIUS as f32 + 1.0;
             if active {
                 ui.painter().rect_filled(r, radius, pal.selection.gamma_multiply(if pal.dark { 0.75 } else { 0.9 }));
-                let bar = Rect::from_center_size(pos2(slot.left() + 1.0, r.center().y), vec2(3.0, 20.0));
-                ui.painter().rect_filled(bar, 1.5, pal.activity_active);
             } else if resp.hovered() {
                 ui.painter().rect_filled(r, radius, pal.hover);
             }
             let color = if active { pal.activity_active } else if resp.hovered() { pal.text } else { pal.activity_fg };
-            icons::paint(ui.painter(), Rect::from_center_size(r.center(), vec2(24.0, 24.0)), icon, color);
+            icons::paint(ui.painter(), Rect::from_center_size(r.center(), vec2(20.0, 20.0)), icon, color);
             resp.on_hover_text(tip).clicked()
         };
-        ui.add_space(2.0);
         ui.spacing_mut().item_spacing.y = GAP;
         for (icon, view, cmd) in [
             (Icon::Files, SideView::Explorer, Cmd::ShowExplorer),
@@ -348,7 +430,7 @@ impl EasyApp {
         }
         // Einstellungen unten, getrennt von den Ansichten
         ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
-            ui.add_space(8.0);
+            ui.add_space(2.0);
             let k = keymap::text(Cmd::Settings);
             let tip = if k.is_empty() { Cmd::Settings.label().to_string() } else { format!("{} ({k})", Cmd::Settings.label()) };
             let open = self.tabs.get(self.active).is_some_and(|t| t.icon() == Some(Icon::Settings));
@@ -362,9 +444,9 @@ impl EasyApp {
     // Registerkarten
 
     pub(super) fn tab_bar(&mut self, ui: &mut egui::Ui) {
-        const BAR_H: f32 = 42.0;
-        const PILL_H: f32 = 30.0;
-        const GAP: f32 = 4.0;
+        const BAR_H: f32 = 38.0;
+        const PILL_H: f32 = BAR_H;
+        const GAP: f32 = 0.0;
         const MAX_W: f32 = 216.0;
         const ACTIVE_W: f32 = 190.0;
         const MIN_W: f32 = 132.0;
@@ -374,6 +456,8 @@ impl EasyApp {
         let font = egui::FontId::proportional(13.0);
         let (bar, _) = ui.allocate_exact_size(vec2(ui.available_width(), BAR_H), Sense::hover());
         block_autoscroll(bar);
+        // Untere Kante der Reiterleiste; der aktive Reiter liegt mit seinem Unterstrich darauf
+        ui.painter().hline(bar.x_range(), bar.bottom() - 0.5, Stroke::new(1.0, pal.border));
         let n = self.tabs.len();
         let looks: Vec<TabLook> = self.tabs.iter().map(|t| TabLook { title: t.title(), icon: t.icon(), busy: t.busy(), modified: t.modified() }).collect();
         // Wunschbreite je Reiter. Passen nicht alle, schrumpfen zuerst die langen Titel, dann die
@@ -411,7 +495,7 @@ impl EasyApp {
         if scroll {
             widths = fit(avail - LIST_W);
         }
-        let tabs_rect = Rect::from_min_max(bar.min + vec2(2.0, 0.0), bar.max - vec2(if scroll { LIST_W + 2.0 } else { 2.0 }, 0.0));
+        let tabs_rect = Rect::from_min_max(bar.min, bar.max - vec2(if scroll { LIST_W + 2.0 } else { 0.0 }, 0.0));
 
         let mut close = None;
         let mut close_others = None;
@@ -462,6 +546,7 @@ impl EasyApp {
                 let cut = widths[i] < 100.0 || widths[i] + 1.0 < desired[i];
                 let resp = if cut { resp.on_hover_text_at_pointer(&look.title) } else { resp };
                 resp.context_menu(|ui| {
+                    crate::style::menu_item_look(ui);
                     if ui.button(crate::i18n::text("Schließen")).clicked() {
                         close = Some(i);
                         ui.close();
@@ -499,7 +584,8 @@ impl EasyApp {
             let w = widths[i];
             let r = Rect::from_center_size(pos2(x.clamp(tabs_rect.left() + w / 2.0, tabs_rect.right() - w / 2.0), tabs_rect.center().y), vec2(w, PILL_H));
             let painter = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("tab-drag")));
-            painter.rect_filled(r.translate(vec2(0.0, 2.0)), style::RADIUS as f32 + 1.0, egui::Color32::from_black_alpha(60));
+            painter.rect_filled(r.translate(vec2(0.0, 2.0)), style::RADIUS as f32, egui::Color32::from_black_alpha(60));
+            painter.rect_filled(r, style::RADIUS as f32, pal.face_light);
             paint_tab(&painter, r, &looks[i], true, false, false, 0.0, &font);
             ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
             self.active = i;
@@ -520,6 +606,7 @@ impl EasyApp {
             }
             icons::paint(ui.painter(), Rect::from_center_size(r.center(), vec2(14.0, 14.0)), Icon::ChevronDown, pal.text_weak);
             egui::Popup::menu(&resp).show(|ui| {
+                crate::style::menu_item_look(ui);
                 for (i, l) in looks.iter().enumerate() {
                     if ui.add(egui::Button::new(&l.title).selected(i == active).min_size(vec2(180.0, 0.0))).clicked() {
                         activate = Some(i);
@@ -546,26 +633,44 @@ impl EasyApp {
         }
     }
 
-    /// Keine Registerkarte offen: leere Flaeche mit den wichtigsten Kuerzeln (wie in VS Code)
+    /// Keine Registerkarte offen: die wichtigsten Befehle als klickbare Zeilen mit Kuerzel (wie in IntelliJ IDEA)
     pub(super) fn empty_area(&mut self, ui: &mut egui::Ui) {
         let pal = style::pal();
         let rect = ui.available_rect_before_wrap();
         let resp = ui.allocate_rect(rect, Sense::click());
-        let c = rect.center() - vec2(0.0, 40.0);
-        let logo = Rect::from_center_size(c - vec2(0.0, 30.0), vec2(90.0, 90.0));
-        icons::paint(ui.painter(), logo, Icon::Database, pal.text_weak.gamma_multiply(0.25));
-        let mut y = c.y + 40.0;
-        for cmd in [Cmd::NewQuery, Cmd::OpenFolder, Cmd::QuickOpen, Cmd::CommandPalette] {
-            let k = keymap::text(cmd);
-            if k.is_empty() {
-                continue;
+        let mut cmds = vec![Cmd::NewQuery];
+        cmds.push(if self.project.is_some() { Cmd::QuickOpen } else { Cmd::OpenFolder });
+        cmds.extend([Cmd::NewFile, Cmd::CommandPalette, Cmd::ToggleTerminal]);
+        const ROW: f32 = 32.0;
+        const W: f32 = 340.0;
+        let top = rect.center().y - (cmds.len() as f32 * ROW) / 2.0;
+        let logo = Rect::from_center_size(pos2(rect.center().x, top - 56.0), vec2(64.0, 64.0));
+        icons::paint(ui.painter(), logo, Icon::Database, pal.text_weak.gamma_multiply(0.3));
+        let mut run = None;
+        for (i, cmd) in cmds.into_iter().enumerate() {
+            let r = Rect::from_min_size(pos2(rect.center().x - W / 2.0, top + i as f32 * ROW), vec2(W, ROW - 2.0));
+            let row = ui.interact(r, egui::Id::new(("empty-cmd", i)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
+            if row.hovered() {
+                ui.painter().rect_filled(r, style::RADIUS as f32, pal.hover);
             }
-            ui.painter().text(pos2(c.x - 8.0, y), egui::Align2::RIGHT_CENTER, cmd.label(), egui::FontId::proportional(13.0), pal.text_weak);
-            ui.painter().text(pos2(c.x + 8.0, y), egui::Align2::LEFT_CENTER, k, egui::FontId::monospace(12.5), pal.text_weak);
-            y += 22.0;
+            let cy = r.center().y;
+            ui.painter().text(pos2(r.left() + 12.0, cy), egui::Align2::LEFT_CENTER, cmd.label(), egui::FontId::proportional(13.0), if row.hovered() { pal.text } else { pal.text_weak });
+            let k = keymap::text(cmd);
+            if !k.is_empty() {
+                let g = ui.painter().layout_no_wrap(k, egui::FontId::proportional(12.0), pal.text_weak);
+                let kr = Rect::from_min_size(pos2(r.right() - 12.0 - g.size().x - 12.0, cy - 10.0), vec2(g.size().x + 12.0, 20.0));
+                ui.painter().rect(kr, 4.0, pal.face_light, Stroke::new(1.0, pal.border), egui::StrokeKind::Inside);
+                ui.painter().galley(pos2(kr.left() + 6.0, cy - g.size().y / 2.0), g, pal.text_weak);
+            }
+            if row.clicked() {
+                run = Some(cmd);
+            }
         }
         if resp.double_clicked() {
-            self.run_cmd(&ui.ctx().clone(), Cmd::NewQuery);
+            run = Some(Cmd::NewQuery);
+        }
+        if let Some(c) = run {
+            self.run_cmd(&ui.ctx().clone(), c);
         }
     }
 
@@ -620,40 +725,42 @@ fn self_file(tabs: &[Box<dyn TabView>], i: usize) -> Option<PathBuf> {
 
 /// Klickflaeche des Schliessen-Kreuzes (rechts im Reiter)
 fn tab_close_rect(r: Rect) -> Rect {
-    Rect::from_center_size(pos2(r.right() - 17.0, r.center().y), vec2(20.0, 20.0))
+    Rect::from_center_size(pos2(r.right() - 17.0, r.center().y - 0.5), vec2(18.0, 18.0))
 }
 
-/// Reiter als abgerundete Kapsel: der aktive hebt sich ab, die anderen sind nur Text
+/// Reiter wie in IntelliJ IDEA: flach, der aktive mit Unterstrich in der Akzentfarbe
 #[allow(clippy::too_many_arguments)]
 fn paint_tab(p: &egui::Painter, r: Rect, look: &TabLook, sel: bool, hovered: bool, over_close: bool, time: f32, font: &egui::FontId) {
     let pal = style::pal();
-    let radius = style::RADIUS as f32 + 1.0;
     if sel {
-        p.rect(r, radius, pal.bg, Stroke::new(1.0, pal.border), egui::StrokeKind::Inside);
+        p.rect_filled(r, 0.0, pal.current_line);
+        p.rect_filled(Rect::from_min_max(pos2(r.left(), r.bottom() - 2.0), r.max), 0.0, pal.accent);
     } else if hovered {
-        p.rect_filled(r, radius, pal.hover);
+        p.rect_filled(r.shrink2(vec2(0.0, 0.0)), 0.0, pal.hover.gamma_multiply(0.7));
     }
+    // Mittellinie fuer Symbol, Text und Kreuz (1 px ueber der Mitte, wegen des Unterstrichs)
+    let cy = r.center().y - 0.5;
     let color = if sel { pal.text } else { pal.text_weak };
     let icon = look.icon.unwrap_or(Icon::File);
     // Zu schmal fuer den Titel: nur das Symbol (Titel im Tooltip)
     if r.width() < 100.0 {
         let c = if sel { pal.accent } else if hovered { pal.text } else { pal.text_weak };
-        icons::paint(p, Rect::from_center_size(r.center(), vec2(16.0, 16.0)), icon, c);
+        icons::paint(p, Rect::from_center_size(pos2(r.center().x, cy), vec2(16.0, 16.0)), icon, c);
         if look.busy {
-            p.circle_filled(r.right_top() + vec2(-8.0, 8.0), 3.0, pal.accent);
+            p.circle_filled(r.right_top() + vec2(-8.0, 9.0), 3.0, pal.accent);
         } else if look.modified {
-            p.circle_filled(r.right_top() + vec2(-8.0, 8.0), 3.0, pal.text_weak);
+            p.circle_filled(r.right_top() + vec2(-8.0, 9.0), 3.0, pal.text_weak);
         }
         return;
     }
     let mut x = r.left() + 12.0;
-    icons::paint(p, Rect::from_center_size(pos2(x + 7.0, r.center().y), vec2(14.0, 14.0)), icon, if sel { pal.accent } else { pal.text_weak });
+    icons::paint(p, Rect::from_center_size(pos2(x + 7.0, cy), vec2(14.0, 14.0)), icon, if sel { pal.accent } else { pal.text_weak });
     x += 22.0;
     let max_w = (r.right() - 30.0 - x).max(10.0);
     let mut job = egui::text::LayoutJob::simple_singleline(look.title.clone(), font.clone(), color);
     job.wrap = egui::text::TextWrapping { max_width: max_w, max_rows: 1, break_anywhere: true, overflow_character: Some('…') };
     let galley = p.layout_job(job);
-    p.galley(pos2(x, r.center().y - galley.size().y / 2.0), galley, color);
+    p.galley(pos2(x, cy - galley.size().y / 2.0), galley, color);
     // Kreuz bzw. Laufanzeige bzw. Punkt fuer Ungespeichertes
     let cr = tab_close_rect(r);
     if look.busy {

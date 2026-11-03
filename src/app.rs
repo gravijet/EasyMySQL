@@ -860,10 +860,15 @@ impl EasyApp {
             Cmd::GitCommit => self.git_commit(),
             Cmd::GitPush => self.git_push(),
             Cmd::GitPull => self.git_pull(),
-            Cmd::NewFile => match self.project.clone() {
-                Some(p) => self.explorer_dlg = Some(ExplorerDlg::NewFile(Box::new(create::NewFile::new(p)))),
-                None => self.handle_actions(vec![Action::OpenSql { db: Some(self.current_db.clone()), sql: String::new(), run: false }]),
-            },
+            Cmd::NewFile => {
+                // Dateien entstehen immer in einem Projekt oder Ordner: ohne Projekt erst einen waehlen
+                if self.project.is_none() {
+                    self.pick_project();
+                }
+                if let Some(p) = self.project.clone() {
+                    self.explorer_dlg = Some(ExplorerDlg::NewFile(Box::new(create::NewFile::new(p))));
+                }
+            }
             Cmd::OpenFile => self.open_sql_file(false),
             Cmd::OpenFolder => self.pick_project(),
             Cmd::Save => {
@@ -1334,16 +1339,18 @@ impl eframe::App for EasyApp {
         crate::terminal::set_focused(false);
         self.follow_tab_database();
         let pal = style::pal();
-        let chrome = |l: i8, r: i8, t: i8, b: i8| egui::Frame::new().fill(pal.face).inner_margin(egui::Margin { left: l, right: r, top: t, bottom: b });
-        egui::Panel::top("menu").show_separator_line(false).frame(chrome(12, 0, 0, 2)).show(ui, |ui| {
+        // Flaches Layout wie IntelliJ IDEA: Leisten und Seitenleiste in der Grundfarbe, Editorflaeche dunkler,
+        // getrennt durch feine Linien
+        let flat = |fill: egui::Color32, m: egui::Margin| egui::Frame::new().fill(fill).inner_margin(m);
+        egui::Panel::top("menu").show_separator_line(true).frame(flat(pal.face, egui::Margin { left: 10, right: 0, top: 0, bottom: 0 })).show(ui, |ui| {
             self.menu_bar(ui, &mut actions);
         });
-        egui::Panel::left("activity").exact_size(60.0).resizable(false).show_separator_line(false).frame(chrome(8, 4, 4, 0)).show(ui, |ui| {
+        egui::Panel::left("activity").exact_size(44.0).resizable(false).show_separator_line(true).frame(flat(pal.face, egui::Margin::symmetric(0, 6))).show(ui, |ui| {
             self.activity_bar(ui);
         });
         if self.settings.sidebar {
-            egui::Panel::left("sidebar").resizable(true).show_separator_line(false).default_size((ctx.content_rect().width() * 0.24).clamp(190.0, 268.0)).min_size(190.0).max_size((ctx.content_rect().width() * 0.45).max(190.0)).frame(chrome(0, 4, 0, 8)).show(ui, |ui| {
-                style::panel_card(ui, pal.sidebar_bg, egui::Margin::symmetric(2, 6), |ui| {
+            egui::Panel::left("sidebar").resizable(true).show_separator_line(true).default_size((ctx.content_rect().width() * 0.22).clamp(200.0, 280.0)).min_size(180.0).max_size((ctx.content_rect().width() * 0.45).max(190.0)).frame(flat(pal.sidebar_bg, egui::Margin::ZERO)).show(ui, |ui| {
+                style::panel_card(ui, pal.sidebar_bg, egui::Margin { left: 4, right: 4, top: 2, bottom: 6 }, |ui| {
                     self.side_panel(ui, &mut actions);
                 });
             });
@@ -1351,12 +1358,12 @@ impl eframe::App for EasyApp {
         if self.terminal.open {
             self.terminal_panel(ui);
         }
-        egui::CentralPanel::default().frame(chrome(4, 8, 0, 8)).show(ui, |ui| {
+        egui::CentralPanel::default().frame(flat(pal.bg, egui::Margin::ZERO)).show(ui, |ui| {
             if !self.tabs.is_empty() {
                 self.tab_bar(ui);
             }
-            // Inhalt als abgerundete Flaeche unter den Reitern
-            style::panel_card(ui, pal.bg, egui::Margin::symmetric(14, 10), |ui| {
+            // Inhalt unter den Reitern
+            style::panel_card(ui, pal.bg, egui::Margin { left: 12, right: 12, top: 8, bottom: 8 }, |ui| {
                 // Nach dem Schliessen der letzten Registerkarte bleibt die Flaeche einfach leer
                 if self.tabs.is_empty() {
                     self.empty_area(ui);

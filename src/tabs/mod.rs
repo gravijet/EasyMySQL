@@ -209,17 +209,20 @@ pub struct Chip {
 pub fn chip(ui: &mut egui::Ui, label: &str, color: Option<egui::Color32>, selected: bool) -> Chip {
     let pal = crate::style::pal();
     let galley = ui.painter().layout_no_wrap(label.to_string(), egui::FontId::proportional(12.5), pal.text);
-    let (r, resp) = ui.allocate_exact_size(egui::vec2(galley.size().x + 44.0, 26.0), egui::Sense::click());
+    let (r, resp) = ui.allocate_exact_size(egui::vec2(galley.size().x + 40.0, 28.0), egui::Sense::click());
     let p = ui.painter();
     let radius = crate::style::RADIUS as f32;
-    if selected {
-        p.rect(r, radius, pal.face_light, egui::Stroke::new(1.0, pal.border), egui::StrokeKind::Inside);
-    } else if resp.hovered() {
-        p.rect_filled(r, radius, pal.hover);
+    // Wie die Reiter des Hauptfensters: flach, der gewaehlte mit Unterstrich in der Akzentfarbe
+    if resp.hovered() && !selected {
+        p.rect_filled(r, radius, pal.hover.gamma_multiply(0.7));
     }
+    if selected {
+        p.rect_filled(egui::Rect::from_min_max(egui::pos2(r.left() + 4.0, r.bottom() - 2.0), egui::pos2(r.right() - 4.0, r.bottom())), 1.0, pal.accent);
+    }
+    let cy = r.center().y - 1.0;
     let fg = color.unwrap_or(if selected { pal.text } else { pal.text_weak });
-    p.galley(egui::pos2(r.left() + 12.0, r.center().y - galley.size().y / 2.0), galley, fg);
-    let cr = egui::Rect::from_center_size(egui::pos2(r.right() - 15.0, r.center().y), egui::vec2(18.0, 18.0));
+    p.galley(egui::pos2(r.left() + 10.0, cy - galley.size().y / 2.0), galley, fg);
+    let cr = egui::Rect::from_center_size(egui::pos2(r.right() - 14.0, cy), egui::vec2(16.0, 16.0));
     let over = ui.ctx().pointer_hover_pos().is_some_and(|q| cr.contains(q));
     if selected || resp.hovered() {
         if over {
@@ -293,6 +296,10 @@ pub trait TabView {
     /// Gleiche Registerkarte schon offen? (fuer Wiederverwendung)
     fn key(&self) -> Option<String> {
         None
+    }
+    /// Laesst sich mit "Ausfuehren" starten (Startknopf in der oberen Leiste)
+    fn runnable(&self) -> bool {
+        false
     }
     fn busy(&self) -> bool {
         false

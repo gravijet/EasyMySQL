@@ -77,9 +77,10 @@ fn main() -> eframe::Result {
         unsafe { std::env::set_var("WGPU_POWER_PREF", "low") };
     }
     let icon = egui::IconData {
-        rgba: icon::icon_rgba(64),
-        width: 64,
-        height: 64,
+        // Gross genug fuer hochaufloesende Bildschirme (verkleinert wird glatt, vergroessert waere pixelig)
+        rgba: icon::icon_rgba(256),
+        width: 256,
+        height: 256,
     };
     updates::cleanup_old();
     let options = eframe::NativeOptions {

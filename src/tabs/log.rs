@@ -101,6 +101,7 @@ impl TabView for LogTab {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let files = icons::button(ui, Icon::Folder, crate::i18n::text("Dateien"));
                 egui::Popup::menu(&files).show(|ui| {
+                    crate::style::menu_item_look(ui);
                     if ui.button(crate::i18n::text("server.log öffnen")).clicked() {
                         crate::app::open_path(&crate::server::log_file());
                         ui.close();
@@ -126,6 +127,7 @@ impl TabView for LogTab {
                 }
                 let options = icons::button(ui, Icon::More, crate::i18n::tr("Optionen", "Options"));
                 egui::Popup::menu(&options).show(|ui| {
+                    crate::style::menu_item_look(ui);
                     let mut on = cx.settings.query_log;
                     if crate::widgets::check(ui, &mut on, crate::i18n::text("Alle Anweisungen mitschreiben")).changed() {
                         cx.settings.query_log = on;

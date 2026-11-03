@@ -348,6 +348,7 @@ pub fn show(ui: &mut egui::Ui, id: egui::Id, s: &mut Session, want_focus: bool) 
     }
     // Rechtsklick: Kopieren/Einfuegen
     resp.context_menu(|ui| {
+        crate::style::menu_item_look(ui);
         if ui.add_enabled(s.selection.is_some(), egui::Button::new(crate::i18n::text("Kopieren"))).clicked() {
             if let Some(t) = selected_text(s) {
                 ui.ctx().copy_text(t);

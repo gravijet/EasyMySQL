@@ -355,7 +355,7 @@ impl TabView for SettingsTab {
                 self.heading(ui, "editor", "Editor");
                 grid(ui, "g-editor", &mut |ui| {
                     crate::widgets::row(ui, crate::i18n::text("Schriftgröße"), |ui| {
-                        ui.add(egui::Slider::new(&mut s.editor_font, crate::settings::MIN_FONT..=crate::settings::MAX_FONT).suffix(" px"));
+                        crate::widgets::slider(ui, &mut s.editor_font, crate::settings::MIN_FONT..=crate::settings::MAX_FONT, 1.0, " px");
                     });
                     crate::widgets::row(ui, crate::i18n::text("Vorschläge beim Tippen"), |ui| {
                         crate::widgets::switch(ui, &mut s.auto_suggest, crate::i18n::text("Automatisch Vorschläge zeigen"))
@@ -419,7 +419,7 @@ impl TabView for SettingsTab {
                 self.heading(ui, "maus", crate::i18n::text("Maus"));
                 grid(ui, "g-mouse", &mut |ui| {
                     crate::widgets::row(ui, crate::i18n::text("Scrollgeschwindigkeit"), |ui| {
-                        ui.add(egui::Slider::new(&mut s.scroll_speed, 0.5..=5.0).step_by(0.25).suffix("×"));
+                        crate::widgets::slider(ui, &mut s.scroll_speed, 0.5..=5.0, 0.25, "×");
                     });
                     crate::widgets::row(ui, crate::i18n::text("Mittlere Maustaste"), |ui| {
                         crate::widgets::switch(ui, &mut s.autoscroll, crate::i18n::text("gedrückt halten und ziehen = schnell scrollen"));

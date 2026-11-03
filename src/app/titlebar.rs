@@ -2,13 +2,14 @@
 // (statt in einer zusaetzlichen Zeile des Betriebssystems). Dazu gehoeren Ziehen, Doppelklick
 // und die Griffe an den Fensterkanten.
 
+use crate::icons::{self, Icon};
 use crate::style;
 use eframe::egui::{self, Color32, Pos2, Rect, ResizeDirection, Sense, Stroke, ViewportCommand, pos2, vec2};
 
 /// Hoehe der Titelleiste
-pub const HEIGHT: f32 = 44.0;
+pub const HEIGHT: f32 = 40.0;
 /// Breite eines Fensterknopfs
-const BUTTON_W: f32 = 48.0;
+const BUTTON_W: f32 = 46.0;
 /// Breite der Griffe an den Fensterkanten
 const EDGE: f32 = 5.0;
 
@@ -71,6 +72,109 @@ pub fn controls(ui: &mut egui::Ui) {
         }
     }
     ui.spacing_mut().item_spacing.x = saved;
+}
+
+/// Was links in einem Knopf der Leiste steht
+pub enum Lead {
+    Icon(Icon, Color32),
+    /// Farbiges Kaestchen mit Kuerzel (Projekt wie in IntelliJ IDEA)
+    Badge(String, Color32),
+    /// Zustandspunkt (Server)
+    Dot(Color32),
+}
+
+/// Hoehe der Knoepfe in der Leiste
+pub const TOOL_H: f32 = 28.0;
+
+/// Flacher Knopf der Leiste (wie die Widgets der Hauptwerkzeugleiste von IntelliJ IDEA): erst beim
+/// Darueberfahren eine Flaeche; Symbol, Text und Pfeil liegen auf einer gemeinsamen Mittellinie.
+pub fn tool_button(ui: &mut egui::Ui, lead: Lead, text: &str, color: Color32, chevron: bool) -> egui::Response {
+    let pal = style::pal();
+    let font = egui::FontId::proportional(13.0);
+    let galley = ui.painter().layout_no_wrap(text.to_string(), font, color);
+    // Breite des Vorspanns (ohne Abstand zum Text)
+    let lead_w = match &lead {
+        Lead::Icon(..) => 16.0,
+        Lead::Badge(..) => 20.0,
+        Lead::Dot(_) => 8.0,
+    };
+    let text_w = if text.is_empty() { 0.0 } else { galley.size().x };
+    let gap = if lead_w > 0.0 && text_w > 0.0 { 8.0 } else { 0.0 };
+    let chev_w = if chevron { 4.0 + 12.0 } else { 0.0 };
+    let pad = if text_w > 0.0 { 8.0 } else { 6.0 };
+    let content = lead_w + gap + text_w + chev_w;
+    let (r, resp) = ui.allocate_exact_size(vec2((content + 2.0 * pad).max(TOOL_H), TOOL_H), Sense::click());
+    let p = ui.painter();
+    if resp.is_pointer_button_down_on() {
+        p.rect_filled(r, style::RADIUS as f32, pal.hover.gamma_multiply(1.3));
+    } else if resp.hovered() {
+        p.rect_filled(r, style::RADIUS as f32, pal.hover);
+    }
+    let cy = r.center().y;
+    // Inhalt waagrecht mittig (bei reinen Symbolknoepfen ist die Flaeche quadratisch)
+    let mut x = r.center().x - content / 2.0;
+    match lead {
+        Lead::Icon(icon, c) => icons::paint(p, Rect::from_center_size(pos2(x + 8.0, cy), vec2(16.0, 16.0)), icon, c),
+        Lead::Badge(t, c) => {
+            let b = Rect::from_center_size(pos2(x + 10.0, cy), vec2(20.0, 20.0));
+            p.rect_filled(b, 5.0, c);
+            p.text(b.center() + vec2(0.0, 0.5), egui::Align2::CENTER_CENTER, t, egui::FontId::proportional(10.0), Color32::WHITE);
+        }
+        Lead::Dot(c) => {
+            p.circle_filled(pos2(x + 4.0, cy), 4.0, c);
+        }
+    }
+    x += lead_w + gap;
+    if !text.is_empty() {
+        p.galley(pos2(x, cy - galley.size().y / 2.0), galley, color);
+        x += text_w;
+    }
+    if chevron {
+        icons::paint(p, Rect::from_center_size(pos2(x + 4.0 + 6.0, cy), vec2(12.0, 12.0)), Icon::ChevronDown, pal.text_weak);
+    }
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
+/// Suchfeld in der Mitte der Leiste (wie die Befehlszentrale von Visual Studio Code): Klick oeffnet die Befehle
+pub fn search_box(ui: &mut egui::Ui, r: Rect, hint: &str, keys: &str) -> egui::Response {
+    let pal = style::pal();
+    let resp = ui.interact(r, ui.id().with("titlebar-search"), Sense::click());
+    let fill = if resp.hovered() { pal.face_light } else { pal.bg };
+    let p = ui.painter();
+    p.rect(r, style::RADIUS as f32 + 1.0, fill, Stroke::new(1.0, pal.border), egui::StrokeKind::Inside);
+    let cy = r.center().y;
+    icons::paint(p, Rect::from_center_size(pos2(r.left() + 18.0, cy), vec2(14.0, 14.0)), Icon::Search, pal.text_weak);
+    let keys_g = p.layout_no_wrap(keys.to_string(), egui::FontId::proportional(12.0), pal.text_weak);
+    let show_keys = !keys.is_empty() && r.width() >= 300.0;
+    let max_text = r.width() - 36.0 - if show_keys { keys_g.size().x + 20.0 } else { 10.0 };
+    let mut job = egui::text::LayoutJob::simple_singleline(hint.to_string(), egui::FontId::proportional(13.0), pal.text_weak);
+    job.wrap = egui::text::TextWrapping { max_width: max_text.max(10.0), max_rows: 1, break_anywhere: true, overflow_character: Some('…') };
+    let g = p.layout_job(job);
+    p.galley(pos2(r.left() + 32.0, cy - g.size().y / 2.0), g, pal.text_weak);
+    if show_keys {
+        p.galley(pos2(r.right() - 12.0 - keys_g.size().x, cy - keys_g.size().y / 2.0), keys_g, pal.text_weak);
+    }
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
+/// Kuerzel und Farbe des Projekts fuer das Kaestchen (Farbe bleibt je Name gleich)
+pub fn project_badge(name: &str) -> (String, Color32) {
+    let words: Vec<&str> = name.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).collect();
+    let initials: String = match words.as_slice() {
+        [] => "?".into(),
+        [one] => one.chars().take(2).collect(),
+        [a, b, ..] => a.chars().take(1).chain(b.chars().take(1)).collect(),
+    };
+    const COLORS: [Color32; 6] = [
+        Color32::from_rgb(0x35, 0x74, 0xF0),
+        Color32::from_rgb(0x2E, 0x9E, 0x6B),
+        Color32::from_rgb(0xC2, 0x5B, 0x2E),
+        Color32::from_rgb(0x8E, 0x56, 0xD6),
+        Color32::from_rgb(0xC9, 0x3D, 0x6D),
+        Color32::from_rgb(0x1F, 0x8F, 0xA8),
+    ];
+    let h = name.bytes().fold(0u32, |h, b| h.wrapping_mul(31).wrapping_add(b as u32));
+    (initials.to_uppercase(), COLORS[h as usize % COLORS.len()])
 }
 
 /// Leere Flaeche der Leiste: Ziehen verschiebt das Fenster, Doppelklick maximiert.
@@ -145,6 +249,14 @@ pub fn frame_and_resize(ctx: &egui::Context) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn badge_initials() {
+        assert_eq!(project_badge("shop").0, "SH");
+        assert_eq!(project_badge("mein-projekt").0, "MP");
+        assert_eq!(project_badge("").0, "?");
+        assert_eq!(project_badge("Kasse 2").1, project_badge("Kasse 2").1);
+    }
 
     #[test]
     fn edges_and_corners() {

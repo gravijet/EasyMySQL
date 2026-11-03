@@ -1576,7 +1576,7 @@ impl TabView for BuilderTab {
             // Rechts: Ausfuehren, Rueckgaengig, weitere Aktionen
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.add_enabled_ui(self.job.is_none(), |ui| {
-                    if icons::primary_button(ui, Icon::Play, crate::i18n::text("Ausführen")).on_hover_text(crate::keymap::text(crate::keymap::Cmd::RunAll)).clicked() {
+                    if icons::run_button(ui, crate::i18n::text("Ausführen")).on_hover_text(crate::keymap::text(crate::keymap::Cmd::RunAll)).clicked() {
                         self.run(cx);
                     }
                 });
@@ -1587,6 +1587,7 @@ impl TabView for BuilderTab {
                 }
                 let more = icons::button(ui, Icon::More, crate::i18n::text("Weitere Aktionen"));
                 egui::Popup::menu(&more).show(|ui| {
+                    crate::style::menu_item_look(ui);
                     if ui.button(crate::i18n::text("Im Editor öffnen")).clicked() {
                         if !sql.is_empty() {
                             cx.actions.push(Action::OpenSql { db: Some(self.db.clone()), sql: format!("{sql};\n"), run: false });
