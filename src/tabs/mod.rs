@@ -1,8 +1,10 @@
 // Registerkarten im Hauptbereich.
 
 pub mod builder;
+pub mod code;
 pub mod data;
 pub mod designer;
+pub mod diff;
 pub mod er;
 pub mod help;
 mod help_content;
@@ -72,6 +74,18 @@ pub enum Action {
     UpdateRestart,
     /// Speicherordner wurde verschoben (offene Dateien und Projekte anpassen)
     FilesMoved { from: std::path::PathBuf, to: std::path::PathBuf },
+    /// Eigenen Server neu starten (neue Einstellungen uebernehmen)
+    RestartServer,
+    /// Anderen Datenordner fuer den eigenen Server (None = Standard); `copy`: bisherige Daten mitnehmen
+    ServerDataDir { dir: Option<std::path::PathBuf>, copy: bool },
+    /// Programm im Terminal starten (Java, Python, JavaScript): mit zusaetzlicher Umgebung
+    RunProgram { launch: crate::dev::process::Launch, env: Vec<(String, String)> },
+    /// Aenderungen des Sprachservers anwenden (Umbenennen ueber mehrere Dateien)
+    ApplyEdit(crate::dev::lsp::WorkspaceEdit),
+    /// Anmeldedialog fuer GitHub oeffnen
+    GitHubLogin,
+    /// Eigenen Server auf diese MariaDB-Version aktualisieren
+    MariaDbUpdate(crate::mariadb_update::Release),
 }
 
 /// Strukturen der Datenbanken. Gelesen wird im Hintergrund, die Oberflaeche bleibt bedienbar.
@@ -332,6 +346,10 @@ pub trait TabView {
     }
     /// Zu einer Zeile springen (Suchergebnisse)
     fn goto_line(&mut self, _line: usize) {}
+    /// Textaenderungen (Zeile, Spalte in UTF-16) auf den Inhalt anwenden; false, wenn die Registerkarte keinen Text hat
+    fn apply_edits(&mut self, _edits: &[crate::dev::lsp::TextEdit]) -> bool {
+        false
+    }
     /// Abschnitt zeigen (Hilfe, Einstellungen)
     fn show_section(&mut self, _id: &str) {}
 }

@@ -24,7 +24,12 @@ pub struct QueryOutput {
     pub elapsed: Duration,
 }
 
-pub const MAX_ROWS: usize = 50_000;
+/// Hoechstens so viele Zeilen je Ergebnis werden gespeichert (Einstellung)
+pub static MAX_ROWS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(50_000);
+
+pub fn max_rows() -> usize {
+    MAX_ROWS.load(std::sync::atomic::Ordering::Relaxed)
+}
 
 /// Geschaetzter Speicherbedarf eines Ergebnisses, ab dem nicht weiter gelesen wird. Jede Zelle
 /// zaehlt mit ihrer Laenge plus einem festen Aufschlag fuer `Option<String>` und die Zuteilung.
@@ -79,7 +84,7 @@ pub fn run_script_with<C: Queryable>(conn: &mut C, sql: &str, abort: Option<&dyn
                                 // Abbruch ist angefordert; bis er greift, nichts mehr speichern.
                                 continue;
                             }
-                            if rs.rows.len() >= MAX_ROWS || bytes >= MAX_RESULT_BYTES {
+                            if rs.rows.len() >= max_rows() || bytes >= MAX_RESULT_BYTES {
                                 rs.truncated = true;
                                 if read_only
                                     && let Some(abort) = abort {

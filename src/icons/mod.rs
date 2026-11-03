@@ -70,6 +70,26 @@ pub enum Icon {
     Lock,
     Edit,
     Copy,
+    Coffee,
+    Package,
+    Minus,
+    Bug,
+    Flask,
+    Braces,
+    Script,
+    StepOver,
+    StepInto,
+    StepOut,
+    Stop,
+    GitBranch,
+    GitCommit,
+    GitPullRequest,
+    Github,
+    CloudUpload,
+    CloudDownload,
+    GitMerge,
+    CircleDot,
+    RotateCcw,
 }
 
 impl Icon {
@@ -134,6 +154,26 @@ impl Icon {
             Icon::Lock => "lock",
             Icon::Edit => "pencil",
             Icon::Copy => "copy",
+            Icon::Coffee => "coffee",
+            Icon::Package => "package",
+            Icon::Minus => "minus",
+            Icon::Bug => "bug",
+            Icon::Flask => "flask-conical",
+            Icon::Braces => "braces",
+            Icon::Script => "file-code-2",
+            Icon::StepOver => "redo-dot",
+            Icon::StepInto => "arrow-down-to-dot",
+            Icon::StepOut => "arrow-up-from-dot",
+            Icon::Stop => "square",
+            Icon::GitBranch => "git-branch",
+            Icon::GitCommit => "git-commit-horizontal",
+            Icon::GitPullRequest => "git-pull-request",
+            Icon::Github => "github",
+            Icon::CloudUpload => "cloud-upload",
+            Icon::CloudDownload => "cloud-download",
+            Icon::GitMerge => "git-merge",
+            Icon::CircleDot => "circle-dot",
+            Icon::RotateCcw => "rotate-ccw",
         }
     }
 
@@ -274,7 +314,8 @@ mod tests {
             Files, Search, Database, History, Diagram, Wizard, Close, Plus, Refresh, NewFile, NewFolder, ChevronDown, ChevronRight, ChevronLeft, Play,
             More, Trash, Up, Down, Collapse, ZoomIn, ZoomOut, Fit, External, Folder, FolderOpen, File, FileText, FileCode, FileImage, FileSheet,
             FileJson, Table, Columns, Key, Link, Settings, Book, Terminal, Shield, Save, Download, Alert, Check, Info,
-            Sparkles, Layers, ArrowLeft, ArrowRight, Undo, Redo, Explain, Upload, Users, ArrowUp, ArrowDown, Lock, Edit, Copy,
+            Sparkles, Layers, ArrowLeft, ArrowRight, Undo, Redo, Explain, Upload, Users, ArrowUp, ArrowDown, Lock, Edit, Copy, Coffee, Package, Minus,
+            Bug, Flask, Braces, Script, StepOver, StepInto, StepOut, Stop, GitBranch, GitCommit, GitPullRequest, Github, CloudUpload, CloudDownload, GitMerge, CircleDot, RotateCcw,
         ] {
             let polys = shapes(icon);
             assert!(!polys.is_empty(), "{icon:?}");
@@ -298,7 +339,8 @@ mod tests {
             Files, Search, Database, History, Diagram, Wizard, Close, Plus, Refresh, NewFile, NewFolder, ChevronDown, ChevronRight, ChevronLeft, Play,
             More, Trash, Up, Down, Collapse, ZoomIn, ZoomOut, Fit, External, Folder, FolderOpen, File, FileText, FileCode, FileImage, FileSheet,
             FileJson, Table, Columns, Key, Link, Settings, Book, Terminal, Shield, Save, Download, Alert, Check, Info,
-            Sparkles, Layers, ArrowLeft, ArrowRight, Undo, Redo, Explain, Upload, Users, ArrowUp, ArrowDown, Lock, Edit, Copy,
+            Sparkles, Layers, ArrowLeft, ArrowRight, Undo, Redo, Explain, Upload, Users, ArrowUp, ArrowDown, Lock, Edit, Copy, Coffee, Package, Minus,
+            Bug, Flask, Braces, Script, StepOver, StepInto, StepOut, Stop, GitBranch, GitCommit, GitPullRequest, Github, CloudUpload, CloudDownload, GitMerge, CircleDot, RotateCcw,
         ];
         const CELL: usize = 96;
         const COLS: usize = 10;

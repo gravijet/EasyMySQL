@@ -109,7 +109,7 @@ impl TabView for LogTab {
                         crate::app::open_path(&crate::server::query_log_file());
                         ui.close();
                     }
-                    if let Some(p) = &cx.server.paths {
+                    if let Some(p) = &cx.server.paths() {
                         ui.separator();
                         if ui.button(crate::i18n::text("Datenordner öffnen")).clicked() {
                             crate::app::open_path(&p.data);
@@ -140,7 +140,7 @@ impl TabView for LogTab {
             });
         });
         ui.add_space(4.0);
-        if cx.server.paths.is_none() {
+        if cx.server.paths().is_none() {
             ui.label(RichText::new(crate::i18n::text("MariaDB wurde nicht gefunden.")).color(pal.error_text));
         }
         let start = self.cleared_at.unwrap_or(0).min(self.cache.len());

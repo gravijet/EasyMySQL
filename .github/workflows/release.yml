@@ -14,12 +14,13 @@ permissions:
   contents: write
 
 env:
-  # MariaDB LTS series; automatically download its latest release.
-  MARIADB_SERIES: "11.8"
+  # The newest stable long-term-support series of MariaDB is chosen automatically
+  # (MariaDB download API); this series is only used if the list of series cannot be read.
+  MARIADB_SERIES: "12.3"
   # Fall back to an archived release if the MariaDB download API is unavailable.
-  MARIADB_FALLBACK_URL: https://archive.mariadb.org/mariadb-11.8.9/winx64-packages/mariadb-11.8.9-winx64.zip
-  MARIADB_FALLBACK_SHA256: 830c46727d9278eae212ae3eca44eeb9e71b2a68704e95f344a64fba7b1963f5
-  MARIADB_FALLBACK_VERSION: "11.8.9"
+  MARIADB_FALLBACK_URL: https://archive.mariadb.org/mariadb-12.3.3/winx64-packages/mariadb-12.3.3-winx64.zip
+  MARIADB_FALLBACK_SHA256: 4b5706b47148b47c8f36963c8352d1ddee37a1287b4690428f631a74b09b85a0
+  MARIADB_FALLBACK_VERSION: "12.3.3"
   ODBC_URL: https://dlm.mariadb.com/4785809/Connectors/odbc/connector-odbc-3.2.9/codbc-amd64-windows/mariadb-connector-odbc-3.2.9-win64.msi
   ODBC_SHA256: 3aaa0202a48e456a692f1864b62da3baeb037eb797692e1737eb675c05fda038
   VCREDIST_URL: https://aka.ms/vs/17/release/vc_redist.x64.exe
@@ -88,10 +89,22 @@ jobs:
             }
           }
 
-          # Try the latest LTS release from the official MariaDB API.
+          # Newest stable LTS series (pre-releases, RCs and short-term "rolling" releases are skipped)
+          $series = $env:MARIADB_SERIES
+          try {
+            $majors = (Invoke-RestMethod "https://downloads.mariadb.org/rest-api/mariadb/").major_releases |
+              Where-Object { $_.release_status -eq 'Stable' -and $_.release_support_type -eq 'Long Term Support' } |
+              Sort-Object { [version]$_.release_id } -Descending
+            if ($majors) { $series = $majors[0].release_id }
+          } catch {
+            Write-Warning "MariaDB series list unavailable ($_) — using $series"
+          }
+          Write-Host "MariaDB series: $series"
+
+          # Latest release of that series from the official MariaDB API.
           $ok = $false
           try {
-            $api = Invoke-RestMethod "https://downloads.mariadb.org/rest-api/mariadb/$($env:MARIADB_SERIES)/latest/"
+            $api = Invoke-RestMethod "https://downloads.mariadb.org/rest-api/mariadb/$series/latest/"
             $rel = $api.releases.PSObject.Properties | Select-Object -First 1
             $file = $rel.Value.files | Where-Object { $_.file_name -like '*-winx64.zip' -and $_.file_name -notlike '*debug*' } | Select-Object -First 1
             if (-not $file) { throw "No winx64.zip found" }
@@ -207,6 +220,9 @@ jobs:
             - ER diagrams with right-angled lines and shared tracks, readable at any zoom.
             - Updates download and install in the background; a button restarts the app afterwards.
             - SQL editor, query builder, users and privileges, integrated terminal, automatic backups.
+            - Java, Python and JavaScript/TypeScript: projects with a ready database connection, runtimes and drivers download themselves, tests, a Java debugger, a self-contained .jar, a library search and language servers (errors while typing, go to definition, rename).
+            - Git and GitHub in the sidebar: commit, branches, pull/push, publish, clone, pull requests, issues and Actions.
+            - TLS with an own certificate for the built-in server and MariaDB updates in existing installations (with backup and automatic rollback).
 
             ### Included
 

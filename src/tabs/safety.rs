@@ -61,7 +61,7 @@ impl SafetyTab {
     }
 
     fn env(&self, cx: &Ctx) -> Option<backup::Env> {
-        Some(backup::Env { paths: cx.server.paths.clone()?, conn: Self::conn(cx), dir: self.cfg.dir(), force: false })
+        Some(backup::Env { paths: cx.server.paths()?, conn: Self::conn(cx), dir: self.cfg.dir(), force: false })
     }
 
     fn start(
@@ -257,7 +257,7 @@ impl SafetyTab {
                     });
                 }
             if ui
-                .add_enabled(!busy && !st.is_busy() && cx.server.paths.is_some(), egui::Button::new(crate::i18n::text("Server retten …")))
+                .add_enabled(!busy && !st.is_busy() && cx.server.paths().is_some(), egui::Button::new(crate::i18n::text("Server retten …")))
                 .clicked()
             {
                 self.confirm_rescue = true;

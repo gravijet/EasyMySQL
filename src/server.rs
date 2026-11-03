@@ -333,11 +333,88 @@ fn follow_query_log(shared: Arc<Mutex<Shared>>) {
     }
 }
 
+/// Einstellungen des eigenen Servers (Einstellungen → Server). Port, Netzwerk und Datenordner gelten
+/// nach einem Neustart des Servers.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Config {
+    pub port: u16,
+    /// Auch von anderen Rechnern erreichbar (bind-address=0.0.0.0), sonst nur von diesem PC
+    pub network: bool,
+    /// Eigener Datenordner; `None` = Programmdatenordner\data
+    pub data_dir: Option<PathBuf>,
+    pub buffer_pool_mb: u32,
+    pub max_connections: u32,
+    pub packet_mb: u32,
+    /// Standard-Sortierung fuer neue Datenbanken (Zeichensatz utf8mb4)
+    pub collation: String,
+    /// CREATE EVENT ausfuehren
+    pub event_scheduler: bool,
+    /// Weitere Zeilen fuer [mysqld] (ueberschreiben die Werte oben)
+    pub extra: String,
+    /// Verschluesselung (TLS) mit eigenem Zertifikat
+    pub tls: crate::tls::Mode,
+    /// Weitere Namen/Adressen fuer das Zertifikat (z. B. db.firma.local 192.168.1.20)
+    pub tls_names: String,
+    /// MariaDB-Programme aus diesem Ordner statt der mitgelieferten (nach einem Update)
+    pub bin_dir: Option<PathBuf>,
+}
+
+pub const DEFAULT_PORT: u16 = 3306;
+
+/// Sortierungen zur Auswahl (Zeichensatz immer utf8mb4)
+pub const COLLATIONS: &[&str] = &["utf8mb4_unicode_ci", "utf8mb4_uca1400_ai_ci", "utf8mb4_general_ci", "utf8mb4_german2_ci", "utf8mb4_bin"];
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            port: DEFAULT_PORT,
+            network: false,
+            data_dir: None,
+            buffer_pool_mb: 128,
+            max_connections: 151,
+            packet_mb: 64,
+            collation: COLLATIONS[0].into(),
+            event_scheduler: false,
+            extra: String::new(),
+            tls: crate::tls::Mode::Default,
+            tls_names: String::new(),
+            bin_dir: None,
+        }
+    }
+}
+
+impl Config {
+    /// Zusatzzeilen pruefen: Liefert die erste ungueltige Zeile (1-basiert) mit Grund.
+    pub fn extra_problem(&self) -> Option<(usize, String)> {
+        for (i, l) in self.extra.lines().enumerate() {
+            let t = l.trim();
+            if t.is_empty() || t.starts_with('#') || t.starts_with(';') {
+                continue;
+            }
+            if t.starts_with('[') {
+                return Some((i + 1, crate::i18n::tr("Abschnitte ([…]) sind hier nicht möglich; alles gilt für [mysqld].", "Sections ([…]) are not possible here; everything applies to [mysqld].").into()));
+            }
+            let key = t.split('=').next().unwrap_or("").trim();
+            if key.is_empty() || !key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.') {
+                return Some((i + 1, crate::i18n::tr("Erwartet: name=wert", "Expected: name=value").into()));
+            }
+            // Diese Werte steuert EasyMySQL selbst; geaendert wuerden sie den Server unerreichbar machen
+            if matches!(key.replace('-', "_").as_str(), "datadir" | "port" | "socket" | "pid_file") {
+                return Some((i + 1, crate::tr_format!("„{key}“ wird oben eingestellt.", "“{key}” is set above.")));
+            }
+        }
+        None
+    }
+}
+
 #[derive(Clone)]
 pub struct Server {
     shared: Arc<Mutex<Shared>>,
-    pub paths: Option<Paths>,
-    pub port: u16,
+    /// Ordner mit den MariaDB-Programmen (None = nicht gefunden)
+    bin: Option<PathBuf>,
+    config: Arc<std::sync::RwLock<Config>>,
+    /// Einstellungen, mit denen der laufende Server gestartet wurde
+    applied: Arc<Mutex<Option<Config>>>,
 }
 
 #[cfg(windows)]
@@ -450,17 +527,10 @@ pub fn port_open(port: u16) -> bool {
 }
 
 impl Server {
-    pub fn new(port: u16) -> Self {
-        let paths = find_bin_dir().map(|bin| {
-            let base = app_data_dir();
-            Paths {
-                bin,
-                data: base.join("data"),
-                ini: base.join("my.ini"),
-                base,
-            }
-        });
-        let state = if paths.is_some() {
+    pub fn new(config: Config) -> Self {
+        let bin = find_bin_dir();
+        let own = config.bin_dir.as_ref().is_some_and(|b| b.join(format!("mariadbd{EXE}")).is_file());
+        let state = if bin.is_some() || own {
             State::Stopped
         } else {
             State::NotFound
@@ -468,7 +538,72 @@ impl Server {
         let shared = Arc::new(Mutex::new(Shared { state, child: None, log: load_old_log(), log_total: 0, unclean: false }));
         let sh = shared.clone();
         std::thread::spawn(move || follow_query_log(sh));
-        Server { shared, paths, port }
+        Server { shared, bin, config: Arc::new(std::sync::RwLock::new(config)), applied: Arc::new(Mutex::new(None)) }
+    }
+
+    pub fn config(&self) -> Config {
+        self.config.read().unwrap().clone()
+    }
+
+    /// Neue Einstellungen; sie gelten ab dem naechsten Start des Servers.
+    pub fn configure(&self, config: Config) {
+        *self.config.write().unwrap() = config;
+    }
+
+    /// Port, auf dem der Server laeuft bzw. starten wird. Nimmt keine Sperre auf den Zustand (wird auch
+    /// waehrend des Beendens aufgerufen, wenn diese gehalten wird).
+    pub fn port(&self) -> u16 {
+        match &*self.applied.lock().unwrap() {
+            Some(a) => a.port,
+            None => self.config.read().unwrap().port,
+        }
+    }
+
+    /// Laeuft der eigene Server mit anderen Einstellungen als den aktuellen? (dann Neustart noetig)
+    pub fn needs_restart(&self) -> bool {
+        matches!(self.state(), State::Running { own: true }) && self.applied.lock().unwrap().as_ref().is_some_and(|a| *a != self.config())
+    }
+
+    /// Ordner des Servers (Programme, Daten, Konfiguration); None, wenn MariaDB fehlt
+    pub fn paths(&self) -> Option<Paths> {
+        // Nach einem MariaDB-Update laufen die Programme aus dem Programmdatenordner
+        let own = self.config.read().unwrap().bin_dir.clone().filter(|b| b.join(format!("mariadbd{EXE}")).is_file());
+        let bin = own.or_else(|| self.bin.clone())?;
+        let base = app_data_dir();
+        let data = self.config.read().unwrap().data_dir.clone().unwrap_or_else(|| base.join("data"));
+        Some(Paths { bin, data, ini: base.join("my.ini"), base })
+    }
+
+    /// Anderen Datenordner verwenden: Server beenden, auf Wunsch die Daten dorthin kopieren (der alte Ordner
+    /// bleibt unveraendert), dann mit dem neuen Ordner starten.
+    pub fn switch_data_dir(&self, conn: ConnInfo, dir: Option<PathBuf>, copy: bool, on_change: impl Fn() + Send + 'static) {
+        let this = self.clone();
+        std::thread::spawn(move || {
+            let old = this.paths().map(|p| p.data);
+            this.stop_blocking(&conn);
+            on_change();
+            let result = (|| {
+                let mut cfg = this.config();
+                cfg.data_dir = dir.clone();
+                let new = dir.clone().unwrap_or_else(|| app_data_dir().join("data"));
+                if copy && let Some(old) = old.filter(|o| o.join("mysql").is_dir() && *o != new) {
+                    if new.starts_with(&old) || old.starts_with(&new) {
+                        return Err(crate::i18n::text("Der neue Ordner darf nicht im alten liegen (und umgekehrt).").to_string());
+                    }
+                    this.log(crate::tr_format!("Kopiere Daten nach {} …", "Copying data to {} …", new.display()));
+                    copy_dir(&old, &new).map_err(|e| crate::tr_format!("Kopieren fehlgeschlagen: {e}", "Copy failed: {e}"))?;
+                    // Markierungen des alten Laufs gehoeren nicht zur Kopie
+                    let _ = std::fs::remove_file(new.join("mysql.pid"));
+                }
+                this.configure(cfg);
+                this.start_blocking(&on_change)
+            })();
+            if let Err(e) = result {
+                this.log(crate::tr_format!("FEHLER: {e}", "ERROR: {e}"));
+                this.set_state(State::Failed(e));
+            }
+            on_change();
+        });
     }
 
     pub fn state(&self) -> State {
@@ -518,22 +653,26 @@ impl Server {
     }
 
     pub fn start_blocking(&self, on_change: &dyn Fn()) -> Result<(), String> {
-        if port_open(self.port) {
-            if self.paths.as_ref().map(|p| p.has_pid_file()).unwrap_or(false) {
+        let cfg = self.config();
+        let port = cfg.port;
+        if port_open(port) {
+            if self.paths().map(|p| p.has_pid_file()).unwrap_or(false) {
                 // Eigener Server aus einer frueheren (abgebrochenen) Sitzung
                 self.log(crate::tr_format!("Der EasyMySQL-Server läuft noch aus einer früheren Sitzung (Port {}) – wird übernommen.", "The EasyMySQL server is still running from a previous session (port {}) — reconnecting.",
-                    self.port
+                    port
                 ));
+                *self.applied.lock().unwrap() = Some(cfg);
                 self.set_state(State::Running { own: true });
             } else {
                 self.log(crate::tr_format!("Auf Port {} läuft bereits ein anderer Datenbankserver – dieser wird verwendet.", "Another database server is already running on port {} — using it.",
-                    self.port
+                    port
                 ));
+                *self.applied.lock().unwrap() = Some(cfg);
                 self.set_state(State::Running { own: false });
             }
             return Ok(());
         }
-        let Some(paths) = self.paths.clone() else {
+        let Some(paths) = self.paths() else {
             self.set_state(State::NotFound);
             return Err(crate::i18n::text("MariaDB wurde nicht gefunden. Bitte EasyMySQL neu installieren.").into());
         };
@@ -548,11 +687,11 @@ impl Server {
                 let backup = paths.base.join(format!("data-unvollstaendig-{}", timestamp()));
                 let _ = std::fs::rename(&paths.data, &backup);
             }
-            self.init_datadir(&paths, &paths.data, self.port)?;
+            self.init_datadir(&paths, &paths.data, port)?;
         }
 
         // 2. Konfiguration schreiben
-        self.write_ini(&paths, &paths.data, self.port, &paths.ini, &[])?;
+        self.write_ini(&paths, &paths.data, port, &paths.ini, &[])?;
 
         // Lief der Server beim letzten Mal noch, als EasyMySQL/der PC beendet wurde?
         if paths.session_flag().exists() {
@@ -567,8 +706,12 @@ impl Server {
         self.shared.lock().unwrap().child = Some(child);
 
         // 4. Warten, bis der Port erreichbar ist
-        self.wait_ready(self.port, Duration::from_secs(600))?;
-        self.log(crate::tr_format!("Server bereit auf Port {}.", "Server ready on port {}.", self.port));
+        self.wait_ready(port, Duration::from_secs(600))?;
+        self.log(crate::tr_format!("Server bereit auf Port {}.", "Server ready on port {}.", port));
+        if cfg.network {
+            self.log(crate::i18n::tr("Der Server ist auch von anderen Rechnern im Netzwerk erreichbar.", "The server can also be reached from other computers on the network."));
+        }
+        *self.applied.lock().unwrap() = Some(cfg);
         let _ = std::fs::write(paths.session_flag(), timestamp());
         self.upgrade_if_needed(&paths);
         self.set_state(State::Running { own: true });
@@ -615,13 +758,28 @@ impl Server {
         let mut ini = String::new();
         ini.push_str("# Von EasyMySQL erzeugt\n[mysqld]\n");
         ini.push_str(&format!("datadir={}\n", slash(data)));
+        let cfg = self.config();
         ini.push_str(&format!("port={port}\n"));
-        ini.push_str("bind-address=127.0.0.1\n");
+        ini.push_str(if cfg.network { "bind-address=0.0.0.0\n" } else { "bind-address=127.0.0.1\n" });
         ini.push_str("character-set-server=utf8mb4\n");
-        ini.push_str("collation-server=utf8mb4_unicode_ci\n");
-        ini.push_str("innodb_buffer_pool_size=128M\n");
-        ini.push_str("max_allowed_packet=64M\n");
+        let collation = if COLLATIONS.contains(&cfg.collation.as_str()) { cfg.collation.as_str() } else { COLLATIONS[0] };
+        ini.push_str(&format!("collation-server={collation}\n"));
+        ini.push_str(&format!("innodb_buffer_pool_size={}M\n", cfg.buffer_pool_mb.clamp(16, 1 << 20)));
+        ini.push_str(&format!("max_allowed_packet={}M\n", cfg.packet_mb.clamp(1, 1024)));
+        ini.push_str(&format!("max_connections={}\n", cfg.max_connections.clamp(10, 100_000)));
+        if cfg.event_scheduler {
+            ini.push_str("event_scheduler=ON\n");
+        }
         ini.push_str(SAFETY_OPTIONS);
+        match crate::tls::ini_lines(cfg.tls, &cfg.tls_names) {
+            Ok(lines) => {
+                for l in lines {
+                    ini.push_str(&l);
+                    ini.push('\n');
+                }
+            }
+            Err(e) => self.log(crate::tr_format!("TLS: Zertifikat konnte nicht angelegt werden: {e}", "TLS: could not create the certificate: {e}")),
+        }
         // Windows speichert Namen sonst komplett klein (lower_case_table_names=1). Mit 2 bleiben Datenbank- und
         // Tabellennamen so, wie sie geschrieben wurden (z. B. "Spielleitung"), Vergleiche bleiben unabhaengig von
         // der Gross-/Kleinschreibung.
@@ -637,6 +795,14 @@ impl Server {
         }
         #[cfg(windows)]
         let _ = paths;
+        // Eigene Zeilen aus den Einstellungen zuletzt: sie ueberschreiben die Werte oben
+        if cfg.extra_problem().is_none() && !cfg.extra.trim().is_empty() {
+            ini.push_str("# --- Eigene Einstellungen ---\n");
+            for l in cfg.extra.lines().map(str::trim).filter(|l| !l.is_empty()) {
+                ini.push_str(l);
+                ini.push('\n');
+            }
+        }
         for e in extra {
             ini.push_str(e);
             ini.push('\n');
@@ -727,7 +893,7 @@ impl Server {
     /// Server-Rettung, wenn MariaDB nicht mehr startet oder die Daten stark beschaedigt sind.
     /// Der beschaedigte Datenordner bleibt immer erhalten (data-defekt-<Zeit>).
     pub fn rescue(&self, conn: &ConnInfo, backup_dir: &Path, on_change: &dyn Fn()) -> Result<String, String> {
-        let paths = self.paths.clone().ok_or(crate::i18n::text("MariaDB wurde nicht gefunden."))?;
+        let paths = self.paths().ok_or(crate::i18n::text("MariaDB wurde nicht gefunden."))?;
         let log = |m: String| self.log(m);
         let mut report = Vec::new();
 
@@ -736,15 +902,16 @@ impl Server {
             log(crate::i18n::text("Beende laufenden Server ...").into());
             self.stop_blocking(conn);
         }
-        if port_open(self.port) {
-            return Err(crate::tr_format!("Port {} ist noch belegt – bitte EasyMySQL neu starten und erneut versuchen.", "Port {} is still in use — please restart EasyMySQL and try again.", self.port));
+        if port_open(self.port()) {
+            return Err(crate::tr_format!("Port {} ist noch belegt – bitte EasyMySQL neu starten und erneut versuchen.", "Port {} is still in use — please restart EasyMySQL and try again.", self.port()));
         }
         self.set_state(State::Repairing);
         on_change();
 
         // 1. Beschaedigten Ordner beiseitelegen (nichts wird geloescht)
         let ts = timestamp();
-        let broken = paths.base.join(format!("data-defekt-{ts}"));
+        // Neben dem Datenordner (bei eigenem Datenordner evtl. auf einem anderen Laufwerk)
+        let broken = paths.data.with_file_name(format!("data-defekt-{ts}"));
         let have_old = paths.data.exists();
         if have_old {
             std::fs::rename(&paths.data, &broken)
@@ -756,10 +923,11 @@ impl Server {
         // 2. Rettungsversuch auf einer Kopie
         let mut rescued: Option<PathBuf> = None;
         if have_old {
-            let work = paths.base.join(format!("rettung-{ts}"));
+            let work = paths.data.with_file_name(format!("rettung-{ts}"));
             log(crate::i18n::text("Kopiere Daten für den Rettungsversuch ...").into());
             copy_dir(&broken, &work).map_err(|e| crate::tr_format!("Kopieren fehlgeschlagen: {e}", "Copy failed: {e}"))?;
-            let rport: u16 = 3399;
+            // Freier Port fuer den Rettungsversuch (nie der eigentliche)
+            let rport: u16 = (3399..3499).find(|p| *p != self.port() && !port_open(*p)).unwrap_or(3399);
             let ini = paths.base.join("rettung.ini");
             for level in 0..=6u8 {
                 log(crate::tr_format!("Rettungsversuch mit innodb_force_recovery={level} ...", "Attempting recovery with innodb_force_recovery={level} ..."));
@@ -809,7 +977,7 @@ impl Server {
         // 3. Frischen Datenordner anlegen und Server starten
         self.set_state(State::Initializing);
         on_change();
-        self.init_datadir(&paths, &paths.data, self.port)?;
+        self.init_datadir(&paths, &paths.data, self.port())?;
         let _ = std::fs::remove_file(paths.session_flag());
         self.set_state(State::Stopped);
         self.start_blocking(on_change)?;
@@ -818,7 +986,7 @@ impl Server {
         // 4. Daten einspielen: gerettete Daten oder neueste Sicherung je Datenbank
         let env = crate::backup::Env {
             paths: paths.clone(),
-            conn: ConnInfo::default(),
+            conn: ConnInfo { port: self.port(), ..ConnInfo::default() },
             dir: backup_dir.to_path_buf(),
             force: false,
         };
@@ -877,7 +1045,7 @@ impl Server {
             "--user=root",
             "--host=127.0.0.1",
             "--protocol=tcp",
-            &format!("--port={}", self.port),
+            &format!("--port={}", self.port()),
             "--silent",
         ]);
         match hidden(&mut cmd).stdin(Stdio::null()).output() {
@@ -899,15 +1067,18 @@ impl Server {
 
     /// Beendet den Server (blockierend, max. ca. 20 Sekunden).
     pub fn stop_blocking(&self, conn: &ConnInfo) {
+        let port = self.port();
         let st = self.state();
         if !matches!(st, State::Running { own: true } | State::Starting | State::Failed(_)) {
             if matches!(st, State::Running { own: false }) {
+                *self.applied.lock().unwrap() = None;
                 self.set_state(State::Stopped);
             }
             return;
         }
         let orphan = self.shared.lock().unwrap().child.is_none();
         if orphan && !matches!(st, State::Running { own: true }) {
+            *self.applied.lock().unwrap() = None;
             self.set_state(State::Stopped);
             return;
         }
@@ -916,13 +1087,13 @@ impl Server {
         // Sauber herunterfahren
         let mut info = conn.clone();
         info.host = "127.0.0.1".into();
-        info.port = self.port;
+        info.port = port;
         let sql_ok = mysql::Conn::new(info.opts())
             .and_then(|mut c| c.query_drop("SHUTDOWN"))
             .is_ok();
         if !sql_ok {
             // Ohne Anmeldung: Signal an den Serverprozess (ebenfalls sauberes Herunterfahren)
-            let pid = self.shared.lock().unwrap().child.as_ref().map(|c| c.id()).or_else(|| self.paths.as_ref().and_then(|p| p.read_pid()));
+            let pid = self.shared.lock().unwrap().child.as_ref().map(|c| c.id()).or_else(|| self.paths().and_then(|p| p.read_pid()));
             if let Some(pid) = pid {
                 self.log(crate::tr_format!("Sende Beenden-Signal an Prozess {pid} ...", "Sending shutdown signal to process {pid} ..."));
                 signal_shutdown(pid);
@@ -934,7 +1105,7 @@ impl Server {
             let mut sh = self.shared.lock().unwrap();
             let done = match sh.child.as_mut() {
                 Some(c) => matches!(c.try_wait(), Ok(Some(_))),
-                None => !orphan || !port_open(self.port),
+                None => !orphan || !port_open(port),
             };
             if done {
                 sh.child = None;
@@ -955,9 +1126,10 @@ impl Server {
             std::thread::sleep(Duration::from_millis(100));
         }
         self.log(crate::i18n::text("Server beendet."));
-        if let (Some(p), false) = (&self.paths, killed) {
+        if let (Some(p), false) = (&self.paths(), killed) {
             let _ = std::fs::remove_file(p.session_flag());
         }
+        *self.applied.lock().unwrap() = None;
         self.set_state(State::Stopped);
     }
 
@@ -1011,6 +1183,67 @@ fn push_log(shared: &Arc<Mutex<Shared>>, kind: LogKind, text: String) {
 #[cfg(test)]
 mod log_tests {
     use super::*;
+
+    /// Echter Server: anderer Port, dann Datenordner wechseln und die Daten mitnehmen.
+    /// `HOME=/tmp/emtest cargo test switch_data_dir -- --ignored` (kurzer HOME wegen der Socket-Pfadlaenge)
+    #[test]
+    #[ignore = "startet einen echten MariaDB-Server"]
+    fn switch_data_dir_copies_the_databases() {
+        let base = app_data_dir();
+        let _ = std::fs::remove_dir_all(&base);
+        let server = Server::new(Config { port: 3417, ..Config::default() });
+        assert!(server.paths().is_some(), "mariadbd fehlt");
+        server.start_blocking(&|| {}).unwrap();
+        let conn = ConnInfo { port: 3417, ..ConnInfo::default() };
+        let mut c = mysql::Conn::new(conn.opts()).unwrap();
+        c.query_drop("CREATE DATABASE umzug; CREATE TABLE umzug.t (id INT); INSERT INTO umzug.t VALUES (7)").unwrap();
+        drop(c);
+        let new = base.with_file_name("EasyMySQL-neu");
+        let _ = std::fs::remove_dir_all(&new);
+        let (tx, rx) = std::sync::mpsc::channel();
+        server.switch_data_dir(conn.clone(), Some(new.clone()), true, move || {
+            let _ = tx.send(());
+        });
+        let deadline = Instant::now() + Duration::from_secs(120);
+        while !(server.state().is_running() && server.paths().unwrap().data == new) {
+            assert!(Instant::now() < deadline, "{:?}", server.state());
+            let _ = rx.recv_timeout(Duration::from_millis(200));
+        }
+        let mut c = mysql::Conn::new(conn.opts()).unwrap();
+        let v: Option<i32> = c.query_first("SELECT id FROM umzug.t").unwrap();
+        assert_eq!(v, Some(7));
+        let datadir: Option<String> = c.query_first("SELECT @@datadir").unwrap();
+        assert!(datadir.unwrap().contains("EasyMySQL-neu"));
+        drop(c);
+        server.stop_blocking(&conn);
+        assert!(base.join("data").join("umzug").is_dir(), "der alte Ordner bleibt");
+        let _ = std::fs::remove_dir_all(&new);
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn config_goes_into_my_ini_and_bad_extra_lines_are_left_out() {
+        let dir = std::env::temp_dir().join(format!("easymysql-ini-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let cfg = Config { port: 3407, network: true, event_scheduler: true, buffer_pool_mb: 256, extra: "# Kommentar\nmax_heap_table_size=32M".into(), ..Config::default() };
+        let server = Server::new(cfg.clone());
+        let paths = Paths { bin: dir.clone(), base: dir.clone(), data: dir.join("data"), ini: dir.join("my.ini") };
+        server.write_ini(&paths, &paths.data, 3407, &paths.ini, &[]).unwrap();
+        let ini = std::fs::read_to_string(&paths.ini).unwrap();
+        for line in ["port=3407", "bind-address=0.0.0.0", "event_scheduler=ON", "innodb_buffer_pool_size=256M", "max_heap_table_size=32M"] {
+            assert!(ini.contains(line), "{line} fehlt:\n{ini}");
+        }
+        // Eigene Zeilen stehen nach den Standardwerten und ueberschreiben sie so
+        assert!(ini.find("max_heap_table_size").unwrap() > ini.find("innodb_buffer_pool_size").unwrap());
+        server.configure(Config { extra: "datadir=/anderswo".into(), ..cfg.clone() });
+        assert!(server.config().extra_problem().is_some());
+        server.write_ini(&paths, &paths.data, 3407, &paths.ini, &[]).unwrap();
+        assert!(!std::fs::read_to_string(&paths.ini).unwrap().contains("/anderswo"));
+        assert_eq!(Config { extra: "[client]".into(), ..Config::default() }.extra_problem().map(|p| p.0), Some(1));
+        assert_eq!(server.port(), 3407);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn general_log_lines() {

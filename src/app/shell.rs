@@ -20,6 +20,7 @@ impl EasyApp {
                 Box::new(crate::tabs::preview::PreviewTab::open(&ctx, p, crate::tabs::preview::detect(p, &head[..n])).ok()?)
             }
             ["sql", path] => Box::new(SqlTab::open_file(Path::new(path), "", self.project.as_deref()).ok()?),
+            ["code", path] => Box::new(crate::tabs::code::CodeTab::open_file(Path::new(path), "", self.project.as_deref()).ok()?),
             ["scratch", id, db] => Box::new(SqlTab::restore_scratch(id.parse().ok()?, db.to_string())?),
             ["er", db] => Box::new(ErTab::new(db.to_string())),
             ["data", db, t] => Box::new(DataTab::new(db.to_string(), t.to_string())),
@@ -133,8 +134,12 @@ impl EasyApp {
                 ui.menu_button(crate::i18n::text("Datei"), |ui| {
                     style::menu_item_look(ui);
                     item(ui, crate::i18n::text("Neue Abfrage"), Cmd::NewQuery, &mut cmd);
+                    item(ui, crate::i18n::text("Neue Datei …"), Cmd::NewFile, &mut cmd);
                     item(ui, crate::i18n::text("Datei öffnen …"), Cmd::OpenFile, &mut cmd);
                     item(ui, crate::i18n::text("Ordner öffnen …"), Cmd::OpenFolder, &mut cmd);
+                    item(ui, crate::i18n::tr("Neues Java-Projekt …", "New Java project …"), Cmd::NewJavaProject, &mut cmd);
+                    item(ui, crate::i18n::tr("Neues Python-Projekt …", "New Python project …"), Cmd::NewPythonProject, &mut cmd);
+                    item(ui, crate::i18n::tr("Neues JavaScript-Projekt …", "New JavaScript project …"), Cmd::NewNodeProject, &mut cmd);
                     ui.menu_button(crate::i18n::text("Zuletzt geöffnet"), |ui| {
                     style::menu_item_look(ui);
                         for p in self.settings.recent.clone() {
@@ -324,6 +329,7 @@ impl EasyApp {
             (Icon::Search, SideView::Search, Cmd::ShowSearch),
             (Icon::Database, SideView::Databases, Cmd::ShowDatabases),
             (Icon::History, SideView::History, Cmd::ShowHistory),
+            (Icon::GitBranch, SideView::Git, Cmd::ShowGit),
         ] {
             let active = self.settings.sidebar && self.side_view == view;
             let k = keymap::text(cmd);

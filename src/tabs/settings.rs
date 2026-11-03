@@ -20,6 +20,14 @@ pub const SECTIONS: &[(&str, &str)] = &[
     ("start", "Start"),
     ("updates", "Updates"),
     ("editor", "Editor"),
+    ("abfragen", "Abfragen und Daten"),
+    ("ausfuehren", "Ausführen"),
+    ("java", "Java"),
+    ("python", "Python"),
+    ("javascript", "JavaScript"),
+    ("sprachserver", "Sprachserver"),
+    ("git", "Git & GitHub"),
+    ("terminal", "Terminal"),
     ("maus", "Maus"),
     ("speicherorte", "Speicherorte"),
     ("dateien", "Dateien"),
@@ -47,6 +55,8 @@ pub struct SettingsTab {
     server_edit: Option<(Option<usize>, crate::profiles::Profile)>,
     /// Neuer Speicherordner, wartet auf "verschieben?"
     pending_root: Option<std::path::PathBuf>,
+    /// Neuer Datenordner des Servers, wartet auf "Daten mitnehmen?" (None im Inneren = Standard)
+    pending_data: Option<Option<std::path::PathBuf>>,
 }
 
 impl SettingsTab {
@@ -66,6 +76,7 @@ impl SettingsTab {
             servers: crate::profiles::all(),
             server_edit: None,
             pending_root: None,
+            pending_data: None,
         }
     }
 
@@ -299,7 +310,7 @@ impl TabView for SettingsTab {
                             use crate::updates::Phase;
                             let st = &cx.update;
                             let text = match st.phase {
-                                Phase::Idle => crate::i18n::text("Die Suche läuft beim Start und danach alle sechs Stunden.").to_string(),
+                                Phase::Idle => crate::tr_format!("Die Suche läuft beim Start und danach alle {} Stunden.", "The check runs at startup and every {} hours after that.", s.app_update_hours),
                                 _ => st.text.clone(),
                             };
                             ui.label(RichText::new(text).color(match st.phase {
@@ -332,6 +343,9 @@ impl TabView for SettingsTab {
                             });
                         });
                     });
+                    crate::widgets::row(ui, crate::i18n::tr("Suchen alle", "Check every"), |ui| {
+                        crate::widgets::drag(ui, &mut s.app_update_hours, 1..=720, crate::i18n::tr(" Stunden", " hours"));
+                    });
                     crate::widgets::row(ui, crate::i18n::text("Automatisch aktualisieren"), |ui| {
                         crate::widgets::switch(ui, &mut s.auto_install, crate::i18n::text("Updates im Hintergrund laden und installieren"))
                             .on_hover_text(crate::i18n::text("Aus: Neue Versionen werden gemeldet und erst nach Ihrer Zustimmung geladen. Nach dem Installieren fragt EasyMySQL, ob es neu starten soll."));
@@ -358,7 +372,49 @@ impl TabView for SettingsTab {
                     crate::widgets::row(ui, crate::i18n::text("Klammern schließen"), |ui| {
                         crate::widgets::switch(ui, &mut s.auto_close, crate::i18n::text("( [ { ' \" ` automatisch schließen"));
                     });
+                    editor_settings(ui, s);
                 });
+
+                self.heading(ui, "abfragen", crate::i18n::tr("Abfragen und Daten", "Queries and data"));
+                grid(ui, "g-data", &mut |ui| {
+                    let pal = style::pal();
+                    crate::widgets::row(ui, crate::i18n::tr("Zeilen je Ergebnis", "Rows per result"), |ui| {
+                        ui.horizontal(|ui| {
+                            crate::widgets::drag(ui, &mut s.result_max_rows, 100..=10_000_000, "");
+                            ui.label(RichText::new(crate::i18n::tr("mehr werden nicht geladen (der Hinweis zeigt, dass es mehr gibt)", "more are not loaded (a note shows that there are more)")).small().color(pal.text_weak));
+                        });
+                    });
+                    crate::widgets::row(ui, crate::i18n::tr("Zeilen je Seite", "Rows per page"), |ui| {
+                        ui.horizontal(|ui| {
+                            crate::widgets::drag(ui, &mut s.data_page_rows, 10..=100_000, "");
+                            ui.label(RichText::new(crate::i18n::tr("in der Datenansicht einer Tabelle", "in the data view of a table")).small().color(pal.text_weak));
+                        });
+                    });
+                    crate::widgets::row(ui, crate::i18n::tr("Verlauf", "History"), |ui| {
+                        crate::widgets::drag(ui, &mut s.history_max, 10..=1_000_000, crate::i18n::tr(" Anweisungen", " statements"));
+                    });
+                    crate::widgets::row(ui, crate::i18n::tr("Vor dem Löschen", "Before deleting"), |ui| {
+                        crate::widgets::switch(ui, &mut s.backup_before_delete, crate::i18n::tr("Betroffene Tabellen sichern (DROP, TRUNCATE, DELETE ohne WHERE)", "Back up the affected tables (DROP, TRUNCATE, DELETE without WHERE)"));
+                    });
+                });
+
+                let ctx = ui.ctx().clone();
+                self.heading(ui, "ausfuehren", crate::i18n::tr("Ausführen", "Running programs"));
+                grid(ui, "g-run", &mut |ui| run_settings(ui, &ctx, s));
+                self.heading(ui, "java", "Java");
+                grid(ui, "g-java", &mut |ui| java_settings(ui, &ctx, s));
+                self.heading(ui, "python", "Python");
+                grid(ui, "g-python", &mut |ui| python_settings(ui, &ctx, s));
+                self.heading(ui, "javascript", "JavaScript & TypeScript");
+                grid(ui, "g-js", &mut |ui| node_settings(ui, &ctx, s));
+                self.heading(ui, "sprachserver", crate::i18n::tr("Sprachserver", "Language servers"));
+                grid(ui, "g-lsp", &mut |ui| lsp_settings(ui, &ctx, s));
+                self.heading(ui, "git", "Git & GitHub");
+                let actions = &mut *cx.actions;
+                grid(ui, "g-git", &mut |ui| git_settings(ui, &ctx, s, actions));
+                self.heading(ui, "terminal", "Terminal");
+                let profiles = crate::terminal::profiles(None, &s.conn.clone());
+                grid(ui, "g-term", &mut |ui| terminal_settings(ui, s, &profiles));
 
                 self.heading(ui, "maus", crate::i18n::text("Maus"));
                 grid(ui, "g-mouse", &mut |ui| {
@@ -413,7 +469,7 @@ impl TabView for SettingsTab {
                             });
                         });
                     });
-                    if let Some(p) = &cx.server.paths {
+                    if let Some(p) = &cx.server.paths() {
                         crate::widgets::row(ui, crate::i18n::text("Datenbanken (MariaDB)"), |ui| {
                             if path_with_open(ui, &p.data.display().to_string()) {
                                 crate::app::open_path(&p.data);
@@ -613,7 +669,11 @@ impl TabView for SettingsTab {
                 }
 
                 self.heading(ui, "server", "Server");
+                let server = cx.server;
+                let actions = &mut *cx.actions;
+                let pending_data = &mut self.pending_data;
                 grid(ui, "g-server", &mut |ui| {
+                    server_settings(ui, s, server, actions, pending_data);
                     crate::widgets::row(ui, crate::i18n::text("Anweisungen mitschreiben"), |ui| {
                         crate::widgets::switch(ui, &mut s.query_log, crate::i18n::text("jede Anweisung im Server-Log"));
                     });
@@ -661,6 +721,826 @@ impl TabView for SettingsTab {
             cx.actions.push(Action::SettingsChanged);
         }
     }
+}
+
+/// Ist der Port schon belegt? Das Ergebnis gilt, bis ein anderer Port eingetragen wird (nicht in jedem Bild pruefen).
+fn port_taken(port: u16) -> bool {
+    static LAST: std::sync::Mutex<Option<(u16, bool)>> = std::sync::Mutex::new(None);
+    let mut last = LAST.lock().unwrap();
+    match *last {
+        Some((p, taken)) if p == port => taken,
+        _ => {
+            let taken = crate::server::port_open(port);
+            *last = Some((port, taken));
+            taken
+        }
+    }
+}
+
+/// Abschnitt Server: Port, Erreichbarkeit, Datenordner, Speicher und eigene my.ini-Zeilen des eigenen Servers
+fn server_settings(ui: &mut egui::Ui, s: &mut crate::settings::Settings, server: &crate::server::Server, actions: &mut Vec<Action>, pending_data: &mut Option<Option<std::path::PathBuf>>) {
+    let pal = style::pal();
+    let weak = |ui: &mut egui::Ui, t: &str| {
+        ui.vertical(|ui| {
+            ui.add(egui::Label::new(RichText::new(t).small().color(pal.text_weak)).wrap());
+        });
+    };
+    // Kurzer Hinweis neben einem Feld (mittig zur Zeile)
+    let inline = |ui: &mut egui::Ui, t: &str| {
+        ui.label(RichText::new(t).small().color(pal.text_weak));
+    };
+    let cfg = &mut s.server;
+    crate::widgets::row(ui, crate::i18n::tr("Automatisch starten", "Start automatically"), |ui| {
+        crate::widgets::switch(ui, &mut s.server_autostart, crate::i18n::tr("beim Start von EasyMySQL", "when EasyMySQL starts"))
+            .on_hover_text(crate::i18n::tr("Aus: Den Server startet man über Server → Starten.", "Off: start the server through Server → Start."));
+    });
+    crate::widgets::row(ui, "Port", |ui| {
+        ui.horizontal(|ui| {
+            crate::widgets::number_field(ui, &mut cfg.port, 1..=65535);
+            if cfg.port != crate::server::DEFAULT_PORT && ui.small_button(crate::i18n::text("Standard")).clicked() {
+                cfg.port = crate::server::DEFAULT_PORT;
+            }
+            if cfg.port != server.port() && port_taken(cfg.port) {
+                ui.label(RichText::new(crate::tr_format!("Port {} ist schon belegt.", "Port {} is already in use.", cfg.port)).small().color(pal.warn_text));
+            }
+        });
+    });
+    crate::widgets::row(ui, crate::i18n::tr("Erreichbar", "Reachable"), |ui| {
+        crate::widgets::segmented(ui, &mut cfg.network, &[(false, crate::i18n::tr("Nur dieser PC", "This PC only")), (true, crate::i18n::tr("Im Netzwerk", "On the network"))]);
+    });
+    if cfg.network {
+        crate::widgets::row(ui, "", |ui| {
+            weak(ui, crate::i18n::tr(
+                "Andere Rechner brauchen einen eigenen Benutzer mit Host % und Passwort (Server → Benutzer & Rechte); root bleibt auf diesen PC beschränkt. Die Firewall fragt beim nächsten Start eventuell nach.",
+                "Other computers need their own user with host % and a password (Server → Users & privileges); root stays limited to this PC. The firewall may ask on the next start.",
+            ));
+        });
+    }
+    crate::widgets::row(ui, crate::i18n::tr("Datenordner", "Data folder"), |ui| {
+        ui.vertical(|ui| {
+            let current = server.paths().map(|p| p.data.display().to_string()).unwrap_or_default();
+            ui.add(egui::Label::new(RichText::new(&current).monospace()).truncate()).on_hover_text(&current);
+            ui.horizontal(|ui| {
+                if ui.button(crate::i18n::text("Ändern …")).clicked()
+                    && let Some(p) = rfd::FileDialog::new().pick_folder()
+                    && Some(&p) != cfg.data_dir.as_ref()
+                {
+                    *pending_data = Some(Some(p));
+                }
+                if cfg.data_dir.is_some() && ui.button(crate::i18n::text("Standard")).clicked() {
+                    *pending_data = Some(None);
+                }
+                if ui.button(crate::i18n::text("Öffnen")).clicked()
+                    && let Some(p) = server.paths()
+                {
+                    crate::app::open_path(&p.data);
+                }
+            });
+        });
+    });
+    if let Some(target) = pending_data.clone() {
+        let dir = target.clone().unwrap_or_else(|| crate::server::app_data_dir().join("data"));
+        let existing = dir.join("mysql").is_dir();
+        crate::widgets::row(ui, "", |ui| {
+            egui::Frame::group(ui.style()).show(ui, |ui| {
+                ui.vertical(|ui| {
+                    ui.label(crate::tr_format!("Neuer Datenordner: {}", "New data folder: {}", dir.display()));
+                    if existing {
+                        weak(ui, crate::i18n::tr("Dort liegen schon Datenbanken. EasyMySQL startet den Server damit neu; der bisherige Ordner bleibt unverändert.", "That folder already holds databases. EasyMySQL restarts the server with it; the current folder stays unchanged."));
+                    } else {
+                        weak(ui, crate::i18n::tr("Der Server wird dafür kurz beendet. Beim Kopieren bleibt der bisherige Ordner unverändert erhalten.", "The server stops briefly. When copying, the current folder is kept unchanged."));
+                    }
+                    ui.horizontal(|ui| {
+                        if existing {
+                            if crate::widgets::primary(ui, crate::i18n::tr("Verwenden", "Use it")).clicked() {
+                                actions.push(Action::ServerDataDir { dir: target.clone(), copy: false });
+                                *pending_data = None;
+                            }
+                        } else {
+                            if crate::widgets::primary(ui, crate::i18n::tr("Daten kopieren", "Copy data")).clicked() {
+                                actions.push(Action::ServerDataDir { dir: target.clone(), copy: true });
+                                *pending_data = None;
+                            }
+                            if ui.button(crate::i18n::tr("Leer beginnen", "Start empty")).clicked() {
+                                actions.push(Action::ServerDataDir { dir: target.clone(), copy: false });
+                                *pending_data = None;
+                            }
+                        }
+                        if ui.button(crate::i18n::text("Abbrechen")).clicked() {
+                            *pending_data = None;
+                        }
+                    });
+                });
+            });
+        });
+    }
+    crate::widgets::row(ui, crate::i18n::tr("Arbeitsspeicher", "Memory"), |ui| {
+        ui.horizontal(|ui| {
+            crate::widgets::drag(ui, &mut cfg.buffer_pool_mb, 16..=262_144, " MB");
+            inline(ui, crate::i18n::tr("Zwischenspeicher für Tabellen (innodb_buffer_pool_size)", "Cache for tables (innodb_buffer_pool_size)"));
+        });
+    });
+    crate::widgets::row(ui, crate::i18n::tr("Verbindungen", "Connections"), |ui| {
+        ui.horizontal(|ui| {
+            crate::widgets::drag(ui, &mut cfg.max_connections, 10..=100_000, "");
+            inline(ui, crate::i18n::tr("höchstens gleichzeitig (max_connections)", "at most at the same time (max_connections)"));
+        });
+    });
+    crate::widgets::row(ui, crate::i18n::tr("Größte Anweisung", "Largest statement"), |ui| {
+        ui.horizontal(|ui| {
+            crate::widgets::drag(ui, &mut cfg.packet_mb, 1..=1024, " MB");
+            inline(ui, crate::i18n::tr("z. B. für große Bilder in BLOB-Spalten (max_allowed_packet)", "e.g. for large images in BLOB columns (max_allowed_packet)"));
+        });
+    });
+    crate::widgets::row(ui, crate::i18n::tr("Sortierung", "Collation"), |ui| {
+        ui.horizontal(|ui| {
+            let items: Vec<String> = crate::server::COLLATIONS.iter().map(|c| c.to_string()).collect();
+            crate::tabs::str_combo(ui, "server-collation", &items, &mut cfg.collation, 210.0);
+            inline(ui, crate::i18n::tr("Standard für neue Datenbanken", "Default for new databases"));
+        });
+    });
+    crate::widgets::row(ui, crate::i18n::tr("Ereignisse", "Events"), |ui| {
+        crate::widgets::switch(ui, &mut cfg.event_scheduler, crate::i18n::tr("CREATE EVENT ausführen (event_scheduler)", "Run CREATE EVENT (event_scheduler)"));
+    });
+    crate::widgets::row(ui, crate::i18n::tr("Verschlüsselung (TLS)", "Encryption (TLS)"), |ui| {
+        ui.vertical(|ui| {
+            let items: Vec<(crate::tls::Mode, &str)> = crate::tls::Mode::ALL.iter().map(|m| (*m, m.label())).collect();
+            crate::widgets::segmented(ui, &mut cfg.tls, &items);
+            match cfg.tls {
+                crate::tls::Mode::Default => weak(ui, crate::i18n::tr("Wie MariaDB es selbst macht: ab Version 11.4 verschlüsselt mit einem bei jedem Start neuen Zertifikat, das Programme nicht prüfen können.", "What MariaDB does by itself: from version 11.4 encrypted with a certificate that changes on every start and that programs cannot verify.")),
+                crate::tls::Mode::On => weak(ui, crate::i18n::tr("Dauerhaftes Zertifikat einer eigenen CA. EasyMySQL und gestartete Programme verbinden sich verschlüsselt und prüfen es; unverschlüsselte Verbindungen bleiben erlaubt.", "Permanent certificate from an own CA. EasyMySQL and started programs connect encrypted and verify it; unencrypted connections stay allowed.")),
+                crate::tls::Mode::Required => weak(ui, crate::i18n::tr("Wie oben, aber Verbindungen über das Netz müssen verschlüsselt sein (require_secure_transport). Empfohlen, wenn der Server im Netzwerk erreichbar ist.", "As above, but connections over the network must be encrypted (require_secure_transport). Recommended when the server is reachable on the network.")),
+            }
+            if cfg.network && cfg.tls == crate::tls::Mode::Default {
+                ui.label(RichText::new(crate::i18n::tr("Der Server ist im Netzwerk erreichbar: „Nur verschlüsselt“ wird empfohlen.", "The server is reachable on the network: “Encrypted only” is recommended.")).small().color(pal.warn_text));
+            }
+            if cfg.tls != crate::tls::Mode::Default {
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(crate::i18n::tr("Weitere Namen:", "More names:")).small());
+                    ui.add(egui::TextEdit::singleline(&mut cfg.tls_names).hint_text("db.firma.local 192.168.1.20").desired_width(260.0));
+                });
+                ui.horizontal(|ui| {
+                    if ui.small_button(crate::i18n::tr("CA-Zertifikat speichern …", "Save CA certificate …")).on_hover_text(crate::i18n::tr("Für andere Rechner und Programme, die das Zertifikat prüfen sollen", "For other computers and programs that should verify the certificate")).clicked() {
+                        match crate::tls::ensure(&cfg.tls_names) {
+                            Ok(f) => {
+                                if let Some(p) = rfd::FileDialog::new().set_file_name("easymysql-ca.pem").save_file() {
+                                    let _ = std::fs::copy(&f.ca, p);
+                                }
+                            }
+                            Err(e) => actions.push(Action::Error(e)),
+                        }
+                    }
+                    if ui.small_button(crate::i18n::tr("Neu erzeugen", "Regenerate")).on_hover_text(crate::i18n::tr("Neue CA und neues Zertifikat (danach den Server neu starten)", "New CA and certificate (restart the server afterwards)")).clicked() {
+                        match crate::tls::generate(&cfg.tls_names) {
+                            Ok(_) => actions.push(Action::RestartServer),
+                            Err(e) => actions.push(Action::Error(e)),
+                        }
+                    }
+                    if ui.small_button(crate::i18n::text("Öffnen")).clicked() {
+                        let _ = std::fs::create_dir_all(crate::tls::dir());
+                        crate::app::open_path(&crate::tls::dir());
+                    }
+                });
+            }
+        });
+    });
+    mariadb_version_ui(ui, s, server, actions);
+    let cfg = &mut s.server;
+    crate::widgets::row(ui, crate::i18n::tr("Weitere Einstellungen", "More settings"), |ui| {
+        ui.vertical(|ui| {
+            ui.add(egui::TextEdit::multiline(&mut cfg.extra).font(egui::TextStyle::Monospace).desired_rows(3).desired_width(f32::INFINITY).hint_text("sql_mode=STRICT_ALL_TABLES\nlong_query_time=2"));
+            match cfg.extra_problem() {
+                Some((line, why)) => {
+                    ui.label(RichText::new(crate::tr_format!("Zeile {line}: {why} – die Zeilen werden erst übernommen, wenn alle stimmen.", "Line {line}: {why} – the lines are only used once all of them are valid.")).small().color(pal.error_text));
+                }
+                None => weak(ui, crate::i18n::tr("Eine Einstellung je Zeile für [mysqld] in my.ini. Sie überschreiben die Werte oben.", "One setting per line for [mysqld] in my.ini. They override the values above.")),
+            }
+            if let Some(p) = server.paths()
+                && p.ini.is_file()
+                && ui.small_button(crate::i18n::tr("my.ini ansehen", "View my.ini")).clicked()
+            {
+                actions.push(Action::OpenFileAt { path: p.ini.clone(), line: 0 });
+            }
+        });
+    });
+    // Am Ende, damit das Formular beim Tippen nicht verrutscht (das Feld behielte sonst den Fokus nicht)
+    if server.needs_restart() {
+        crate::widgets::row(ui, "", |ui| {
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(crate::i18n::tr("Die Änderungen gelten nach einem Neustart des Servers.", "The changes take effect after restarting the server.")).color(pal.warn_text));
+                if crate::widgets::primary(ui, crate::i18n::tr("Jetzt neu starten", "Restart now")).clicked() {
+                    actions.push(Action::RestartServer);
+                }
+            });
+        });
+    }
+}
+
+/// Hinweis unter einer Einstellung (bricht um, statt die Karte zu verbreitern)
+fn note(ui: &mut egui::Ui, t: &str) {
+    let pal = style::pal();
+    ui.vertical(|ui| {
+        ui.add(egui::Label::new(RichText::new(t).small().color(pal.text_weak)).wrap());
+    });
+}
+
+/// Einzeiliges Feld fuer Optionen (Monospace, ganze Breite)
+fn args_field(ui: &mut egui::Ui, value: &mut String, hint: &str) {
+    ui.add(egui::TextEdit::singleline(value).font(egui::TextStyle::Monospace).hint_text(hint).desired_width(f32::INFINITY));
+}
+
+/// Wahl eines Werkzeugs: automatisch, eigenes, vom System oder ein Pfad
+fn tool_choice(ui: &mut egui::Ui, id: &str, value: &mut String, pick_folder: bool) {
+    let kind = match value.as_str() {
+        "" => 0,
+        "own" => 1,
+        "system" => 2,
+        _ => 3,
+    };
+    let mut k = kind;
+    ui.vertical(|ui| {
+        ui.push_id(id, |ui| {
+            crate::widgets::segmented(
+                ui,
+                &mut k,
+                &[(0, crate::i18n::tr("Automatisch", "Automatic")), (1, crate::i18n::tr("Eigenes", "Own")), (2, crate::i18n::tr("System", "System")), (3, crate::i18n::tr("Pfad", "Path"))],
+            );
+        });
+        if k != kind {
+            *value = match k {
+                0 => String::new(),
+                1 => "own".into(),
+                2 => "system".into(),
+                _ => String::from(if cfg!(windows) { "C:\\" } else { "/" }),
+            };
+        }
+        if k == 3 {
+            ui.horizontal(|ui| {
+                ui.add(egui::TextEdit::singleline(value).font(egui::TextStyle::Monospace).desired_width(ui.available_width() - 80.0));
+                if ui.button(crate::i18n::text("Ändern …")).clicked() {
+                    let picked = if pick_folder { rfd::FileDialog::new().pick_folder() } else { rfd::FileDialog::new().pick_file() };
+                    if let Some(p) = picked {
+                        *value = p.display().to_string();
+                    }
+                }
+            });
+        }
+    });
+}
+
+/// Stand der Downloads (Fortschritt, Fehler, fertig) mit Abbrechen
+fn install_state(ui: &mut egui::Ui) {
+    use crate::dev::install;
+    let pal = style::pal();
+    let st = install::status();
+    if st.busy || install::checking() {
+        ui.horizontal(|ui| {
+            ui.spinner();
+            ui.label(RichText::new(install::status_line(&st)).small().color(pal.text_weak));
+            if st.busy && ui.small_button(crate::i18n::text("Abbrechen")).clicked() {
+                install::cancel();
+            }
+        });
+        if let Some(f) = st.fraction {
+            ui.add(egui::ProgressBar::new(f).desired_width(260.0).desired_height(8.0).corner_radius(4));
+        }
+    } else if let Some(e) = &st.error {
+        ui.label(RichText::new(e).small().color(pal.error_text));
+    } else if !st.stage.is_empty() {
+        ui.label(RichText::new(&st.stage).small().color(pal.ok_text));
+    }
+}
+
+/// Knopf "Herunterladen"/"Aktualisieren" fuer ein Werkzeug
+fn tool_button(ui: &mut egui::Ui, ctx: &egui::Context, tool: crate::dev::Tool, have: bool) {
+    use crate::dev::install;
+    let busy = install::status().busy || install::checking();
+    let label = if have { crate::i18n::tr("Aktualisieren", "Update") } else { crate::i18n::tr("Herunterladen", "Download") };
+    if ui.add_enabled(!busy, egui::Button::new(label).small()).on_hover_text(crate::i18n::tr("Lädt die neueste stabile Version", "Downloads the newest stable version")).clicked() {
+        install::install(&[tool], ctx);
+    }
+}
+
+fn open_button(ui: &mut egui::Ui, dir: &std::path::Path) {
+    if ui.small_button(crate::i18n::text("Öffnen")).on_hover_text(dir.display().to_string()).clicked() {
+        crate::app::open_path(dir);
+    }
+}
+
+/// Weitere Einstellungen des Editors
+fn editor_settings(ui: &mut egui::Ui, s: &mut crate::settings::Settings) {
+    let e = &mut s.editor;
+    crate::widgets::row(ui, crate::i18n::tr("Einrückung", "Indentation"), |ui| {
+        ui.horizontal(|ui| {
+            let mut mode = if e.indent == 0 { 0 } else { 1 };
+            if crate::widgets::segmented(ui, &mut mode, &[(0, crate::i18n::tr("Je nach Sprache", "By language")), (1, crate::i18n::tr("Fest", "Fixed"))]) {
+                e.indent = if mode == 0 { 0 } else { 4 };
+            }
+            if e.indent > 0 {
+                crate::widgets::drag(ui, &mut e.indent, 1..=16, crate::i18n::tr(" Leerzeichen", " spaces"));
+            }
+        });
+    });
+    crate::widgets::row(ui, crate::i18n::tr("Automatisch einrücken", "Auto-indent"), |ui| {
+        crate::widgets::switch(ui, &mut e.auto_indent, crate::i18n::tr("nach Enter, { und : (Python)", "after Enter, { and : (Python)"));
+    });
+    crate::widgets::row(ui, crate::i18n::tr("Anzeige", "Display"), |ui| {
+        ui.vertical(|ui| {
+            crate::widgets::switch(ui, &mut e.line_numbers, crate::i18n::tr("Zeilennummern", "Line numbers"));
+            crate::widgets::switch(ui, &mut e.highlight_line, crate::i18n::tr("Zeile mit dem Cursor hervorheben", "Highlight the cursor line"));
+            crate::widgets::switch(ui, &mut e.match_brackets, crate::i18n::tr("Zusammengehörige Klammern markieren", "Highlight matching brackets"));
+            crate::widgets::switch(ui, &mut e.scroll_past_end, crate::i18n::tr("Über die letzte Zeile hinaus scrollen", "Scroll past the last line"));
+        });
+    });
+    crate::widgets::row(ui, crate::i18n::tr("SQL in Programmcode", "SQL in program code"), |ui| {
+        crate::widgets::switch(ui, &mut e.sql_in_strings, crate::i18n::tr("SQL in Zeichenketten von Java, Python und JavaScript prüfen", "Check SQL in strings of Java, Python and JavaScript"));
+    });
+    crate::widgets::row(ui, crate::i18n::tr("Prüfen nach", "Check after"), |ui| {
+        ui.horizontal(|ui| {
+            crate::widgets::drag(ui, &mut e.lint_delay_ms, 0..=5000, " ms");
+            ui.label(RichText::new(crate::i18n::tr("Pause beim Tippen", "pause in typing")).small().color(style::pal().text_weak));
+        });
+    });
+    crate::widgets::row(ui, crate::i18n::tr("Speichern nach", "Save after"), |ui| {
+        ui.horizontal(|ui| {
+            crate::widgets::drag(ui, &mut s.autosave_ms, 200..=60_000, " ms");
+            ui.label(RichText::new(crate::i18n::tr("ohne Tippen (wenn automatisches Speichern an ist)", "without typing (when auto-save is on)")).small().color(style::pal().text_weak));
+        });
+    });
+}
+
+/// Version des eigenen MariaDB-Servers, Suche nach Updates und Update ohne Administratorrechte
+fn mariadb_version_ui(ui: &mut egui::Ui, s: &mut crate::settings::Settings, server: &crate::server::Server, actions: &mut Vec<Action>) {
+    use crate::mariadb_update::{self as mu, Track};
+    let pal = style::pal();
+    let st = mu::status();
+    let installed = server.paths().and_then(|p| mu::installed_version(&p.bin));
+    crate::widgets::row(ui, crate::i18n::tr("MariaDB-Version", "MariaDB version"), |ui| {
+        ui.vertical(|ui| {
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(installed.clone().unwrap_or_else(|| "?".into())).monospace());
+                if s.server.bin_dir.is_some() {
+                    ui.label(RichText::new(crate::i18n::tr("aktualisiert", "updated")).small().color(pal.text_weak));
+                }
+                if ui.add_enabled(!st.busy, egui::Button::new(crate::i18n::tr("Nach Updates suchen", "Check for updates")).small()).clicked() {
+                    mu::check(server, Track::from_id(&s.mariadb_track), ui.ctx());
+                }
+            });
+            if st.busy {
+                ui.horizontal(|ui| {
+                    ui.spinner();
+                    ui.label(RichText::new(&st.stage).small().color(pal.text_weak));
+                });
+                if let Some(f) = st.fraction {
+                    ui.add(egui::ProgressBar::new(f).desired_width(260.0).desired_height(8.0).corner_radius(4));
+                }
+            } else if let Some(rel) = &st.available {
+                ui.label(RichText::new(crate::tr_format!("MariaDB {} ist verfügbar.", "MariaDB {} is available.", rel.version)).color(pal.ok_text));
+                note(ui, crate::i18n::tr("Vorher werden alle Datenbanken gesichert und der Datenordner kopiert. Der Server ist kurz nicht erreichbar. Klappt der Start nicht, läuft wieder die bisherige Version.", "All databases are backed up and the data folder is copied first. The server is briefly unavailable. If the start fails, the previous version runs again."));
+                if crate::widgets::primary(ui, &crate::tr_format!("Auf {} aktualisieren", "Update to {}", rel.version)).clicked() {
+                    actions.push(Action::MariaDbUpdate(rel.clone()));
+                }
+            } else if let Some(e) = &st.error {
+                ui.add(egui::Label::new(RichText::new(e).small().color(pal.error_text)).wrap());
+            } else if let Some(d) = &st.done {
+                ui.label(RichText::new(d).small().color(pal.ok_text));
+            }
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(crate::i18n::tr("Neue Versionen:", "New versions:")).small());
+                let mut m = s.mariadb_updates.clone();
+                if crate::widgets::segmented(ui, &mut m, &[("aus".to_string(), crate::i18n::tr("nicht suchen", "don't check")), ("melden".to_string(), crate::i18n::tr("melden", "notify")), ("automatisch".to_string(), crate::i18n::tr("automatisch installieren", "install automatically"))]) {
+                    s.mariadb_updates = m;
+                }
+            });
+            ui.horizontal(|ui| {
+                let mut t = s.mariadb_track.clone();
+                if crate::widgets::segmented(ui, &mut t, &[("lts".to_string(), crate::i18n::tr("Langzeitversionen (LTS)", "Long-term versions (LTS)")), ("stable".to_string(), crate::i18n::tr("Neueste stabile", "Newest stable"))]) {
+                    s.mariadb_track = t;
+                }
+            });
+            crate::widgets::switch(ui, &mut s.mariadb_copy_data, crate::i18n::tr("Datenordner vor dem Update zusätzlich kopieren", "Also copy the data folder before the update"));
+            if s.server.bin_dir.is_some() && ui.small_button(crate::i18n::tr("Mitgelieferte Version verwenden", "Use the bundled version")).on_hover_text(crate::i18n::tr("Nur möglich, wenn sie nicht älter ist als die Daten", "Only possible when it is not older than the data")).clicked() {
+                s.server.bin_dir = None;
+                actions.push(Action::RestartServer);
+            }
+        });
+    });
+}
+
+/// Abschnitt Ausfuehren: gilt fuer Java, Python und JavaScript
+fn run_settings(ui: &mut egui::Ui, ctx: &egui::Context, s: &mut crate::settings::Settings) {
+    use crate::dev::{UpdatePolicy, install};
+    let d = &mut s.dev;
+    crate::widgets::row(ui, crate::i18n::tr("Programmargumente", "Program arguments"), |ui| {
+        ui.vertical(|ui| {
+            args_field(ui, &mut d.program_args, "--verbose \"Datei mit Leerzeichen.txt\"");
+            note(ui, crate::i18n::tr("Werden jedem gestarteten Programm mitgegeben (args in main, sys.argv, process.argv).", "Passed to every started program (args in main, sys.argv, process.argv)."));
+        });
+    });
+    crate::widgets::row(ui, crate::i18n::tr("Umgebungsvariablen", "Environment variables"), |ui| {
+        ui.vertical(|ui| {
+            ui.add(egui::TextEdit::multiline(&mut d.program_env).font(egui::TextStyle::Monospace).desired_rows(3).desired_width(f32::INFINITY).hint_text("APP_MODE=test\nLOG_LEVEL=debug"));
+            note(ui, crate::i18n::tr("NAME=Wert je Zeile; # leitet einen Kommentar ein.", "NAME=value per line; # starts a comment."));
+        });
+    });
+    crate::widgets::row(ui, crate::i18n::tr("Datenbank übergeben", "Pass the database"), |ui| {
+        crate::widgets::switch(ui, &mut d.pass_connection, crate::i18n::tr("Server, Datenbank und Passwort als EASYMYSQL_DB_* mitgeben", "Pass server, database and password as EASYMYSQL_DB_*"));
+    });
+    crate::widgets::row(ui, crate::i18n::tr("Vor dem Start", "Before starting"), |ui| {
+        ui.vertical(|ui| {
+            crate::widgets::switch(ui, &mut d.save_before_run, crate::i18n::tr("Alle Dateien speichern", "Save all files"));
+            crate::widgets::switch(ui, &mut d.check_before_run, crate::i18n::tr("Syntax prüfen (Python, JavaScript)", "Check syntax (Python, JavaScript)"));
+        });
+    });
+    crate::widgets::row(ui, crate::i18n::tr("Arbeitsordner", "Working folder"), |ui| {
+        crate::widgets::segmented(ui, &mut d.cwd_project, &[(true, crate::i18n::tr("Projekt", "Project")), (false, crate::i18n::tr("Ordner der Datei", "Folder of the file"))]);
+    });
+    crate::widgets::row(ui, "Terminal", |ui| {
+        crate::widgets::switch(ui, &mut d.reuse_terminal, crate::i18n::tr("Ein neuer Start ersetzt den vorigen desselben Programms", "A new run replaces the previous one of the same program"));
+    });
+    crate::widgets::row(ui, crate::i18n::tr("Werkzeuge laden", "Download tools"), |ui| {
+        ui.vertical(|ui| {
+            crate::widgets::switch(ui, &mut d.auto_download, crate::i18n::tr("Fehlendes ohne Nachfrage herunterladen (JDK, Python, Node.js, Treiber …)", "Download missing tools without asking (JDK, Python, Node.js, drivers …)"));
+        });
+    });
+    crate::widgets::row(ui, crate::i18n::tr("Nach Updates suchen", "Check for updates"), |ui| {
+        ui.vertical(|ui| {
+            let items: Vec<(UpdatePolicy, &str)> = UpdatePolicy::ALL.iter().map(|p| (*p, p.label())).collect();
+            crate::widgets::segmented(ui, &mut d.updates, &items);
+            let busy = install::status().busy || install::checking();
+            if ui.add_enabled(!busy, egui::Button::new(crate::i18n::text("Jetzt nach Updates suchen"))).clicked() {
+                install::check_updates_now(ctx);
+            }
+            install_state(ui);
+        });
+    });
+}
+
+/// Abschnitt Java: JDK, Treiber, Maven, Gradle, JUnit und Optionen
+fn java_settings(ui: &mut egui::Ui, ctx: &egui::Context, s: &mut crate::settings::Settings) {
+    use crate::dev::java::{self, Driver};
+    use crate::dev::{self, Tool};
+    let pal = style::pal();
+    let tools = dev::tools();
+    let weak = |ui: &mut egui::Ui, t: &str| {
+        ui.label(RichText::new(t).color(pal.text_weak));
+    };
+    let d = &mut s.dev;
+    crate::widgets::row(ui, "JDK", |ui| {
+        ui.vertical(|ui| {
+            ui.horizontal(|ui| match (&tools.jdk, &tools.old_jdk) {
+                (Some(j), _) => {
+                    ui.label(RichText::new(format!("Java {}", j.version)).monospace());
+                    weak(ui, if j.own { "Eclipse Temurin" } else { crate::i18n::tr("vom System", "from the system") });
+                    open_button(ui, &j.home);
+                    tool_button(ui, ctx, Tool::Jdk, j.own);
+                }
+                (None, Some(old)) => {
+                    ui.label(RichText::new(crate::tr_format!("Java {} ist zu alt (mindestens {})", "Java {} is too old (needs {} or newer)", old.version, java::MIN_JDK)).color(pal.warn_text));
+                    tool_button(ui, ctx, Tool::Jdk, false);
+                }
+                (None, None) => {
+                    weak(ui, crate::i18n::tr("Nicht installiert – wird beim ersten Start geladen", "Not installed – downloaded on the first run"));
+                    tool_button(ui, ctx, Tool::Jdk, false);
+                }
+            });
+            tool_choice(ui, "jdk-choice", &mut d.jdk, true);
+        });
+    });
+    crate::widgets::row(ui, crate::i18n::tr("JDBC-Treiber", "JDBC drivers"), |ui| {
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = 6.0;
+            for drv in Driver::ALL {
+                ui.horizontal(|ui| {
+                    ui.label(drv.label());
+                    match tools.driver(drv) {
+                        Some((_, v, _)) => ui.label(RichText::new(v).monospace()),
+                        None => ui.label(RichText::new(crate::i18n::tr("fehlt", "missing")).color(pal.text_weak)),
+                    };
+                });
+            }
+            ui.horizontal(|ui| {
+                tool_button(ui, ctx, Tool::JavaDrivers, tools.has(Tool::JavaDrivers));
+                open_button(ui, &java::lib_dir());
+            });
+        });
+    });
+    crate::widgets::row(ui, crate::i18n::tr("Treiber im Code", "Driver in code"), |ui| {
+        ui.vertical(|ui| {
+            let items: Vec<(Driver, &str)> = Driver::ALL.iter().map(|x| (*x, x.label())).collect();
+            crate::widgets::segmented(ui, &mut d.java_driver, &items);
+            note(ui, crate::i18n::tr("Gilt für erzeugten Code (jdbc:mariadb:// bzw. jdbc:mysql://) und neue Maven/Gradle-Projekte. Beide Treiber stehen beim Ausführen im Klassenpfad.", "Used for generated code (jdbc:mariadb:// or jdbc:mysql://) and new Maven/Gradle projects. Both drivers are on the class path when running."));
+        });
+    });
+    for (tool, dist) in [(Tool::Maven, &tools.maven), (Tool::Gradle, &tools.gradle)] {
+        crate::widgets::row(ui, tool.label(), |ui| {
+            ui.horizontal(|ui| match dist {
+                Some(x) => {
+                    if x.version.is_empty() {
+                        weak(ui, crate::i18n::tr("vom System", "from the system"));
+                    } else {
+                        ui.label(RichText::new(&x.version).monospace());
+                    }
+                    open_button(ui, &x.home);
+                    if x.own {
+                        tool_button(ui, ctx, tool, true);
+                    }
+                }
+                None => {
+                    weak(ui, crate::i18n::tr("Wird bei Bedarf geladen", "Downloaded when needed"));
+                    tool_button(ui, ctx, tool, false);
+                }
+            });
+        });
+    }
+    crate::widgets::row(ui, "JUnit", |ui| {
+        ui.horizontal(|ui| {
+            match &tools.junit {
+                Some((v, _)) => ui.label(RichText::new(v).monospace()),
+                None => ui.label(RichText::new(crate::i18n::tr("Wird für Tests in einfachen Projekten geladen", "Downloaded for tests in simple projects")).color(pal.text_weak)),
+            };
+            tool_button(ui, ctx, Tool::JUnit, tools.junit.is_some());
+        });
+    });
+    crate::widgets::row(ui, crate::i18n::tr("Neue Projekte", "New projects"), |ui| {
+        crate::widgets::switch(ui, &mut d.junit, crate::i18n::tr("mit JUnit-Tests anlegen", "create with JUnit tests"));
+    });
+    crate::widgets::row(ui, crate::i18n::tr("Java-Version", "Java version"), |ui| {
+        ui.horizontal(|ui| {
+            crate::widgets::drag(ui, &mut d.java_release, 0..=40, "");
+            ui.label(RichText::new(crate::i18n::tr("für javac --release (0 = Version des JDK)", "for javac --release (0 = version of the JDK)")).small().color(pal.text_weak));
+        });
+    });
+    crate::widgets::row(ui, crate::i18n::tr("javac-Optionen", "javac options"), |ui| args_field(ui, &mut d.javac_args, "-Xlint:all -parameters"));
+    crate::widgets::row(ui, crate::i18n::tr("JVM-Optionen", "JVM options"), |ui| args_field(ui, &mut d.jvm_args, "-Xmx1g -ea -Dfile.encoding=UTF-8"));
+    crate::widgets::row(ui, crate::i18n::tr("Maven-Optionen", "Maven options"), |ui| args_field(ui, &mut d.maven_args, "-DskipTests -P dev"));
+    crate::widgets::row(ui, crate::i18n::tr("Gradle-Optionen", "Gradle options"), |ui| args_field(ui, &mut d.gradle_args, "--warning-mode all"));
+    crate::widgets::row(ui, crate::i18n::tr("Maven und Gradle", "Maven and Gradle"), |ui| {
+        ui.vertical(|ui| {
+            crate::widgets::switch(ui, &mut d.use_wrapper, crate::i18n::tr("mvnw/gradlew des Projekts verwenden", "Use the project's mvnw/gradlew"));
+            crate::widgets::switch(ui, &mut d.build_offline, crate::i18n::tr("Ohne Netz bauen (--offline)", "Build offline (--offline)"));
+        });
+    });
+}
+
+/// Abschnitt Python: Interpreter, Treiber, .venv, pip
+fn python_settings(ui: &mut egui::Ui, ctx: &egui::Context, s: &mut crate::settings::Settings) {
+    use crate::dev::python::{self, Driver};
+    use crate::dev::{self, Tool};
+    let pal = style::pal();
+    let tools = dev::tools();
+    let d = &mut s.dev;
+    crate::widgets::row(ui, "Python", |ui| {
+        ui.vertical(|ui| {
+            ui.horizontal(|ui| {
+                match (&tools.python, &tools.bad_python) {
+                    (Some(p), _) => {
+                        ui.label(RichText::new(format!("Python {}", p.version)).monospace());
+                        ui.label(RichText::new(if p.own { "python-build-standalone" } else { crate::i18n::tr("vom System", "from the system") }).color(pal.text_weak));
+                        open_button(ui, &p.home);
+                    }
+                    (None, Some((_, why))) => {
+                        ui.label(RichText::new(why).color(pal.warn_text));
+                    }
+                    (None, None) => {
+                        ui.label(RichText::new(crate::i18n::tr("Nicht installiert – wird beim ersten Start geladen", "Not installed – downloaded on the first run")).color(pal.text_weak));
+                    }
+                }
+                tool_button(ui, ctx, Tool::Python, tools.python.as_ref().is_some_and(|p| p.own));
+            });
+            tool_choice(ui, "py-choice", &mut d.python, false);
+        });
+    });
+    crate::widgets::row(ui, crate::i18n::tr("Treiber", "Driver"), |ui| {
+        ui.vertical(|ui| {
+            let items: Vec<(Driver, &str)> = Driver::ALL.iter().map(|x| (*x, x.label())).collect();
+            crate::widgets::segmented(ui, &mut d.python_driver, &items);
+            ui.horizontal(|ui| {
+                match tools.python_drivers.iter().find(|x| x.0 == d.python_driver) {
+                    Some((_, v)) => ui.label(RichText::new(crate::tr_format!("installiert: {v}", "installed: {v}")).small().monospace()),
+                    None => ui.label(RichText::new(crate::i18n::tr("wird beim ersten Start installiert", "installed on the first run")).small().color(pal.text_weak)),
+                };
+                tool_button(ui, ctx, Tool::PythonDrivers, tools.has(Tool::PythonDrivers));
+                open_button(ui, &python::site_dir());
+            });
+            note(ui, crate::tr_format!("Skripte ohne Projektdatei finden den Treiber über PYTHONPATH (import {}).", "Scripts without a project file find the driver through PYTHONPATH (import {}).", d.python_driver.module()).as_str());
+        });
+    });
+    crate::widgets::row(ui, crate::i18n::tr("Virtuelle Umgebung", "Virtual environment"), |ui| {
+        ui.vertical(|ui| {
+            crate::widgets::switch(ui, &mut d.python_venv, crate::i18n::tr("Projekte mit requirements.txt/pyproject.toml in .venv ausführen", "Run projects with requirements.txt/pyproject.toml in .venv"));
+            note(ui, crate::i18n::tr("EasyMySQL legt die .venv selbst an und installiert die Pakete neu, wenn sich die Datei ändert.", "EasyMySQL creates the .venv itself and reinstalls the packages when the file changes."));
+        });
+    });
+    crate::widgets::row(ui, crate::i18n::tr("Python-Optionen", "Python options"), |ui| args_field(ui, &mut d.python_args, "-X dev -W error"));
+    crate::widgets::row(ui, crate::i18n::tr("pip-Optionen", "pip options"), |ui| args_field(ui, &mut d.pip_args, "--index-url https://…"));
+}
+
+/// Abschnitt JavaScript: Node.js, Treiber, Paketverwaltung
+fn node_settings(ui: &mut egui::Ui, ctx: &egui::Context, s: &mut crate::settings::Settings) {
+    use crate::dev::node::{self, Driver};
+    use crate::dev::{self, Tool};
+    let pal = style::pal();
+    let tools = dev::tools();
+    let d = &mut s.dev;
+    crate::widgets::row(ui, "Node.js", |ui| {
+        ui.vertical(|ui| {
+            ui.horizontal(|ui| {
+                match (&tools.node, &tools.bad_node) {
+                    (Some(n), _) => {
+                        ui.label(RichText::new(format!("Node.js {}", n.version)).monospace());
+                        ui.label(RichText::new(if n.own { "LTS" } else { crate::i18n::tr("vom System", "from the system") }).color(pal.text_weak));
+                        open_button(ui, &n.home);
+                    }
+                    (None, Some((_, why))) => {
+                        ui.label(RichText::new(why).color(pal.warn_text));
+                    }
+                    (None, None) => {
+                        ui.label(RichText::new(crate::i18n::tr("Nicht installiert – wird beim ersten Start geladen", "Not installed – downloaded on the first run")).color(pal.text_weak));
+                    }
+                }
+                tool_button(ui, ctx, Tool::Node, tools.node.as_ref().is_some_and(|n| n.own));
+            });
+            tool_choice(ui, "node-choice", &mut d.node, false);
+        });
+    });
+    crate::widgets::row(ui, crate::i18n::tr("Treiber", "Driver"), |ui| {
+        ui.vertical(|ui| {
+            let items: Vec<(Driver, &str)> = Driver::ALL.iter().map(|x| (*x, x.label())).collect();
+            crate::widgets::segmented(ui, &mut d.node_driver, &items);
+            ui.horizontal(|ui| {
+                match tools.node_drivers.iter().find(|x| x.0 == d.node_driver) {
+                    Some((_, v)) => ui.label(RichText::new(crate::tr_format!("installiert: {v}", "installed: {v}")).small().monospace()),
+                    None => ui.label(RichText::new(crate::i18n::tr("wird beim ersten Start installiert", "installed on the first run")).small().color(pal.text_weak)),
+                };
+                tool_button(ui, ctx, Tool::NodeDrivers, tools.has(Tool::NodeDrivers));
+                open_button(ui, &node::modules_dir());
+            });
+        });
+    });
+    crate::widgets::row(ui, crate::i18n::tr("Paketverwaltung", "Package manager"), |ui| {
+        ui.vertical(|ui| {
+            let mut pm = d.package_manager.clone();
+            if crate::widgets::segmented(ui, &mut pm, &[("npm".to_string(), "npm"), ("pnpm".to_string(), "pnpm"), ("yarn".to_string(), "yarn")]) {
+                d.package_manager = pm;
+            }
+            crate::widgets::switch(ui, &mut d.npm_auto_install, crate::i18n::tr("Pakete vor dem Start installieren, wenn package.json sich ändert", "Install packages before running when package.json changes"));
+            note(ui, crate::i18n::tr("pnpm und yarn werden aus dem PATH verwendet; ohne sie gilt npm. Eine pnpm-lock.yaml bzw. yarn.lock im Projekt hat Vorrang.", "pnpm and yarn are used from the PATH; without them npm is used. A pnpm-lock.yaml or yarn.lock in the project takes precedence."));
+        });
+    });
+    crate::widgets::row(ui, crate::i18n::tr("Node-Optionen", "Node options"), |ui| args_field(ui, &mut d.node_args, "--enable-source-maps --max-old-space-size=4096"));
+}
+
+/// Abschnitt Sprachserver: an/aus je Sprache, Speicher, Verzoegerung
+fn lsp_settings(ui: &mut egui::Ui, ctx: &egui::Context, s: &mut crate::settings::Settings) {
+    use crate::dev::{self, Tool, lsp};
+    let pal = style::pal();
+    let tools = dev::tools();
+    let d = &mut s.dev;
+    crate::widgets::row(ui, "", |ui| {
+        note(ui, crate::i18n::tr("Sprachserver zeigen Fehler schon beim Tippen, springen zur Definition (F12, Strg+Klick), benennen über das ganze Projekt um (F2) und zeigen Hinweise beim Zeigen mit der Maus.", "Language servers show errors while typing, go to definitions (F12, Ctrl+click), rename across the project (F2) and show hints on hover."));
+    });
+    for (tool, on, name) in [(Tool::JavaLsp, &mut d.lsp_java, "Java (Eclipse JDT LS)"), (Tool::PythonLsp, &mut d.lsp_python, "Python (Pyright)"), (Tool::JsLsp, &mut d.lsp_js, "JavaScript/TypeScript")] {
+        crate::widgets::row(ui, name, |ui| {
+            ui.horizontal(|ui| {
+                crate::widgets::switch(ui, on, crate::i18n::tr("an", "on"));
+                let have = tools.own_version(tool);
+                match &have {
+                    Some(v) => ui.label(RichText::new(v).small().monospace()),
+                    None => ui.label(RichText::new(crate::i18n::tr("wird bei Bedarf geladen", "downloaded when needed")).small().color(pal.text_weak)),
+                };
+                tool_button(ui, ctx, tool, have.is_some());
+            });
+        });
+    }
+    crate::widgets::row(ui, crate::i18n::tr("Speicher für Java", "Memory for Java"), |ui| {
+        crate::widgets::drag(ui, &mut d.lsp_java_memory_mb, 256..=16384, " MB");
+    });
+    crate::widgets::row(ui, crate::i18n::tr("Prüfen nach", "Check after"), |ui| {
+        ui.horizontal(|ui| {
+            crate::widgets::drag(ui, &mut d.lsp_delay_ms, 50..=5000, " ms");
+            ui.label(RichText::new(crate::i18n::tr("Pause beim Tippen", "pause in typing")).small().color(pal.text_weak));
+        });
+    });
+    let running = lsp::running();
+    crate::widgets::row(ui, crate::i18n::tr("Laufend", "Running"), |ui| {
+        ui.vertical(|ui| {
+            if running.is_empty() {
+                ui.label(RichText::new(crate::i18n::tr("keine", "none")).color(pal.text_weak));
+            }
+            for (lang, root, phase) in &running {
+                let st = match phase {
+                    lsp::Phase::Starting => crate::i18n::tr("startet", "starting").to_string(),
+                    lsp::Phase::Ready => crate::i18n::tr("bereit", "ready").to_string(),
+                    lsp::Phase::Failed(e) => e.clone(),
+                };
+                ui.label(RichText::new(format!("{} · {} · {st}", lang.label(), root.display())).small());
+            }
+            if !running.is_empty() && ui.button(crate::i18n::tr("Alle neu starten", "Restart all")).clicked() {
+                lsp::shutdown_all();
+            }
+        });
+    });
+    install_state(ui);
+}
+
+/// Abschnitt Git & GitHub
+fn git_settings(ui: &mut egui::Ui, ctx: &egui::Context, s: &mut crate::settings::Settings, actions: &mut Vec<Action>) {
+    use crate::dev::{self, Tool};
+    let pal = style::pal();
+    let tools = dev::tools();
+    crate::widgets::row(ui, "Git", |ui| {
+        ui.horizontal(|ui| match &tools.git {
+            Some(g) => {
+                ui.label(RichText::new(if g.version.is_empty() { crate::i18n::tr("vom System", "from the system").to_string() } else { format!("MinGit {}", g.version) }).monospace());
+                if g.own {
+                    tool_button(ui, ctx, Tool::Git, true);
+                }
+            }
+            None if cfg!(windows) => {
+                ui.label(RichText::new(crate::i18n::tr("nicht installiert", "not installed")).color(pal.warn_text));
+                tool_button(ui, ctx, Tool::Git, false);
+            }
+            None => {
+                ui.label(RichText::new(crate::i18n::tr("nicht installiert – bitte über die Paketverwaltung installieren", "not installed – please install it with the package manager")).color(pal.warn_text));
+            }
+        });
+    });
+    let g = &mut s.git;
+    crate::widgets::row(ui, crate::i18n::tr("Name", "Name"), |ui| {
+        ui.add(crate::widgets::edit(&mut g.user_name).hint_text(crate::i18n::tr("aus der Git-Konfiguration bzw. von GitHub", "from the Git configuration or GitHub")).desired_width(300.0));
+    });
+    crate::widgets::row(ui, "E-Mail", |ui| {
+        ui.add(crate::widgets::edit(&mut g.user_email).hint_text("name@example.org").desired_width(300.0));
+    });
+    crate::widgets::row(ui, "Pull", |ui| {
+        let mut m = g.pull_mode.clone();
+        if crate::widgets::segmented(ui, &mut m, &[("ff-only".to_string(), crate::i18n::tr("Nur vorspulen", "Fast-forward only")), ("rebase".to_string(), "Rebase"), ("merge".to_string(), "Merge")]) {
+            g.pull_mode = m;
+        }
+    });
+    crate::widgets::row(ui, "Commit", |ui| {
+        ui.vertical(|ui| {
+            crate::widgets::switch(ui, &mut g.auto_stage, crate::i18n::tr("Alles committen, wenn nichts vorgemerkt ist", "Commit everything when nothing is staged"));
+            crate::widgets::switch(ui, &mut g.push_after_commit, crate::i18n::tr("Danach gleich pushen", "Push right after"));
+        });
+    });
+    crate::widgets::row(ui, crate::i18n::tr("Abrufen (fetch)", "Fetch"), |ui| {
+        ui.horizontal(|ui| {
+            crate::widgets::drag(ui, &mut g.auto_fetch_secs, 0..=86_400, " s");
+            ui.label(RichText::new(crate::i18n::tr("automatisch alle … Sekunden (0 = aus)", "automatically every … seconds (0 = off)")).small().color(pal.text_weak));
+        });
+    });
+    crate::widgets::row(ui, crate::i18n::tr("Erster Branch", "First branch"), |ui| {
+        ui.add(crate::widgets::edit(&mut g.default_branch).desired_width(160.0));
+    });
+    crate::widgets::row(ui, crate::i18n::tr("Neue Repositorys", "New repositories"), |ui| {
+        ui.vertical(|ui| {
+            crate::widgets::switch(ui, &mut g.private_repos, crate::i18n::tr("auf GitHub privat anlegen", "create as private on GitHub"));
+            crate::widgets::switch(ui, &mut s.git_init_projects, crate::i18n::tr("Neue Projekte mit Git-Repository anlegen", "Create new projects with a Git repository"));
+        });
+    });
+    crate::widgets::row(ui, crate::i18n::tr("Anzeige", "Display"), |ui| {
+        crate::widgets::switch(ui, &mut s.git_panel_refresh, crate::i18n::tr("Stand alle 3 Sekunden auffrischen, solange der Git-Bereich offen ist", "Refresh every 3 seconds while the Git panel is open"));
+    });
+    crate::widgets::row(ui, "GitHub", |ui| {
+        ui.horizontal(|ui| {
+            if crate::git::github::token().is_some() {
+                ui.label(RichText::new(crate::i18n::tr("angemeldet", "signed in")).color(pal.ok_text));
+                if ui.button(crate::i18n::tr("Abmelden", "Sign out")).clicked() {
+                    let _ = crate::git::github::set_token("");
+                }
+            } else if ui.button(crate::i18n::tr("Anmelden …", "Sign in …")).clicked() {
+                actions.push(Action::GitHubLogin);
+            }
+        });
+    });
+}
+
+/// Abschnitt Terminal
+fn terminal_settings(ui: &mut egui::Ui, s: &mut crate::settings::Settings, profiles: &[crate::terminal::Profile]) {
+    let pal = style::pal();
+    let t = &mut s.terminal;
+    crate::widgets::row(ui, crate::i18n::text("Schriftgröße"), |ui| {
+        ui.horizontal(|ui| {
+            crate::widgets::drag(ui, &mut t.font_size, 0..=48, " px");
+            ui.label(RichText::new(crate::i18n::tr("0 = wie im Editor", "0 = same as the editor")).small().color(pal.text_weak));
+        });
+    });
+    crate::widgets::row(ui, crate::i18n::tr("Verlauf", "Scrollback"), |ui| {
+        crate::widgets::drag(ui, &mut t.scrollback, 100..=200_000, crate::i18n::tr(" Zeilen", " lines"));
+    });
+    crate::widgets::row(ui, crate::i18n::tr("Standard-Shell", "Default shell"), |ui| {
+        let mut names = vec![String::new()];
+        names.extend(profiles.iter().map(|p| p.name.clone()));
+        crate::tabs::str_combo(ui, "term-default", &names, &mut t.default_shell, 240.0);
+    });
+    crate::widgets::row(ui, crate::i18n::tr("Eigene Shell", "Custom shell"), |ui| {
+        ui.vertical(|ui| {
+            args_field(ui, &mut t.custom_shell, if cfg!(windows) { "\"C:\\Program Files\\Git\\bin\\bash.exe\" --login" } else { "/usr/bin/fish" });
+            note(ui, crate::i18n::tr("Programm und Argumente; erscheint als erste Shell in der Auswahl.", "Program and arguments; appears as the first shell in the list."));
+        });
+    });
 }
 
 /// Pfad (gekuerzt, wenn er nicht passt) mit "Oeffnen" darunter; true bei Klick auf "Oeffnen"
@@ -717,7 +1597,7 @@ mod tests {
         let ctx = egui::Context::default();
         style::apply(&ctx, true);
         let mut tab = SettingsTab::new();
-        let server = crate::server::Server::new(3306);
+        let server = crate::server::Server::new(crate::server::Config::default());
         let mut settings = crate::settings::Settings::default();
         let mut schemas = super::super::SchemaCache::default();
         let mut actions = Vec::new();

@@ -1,6 +1,8 @@
 // Hauptfenster von EasyMySQL.
 
 mod autoscroll;
+mod create;
+mod git_panel;
 mod dialogs;
 mod palette;
 mod remote;
@@ -127,6 +129,10 @@ pub struct EasyApp {
     tree_job: Option<Receiver<(PathBuf, crate::workspace::Node)>>,
     side_view: SideView,
     explorer_dlg: Option<ExplorerDlg>,
+    /// Dialog "Neues Java-Projekt"
+    project_dlg: Option<create::ProjectDlg>,
+    /// Git-Bereich in der Seitenleiste
+    git: git_panel::GitPanel,
     session_saved: Instant,
     history: Vec<crate::qhistory::Entry>,
     history_filter: String,
@@ -162,7 +168,7 @@ impl EasyApp {
         // Strg + / Strg - aendern nur die Schrift im Editor (egui wuerde sonst die ganze Oberflaeche skalieren)
         cc.egui_ctx.options_mut(|o| o.zoom_with_keyboard = false);
         apply_editor_prefs(&settings);
-        let server = Server::new(3306);
+        let server = Server::new(settings.server.clone());
         let hwnd = platform::window_handle(cc);
         let tray = if settings.background { platform::create_tray(&cc.egui_ctx, hwnd) } else { None };
         {
@@ -175,8 +181,11 @@ impl EasyApp {
                 }),
             );
         }
-        let ctx = cc.egui_ctx.clone();
-        server.start(move || ctx.request_repaint());
+        // Ohne automatischen Start startet man den Server ueber das Menue "Server"
+        if settings.server_autostart {
+            let ctx = cc.egui_ctx.clone();
+            server.start(move || ctx.request_repaint());
+        }
         let session = crate::workspace::Session::load();
         let project = session
             .as_ref()
@@ -229,6 +238,8 @@ impl EasyApp {
             tree_job: None,
             side_view: SideView::Explorer,
             explorer_dlg: None,
+            project_dlg: None,
+            git: Default::default(),
             session_saved: Instant::now(),
             history,
             history_filter: String::new(),
@@ -358,7 +369,7 @@ impl EasyApp {
     }
 
     fn update_backup_env(&mut self) {
-        let env = match (&self.db, &self.server.paths) {
+        let env = match (&self.db, &self.server.paths()) {
             (Some(db), Some(paths)) => Some(crate::backup::Env {
                 paths: paths.clone(),
                 conn: db.info.clone(),
@@ -734,12 +745,44 @@ impl EasyApp {
                     self.tree_scan = None;
                     self.settings.save();
                 }
+                Action::RestartServer => {
+                    let ctx = CTX.lock().unwrap().clone();
+                    if let Some(ctx) = ctx {
+                        self.restart_server(&ctx);
+                    }
+                }
+                Action::ServerDataDir { dir, copy } => {
+                    let ctx = CTX.lock().unwrap().clone();
+                    self.settings.server.data_dir = dir.clone();
+                    self.settings.save();
+                    self.db = None;
+                    self.databases.clear();
+                    self.schemas.clear();
+                    self.auto_connect = true;
+                    if let Some(ctx) = ctx {
+                        self.server.switch_data_dir(self.settings.conn.clone(), dir, copy, Self::on_change_cb(&ctx));
+                    }
+                }
+                Action::RunProgram { launch, env } => {
+                    let ctx = CTX.lock().unwrap().clone();
+                    if let Some(ctx) = ctx {
+                        self.run_program(&ctx, launch, env);
+                    }
+                }
+                Action::ApplyEdit(edit) => self.apply_workspace_edit(edit),
+                Action::MariaDbUpdate(rel) => {
+                    let ctx = CTX.lock().unwrap().clone().unwrap_or_default();
+                    self.db = None;
+                    self.auto_connect = true;
+                    crate::mariadb_update::run(self.server.clone(), self.settings.conn.clone(), rel, self.settings.mariadb_copy_data, &ctx);
+                }
+                Action::GitHubLogin => self.git.dialog = Some(git_panel::GitDialog::Login { token: String::new(), error: None, job: None }),
             }
         }
     }
 
     fn is_local(&self) -> bool {
-        !self.settings.ssh.enabled && matches!(self.settings.conn.host.as_str(), "127.0.0.1" | "localhost") && self.settings.conn.port == self.server.port
+        !self.settings.ssh.enabled && matches!(self.settings.conn.host.as_str(), "127.0.0.1" | "localhost") && self.settings.conn.port == self.server.port()
     }
 
     /// Geaenderte Einstellungen anwenden und speichern
@@ -758,6 +801,16 @@ impl EasyApp {
             self.applied_language = self.settings.language;
         }
         apply_editor_prefs(&self.settings);
+        // Neuer Port des eigenen Servers: die Verbindung zieht mit, solange sie auf diesen Server zeigt
+        let old = self.server.config();
+        if old.port != self.settings.server.port
+            && !self.settings.ssh.enabled
+            && matches!(self.settings.conn.host.as_str(), "127.0.0.1" | "localhost")
+            && self.settings.conn.port == old.port
+        {
+            self.settings.conn.port = self.settings.server.port;
+        }
+        self.server.configure(self.settings.server.clone());
         let root_before = crate::workspace::storage_root();
         crate::workspace::set_storage_root(&self.settings.storage_dir);
         if crate::workspace::storage_root() != root_before {
@@ -771,7 +824,27 @@ impl EasyApp {
 
     fn run_cmd(&mut self, ctx: &egui::Context, cmd: Cmd) {
         match cmd {
-            Cmd::RunAll | Cmd::RunStatement | Cmd::Explain | Cmd::Format | Cmd::FixAll | Cmd::CopyJava | Cmd::Find | Cmd::Replace | Cmd::GotoLine => {
+            Cmd::RunAll
+            | Cmd::RunStatement
+            | Cmd::Explain
+            | Cmd::Format
+            | Cmd::FixAll
+            | Cmd::CopyJava
+            | Cmd::Find
+            | Cmd::Replace
+            | Cmd::GotoLine
+            | Cmd::RunTests
+            | Cmd::BuildJar
+            | Cmd::AddLibrary
+            | Cmd::GotoDefinition
+            | Cmd::RenameSymbol
+            | Cmd::DebugStart
+            | Cmd::DebugContinue
+            | Cmd::StepOver
+            | Cmd::StepInto
+            | Cmd::StepOut
+            | Cmd::DebugStop
+            | Cmd::ToggleBreakpoint => {
                 let mut acts = Vec::new();
                 let srv = self.tabs.get(self.active).and_then(|t| t.server());
                 if let Some(t) = self.tabs.get_mut(self.active) {
@@ -780,8 +853,15 @@ impl EasyApp {
                 self.handle_actions(acts);
             }
             Cmd::NewQuery => self.handle_actions(vec![Action::OpenSql { db: Some(self.current_db.clone()), sql: String::new(), run: false }]),
+            Cmd::NewJavaProject => self.open_project_dialog(create::ProjectLang::Java),
+            Cmd::NewPythonProject => self.open_project_dialog(create::ProjectLang::Python),
+            Cmd::NewNodeProject => self.open_project_dialog(create::ProjectLang::Node),
+            Cmd::ShowGit => self.show_side(SideView::Git),
+            Cmd::GitCommit => self.git_commit(),
+            Cmd::GitPush => self.git_push(),
+            Cmd::GitPull => self.git_pull(),
             Cmd::NewFile => match self.project.clone() {
-                Some(p) => self.explorer_dlg = Some(ExplorerDlg::NewFile { name: side::new_name(&p), dir: p }),
+                Some(p) => self.explorer_dlg = Some(ExplorerDlg::NewFile(Box::new(create::NewFile::new(p)))),
                 None => self.handle_actions(vec![Action::OpenSql { db: Some(self.current_db.clone()), sql: String::new(), run: false }]),
             },
             Cmd::OpenFile => self.open_sql_file(false),
@@ -872,7 +952,7 @@ impl EasyApp {
 
     /// Tastenkuerzel, die unabhaengig vom Fokus gelten
     fn global_keys(&mut self, ctx: &egui::Context) {
-        if !self.dialogs.is_empty() || self.explorer_dlg.is_some() {
+        if !self.dialogs.is_empty() || self.explorer_dlg.is_some() || self.project_dlg.is_some() {
             return;
         }
         const GLOBAL: &[Cmd] = &[
@@ -886,6 +966,9 @@ impl EasyApp {
             Cmd::GotoLine,
             Cmd::NewQuery,
             Cmd::NewFile,
+            Cmd::NewJavaProject,
+            Cmd::NewPythonProject,
+            Cmd::NewNodeProject,
             Cmd::OpenFile,
             Cmd::OpenFolder,
             Cmd::Save,
@@ -917,6 +1000,21 @@ impl EasyApp {
             Cmd::Import,
             Cmd::Export,
             Cmd::Users,
+            Cmd::RunTests,
+            Cmd::BuildJar,
+            Cmd::AddLibrary,
+            Cmd::GotoDefinition,
+            Cmd::RenameSymbol,
+            Cmd::DebugStart,
+            Cmd::DebugContinue,
+            Cmd::StepOver,
+            Cmd::StepInto,
+            Cmd::StepOut,
+            Cmd::DebugStop,
+            Cmd::ToggleBreakpoint,
+            Cmd::ShowGit,
+            Cmd::GitPush,
+            Cmd::GitPull,
         ];
         // Waehrend ein Kuerzel in den Einstellungen aufgezeichnet wird, nichts ausloesen
         if crate::tabs::settings::recording() {
@@ -1024,6 +1122,9 @@ impl EasyApp {
 
     fn open_sql_file(&mut self, run: bool) {
         let mut dlg = rfd::FileDialog::new().add_filter(crate::i18n::text("SQL-Dateien"), &["sql", "txt"]);
+        if !run {
+            dlg = dlg.add_filter(crate::i18n::tr("Java-Dateien", "Java files"), &["java"]).add_filter(crate::i18n::tr("Alle Dateien", "All files"), &["*"]);
+        }
         if let Some(p) = &self.project {
             dlg = dlg.set_directory(p);
         }
@@ -1058,8 +1159,16 @@ impl EasyApp {
             }
             return;
         }
-        match SqlTab::open_file(p, &self.current_db, self.project.as_deref()) {
-            Ok(tab) => self.open_tab(Box::new(tab)),
+        // SQL (und Dateien ohne Endung) im SQL-Editor, alles andere im Code-Editor
+        // .txt bleibt beim SQL-Editor: "SQL-Datei öffnen" bietet sie dafür an
+        let sql_like = crate::sqledit::Lang::from_path(p) == crate::sqledit::Lang::Sql || p.extension().is_none_or(|e| e.eq_ignore_ascii_case("txt"));
+        let res: Result<Box<dyn TabView>, String> = if sql_like {
+            SqlTab::open_file(p, &self.current_db, self.project.as_deref()).map(|t| Box::new(t) as Box<dyn TabView>)
+        } else {
+            crate::tabs::code::CodeTab::open_file(p, &self.current_db, self.project.as_deref()).map(|t| Box::new(t) as Box<dyn TabView>)
+        };
+        match res {
+            Ok(tab) => self.open_tab(tab),
             Err(e) => self.error(e),
         }
     }
@@ -1123,6 +1232,27 @@ fn apply_editor_prefs(s: &Settings) {
     crate::tabs::sql::AUTOSAVE.store(s.autosave, Ordering::Relaxed);
     crate::sqledit::LINT.store(s.lint, Ordering::Relaxed);
     crate::tabs::SHOW_SYSTEM_DBS.store(s.show_system_dbs, Ordering::Relaxed);
+    let old = crate::dev::config();
+    crate::dev::set_config(s.dev.clone());
+    // Ausgeschaltete Sprachserver beenden
+    for (on, was, lang) in [(s.dev.lsp_java, old.lsp_java, crate::sqledit::Lang::Java), (s.dev.lsp_python, old.lsp_python, crate::sqledit::Lang::Python), (s.dev.lsp_js, old.lsp_js, crate::sqledit::Lang::JavaScript)] {
+        if was && !on {
+            crate::dev::lsp::shutdown_lang(lang);
+        }
+    }
+    if old.lsp_java_memory_mb != s.dev.lsp_java_memory_mb {
+        crate::dev::lsp::shutdown_lang(crate::sqledit::Lang::Java);
+    }
+    crate::sqledit::set_prefs(s.editor.clone());
+    crate::db::MAX_ROWS.store(s.result_max_rows, Ordering::Relaxed);
+    crate::tabs::data::PAGE_ROWS.store(s.data_page_rows, Ordering::Relaxed);
+    crate::qhistory::MAX.store(s.history_max, Ordering::Relaxed);
+    crate::backup::BEFORE_DELETE.store(s.backup_before_delete, Ordering::Relaxed);
+    crate::updates::INTERVAL_HOURS.store(s.app_update_hours, Ordering::Relaxed);
+    crate::db::set_local_tls((s.server.tls != crate::tls::Mode::Default).then(|| (s.server.port, crate::tls::files().ca)));
+    crate::terminal::set_prefs(s.terminal.clone());
+    crate::git::set_config(s.git.clone());
+    crate::tabs::code::AUTOSAVE_MS.store(s.autosave_ms, Ordering::Relaxed);
 }
 
 /// egui-Kontext fuer Aktionen, die ihn brauchen (einmal je Bild gesetzt)
@@ -1139,6 +1269,19 @@ pub fn open_path(p: &Path) {
 impl eframe::App for EasyApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         *CTX.lock().unwrap() = Some(ctx.clone());
+        // MariaDB-Update: neuen Programmordner uebernehmen, nach Updates sehen (taeglich, je nach Einstellung)
+        if let Some(bin) = crate::mariadb_update::take_applied() {
+            self.settings.server.bin_dir = bin;
+            self.settings.save();
+            self.auto_connect = true;
+        }
+        crate::mariadb_update::daily_check(&self.server, &self.settings.mariadb_updates, crate::mariadb_update::Track::from_id(&self.settings.mariadb_track), ctx);
+        if self.settings.mariadb_updates == "automatisch" && self.server.state().is_running() {
+            let st = crate::mariadb_update::status();
+            if let (Some(rel), false, None) = (st.available.clone(), st.busy, st.error.as_ref()) {
+                self.handle_actions(vec![Action::MariaDbUpdate(rel)]);
+            }
+        }
         // Befehle aus dem Infobereich
         let cmds: Vec<TrayCmd> = self.tray.as_ref().map(|(_, rx)| rx.try_iter().collect()).unwrap_or_default();
         for c in cmds {
@@ -1273,6 +1416,8 @@ impl eframe::App for EasyApp {
             self.save_session();
         }
         self.explorer_dialogs(&ctx);
+        self.project_dialog(&ctx);
+        self.git_dialogs(&ctx);
         self.handle_actions(actions);
         self.palette_ui(&ctx);
         self.dialogs_ui(&ctx);
@@ -1301,6 +1446,8 @@ impl eframe::App for EasyApp {
     }
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        crate::dev::debug::stop();
+        crate::dev::lsp::shutdown_all();
         self.terminal.close_all();
         self.save_all();
         self.db = None;

@@ -4,7 +4,12 @@
 use std::io::Write;
 use std::path::PathBuf;
 
-const MAX: usize = 3000;
+/// Hoechstens so viele Eintraege bleiben im Verlauf (Einstellung)
+pub static MAX: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(3000);
+
+fn max() -> usize {
+    MAX.load(std::sync::atomic::Ordering::Relaxed).max(10)
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Entry {
@@ -65,7 +70,7 @@ pub fn load() -> Vec<Entry> {
     let text = std::fs::read_to_string(file()).unwrap_or_default();
     let mut v: Vec<Entry> = text.lines().filter_map(Entry::from_line).collect();
     v.reverse();
-    v.truncate(MAX);
+    v.truncate(max());
     v
 }
 
@@ -85,7 +90,7 @@ pub fn append(entries: &[Entry]) {
     }
     if std::fs::metadata(&path).is_ok_and(|m| m.len() > 4_000_000) {
         let mut all = load();
-        all.truncate(MAX);
+        all.truncate(max());
         all.reverse();
         let text: String = all.iter().map(|e| e.to_line() + "\n").collect();
         let _ = crate::workspace::atomic_write(&path, &text);

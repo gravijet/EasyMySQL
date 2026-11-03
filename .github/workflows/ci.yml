@@ -1,0 +1,27 @@
+# Tests fuer jeden Branch ausser main (main baut release.yml). Laeuft auch fuer Pull Requests,
+# die der Workflow auto-pr.yml anlegt, weil sie aus einem Push entstehen.
+name: Tests
+
+on:
+  push:
+    branches-ignore: [main]
+    paths-ignore:
+      - "**.md"
+      - "website/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Tests
+        run: |
+          git config --global user.name "CI"
+          git config --global user.email "ci@example.invalid"
+          cargo test --locked

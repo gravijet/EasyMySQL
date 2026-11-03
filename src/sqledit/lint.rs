@@ -21,7 +21,7 @@ pub struct Fix {
     pub text: String,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Problem {
     pub start: usize,
     pub end: usize,

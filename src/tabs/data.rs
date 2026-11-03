@@ -58,6 +58,9 @@ struct Analysis {
     result: Option<Result<Stats, String>>,
 }
 
+/// Zeilen je Seite in der Datenansicht (Einstellung)
+pub static PAGE_ROWS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(500);
+
 pub struct DataTab {
     pub db: String,
     pub table: String,
@@ -97,7 +100,7 @@ impl DataTab {
             filter: String::new(),
             order: String::new(),
             desc: false,
-            limit: 500,
+            limit: PAGE_ROWS.load(std::sync::atomic::Ordering::Relaxed).max(10),
             offset: 0,
             columns: Vec::new(),
             rows: Vec::new(),

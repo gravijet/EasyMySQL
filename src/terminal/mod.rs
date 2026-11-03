@@ -23,12 +23,51 @@ pub(crate) fn set_focused(on: bool) {
     FOCUSED.store(on, Ordering::Relaxed);
 }
 
+/// Einstellungen des Terminals
+#[derive(Clone, Debug, PartialEq)]
+pub struct Prefs {
+    /// Schriftgroesse (0 = wie im Editor)
+    pub font_size: u32,
+    /// Zeilen, die man zurueckscrollen kann
+    pub scrollback: usize,
+    /// Name der Standard-Shell (leer = erste der Liste)
+    pub default_shell: String,
+    /// Eigenes Programm als Shell (z. B. C:\Program Files\Git\bin\bash.exe); leer = keins
+    pub custom_shell: String,
+}
+
+impl Default for Prefs {
+    fn default() -> Self {
+        Prefs { font_size: 0, scrollback: 5000, default_shell: String::new(), custom_shell: String::new() }
+    }
+}
+
+static PREFS: std::sync::RwLock<Option<Prefs>> = std::sync::RwLock::new(None);
+
+pub fn prefs() -> Prefs {
+    PREFS.read().unwrap().clone().unwrap_or_default()
+}
+
+pub fn set_prefs(p: Prefs) {
+    *PREFS.write().unwrap() = Some(p);
+}
+
+/// Schriftgroesse im Terminal
+pub fn font_size() -> f32 {
+    match prefs().font_size {
+        0 => crate::sqledit::font_size(),
+        n => n.clamp(6, 48) as f32,
+    }
+}
+
 /// Eine auswaehlbare Shell
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Profile {
     pub name: String,
     pub program: String,
     pub args: Vec<String>,
+    /// Zusaetzliche Umgebungsvariablen
+    pub env: Vec<(String, String)>,
 }
 
 /// Verfuegbare Profile; das erste ist die Standard-Shell. `bin` = MariaDB-Programmordner, `conn` = Verbindung.
@@ -36,14 +75,14 @@ pub fn profiles(bin: Option<&Path>, conn: &crate::db::ConnInfo) -> Vec<Profile> 
     let mut out = Vec::new();
     #[cfg(windows)]
     {
-        out.push(Profile { name: "PowerShell".into(), program: "powershell.exe".into(), args: vec!["-NoLogo".into()] });
-        out.push(Profile { name: crate::i18n::text("Eingabeaufforderung").into(), program: "cmd.exe".into(), args: Vec::new() });
+        out.push(Profile { name: "PowerShell".into(), program: "powershell.exe".into(), args: vec!["-NoLogo".into()], env: Vec::new() });
+        out.push(Profile { name: crate::i18n::text("Eingabeaufforderung").into(), program: "cmd.exe".into(), args: Vec::new(), env: Vec::new() });
     }
     #[cfg(not(windows))]
     {
         let shell = std::env::var("SHELL").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| "/bin/sh".into());
         let name = Path::new(&shell).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "Shell".into());
-        out.push(Profile { name, program: shell, args: Vec::new() });
+        out.push(Profile { name, program: shell, args: Vec::new(), env: Vec::new() });
     }
     let client = match bin {
         Some(b) => crate::server::find_tool(b, "mysql").display().to_string(),
@@ -53,7 +92,34 @@ pub fn profiles(bin: Option<&Path>, conn: &crate::db::ConnInfo) -> Vec<Profile> 
     if !conn.password.is_empty() {
         args.push("-p".into());
     }
-    out.push(Profile { name: crate::i18n::text("MariaDB-Konsole").into(), program: client, args });
+    out.push(Profile { name: crate::i18n::text("MariaDB-Konsole").into(), program: client, args, env: Vec::new() });
+    // Python- und Node-Konsole, wenn vorhanden
+    let tools = crate::dev::tools();
+    if let Some(py) = &tools.python {
+        out.push(Profile { name: format!("Python {}", py.version), program: py.exe.display().to_string(), args: vec!["-q".into()], env: Vec::new() });
+    }
+    if let Some(n) = &tools.node {
+        out.push(Profile { name: format!("Node.js {}", n.version), program: n.exe.display().to_string(), args: Vec::new(), env: Vec::new() });
+    }
+    if let Some(j) = &tools.jdk
+        && j.bin().join(format!("jshell{}", crate::dev::EXE)).is_file()
+    {
+        out.push(Profile { name: format!("JShell {}", j.version), program: j.bin().join(format!("jshell{}", crate::dev::EXE)).display().to_string(), args: Vec::new(), env: Vec::new() });
+    }
+    let p = prefs();
+    if !p.custom_shell.trim().is_empty() {
+        let mut parts = crate::dev::split_args(&p.custom_shell);
+        if !parts.is_empty() {
+            let program = parts.remove(0);
+            let name = Path::new(&program).file_stem().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "Shell".into());
+            out.insert(0, Profile { name, program, args: parts, env: Vec::new() });
+        }
+    }
+    // Gewaehlte Standard-Shell nach vorne
+    if let Some(i) = out.iter().position(|x| !p.default_shell.is_empty() && x.name == p.default_shell) {
+        let d = out.remove(i);
+        out.insert(0, d);
+    }
     out
 }
 
@@ -72,14 +138,15 @@ pub struct Session {
     /// Auswahl mit der Maus: (Zeile, Spalte) von/bis
     pub(crate) selection: Option<((u16, u16), (u16, u16))>,
     cwd: PathBuf,
-    path_prefix: Option<PathBuf>,
+    /// Ordner, die vorne in PATH stehen (MariaDB-Programme, JDK, Maven, Gradle)
+    path_prefix: Vec<PathBuf>,
 }
 
 impl Session {
-    pub fn spawn(ctx: &egui::Context, profile: Profile, cwd: PathBuf, path_prefix: Option<PathBuf>) -> Session {
+    pub fn spawn(ctx: &egui::Context, profile: Profile, cwd: PathBuf, path_prefix: Vec<PathBuf>) -> Session {
         let mut s = Session {
             profile,
-            parser: Arc::new(Mutex::new(vt100::Parser::new(24, 80, 5000))),
+            parser: Arc::new(Mutex::new(vt100::Parser::new(24, 80, prefs().scrollback.clamp(100, 200_000)))),
             writer: None,
             master: None,
             child: None,
@@ -99,7 +166,7 @@ impl Session {
         self.exited.store(false, Ordering::Relaxed);
         self.selection = None;
         let (rows, cols) = self.size;
-        *self.parser.lock().unwrap() = vt100::Parser::new(rows, cols, 5000);
+        *self.parser.lock().unwrap() = vt100::Parser::new(rows, cols, prefs().scrollback.clamp(100, 200_000));
         match self.open(ctx, rows, cols) {
             Ok(()) => {}
             Err(e) => {
@@ -116,13 +183,16 @@ impl Session {
         cmd.cwd(&self.cwd);
         cmd.env("TERM", "xterm-256color");
         cmd.env("COLORTERM", "truecolor");
-        if let Some(prefix) = &self.path_prefix {
+        if !self.path_prefix.is_empty() {
             let old = std::env::var_os("PATH").unwrap_or_default();
-            let mut paths = vec![prefix.clone()];
+            let mut paths = self.path_prefix.clone();
             paths.extend(std::env::split_paths(&old));
             if let Ok(joined) = std::env::join_paths(paths) {
                 cmd.env("PATH", joined);
             }
+        }
+        for (k, v) in &self.profile.env {
+            cmd.env(k, v);
         }
         let child = pair.slave.spawn_command(cmd).map_err(|e| format!("{}: {e}", self.profile.program))?;
         drop(pair.slave);
@@ -244,8 +314,8 @@ mod tests {
     fn profiles_start_with_a_shell_and_offer_the_client() {
         let p = profiles(None, &crate::db::ConnInfo::default());
         assert!(p.len() >= 2);
-        let last = p.last().unwrap();
-        assert!(last.args.contains(&"-u".to_string()) && last.args.contains(&"root".to_string()));
+        let client = p.iter().find(|x| x.args.contains(&"-u".to_string())).unwrap();
+        assert!(client.args.contains(&"root".to_string()));
     }
 
     /// Eine echte Shell starten, etwas ausfuehren lassen und die Ausgabe lesen (nur Linux).
@@ -253,10 +323,10 @@ mod tests {
     #[test]
     fn shell_runs_a_command_and_the_screen_shows_the_output() {
         let ctx = egui::Context::default();
-        let profile = Profile { name: "sh".into(), program: "/bin/sh".into(), args: Vec::new() };
-        let mut s = Session::spawn(&ctx, profile, std::env::temp_dir(), None);
+        let profile = Profile { name: "sh".into(), program: "/bin/sh".into(), args: Vec::new(), env: vec![("EASY_TEST".into(), "42".into())] };
+        let mut s = Session::spawn(&ctx, profile, std::env::temp_dir(), Vec::new());
         assert!(s.error.is_none(), "{:?}", s.error);
-        s.write(b"echo EASY$((20+22))\r");
+        s.write(b"echo EASY$EASY_TEST\r");
         let mut seen = false;
         for _ in 0..100 {
             std::thread::sleep(std::time::Duration::from_millis(50));
