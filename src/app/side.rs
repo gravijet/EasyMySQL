@@ -892,6 +892,10 @@ fn tree_node<R>(ui: &mut egui::Ui, id: egui::Id, icon: Icon, tint: Color32, labe
     let pal = style::pal();
     let mut state = egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, false);
     let weak = pal.text_weak;
+    // Hintergrund der Zeile liegt hinter dem Inhalt: Platz reservieren, nach dem Zeichnen fuellen
+    let bg = ui.painter().add(egui::Shape::Noop);
+    let sel_key = egui::Id::new("tree-selected");
+    let selected = ui.ctx().data(|d| d.get_temp::<egui::Id>(sel_key)) == Some(id);
     let row = ui.horizontal(|ui| {
         ui.set_min_height(TREE_ROW);
         ui.spacing_mut().item_spacing.x = 4.0;
@@ -904,6 +908,15 @@ fn tree_node<R>(ui: &mut egui::Ui, id: egui::Id, icon: Icon, tint: Color32, labe
         ui.add(egui::Label::new(label).sense(Sense::click()).selectable(false))
     });
     let label_resp = row.inner;
+    if label_resp.clicked() || label_resp.secondary_clicked() {
+        ui.ctx().data_mut(|d| d.insert_temp(sel_key, id));
+    }
+    // Ausgewaehlte Zeile in der Auswahlfarbe, Zeile unter dem Mauszeiger dezent heller (ueber die ganze Breite)
+    let full = egui::Rect::from_min_max(egui::pos2(ui.max_rect().left() - 4.0, row.response.rect.top() - 1.0), egui::pos2(ui.max_rect().right() + 4.0, row.response.rect.bottom() + 1.0));
+    if selected || ui.rect_contains_pointer(row.response.rect) {
+        let fill = if selected { pal.selection } else { pal.hover };
+        ui.painter().set(bg, egui::epaint::RectShape::filled(full, style::RADIUS as f32 - 2.0, fill));
+    }
     if label_resp.clicked() {
         state.toggle(ui);
         state.store(ui.ctx());
