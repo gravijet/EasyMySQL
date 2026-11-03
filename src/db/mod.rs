@@ -559,6 +559,12 @@ mod split_tests {
     }
 
     #[test]
+    fn double_dash_needs_a_space_to_be_a_comment() {
+        let s = split_statements("SELECT 5--3;\nSELECT 1; -- Kommentar; mit Semikolon\n--\nSELECT 2");
+        assert_eq!(s.iter().map(|x| x.sql.as_str()).collect::<Vec<_>>(), ["SELECT 5--3", "SELECT 1", "SELECT 2"]);
+    }
+
+    #[test]
     fn only_comments() {
         assert!(split_statements("-- nur\n# Kommentar\n").is_empty());
     }

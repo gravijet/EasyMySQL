@@ -222,7 +222,15 @@ pub fn run(server: Server, conn: crate::db::ConnInfo, rel: Release, copy_data: b
             if copy_data {
                 stage(crate::i18n::tr("Datenordner wird kopiert …", "Copying the data folder …").into());
                 let _ = std::fs::remove_dir_all(&copy);
-                crate::server::copy_dir(&paths.data, &copy).map_err(|e| e.to_string())?;
+                if let Err(e) = crate::server::copy_dir(&paths.data, &copy) {
+                    // Meist zu wenig Platz: die halbe Kopie entfernen und mit der bisherigen Version weiterlaufen
+                    let _ = std::fs::remove_dir_all(&copy);
+                    let _ = server.start_blocking(&|| ctx.request_repaint());
+                    return Err(crate::tr_format!(
+                        "Der Datenordner konnte nicht kopiert werden ({e}). Das Update wurde nicht durchgeführt; die bisherige Version läuft weiter.",
+                        "The data folder could not be copied ({e}). The update was not applied; the previous version keeps running."
+                    ));
+                }
             }
             // 4. Mit der neuen Version starten (mariadb-upgrade laeuft beim Start)
             stage(crate::tr_format!("MariaDB {} wird gestartet …", "Starting MariaDB {} …", rel.version));
@@ -247,16 +255,28 @@ pub fn run(server: Server, conn: crate::db::ConnInfo, rel: Release, copy_data: b
                     // Zurueck zur bisherigen Version mit dem gesicherten Datenordner
                     stage(crate::i18n::tr("Start fehlgeschlagen – zurück zur bisherigen Version …", "Start failed – going back to the previous version …").into());
                     server.stop_blocking(&conn);
+                    let mut note = String::new();
                     if copy_data && copy.is_dir() {
                         let broken = paths.data.with_file_name(format!("{}-fehlgeschlagen-{}", paths.data.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(), crate::server::timestamp().replace([':', ' '], "-")));
-                        let _ = std::fs::rename(&paths.data, &broken);
-                        let _ = crate::server::copy_dir(&copy, &paths.data);
+                        // Nur wenn die veraenderten Daten zur Seite liegen, die Kopie zurueckspielen - sonst wuerden beide Staende vermischt
+                        match std::fs::rename(&paths.data, &broken) {
+                            Ok(()) => {
+                                if let Err(e) = crate::server::copy_dir(&copy, &paths.data) {
+                                    let _ = std::fs::remove_dir_all(&paths.data);
+                                    let _ = std::fs::rename(&broken, &paths.data);
+                                    note = crate::tr_format!(" Die Sicherungskopie ließ sich nicht zurückspielen ({e}); sie liegt unter {}.", " The backup copy could not be restored ({e}); it is at {}.", copy.display());
+                                }
+                            }
+                            Err(e) => {
+                                note = crate::tr_format!(" Die Daten blieben unverändert, weil sie nicht beiseitegelegt werden konnten ({e}); die Kopie liegt unter {}.", " The data was left as it is because it could not be moved aside ({e}); the copy is at {}.", copy.display());
+                            }
+                        }
                     }
                     cfg.bin_dir = old_bin.clone();
                     server.configure(cfg);
                     apply_bin(old_bin);
                     let _ = server.start_blocking(&|| ctx.request_repaint());
-                    Err(crate::tr_format!("MariaDB {} ließ sich nicht starten ({e}). Die bisherige Version läuft wieder.", "MariaDB {} could not be started ({e}). The previous version is running again.", rel.version))
+                    Err(format!("{}{note}", crate::tr_format!("MariaDB {} ließ sich nicht starten ({e}). Die bisherige Version läuft wieder.", "MariaDB {} could not be started ({e}). The previous version is running again.", rel.version)))
                 }
             }
         })();

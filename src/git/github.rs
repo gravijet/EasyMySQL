@@ -41,12 +41,7 @@ pub fn set_token(t: &str) -> Result<(), String> {
     if t.is_empty() {
         let _ = std::fs::remove_file(&f);
     } else {
-        crate::workspace::atomic_write(&f, t).map_err(|e| e.to_string())?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let _ = std::fs::set_permissions(&f, std::fs::Permissions::from_mode(0o600));
-        }
+        crate::workspace::atomic_write_private(&f, t).map_err(|e| e.to_string())?;
     }
     *TOKEN.write().unwrap() = None;
     Ok(())

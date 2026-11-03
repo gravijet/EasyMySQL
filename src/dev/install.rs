@@ -457,7 +457,9 @@ fn install_jar(pkg: &Package, prefix: &str, progress: &Progress, cancel: &Atomic
 /// Ordner `<prefix><version>`.
 fn install_archive(tool: Tool, pkg: &Package, dir: &Path, prefix: &str, progress: &Progress, cancel: &AtomicBool, stage: &dyn Fn(String)) -> Result<(), String> {
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    let tmp = dir.join(format!(".laden-{}", std::process::id()));
+    // Eigener Ordner je Aufruf: Hintergrundauftrag und ein gleichzeitiges `install_now` stoeren sich nicht
+    static N: AtomicU64 = AtomicU64::new(0);
+    let tmp = dir.join(format!(".laden-{}-{}", std::process::id(), N.fetch_add(1, Ordering::Relaxed)));
     let _ = std::fs::create_dir_all(&tmp);
     let result = (|| {
         let archive = tmp.join(&pkg.file);
@@ -666,6 +668,11 @@ pub fn install(list: &[Tool], ctx: &egui::Context) {
                     if let Some(t) = t {
                         s.stage = crate::tr_format!("{} wird vorbereitet …", "Preparing {} …", t.label());
                     }
+                    // Leer und "fertig" im selben Schritt: ein gleichzeitiges install() startet sonst keinen neuen Lauf
+                    // und sein Auftrag bliebe liegen
+                    if t.is_none() {
+                        s.running = false;
+                    }
                     t.map(|t| (t, Arc::clone(&s.progress), Arc::clone(&s.cancel)))
                 });
                 let Some((tool, progress, cancel)) = next else { break };
@@ -701,7 +708,6 @@ pub fn install(list: &[Tool], ctx: &egui::Context) {
                 });
                 repaint.request_repaint();
             }
-            with_state(|s| s.running = false);
             ctx.request_repaint();
         })
         .ok();

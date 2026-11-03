@@ -36,19 +36,19 @@ fn to_text(list: &[Profile], with_passwords: bool) -> String {
     let mut out = String::new();
     for p in list {
         let (c, s) = (&p.conn, &p.ssh);
-        let (pw, spw) = if with_passwords { (c.password.as_str(), s.password.as_str()) } else { ("", "") };
+        let (pw, spw) = if with_passwords { (crate::settings::secret_enc(&c.password), crate::settings::secret_enc(&s.password)) } else { (String::new(), String::new()) };
         let cols = [
             field(&p.name),
             field(&c.host),
             c.port.to_string(),
             field(&c.user),
-            field(pw),
+            pw,
             (s.enabled as u8).to_string(),
             field(&s.host),
             s.port.to_string(),
             field(&s.user),
             field(&s.key),
-            field(spw),
+            spw,
         ];
         out.push_str(&cols.join("\t"));
         out.push('\n');
@@ -65,8 +65,8 @@ fn from_text(text: &str) -> Vec<Profile> {
         }
         out.push(Profile {
             name: c[0].to_string(),
-            conn: ConnInfo { host: c[1].to_string(), port: c[2].parse().unwrap_or(3306), user: c[3].to_string(), password: c[4].to_string() },
-            ssh: SshConfig { enabled: c[5] == "1", host: c[6].to_string(), port: c[7].parse().unwrap_or(22), user: c[8].to_string(), key: c[9].to_string(), password: c[10].to_string() },
+            conn: ConnInfo { host: c[1].to_string(), port: c[2].parse().unwrap_or(3306), user: c[3].to_string(), password: crate::settings::secret_dec(c[4]) },
+            ssh: SshConfig { enabled: c[5] == "1", host: c[6].to_string(), port: c[7].parse().unwrap_or(22), user: c[8].to_string(), key: c[9].to_string(), password: crate::settings::secret_dec(c[10]) },
         });
     }
     out
@@ -89,7 +89,7 @@ pub fn find(name: &str) -> Option<Profile> {
 /// Liste ersetzen und speichern. Passwoerter werden nur gespeichert, wenn `save_passwords` gilt
 /// (wie beim globalen Server); bis zum Neustart bleiben sie im Speicher.
 pub fn set(list: Vec<Profile>, save_passwords: bool) {
-    let _ = crate::workspace::atomic_write(&path(), &to_text(&list, save_passwords));
+    let _ = crate::workspace::atomic_write_private(&path(), &to_text(&list, save_passwords));
     *store().lock().unwrap() = list;
 }
 
@@ -112,6 +112,9 @@ mod tests {
         // doppelte und leere Namen werden verworfen, Tabulatoren im Namen zerstoeren die Zeile nicht
         let dup = format!("{}{}", to_text(&[a.clone()], true), to_text(&[a], true));
         assert_eq!(from_text(&dup).len(), 1);
+        let mut odd = Profile::new("Seltsam");
+        odd.conn.password = " a\tb\\c\nd ".into();
+        assert_eq!(from_text(&to_text(&[odd.clone()], true))[0].conn.password, odd.conn.password);
         assert_eq!(from_text("\thost\t1\tu\tp\t0\t\t22\t\t\t\n").len(), 0);
         let tabbed = Profile { name: "a\tb".into(), ..b };
         assert_eq!(from_text(&to_text(&[tabbed], true))[0].name, "a b");
