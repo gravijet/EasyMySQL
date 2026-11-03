@@ -65,8 +65,9 @@ jobs:
           "version=$v" >> $env:GITHUB_OUTPUT
           Write-Host "EasyMySQL $v"
 
+      # Der Debugger-Test braucht ein echtes JDK und jdb; er laeuft in ci.yml (Tests), nicht als Huerde fuers Release.
       - name: Run unit tests
-        run: cargo test --locked
+        run: cargo test --locked -- --skip debugging_a_program_stops_at_breakpoints
 
       - name: Build EasyMySQL.exe
         run: cargo build --release --locked

@@ -1,0 +1,54 @@
+# Mergt Pull Requests von Arbeits-Branches (fix/*, feature/* ...) selbst, sobald "Tests" gruen ist,
+# und startet danach das Release. (Ein Merge mit dem Workflow-Token loest keinen Push-Workflow aus,
+# darum wird release.yml hier ausdruecklich gestartet - nur wenn die Version noch kein Tag hat.)
+name: Automatisch mergen
+
+on:
+  workflow_run:
+    workflows: ["Tests"]
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+concurrency:
+  group: auto-merge
+  cancel-in-progress: false
+
+jobs:
+  merge:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      BRANCH: ${{ github.event.workflow_run.head_branch }}
+      SHA: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - name: Branch-Name pruefen
+        id: name
+        run: |
+          case "$BRANCH" in
+            fix/*|feature/*|design/*|docs/*|chore/*|refactor/*|perf/*|ci/*) echo "ok=true" >> "$GITHUB_OUTPUT" ;;
+            *) echo "Branch $BRANCH wird nicht automatisch gemergt." ;;
+          esac
+      - uses: actions/checkout@v4
+        if: steps.name.outputs.ok == 'true'
+        with:
+          fetch-depth: 0
+      - name: Mergen und Release starten
+        if: steps.name.outputs.ok == 'true'
+        run: |
+          set -euo pipefail
+          pr=$(gh pr list --head "$BRANCH" --base main --state open --json number,headRefOid --jq ".[] | select(.headRefOid==\"$SHA\") | .number" | head -n1)
+          if [ -z "$pr" ]; then echo "Kein offener Pull Request fuer $SHA."; exit 0; fi
+          gh pr merge "$pr" --merge --delete-branch
+          git fetch origin main --tags
+          v=$(git show origin/main:Cargo.toml | grep -m1 '^version' | sed -E 's/.*"(.+)".*/\1/')
+          if git rev-parse -q --verify "refs/tags/v$v" >/dev/null; then
+            echo "Version $v ist schon veroeffentlicht."
+          else
+            gh workflow run release.yml --ref main
+            echo "Release $v gestartet."
+          fi
