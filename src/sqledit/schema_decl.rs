@@ -115,7 +115,14 @@ fn teil(chars: &[char], ts: &[Tok]) -> Option<Teil> {
             let end = r + ts[r..].iter().position(|t| t.kind == Kind::Close)?;
             format!("FOREIGN {columns} {table} {}", ts[r..=end].iter().map(|t| t.text.to_lowercase()).collect::<Vec<_>>().join(" "))
         } else if kind == "CHECK" {
-            format!("CHECK {}", sql.to_lowercase())
+            format!(
+                "CHECK {}",
+                ts[i + 1..]
+                    .iter()
+                    .map(|t| if t.kind == Kind::Str { chars[t.start..t.end].iter().collect::<String>() } else { t.text.to_lowercase() })
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            )
         } else {
             format!("{kind} {columns}")
         }
@@ -340,6 +347,76 @@ pub fn migrationen(text: &str) -> Result<Vec<TabellenPlan>, String> {
     Ok(plans)
 }
 
+/// Metadaten statt Spaltentyp-Parsing: auch vorhandene berechnete/provider-spezifische Spalten erhalten.
+pub fn bestehender_plan(schema: &Schema, table: &crate::db::TableInfo, indexes: &[crate::db::IndexInfo], ddl: &str) -> TabellenPlan {
+    let mut parts = table
+        .columns
+        .iter()
+        .map(|c| Teil {
+            name: Some(c.name.clone()),
+            sql: String::new(),
+            kennung: format!("COLUMN {}", c.name.to_lowercase()),
+            referenz: None,
+        })
+        .collect::<Vec<_>>();
+    let mut rules = Vec::new();
+    for index in indexes {
+        rules.push(format!(
+            "{} ({})",
+            if index.name == "PRIMARY" {
+                "PRIMARY KEY"
+            } else if index.unique {
+                "UNIQUE KEY"
+            } else {
+                "KEY"
+            },
+            index.columns.iter().map(|c| q(c)).collect::<Vec<_>>().join(", ")
+        ));
+    }
+    for fk in schema.fks.iter().filter(|f| f.table == table.name) {
+        rules.push(format!(
+            "FOREIGN KEY ({}) REFERENCES {} ({})",
+            fk.columns.iter().map(|c| q(c)).collect::<Vec<_>>().join(", "),
+            q(&fk.ref_table),
+            fk.ref_columns.iter().map(|c| q(c)).collect::<Vec<_>>().join(", ")
+        ));
+    }
+    for rule in rules {
+        let chars: Vec<char> = rule.chars().collect();
+        if let Some(p) = teil(&chars, &lex(&chars).toks) {
+            parts.push(p);
+        }
+    }
+    let chars: Vec<char> = ddl.chars().collect();
+    let ts = lex(&chars).toks;
+    if let Some(first) = ts.iter().position(|t| t.kind == Kind::Open) {
+        let mut depth = 0;
+        let mut start = first + 1;
+        for i in first + 1..ts.len() {
+            if ts[i].kind == Kind::Open {
+                depth += 1;
+            }
+            if ts[i].kind == Kind::Close {
+                depth -= 1;
+            }
+            if depth < 0 || (depth == 0 && ts[i].kind == Kind::Comma) {
+                let segment = &ts[start..i];
+                if segment.first().is_some_and(|t| t.is_word("CHECK") || t.is_word("CONSTRAINT"))
+                    && segment.iter().any(|t| t.is_word("CHECK"))
+                    && let Some(p) = teil(&chars, segment)
+                {
+                    parts.push(p);
+                }
+                start = i + 1;
+                if depth < 0 {
+                    break;
+                }
+            }
+        }
+    }
+    TabellenPlan { datenbank: Some(schema.name.clone()), tabelle: table.name.clone(), teile: parts }
+}
+
 /// Erst Tabellen/Spalten und Schluessel, dann Fremdschluessel. Bestehende Definitionen nie ersetzen.
 pub fn plan_sql(plans: &[TabellenPlan], schema: &Schema, vorhanden: &[TabellenPlan]) -> Option<String> {
     let mut sql = Vec::new();
@@ -465,6 +542,29 @@ pub fn pruefe_daten(dbc: &crate::db::Db, db: &str, plans: &[TabellenPlan]) -> Re
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn vorhandene_berechnete_spalten_und_benannte_checks_beibehalten() {
+        let table = crate::db::TableInfo {
+            name: "t".into(),
+            columns: ["id", "berechnet"].iter().map(|n| crate::db::ColumnInfo { name: (*n).into(), ..Default::default() }).collect(),
+            ..Default::default()
+        };
+        let schema = Schema { name: "test".into(), tables: vec![table.clone()], ..Default::default() };
+        let indexes = vec![crate::db::IndexInfo { name: "PRIMARY".into(), unique: true, columns: vec!["id".into()] }];
+        let current = bestehender_plan(
+            &schema,
+            &table,
+            &indexes,
+            "CREATE TABLE t (id INT, berechnet INT AS (beliebig(id)) STORED, CONSTRAINT chk_id CHECK (id > 0))",
+        );
+        let desired = migrationen("CREATE TABLE t (id INT PRIMARY KEY, berechnet INT, aktiv BOOLEAN, CHECK (id > 0));").unwrap();
+        let sql = plan_sql(&desired, &schema, &[current]).unwrap();
+        assert!(sql.contains("ADD aktiv BOOLEAN"));
+        assert!(!sql.contains("PRIMARY"));
+        assert!(!sql.contains("CHECK"));
+        assert!(!sql.contains("berechnet"));
+    }
     #[test]
     fn migration_mit_schluesseln_defaults_und_add() {
         let sql = "CREATE TABLE kunde (id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY, name VARCHAR(80) NOT NULL DEFAULT 'neu', UNIQUE KEY uk_name (name)); ALTER TABLE kunde ADD COLUMN aktiv BOOLEAN DEFAULT TRUE; INSERT INTO kunde VALUES (1,'x',1);";

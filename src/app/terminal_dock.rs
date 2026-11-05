@@ -295,9 +295,11 @@ impl EasyApp {
                 let schema = match dbc.schema(&db) { Ok(s) => s, Err(e) => { self.error(e); return; } };
                 let mut existing = Vec::new();
                 for plan in &plaene {
-                    if schema.tables.iter().any(|t| t.name == plan.tabelle) {
-                        let result = dbc.create_statement(&db, &plan.tabelle).and_then(|s| crate::sqledit::migrationen(&s));
-                        match result { Ok(mut p) => existing.append(&mut p), Err(e) => { self.error(e); return; } }
+                    if let Some(table) = schema.tables.iter().find(|t| t.name == plan.tabelle) {
+                        let result = dbc.indexes(&db, &plan.tabelle).and_then(|indexes| {
+                            dbc.create_statement(&db, &plan.tabelle).map(|ddl| crate::sqledit::bestehender_plan(&schema, table, &indexes, &ddl))
+                        });
+                        match result { Ok(p) => existing.push(p), Err(e) => { self.error(e); return; } }
                     }
                 }
                 let Some(sql) = crate::sqledit::plan_sql(&plaene, &schema, &existing) else {

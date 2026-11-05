@@ -177,13 +177,13 @@ pub(super) fn abfragen(text: &str) -> Vec<(String, Option<String>)> {
         {
             jdbc = true;
             let mut at = i + 2;
-            if let Some(sql) = ausdruck(&ts, &mut at, &vars).filter(|s| crate::dev::java::source::looks_like_sql(s)) {
-                if ts.get(at).is_some_and(|t| t == ")" || t == ",") {
-                    if method == "prepareStatement" && i >= 2 && ts[i - 1] == "=" {
-                        receivers.entry(sql.clone()).or_default().insert(ts[i - 2].clone());
-                    }
-                    out.push(sql);
+            if let Some(sql) = ausdruck(&ts, &mut at, &vars).filter(|s| crate::dev::java::source::looks_like_sql(s))
+                && ts.get(at).is_some_and(|t| t == ")" || t == ",")
+            {
+                if method == "prepareStatement" && i >= 2 && ts[i - 1] == "=" {
+                    receivers.entry(sql.clone()).or_default().insert(ts[i - 2].clone());
                 }
+                out.push(sql);
             }
         }
     }
@@ -220,7 +220,10 @@ mod tests {
     fn dynamische_bezeichner_werden_nicht_geraten() {
         let q = abfragen(r#"String table = leseEingabe(); c.prepareStatement("SELECT id FROM " + table);"#);
         assert!(q.is_empty());
-        assert!(abfragen(r#"StringBuilder q = new StringBuilder("SELECT id FROM kunde"); q.append(eingabe); c.executeQuery(q.toString());"#).is_empty());
+        assert!(
+            abfragen(r#"StringBuilder q = new StringBuilder("SELECT id FROM kunde"); q.append(eingabe); c.executeQuery(q.toString());"#)
+                .is_empty()
+        );
         assert!(abfragen(r#"String sql = "SELECT id FROM kunde"; sql += eingabe; c.executeQuery(sql);"#).is_empty());
         assert_eq!(literal("\"\"\"\nSELECT \"name\" FROM kunde\n\"\"\"").unwrap(), "SELECT \"name\" FROM kunde\n");
         assert_eq!(literal(r#""SELECT id\nFROM kunde""#).unwrap(), "SELECT id\nFROM kunde");

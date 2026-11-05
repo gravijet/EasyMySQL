@@ -140,7 +140,7 @@ struct Modell {
     regeln: Vec<String>,
 }
 
-fn modell(klasse: String, anns: Annotationen, body: &[String]) -> Option<Modell> {
+fn modell(klasse: String, anns: Annotationen, body: &[String], imports: &BTreeMap<String, String>) -> Option<Modell> {
     if !anns.contains_key("Entity")
         || ["Inheritance", "SecondaryTable", "SecondaryTables", "AttributeOverride", "AttributeOverrides"]
             .iter()
@@ -150,9 +150,9 @@ fn modell(klasse: String, anns: Annotationen, body: &[String]) -> Option<Modell>
     }
     let empty = Attribute::new();
     let table = anns.get("Table").unwrap_or(&empty);
-    let name = wert(table, "name")
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| anns.get("Entity").and_then(|a| wert(a, "name")).unwrap_or_else(|| klasse.clone()));
+    let name = wert(table, "name").filter(|s| !s.is_empty()).unwrap_or_else(|| {
+        anns.get("Entity").and_then(|a| wert(a, "name")).unwrap_or_else(|| klasse.rsplit('.').next().unwrap_or(&klasse).to_string())
+    });
     let db = wert(table, "schema").or_else(|| wert(table, "catalog")).filter(|s| !s.is_empty());
     let mut members = Vec::new();
     let mut i = 0;
@@ -178,6 +178,9 @@ fn modell(klasse: String, anns: Annotationen, body: &[String]) -> Option<Modell>
                 words.drain(1..3);
             }
             if words.iter().any(|s| matches!(s.as_str(), "class" | "enum" | "interface")) {
+                words.clear();
+            }
+            if words.get(1).is_some_and(|s| s == "(") {
                 words.clear();
             }
             if !words.iter().any(|t| matches!(t.as_str(), "static" | "transient")) && words.len() >= 2 {
@@ -235,7 +238,16 @@ fn modell(klasse: String, anns: Annotationen, body: &[String]) -> Option<Modell>
                     .or_else(|| m.anns.get("OneToOne"))
                     .is_some_and(|a| wert(a, "optional").as_deref() == Some("false"));
             def.unique = wert(attrs, "unique").as_deref() == Some("true") || m.anns.contains_key("OneToOne");
-            model.links.push((def, m.typ.rsplit('.').next()?.to_string(), wert(attrs, "referencedColumnName"), default_name));
+            let target = imports.get(&m.typ).cloned().unwrap_or_else(|| {
+                if m.typ.contains('.') {
+                    m.typ.clone()
+                } else if let Some((package, _)) = model.klasse.rsplit_once('.') {
+                    format!("{package}.{}", m.typ)
+                } else {
+                    m.typ.clone()
+                }
+            });
+            model.links.push((def, target, wert(attrs, "referencedColumnName"), default_name));
             continue;
         }
         let attrs = m.anns.get("Column").unwrap_or(&empty);
@@ -381,6 +393,12 @@ pub fn jpa_modelle(texte: &[String]) -> Result<Vec<TabellenPlan>, String> {
             return Err("JPA-Datei zu gross".into());
         }
         let ts = java_tokens(text);
+        let package = ts.windows(2).find(|w| w[0] == "package").map(|w| w[1].clone());
+        let imports = ts
+            .windows(2)
+            .filter(|w| w[0] == "import" && !w[1].ends_with('.'))
+            .map(|w| (w[1].rsplit('.').next().unwrap().to_string(), w[1].clone()))
+            .collect::<BTreeMap<_, _>>();
         if !ts.windows(2).any(|w| w[0] == "@" && w[1].rsplit('.').next() == Some("Entity")) {
             continue;
         }
@@ -392,6 +410,7 @@ pub fn jpa_modelle(texte: &[String]) -> Result<Vec<TabellenPlan>, String> {
             } else if ts[at] == "class" {
                 at += 1;
                 let klasse = ts.get(at).ok_or("Klassenname fehlt")?.clone();
+                let klasse = package.as_ref().map(|p| format!("{p}.{klasse}")).unwrap_or(klasse);
                 at += 1;
                 if ts.get(at).is_some_and(|t| t == "extends") && anns.contains_key("Entity") {
                     return Err("JPA-Vererbung braucht explizite Migration".into());
@@ -401,7 +420,7 @@ pub fn jpa_modelle(texte: &[String]) -> Result<Vec<TabellenPlan>, String> {
                 }
                 let body = gruppe(&ts, &mut at, "{", "}").ok_or("Klassenrumpf fehlt")?;
                 if anns.contains_key("Entity") {
-                    models.push(modell(klasse, std::mem::take(&mut anns), &body).ok_or("JPA-Modell nicht eindeutig")?);
+                    models.push(modell(klasse, std::mem::take(&mut anns), &body, &imports).ok_or("JPA-Modell nicht eindeutig")?);
                 }
                 anns.clear();
             } else {
@@ -410,7 +429,10 @@ pub fn jpa_modelle(texte: &[String]) -> Result<Vec<TabellenPlan>, String> {
         }
     }
     let mut out = Vec::new();
-    for model in &models {
+    for (i, model) in models.iter().enumerate() {
+        if models[..i].iter().any(|m| m.klasse == model.klasse) {
+            return Err("Mehrdeutige JPA-Klasse".into());
+        }
         let mut cols = model.cols.clone();
         let mut fks = Vec::new();
         for (col, klasse, referenced, default_name) in &model.links {
@@ -460,9 +482,23 @@ pub fn jpa_modelle(texte: &[String]) -> Result<Vec<TabellenPlan>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn beziehungen_respektieren_packages_imports_und_konstruktoren() {
+        let sources = [
+            r#"package a; @Entity @Table(name="kunde_a") class Kunde { public Kunde() {} @Id long id; }"#.into(),
+            r#"package b; @Entity @Table(name="kunde_b") class Kunde { @Id long id; }"#.into(),
+            r#"package b; import a.Kunde; @Entity @Table(name="auftrag") class Auftrag { @Id long id; @ManyToOne @JoinColumn(name="kunde_id") Kunde kunde; }"#.into(),
+        ];
+        let models = jpa_modelle(&sources).unwrap();
+        let sql =
+            models.iter().find(|p| p.tabelle == "auftrag").unwrap().teile.iter().map(|p| p.sql.clone()).collect::<Vec<_>>().join("\n");
+        assert!(sql.contains("REFERENCES `kunde_a`"));
+        assert!(!sql.contains("REFERENCES `kunde_b`"));
+    }
     #[test]
     fn jpa_mit_id_namen_typen_und_beziehung() {
-        let sources = vec![r#"import jakarta.persistence.*; @Entity @Table(name="kunde") class Kunde { @Id @GeneratedValue(strategy=GenerationType.IDENTITY) long id; @Column(name="anzeige",length=80,nullable=false,unique=true) String name; }"#.into(),
+        let sources = vec![r#"import jakarta.persistence.*; @Entity @Table(name="kunde") class Kunde { public Kunde() {} @Id @GeneratedValue(strategy=GenerationType.IDENTITY) long id; @Column(name="anzeige",length=80,nullable=false,unique=true) String name; }"#.into(),
             r#"@Entity @Table(name="auftrag") class Auftrag { @Id long id; @ManyToOne @JoinColumn(name="kunde_id",nullable=false) Kunde kunde; @Column(precision=12,scale=2) BigDecimal preis; }"#.into()];
         let plans = jpa_modelle(&sources).unwrap();
         assert_eq!(plans.len(), 2);

@@ -822,10 +822,14 @@ fn deklarierter_fix(root: &Path, files: &[PathBuf], db: Option<&str>, table: Opt
     let mut plans = crate::sqledit::migrationen(&sql)?;
     let texts = files.iter().filter(|f| f.extension().is_some_and(|e| e == "java")).filter_map(|f| std::fs::read_to_string(f).ok()).collect::<Vec<_>>();
     let mut has_jpa = false;
+    let migration_keys = plans.iter().map(|p| (p.datenbank.clone(), p.tabelle.clone())).collect::<Vec<_>>();
     match crate::sqledit::jpa_modelle(&texts) {
         Ok(models) => {
             for model in models {
-                if !plans.iter().any(|p| p.tabelle == model.tabelle && p.datenbank == model.datenbank) { plans.push(model); has_jpa = true; }
+                if migration_keys.contains(&(model.datenbank.clone(), model.tabelle.clone())) { continue; }
+                if let Some(old) = plans.iter().find(|p| p.tabelle == model.tabelle && p.datenbank == model.datenbank) {
+                    if *old != model { return Err("Widerspruechliche JPA-Modelle".into()); }
+                } else { plans.push(model); has_jpa = true; }
             }
         }
         Err(e) if !plans.iter().any(|p| table.is_none_or(|t| p.tabelle == t) && column.is_none_or(|c| p.teile.iter().any(|d| d.name.as_deref() == Some(c)))) => return Err(e),
@@ -1315,7 +1319,7 @@ Caused by: java.sql.SQLSyntaxErrorException: Unknown database 'schule1'\n\
         assert!(struktur_sql(&dbc.schema(&db).unwrap(), &table, &columns).is_none());
         let plans = crate::sqledit::migrationen("CREATE TABLE kunde (id BIGINT PRIMARY KEY, name TEXT); CREATE TABLE auftrag (id BIGINT AUTO_INCREMENT PRIMARY KEY, kunde_id BIGINT NOT NULL, status VARCHAR(20) DEFAULT 'offen', FOREIGN KEY (kunde_id) REFERENCES kunde(id) ON DELETE RESTRICT);").unwrap();
         let schema = dbc.schema(&db).unwrap();
-        let existing = schema.tables.iter().flat_map(|t| crate::sqledit::migrationen(&dbc.create_statement(&db, &t.name).unwrap()).unwrap()).collect::<Vec<_>>();
+        let existing = schema.tables.iter().map(|t| crate::sqledit::bestehender_plan(&schema, t, &dbc.indexes(&db, &t.name).unwrap(), &dbc.create_statement(&db, &t.name).unwrap())).collect::<Vec<_>>();
         let sql = crate::sqledit::plan_sql(&plans, &schema, &existing).unwrap();
         crate::sqledit::pruefe_daten(&dbc, &db, &plans).unwrap();
         dbc.exec_schema(&db, &sql).unwrap();
@@ -1324,7 +1328,7 @@ Caused by: java.sql.SQLSyntaxErrorException: Unknown database 'schule1'\n\
         let rows = dbc.query(&format!("SELECT status FROM {}.auftrag", crate::db::q(&db))).unwrap();
         assert_eq!(rows.rows[0][0].as_deref(), Some("offen"));
         let schema = dbc.schema(&db).unwrap();
-        let existing = schema.tables.iter().flat_map(|t| crate::sqledit::migrationen(&dbc.create_statement(&db, &t.name).unwrap()).unwrap()).collect::<Vec<_>>();
+        let existing = schema.tables.iter().map(|t| crate::sqledit::bestehender_plan(&schema, t, &dbc.indexes(&db, &t.name).unwrap(), &dbc.create_statement(&db, &t.name).unwrap())).collect::<Vec<_>>();
         assert!(crate::sqledit::plan_sql(&plans, &schema, &existing).is_none());
         let required = crate::sqledit::migrationen("ALTER TABLE kunde ADD pflicht INT NOT NULL").unwrap();
         assert!(crate::sqledit::pruefe_daten(&dbc, &db, &required).is_err());
