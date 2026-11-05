@@ -14,6 +14,11 @@ mod lang;
 mod lint;
 mod scan;
 mod schema_fix;
+mod schema_decl;
+mod schema_jpa;
+mod schema_java;
+pub(crate) use schema_decl::{TabellenPlan, migrationen, plan_sql, pruefe_daten};
+pub(crate) use schema_jpa::jpa_modelle;
 pub(crate) use schema_fix::java_struktur;
 mod text;
 

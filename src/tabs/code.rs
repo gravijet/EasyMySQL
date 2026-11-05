@@ -65,6 +65,8 @@ enum LspWait {
     Definition(lsp::Reply),
     Rename(lsp::Reply),
     Format(lsp::Reply, String),
+    Korrekturen(lsp::Reply, String),
+    Korrektur(lsp::Reply, String),
 }
 
 pub struct CodeTab {
@@ -101,6 +103,7 @@ pub struct CodeTab {
     rename: Option<(String, usize, bool)>,
     debug_eval: String,
     lsp_note: Option<String>,
+    korrekturen: Option<(Vec<serde_json::Value>, String)>,
 }
 
 type FixCache = ((usize, usize, usize), Vec<Option<dev::autofix::Suggestion>>, Vec<dev::autofix::Suggestion>);
@@ -224,6 +227,7 @@ impl CodeTab {
             rename: None,
             debug_eval: String::new(),
             lsp_note: None,
+            korrekturen: None,
         };
         t.update_database_module();
         Ok(t)
@@ -535,12 +539,20 @@ impl CodeTab {
     fn poll_lsp_wait(&mut self, cx: &mut Ctx) {
         let Some(wait) = &self.lsp_wait else { return };
         let rx = match wait {
-            LspWait::Definition(rx) | LspWait::Rename(rx) | LspWait::Format(rx, _) => rx,
+            LspWait::Definition(rx) | LspWait::Rename(rx) | LspWait::Format(rx, _) | LspWait::Korrekturen(rx, _) | LspWait::Korrektur(rx, _) => rx,
         };
         let Ok(result) = rx.try_recv() else { return };
         let wait = self.lsp_wait.take().unwrap();
         match (wait, result) {
             (_, Err(e)) => cx.error(e),
+            (LspWait::Korrekturen(_, before), Ok(v)) => {
+                if self.text == before {
+                    self.korrekturen = Some((v.as_array().cloned().unwrap_or_default(), before));
+                } else { cx.status(crate::i18n::tr("Text geändert – Korrekturen erneut anfordern.", "Text changed – request fixes again.")); }
+            }
+            (LspWait::Korrektur(_, before), Ok(v)) => {
+                if self.text == before { self.korrekturen = Some((vec![v], before)); }
+            }
             (LspWait::Definition(_), Ok(v)) => match lsp::parse_location(&v) {
                 Some((path, pos)) if same_file(&path, &self.file) => self.pending_cursor = Some(lsp::from_pos(&self.text, pos)),
                 Some((path, pos)) => cx.actions.push(Action::OpenFileAt { path, line: pos.0 }),
@@ -824,6 +836,10 @@ impl CodeTab {
                         self.format(cx);
                         ui.close();
                     }
+                    if self.lang == Lang::Java && ui.button(crate::i18n::tr("Java-Korrekturen …", "Java fixes …")).clicked() {
+                        self.korrekturen_anfordern(cx);
+                        ui.close();
+                    }
                     ui.separator();
                     if ui.button(crate::i18n::tr("Einstellungen zum Ausführen …", "Run settings …")).clicked() {
                         cx.actions.push(Action::OpenSettings(Some(match self.lang {
@@ -1044,9 +1060,78 @@ impl CodeTab {
         if n > 0 {
             self.last_edit = Instant::now();
             cx.status(crate::tr_format!("{n} Stelle(n) korrigiert.", "{n} place(s) corrected."));
+        } else if self.lang == Lang::Java && self.lsp.as_ref().is_some_and(|s| s.ready()) {
+            self.korrekturen_anfordern(cx);
         } else {
             cx.status(crate::i18n::text("Nichts zu korrigieren."));
         }
+    }
+
+    fn korrekturen_anfordern(&mut self, cx: &mut Ctx) {
+        self.flush_lsp();
+        if let Some(s) = self.lsp.as_ref().filter(|s| s.ready()) {
+            self.lsp_wait = Some(LspWait::Korrekturen(s.korrekturen(&self.file, &self.text, self.editor.cursor), self.text.clone()));
+        } else { cx.status(self.lsp_missing()); }
+    }
+
+    fn korrektur_anwenden(&mut self, action: &serde_json::Value, before: &str, cx: &mut Ctx) {
+        if self.text != before {
+            cx.error(crate::i18n::tr("Text geändert – Korrekturen erneut anfordern.", "Text changed – request fixes again."));
+            return;
+        }
+        match lsp::korrektur_edit(action) {
+            Ok(edit) => {
+                let root = self.lsp_root().canonicalize();
+                if edit.files.iter().any(|f| f.path.canonicalize().ok().zip(root.as_ref().ok()).is_none_or(|(p, r)| !p.starts_with(r))) {
+                    cx.error(crate::i18n::tr("Korrektur enthält eine Datei außerhalb des Projekts oder eine neue Datei.", "Fix contains a file outside the project or a new file."));
+                    return;
+                }
+                // Den offenen Text direkt aendern; andere Dateien nutzt der vorhandene Workspace-Editor.
+                for f in edit.files.iter().filter(|f| same_file(&f.path, &self.file)) {
+                    self.text = lsp::apply_edits(&self.text, &f.edits);
+                }
+                let others = lsp::WorkspaceEdit { files: edit.files.into_iter().filter(|f| !same_file(&f.path, &self.file)).collect(), renames: Vec::new() };
+                if !others.files.is_empty() { cx.actions.push(Action::ApplyEdit(others)); }
+                self.last_edit = Instant::now();
+                self.editor.set_external(Vec::new()); self.editor.set_diagnostics(&self.text, &[]); self.failure = None;
+            }
+            Err(e) => cx.error(e),
+        }
+    }
+
+    fn korrekturen_dialog(&mut self, ctx: &egui::Context, cx: &mut Ctx) {
+        let Some((actions, before)) = self.korrekturen.clone() else { return };
+        let mut selected = None;
+        let mut close = false;
+        egui::Modal::new(self.editor.id.with("java-korrekturen")).show(ctx, |ui| {
+            ui.heading(crate::i18n::tr("Java-Korrekturen", "Java fixes"));
+            if actions.is_empty() { ui.label(crate::i18n::tr("Keine Korrektur an dieser Stelle gefunden.", "No fix found at this position.")); }
+            egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
+                for action in &actions {
+                    let title = action["title"].as_str().unwrap_or("");
+                    ui.collapsing(title, |ui| {
+                        if let Ok(edit) = lsp::korrektur_edit(action) {
+                            for f in &edit.files {
+                                ui.label(f.path.display().to_string());
+                                for (start, _, text) in &f.edits {
+                                    ui.label(format!("{}: {text}", start.0 + 1));
+                                }
+                            }
+                        } else if let Some(reason) = action["disabled"]["reason"].as_str() { ui.label(reason); }
+                        if ui.button(crate::i18n::tr("Korrektur wählen", "Choose fix")).clicked() { selected = Some(action.clone()); }
+                    });
+                }
+            });
+            if ui.button(crate::i18n::text("Schließen")).clicked() { close = true; }
+        });
+        if let Some(action) = selected {
+            if action.get("edit").is_none() && action.get("data").is_some()
+                && let Some(rx) = self.lsp.as_ref().and_then(|s| s.korrektur_auflosen(action.clone())) {
+                    self.lsp_wait = Some(LspWait::Korrektur(rx, before));
+            } else { self.korrektur_anwenden(&action, &before, cx); }
+            close = true;
+        }
+        if close { self.korrekturen = None; }
     }
 
     // ------------------------------------------------------------------
@@ -1761,6 +1846,7 @@ impl TabView for CodeTab {
         self.history_dialog(&ctx);
         self.libs_dialog(&ctx, cx);
         self.rename_dialog(&ctx);
+        self.korrekturen_dialog(&ctx, cx);
     }
 }
 

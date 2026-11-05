@@ -22,3 +22,21 @@ jobs:
           git config --global user.name "CI"
           git config --global user.email "ci@example.invalid"
           cargo test --locked
+
+  windows-ui:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Windows bauen
+        run: cargo build --locked
+      - name: Java-Autofix im nativen Fenster pruefen
+        shell: pwsh
+        run: .github/scripts/windows-ui.ps1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-ui
+          path: ${{ runner.temp }}/easymysql-ui

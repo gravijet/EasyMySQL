@@ -265,6 +265,23 @@ impl Db {
         Ok(c.affected_rows())
     }
 
+    /// Struktur-Fixes duerfen Daten nicht durch lockere SQL-Modi stillschweigend konvertieren.
+    pub fn exec_schema(&self, db: &str, sql: &str) -> Result<u64, String> {
+        let mut c = self.conn()?;
+        c.query_drop(format!("USE {}", q(db))).map_err(err_text)?;
+        let before: (String, u8, u8) = c.query_first("SELECT @@SESSION.sql_mode, @@SESSION.foreign_key_checks, @@SESSION.unique_checks").map_err(err_text)?.ok_or("Sitzungsmodus fehlt")?;
+        // Lexer und Literal-Helfer verwenden die normalen MySQL-Quote-/Escape-Regeln.
+        let mut modes = before.0.split(',').filter(|m| !m.is_empty() && !matches!(*m, "ANSI_QUOTES" | "NO_BACKSLASH_ESCAPES")).collect::<Vec<_>>();
+        if !modes.contains(&"STRICT_ALL_TABLES") { modes.push("STRICT_ALL_TABLES"); }
+        let result = c.exec_drop("SET SESSION sql_mode=?, foreign_key_checks=1, unique_checks=1", (modes.join(","),))
+            .and_then(|_| c.query_drop(sql));
+        let affected = c.affected_rows();
+        let restored = c.exec_drop("SET SESSION sql_mode=?, foreign_key_checks=?, unique_checks=?", before);
+        result.map_err(err_text)?;
+        restored.map_err(err_text)?;
+        Ok(affected)
+    }
+
     pub fn databases(&self) -> Result<Vec<String>, String> {
         Ok(self
             .rows("SHOW DATABASES", ())?

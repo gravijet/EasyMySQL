@@ -7,6 +7,7 @@ use eframe::egui::{Key, RichText};
 pub enum Dialog {
     Message { title: String, text: String, error: bool },
     Confirm { text: String, db: Option<String>, sql: String },
+    ConfirmStructure { text: String, db: Option<String>, sql: String },
     NewDatabase { name: String, collation: String },
     /// `only`: ausgewaehlte Tabellen (None = alle)
     /// Tabelle umbenennen oder kopieren
@@ -39,7 +40,8 @@ impl EasyApp {
     pub(super) fn dialogs_ui(&mut self, ctx: &egui::Context) {
         let Some(dlg) = self.dialogs.last_mut() else { return };
         let mut close = false;
-        let mut run_sql: Option<(Option<String>, String)> = None;
+        let mut run_sql: Option<(Option<String>, String, bool)> = None;
+        let structure = matches!(dlg, Dialog::ConfirmStructure { .. });
         // Mehrere Anweisungen nacheinander in einer Datenbank ausfuehren
         let mut batch: Option<(String, Vec<String>)> = None;
         let mut open_sql: Option<(String, String)> = None;
@@ -82,7 +84,7 @@ impl EasyApp {
                         });
                     });
                 }
-                Dialog::Confirm { text, db, sql } => {
+                Dialog::Confirm { text, db, sql } | Dialog::ConfirmStructure { text, db, sql } => {
                     ui.label(RichText::new(text.as_str()).strong());
                     ui.add_space(4.0);
                     egui::ScrollArea::vertical().max_height(240.0).show(ui, |ui| {
@@ -91,7 +93,7 @@ impl EasyApp {
                     ui.add_space(8.0);
                     ui.horizontal(|ui| {
                         if ui.button(crate::i18n::text("Ja")).clicked() {
-                            run_sql = Some((db.clone(), sql.clone()));
+                            run_sql = Some((db.clone(), sql.clone(), structure));
                             close = true;
                         }
                         if ui.button(crate::i18n::text("Nein")).clicked() || ui.input(|i| i.key_pressed(Key::Escape)) {
@@ -292,7 +294,7 @@ impl EasyApp {
                 }
             }
         });
-        if modal.should_close() && !matches!(self.dialogs.last(), Some(Dialog::Confirm { .. })) {
+        if modal.should_close() && !matches!(self.dialogs.last(), Some(Dialog::Confirm { .. } | Dialog::ConfirmStructure { .. })) {
             close = true;
         }
         if close {
@@ -318,8 +320,8 @@ impl EasyApp {
         if let Some((save, then)) = unsaved {
             self.finish_unsaved(save, then);
         }
-        if let Some((db, sql)) = run_sql {
-            self.run_confirmed(db, sql);
+        if let Some((db, sql, structure)) = run_sql {
+            self.run_confirmed(db, sql, structure);
         }
         if open_settings {
             self.handle_actions(vec![Action::OpenSettings(Some("verbindung".into()))]);
@@ -373,7 +375,7 @@ impl EasyApp {
     }
 
     /// Bestaetigtes SQL ausfuehren (vorher bei Loeschen automatisch sichern)
-    fn run_confirmed(&mut self, db: Option<String>, sql: String) {
+    fn run_confirmed(&mut self, db: Option<String>, sql: String, structure: bool) {
         let targets = crate::backup::destructive_targets(&sql, db.as_deref());
         if !targets.is_empty() {
             self.update_backup_env();
@@ -385,6 +387,9 @@ impl EasyApp {
         }
         let Some(dbc) = &self.db else { return };
         let res = match &db {
+            Some(d) if structure => crate::sqledit::migrationen(&sql)
+                .and_then(|p| crate::sqledit::pruefe_daten(dbc, d, &p))
+                .and_then(|_| dbc.exec_schema(d, &sql)),
             Some(d) => dbc.exec_in(d, &sql),
             None => dbc.exec(&sql, ()),
         };

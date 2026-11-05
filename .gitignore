@@ -22,3 +22,6 @@ auth_cache/
 
 # Redis dumps from local tests
 dump.rdb
+
+# Projektcache fuer Java-Klassen und Sprachserver
+.easymysql/

@@ -701,6 +701,9 @@ pub const CHAPTERS: &[Chapter] = &[
                         "Vorlagen: main, sout, fori, foreach, try, scanner, connection, query, update, transaction.",
                         "„Einfügen“ setzt Code für die Datenbank ein: eine Verbindung, das Lesen aller Zeilen einer Tabelle (mit passenden Typen und Imports) oder Record und DAO-Klasse als neue Dateien.",
                         "Fehler beim Übersetzen sind im Code rot unterstrichen; die Liste darunter springt per Klick zur Stelle, auch in anderen Dateien.",
+                        "Weitere → Java-Korrekturen bietet passende Sprachserver-Fixes mit Vorschau an. Strg+. korrigiert zunächst lokale Fehler und fragt sonst den Sprachserver.",
+                        "Fehlende Datenbankstrukturen werden aus SQL-Migrationen, JPA-Modellen oder eindeutigem JDBC-Code abgeleitet. Vor dem Erstellen werden Server, Datenbank und SQL bestätigt. Schlüssel, Defaults und Beziehungen aus Deklarationen werden berücksichtigt; bestehende Spalten bleiben erhalten.",
+
                         "Enter rückt automatisch ein, nach { eine Ebene mehr, } rückt wieder aus. Strg+# kommentiert mit //.",
                     ]),
                     Tip("Hat die geöffnete Datei keine main-Methode, startet ▶ die Klasse mit main im Projekt (bei mehreren die namens Main)."),
