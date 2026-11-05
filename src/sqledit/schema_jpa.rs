@@ -328,6 +328,11 @@ fn modell(klasse: String, anns: Annotationen, body: &[String], imports: &BTreeMa
             def.auto_inc = true;
         }
         if let Some(custom) = wert(attrs, "columnDefinition") {
+            // Provider koennen Annotationen und rohe DDL-Fragmente verschieden kombinieren.
+            if def.primary || def.unique || def.not_null || def.auto_inc || !def.default.is_empty() {
+                return None;
+            }
+
             let p = migrationen(&format!("CREATE TABLE x ({} {custom})", q(&colname))).ok()?;
             if p.len() != 1 || p[0].teile.len() != 1 {
                 return None;
@@ -515,5 +520,6 @@ mod tests {
         assert_eq!(jpa_modelle(&[s.into()]).unwrap()[0].teile.iter().filter(|t| t.name.is_some()).count(), 2);
         assert!(jpa_modelle(&["@Entity class X { @Id long id; BigDecimal wert; }".into()]).is_err());
         assert!(jpa_modelle(&["@Entity class X extends Basis { @Id long id; }".into()]).is_err());
+        assert!(jpa_modelle(&[r#"@Entity class X { @Id @Column(columnDefinition="BIGINT") long id; }"#.into()]).is_err());
     }
 }

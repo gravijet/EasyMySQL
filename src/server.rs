@@ -428,7 +428,7 @@ fn exe_dir() -> Option<PathBuf> {
         .and_then(|p| p.parent().map(|p| p.to_path_buf()))
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, not(test)))]
 fn writable(dir: &Path) -> bool {
     let test = dir.join(".schreibtest");
     let ok = std::fs::write(&test, b"ok").is_ok();
@@ -446,28 +446,35 @@ pub fn app_data_dir() -> PathBuf {
 
 fn find_app_data_dir() -> PathBuf {
     #[cfg(test)]
-    if let Some(p) = std::env::var_os("EASYMYSQL_TEST_DATA_DIR") {
-        return PathBuf::from(p);
-    }
-    #[cfg(windows)]
     {
-        if let Ok(p) = std::env::var("ProgramData") {
-            let d = PathBuf::from(p).join("EasyMySQL");
-            if d.is_dir() && writable(&d) {
-                return d;
+        // Auch der normale Testaufruf darf keine echte App-Konfiguration ueberschreiben.
+        std::env::var_os("EASYMYSQL_TEST_DATA_DIR").filter(|p| !p.is_empty()).map(PathBuf::from).unwrap_or_else(|| {
+            let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos();
+            std::env::temp_dir().join(format!("easymysql-test-app-{}-{stamp}", std::process::id()))
+        })
+    }
+    #[cfg(not(test))]
+    {
+        #[cfg(windows)]
+        {
+            if let Ok(p) = std::env::var("ProgramData") {
+                let d = PathBuf::from(p).join("EasyMySQL");
+                if d.is_dir() && writable(&d) {
+                    return d;
+                }
+            }
+            if let Ok(p) = std::env::var("LOCALAPPDATA") {
+                return PathBuf::from(p).join("EasyMySQL");
             }
         }
-        if let Ok(p) = std::env::var("LOCALAPPDATA") {
-            return PathBuf::from(p).join("EasyMySQL");
+        #[cfg(not(windows))]
+        {
+            if let Ok(p) = std::env::var("HOME") {
+                return PathBuf::from(p).join(".local/share/EasyMySQL");
+            }
         }
+        exe_dir().unwrap_or_default().join("userdata")
     }
-    #[cfg(not(windows))]
-    {
-        if let Ok(p) = std::env::var("HOME") {
-            return PathBuf::from(p).join(".local/share/EasyMySQL");
-        }
-    }
-    exe_dir().unwrap_or_default().join("userdata")
 }
 
 fn find_bin_dir() -> Option<PathBuf> {
@@ -1189,6 +1196,20 @@ fn push_log(shared: &Arc<Mutex<Shared>>, kind: LogKind, text: String) {
 #[cfg(test)]
 mod log_tests {
     use super::*;
+
+    #[test]
+    fn tests_verwenden_keine_echten_appdaten() {
+        let path = app_data_dir();
+        if let Some(explicit) = std::env::var_os("EASYMYSQL_TEST_DATA_DIR").filter(|p| !p.is_empty()) {
+            assert_eq!(path, PathBuf::from(explicit));
+        } else {
+            assert!(path.starts_with(std::env::temp_dir()), "{path:?}");
+            if let Some(home) = std::env::var_os("HOME") {
+                assert_ne!(path, PathBuf::from(home).join(".local/share/EasyMySQL"));
+            }
+        }
+        assert_eq!(path, app_data_dir());
+    }
 
     /// Echter Server: anderer Port, dann Datenordner wechseln und die Daten mitnehmen.
     /// `HOME=/tmp/emtest cargo test switch_data_dir -- --ignored` (kurzer HOME wegen der Socket-Pfadlaenge)
