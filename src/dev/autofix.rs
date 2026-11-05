@@ -15,6 +15,12 @@ pub enum Fix {
     CreateDatabase(String),
     /// Tabellen-Designer fuer diese Datenbank oeffnen
     NewTable(String),
+    /// Abgeleitete Struktur, vor der Ausfuehrung mit SQL-Vorschau bestaetigen
+    Schema {
+        db: Option<String>,
+        table: String,
+        columns: Vec<(String, String)>,
+    },
     StartServer,
     ConnectionSettings,
     Install(Tool),
@@ -231,7 +237,167 @@ const JAVA_IMPORTS: &[(&str, &str)] = &[
     ("Consumer", "java.util.function.Consumer"),
     ("Supplier", "java.util.function.Supplier"),
     ("Predicate", "java.util.function.Predicate"),
+    ("Callable", "java.util.concurrent.Callable"),
+    ("ExecutorService", "java.util.concurrent.ExecutorService"),
+    ("Executors", "java.util.concurrent.Executors"),
+    ("Future", "java.util.concurrent.Future"),
+    ("Queue", "java.util.Queue"),
+    ("Deque", "java.util.Deque"),
+    ("ArrayDeque", "java.util.ArrayDeque"),
+    ("Comparator", "java.util.Comparator"),
+    ("Collection", "java.util.Collection"),
+    ("DatabaseMetaData", "java.sql.DatabaseMetaData"),
+    ("BatchUpdateException", "java.sql.BatchUpdateException"),
+    (
+        "SQLIntegrityConstraintViolationException",
+        "java.sql.SQLIntegrityConstraintViolationException",
+    ),
+    ("Savepoint", "java.sql.Savepoint"),
+    ("OutputStream", "java.io.OutputStream"),
+    ("BufferedWriter", "java.io.BufferedWriter"),
+    ("StandardCharsets", "java.nio.charset.StandardCharsets"),
+    ("StandardOpenOption", "java.nio.file.StandardOpenOption"),
 ];
+
+/// Sichere lokale Korrekturen bereits beim Tippen, ohne Compiler oder Sprachserver.
+pub fn java_probleme(text: &str) -> Vec<crate::sqledit::Problem> {
+    use super::java::source::{self, Span};
+    use crate::sqledit::{Fix, Problem, Severity};
+    if text.chars().count() > crate::sqledit::MAX_CHARS {
+        return Vec::new();
+    }
+    let chars: Vec<char> = text.chars().collect();
+    let code: String = source::spans(&chars)
+        .into_iter()
+        .flat_map(|(k, a, b)| {
+            chars[a..b].iter().map(move |c| {
+                if k == Span::Code || *c == '\n' {
+                    *c
+                } else {
+                    ' '
+                }
+            })
+        })
+        .collect();
+    let tokens: Vec<&str> = code
+        .split(|c: char| !c.is_alphanumeric() && c != '_' && c != '$')
+        .filter(|w| !w.is_empty())
+        .collect();
+    let mut out = Vec::new();
+    let mut imports = String::new();
+    for &(short, full) in JAVA_IMPORTS {
+        let package = full.rsplit_once('.').unwrap().0;
+        let shadowed = tokens
+            .windows(2)
+            .any(|w| matches!(w[0], "class" | "interface" | "enum" | "record") && w[1] == short);
+        let imported = code.lines().any(|l| {
+            let compact: String = l.chars().filter(|c| !c.is_whitespace()).collect();
+            compact == format!("import{full};")
+                || compact == format!("import{package}.*;")
+                || (compact.starts_with("import") && compact.ends_with(&format!(".{short};")))
+        });
+        // Ein fremder Wildcard-Import kann denselben Namen liefern.
+        let ambiguous = code
+            .lines()
+            .any(|l| l.trim_start().starts_with("import ") && l.contains(".*"));
+        if imported
+            || shadowed
+            || ambiguous
+            || !tokens.contains(&short)
+            || imports.contains(&format!("import {full};\n"))
+        {
+            continue;
+        }
+        let usage = code.match_indices(short).find(|(i, _)| {
+            let before = code[..*i].chars().next_back();
+            let after = code[*i + short.len()..].chars().next();
+            before.is_none_or(|c| !c.is_alphanumeric() && c != '_' && c != '$' && c != '.')
+                && after.is_none_or(|c| !c.is_alphanumeric() && c != '_' && c != '$')
+        });
+        if usage.is_some() {
+            imports.push_str(&format!("import {full};\n"));
+        }
+    }
+    if !imports.is_empty() {
+        let at = text
+            .lines()
+            .take(import_line(text))
+            .map(|l| l.chars().count() + 1)
+            .sum::<usize>()
+            .min(chars.len());
+        if at == chars.len() && !text.ends_with('\n') && !text.is_empty() {
+            imports.insert(0, '\n');
+        }
+        out.push(Problem {
+            start: at,
+            end: at,
+            severity: Severity::Warning,
+            message: tr(
+                "Fehlende Java-Imports ergänzen.",
+                "Add missing Java imports.",
+            )
+            .into(),
+            fix: Some(Fix {
+                start: at,
+                end: at,
+                text: imports,
+            }),
+        });
+    }
+    let mut offset = 0;
+    for line in code.split_inclusive('\n') {
+        let trimmed = line.trim();
+        if ["System.out.print(", "System.out.println(", "System.err.print(", "System.err.println("].iter().any(|p| trimmed.starts_with(p))
+            && trimmed.ends_with(')')
+        {
+            let mut balance = 0i32;
+            let mut valid = true;
+            for c in trimmed.chars() {
+                if c == '(' { balance += 1; }
+                if c == ')' { balance -= 1; valid &= balance >= 0; }
+            }
+            if valid && balance == 0 {
+                let at = offset + line.trim_end().chars().count();
+                out.push(Problem { start: at, end: at, severity: Severity::Error,
+                    message: tr("Nach dem Ausgabeaufruf fehlt ein Semikolon.", "A semicolon is missing after the print call.").into(),
+                    fix: Some(Fix { start: at, end: at, text: ";".into() }) });
+            }
+        }
+        offset += line.chars().count();
+    }
+    for (from, to) in [
+        ("System.out.printLn", "System.out.println"),
+        ("System.out.prinln", "System.out.println"),
+        ("System.err.prinln", "System.err.println"),
+        ("System.err.printLn", "System.err.println"),
+        ("System.out.Println", "System.out.println"),
+        ("System.err.Println", "System.err.println"),
+    ] {
+        for (i, _) in code.match_indices(from) {
+            if code[i + from.len()..].trim_start().starts_with('(')
+                && code[..i]
+                    .chars()
+                    .next_back()
+                    .is_none_or(|c| !c.is_alphanumeric() && c != '_' && c != '.')
+            {
+                let start = code[..i].chars().count();
+                let end = start + from.chars().count();
+                out.push(Problem {
+                    start,
+                    end,
+                    severity: Severity::Error,
+                    message: crate::tr_format!("{from} heißt {to}.", "Use {to} instead of {from}."),
+                    fix: Some(Fix {
+                        start,
+                        end,
+                        text: to.into(),
+                    }),
+                });
+            }
+        }
+    }
+    out
+}
 
 /// Zeile, vor der ein neuer Import steht: nach package und den vorhandenen Imports
 fn import_line(text: &str) -> usize {
@@ -340,11 +506,39 @@ pub fn analyze_output(raw: &str, project: Option<&Path>, file: Option<&Path>, lo
     }
     if let Some(t) = between(text, "Table '", '\'').filter(|_| text.contains("doesn't exist")) {
         let (db, table) = t.split_once('.').unwrap_or(("", t));
-        let p = crate::tr_format!("Die Tabelle „{table}“ gibt es nicht.", "The table “{table}” does not exist.");
-        v.push(if db.is_empty() { Suggestion::hint(p) } else { Suggestion::new(p, tr("Tabelle anlegen …", "Create table …"), Fix::NewTable(db.to_string())) });
+        let p = crate::tr_format!(
+            "Die Tabelle „{table}“ gibt es nicht.",
+            "The table “{table}” does not exist."
+        );
+        let inferred = java_struktur_fix(
+            project,
+            file,
+            (!db.is_empty()).then_some(db),
+            Some(table),
+            None,
+        );
+        v.push(if let Some(fix) = inferred {
+            Suggestion::new(p, tr("Struktur erstellen …", "Create structure …"), fix)
+        } else if db.is_empty() {
+            Suggestion::hint(p)
+        } else {
+            Suggestion::new(
+                p,
+                tr("Tabelle anlegen …", "Create table …"),
+                Fix::NewTable(db.to_string()),
+            )
+        });
     }
     if let Some(c) = between(text, "Unknown column '", '\'') {
-        v.push(Suggestion::hint(crate::tr_format!("Die Spalte „{c}“ gibt es nicht – Schreibweise und Tabelle prüfen.", "The column “{c}” does not exist – check the spelling and the table.")));
+        let p = crate::tr_format!(
+            "Die Spalte „{c}“ gibt es nicht – Schreibweise und Tabelle prüfen.",
+            "The column “{c}” does not exist – check the spelling and the table."
+        );
+        let column = c.rsplit('.').next().unwrap_or(c);
+        v.push(match java_struktur_fix(project, file, None, c.rsplit_once('.').map(|(t, _)| t), Some(column)) {
+            Some(fix) => Suggestion::new(p, tr("Spalte ergänzen …", "Add column …"), fix),
+            None => Suggestion::hint(p),
+        });
     }
     if text.contains("Access denied for user") {
         v.push(Suggestion::new(tr("Benutzer oder Passwort stimmen nicht.", "User name or password is wrong.").into(), tr("Verbindung prüfen …", "Check connection …"), Fix::ConnectionSettings));
@@ -537,6 +731,55 @@ fn dedup(v: Vec<Suggestion>) -> Vec<Suggestion> {
     out
 }
 
+/// Nur fehlende Spalten hinzufuegen; bestehende Definitionen und Daten bleiben erhalten.
+pub fn struktur_sql(schema: &crate::db::Schema, table: &str, columns: &[(String, String)]) -> Option<String> {
+    let target = format!("{}.{}", crate::db::q(&schema.name), crate::db::q(table));
+    let existing = schema.tables.iter().find(|t| t.name == table);
+    let definitions: Vec<String> = columns.iter()
+        .filter(|(name, _)| existing.is_none_or(|t| !t.columns.iter().any(|c| c.name.eq_ignore_ascii_case(name))))
+        .map(|(name, typ)| format!("{} {typ} NULL", crate::db::q(name))).collect();
+    if definitions.is_empty() { return None; }
+    Some(if existing.is_some() {
+        format!("ALTER TABLE {target}\n  ADD COLUMN {};", definitions.join(",\n  ADD COLUMN "))
+    } else {
+        format!("CREATE TABLE {target} (\n  {}\n);", definitions.join(",\n  "))
+    })
+}
+
+fn java_struktur_fix(
+    project: Option<&Path>,
+    file: Option<&Path>,
+    db: Option<&str>,
+    table: Option<&str>,
+    column: Option<&str>,
+) -> Option<Fix> {
+    let mut files = Vec::new();
+    if let Some(root) = project {
+        source_files(root, &mut files, 0);
+    } else {
+        files.extend(file.map(Path::to_path_buf));
+    }
+    let mut result = None;
+    for path in files
+        .into_iter()
+        .filter(|p| p.extension().is_some_and(|e| e == "java"))
+    {
+        let Ok(text) = std::fs::read_to_string(path) else {
+            continue;
+        };
+        if let Some((db, table, columns)) = crate::sqledit::java_struktur(&text, db, table, column)
+        {
+            let fix = Fix::Schema { db, table, columns };
+            if result.as_ref().is_some_and(|old| *old != fix) {
+                return None;
+            }
+            result = Some(fix);
+        }
+    }
+    result
+}
+
+
 /// Zeilen mit `Class.forName("…Driver")` entfernen
 fn forname_removal(project: Option<&Path>, file: Option<&Path>) -> Option<WorkspaceEdit> {
     let mut files = Vec::new();
@@ -574,15 +817,32 @@ pub fn fix_for_diag(d: &Diag, text: &str) -> Option<Suggestion> {
     let m = d.message.as_str();
     let line = text.lines().nth(d.line).unwrap_or("");
     let is_java = d.file.extension().is_some_and(|e| e == "java");
-    if m.contains("';' expected") || m.contains("';' erwartet") {
-        let code_end = line.find("//").map(|i| line[..i].trim_end()).unwrap_or(line.trim_end());
+    if m.contains("';' expected") || m.contains("';' erwartet") || m.contains("insert \";\" to complete") {
+        let chars: Vec<char> = line.chars().collect();
+        let comment = super::java::source::spans(&chars)
+            .into_iter()
+            .find(|(k, _, _)| *k == super::java::source::Span::Comment)
+            .map(|(_, a, _)| a);
+        let before: String = chars[..comment.unwrap_or(chars.len())].iter().collect();
+        let code_end = before.trim_end();
+        if code_end.ends_with(';') {
+            return None;
+        }
         let c = utf16(code_end);
-        return Some(Suggestion::new(tr("Am Ende der Anweisung fehlt ein Semikolon.", "A semicolon is missing at the end of the statement.").into(), tr("„;“ ergänzen", "Add “;”"), Fix::Edit(single(&d.file, ((d.line, c), (d.line, c), ";".into())))));
+        return Some(Suggestion::new(
+            tr(
+                "Am Ende der Anweisung fehlt ein Semikolon.",
+                "A semicolon is missing at the end of the statement.",
+            )
+            .into(),
+            tr("„;“ ergänzen", "Add “;”"),
+            Fix::Edit(single(&d.file, ((d.line, c), (d.line, c), ";".into()))),
+        ));
     }
-    if is_java && (m.contains("cannot find symbol") || m.contains("Symbol nicht gefunden")) {
+    if is_java && (m.contains("cannot find symbol") || m.contains("Symbol nicht gefunden") || m.contains("cannot be resolved to a type") || m.contains("cannot be resolved to a variable")) {
         let w = d.col.and_then(|c| word_at(line, c))?;
         let (_, full) = JAVA_IMPORTS.iter().find(|(n, _)| *n == w)?;
-        if text.contains(&format!("import {full};")) {
+        if text.contains(&format!("import {full};")) || text.contains(&format!("import {}.*;", full.rsplit_once('.')?.0)) {
             return None;
         }
         let at = import_line(text);
@@ -617,10 +877,43 @@ pub fn fix_for_diag(d: &Diag, text: &str) -> Option<Suggestion> {
         let (ca, cb) = (utf16(&line[..a]), utf16(&line[..a + class.len()]));
         return Some(Suggestion::new(crate::tr_format!("Klasse und Datei heißen verschieden ({class} / {stem}.java).", "Class and file names differ ({class} / {stem}.java)."), &crate::tr_format!("Klasse in {stem} umbenennen", "Rename class to {stem}"), Fix::Edit(single(&d.file, ((d.line, ca), (d.line, cb), stem)))));
     }
-    if m.contains("reached end of file while parsing") || m.contains("Dateiende beim Parsen erreicht") {
+    if m.contains("reached end of file while parsing")
+        || m.contains("Dateiende beim Parsen erreicht")
+    {
+        let chars: Vec<char> = text.chars().collect();
+        let mut balance = 0usize;
+        for (kind, a, b) in super::java::source::spans(&chars) {
+            if kind != super::java::source::Span::Code {
+                continue;
+            }
+            for c in &chars[a..b] {
+                if *c == '{' {
+                    balance += 1;
+                }
+                if *c == '}' {
+                    balance = balance.checked_sub(1)?;
+                }
+            }
+        }
+        if balance == 0 {
+            return None;
+        }
         let n = text.lines().count();
-        let nl = if text.ends_with('\n') || text.is_empty() { "" } else { "\n" };
-        return Some(Suggestion::new(tr("Am Ende fehlt eine schließende Klammer }.", "A closing brace } is missing at the end.").into(), tr("„}“ ergänzen", "Add “}”"), Fix::Edit(single(&d.file, ((n, 0), (n, 0), format!("{nl}}}\n"))))));
+        let nl = if text.ends_with('\n') || text.is_empty() {
+            ""
+        } else {
+            "\n"
+        };
+        let braces = "}\n".repeat(balance);
+        return Some(Suggestion::new(
+            tr(
+                "Am Ende fehlen schließende Klammern }.",
+                "Closing braces } are missing at the end.",
+            )
+            .into(),
+            tr("„}“ ergänzen", "Add “}”"),
+            Fix::Edit(single(&d.file, ((n, 0), (n, 0), format!("{nl}{braces}")))),
+        ));
     }
     if m.contains("missing return statement") || m.contains("Rückgabeanweisung fehlt") {
         return Some(Suggestion::hint(tr("Die Methode muss auf jedem Weg einen Wert mit return liefern.", "The method must return a value on every path.").into()));
@@ -856,6 +1149,87 @@ Caused by: java.sql.SQLSyntaxErrorException: Unknown database 'schule1'\n\
         assert!(t.contains("main(String[] args) throws SQLException {") && t.contains("import java.sql.SQLException;"), "{t}");
         let t = apply(fix_for_diag(&diag(2, Some(7), "class Haupt is public, should be declared in a file named Haupt.java"), text));
         assert!(t.contains("public class Main {"), "{t}");
+    }
+
+    #[test]
+    fn java_fixes_vor_dem_kompilieren() {
+        let text = "package app;\nclass Main { void f() {\n  List<String> namen = new ArrayList<>();\n  System.out.printLn(namen); // System.err.printLn(x)\n  String s = \"Connection System.out.printLn(x)\";\n} }\n";
+        let (fixed, n) = crate::sqledit::apply_fixes(text, &java_probleme(text));
+        assert_eq!(n, 2);
+        assert!(fixed.contains("import java.util.List;\nimport java.util.ArrayList;"));
+        assert!(fixed.contains("System.out.println(namen)"));
+        assert!(!fixed.contains("import java.sql.Connection"));
+        assert!(fixed.contains("// System.err.printLn(x)"));
+        assert!(java_probleme(&fixed).is_empty());
+        assert!(java_probleme("import java.util.*;\nclass Main { List<String> x; }").is_empty());
+        assert!(java_probleme("class List {}\nclass Main { List x; }").is_empty());
+        let text = "System.out.println(\"https://beispiel.at\") // Ausgabe\n";
+        let (fixed, n) = crate::sqledit::apply_fixes(text, &java_probleme(text));
+        assert_eq!(n, 1);
+        assert_eq!(fixed, "System.out.println(\"https://beispiel.at\"); // Ausgabe\n");
+        assert!(java_probleme("System.out.println(\n  \"mehrzeilig\"\n);\n").is_empty());
+    }
+
+    #[test]
+    fn sql_fehler_liefern_struktur_statt_leerer_tabelle() {
+        let dir = tmp("struktur");
+        let file = dir.join("Main.java");
+        std::fs::write(&file, "q = \"INSERT INTO kunde (id, name) VALUES (1, 'Ada')\";").unwrap();
+        let fixes = analyze_output("Table 'schule.kunde' doesn't exist", Some(&dir), Some(&file), false);
+        assert!(matches!(&fixes[0].fix, Some(Fix::Schema { db: Some(db), table, columns }) if db == "schule" && table == "kunde" && columns.len() == 2));
+        let fixes = analyze_output("Unknown column 'name' in 'field list'", Some(&dir), Some(&file), false);
+        assert!(matches!(&fixes[0].fix, Some(Fix::Schema { columns, .. }) if columns == &vec![("name".into(), "TEXT".into())]));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn struktur_ergaenzt_nur_fehlende_spalten_und_quotiert_namen() {
+        let mut schema = crate::db::Schema { name: "schule".into(), ..Default::default() };
+        let cols = vec![("id".into(), "BIGINT".into()), ("na`me".into(), "TEXT".into())];
+        let sql = struktur_sql(&schema, "kunde", &cols).unwrap();
+        assert!(sql.starts_with("CREATE TABLE `schule`.`kunde`"));
+        assert!(sql.contains("`na``me` TEXT NULL"));
+        schema.tables.push(crate::db::TableInfo { name: "kunde".into(), columns: vec![crate::db::ColumnInfo { name: "ID".into(), ..Default::default() }], ..Default::default() });
+        let sql = struktur_sql(&schema, "kunde", &cols).unwrap();
+        assert!(sql.starts_with("ALTER TABLE"));
+        assert!(!sql.contains("BIGINT"));
+        schema.tables[0].columns.push(crate::db::ColumnInfo { name: "na`me".into(), ..Default::default() });
+        assert!(struktur_sql(&schema, "kunde", &cols).is_none());
+    }
+
+    #[test]
+    #[ignore = "braucht isolierten MariaDB-Testserver auf EASYMYSQL_AUTOFIX_TEST_PORT"]
+    fn struktur_gegen_mariadb() {
+        let port = std::env::var("EASYMYSQL_AUTOFIX_TEST_PORT").unwrap().parse().unwrap();
+        let dbc = crate::db::Db::connect(&crate::db::ConnInfo { port, ..Default::default() }).unwrap();
+        let db = format!("autofix_test_{}", std::process::id());
+        dbc.exec(&format!("CREATE DATABASE {}", crate::db::q(&db)), ()).unwrap();
+        let java = "q = \"INSERT INTO kunde (id, name) VALUES (1, 'Ada')\";";
+        let (_, table, columns) = crate::sqledit::java_struktur(java, Some(&db), Some("kunde"), None).unwrap();
+        let sql = struktur_sql(&dbc.schema(&db).unwrap(), &table, &columns).unwrap();
+        dbc.exec_in(&db, &sql).unwrap();
+        dbc.exec_in(&db, "INSERT INTO kunde (id, name) VALUES (1, 'Ada')").unwrap();
+        let columns = vec![("name".into(), "TEXT".into()), ("aktiv".into(), "BOOLEAN".into())];
+        let sql = struktur_sql(&dbc.schema(&db).unwrap(), &table, &columns).unwrap();
+        dbc.exec_in(&db, &sql).unwrap();
+        let rows = dbc.query(&format!("SELECT name FROM {}.kunde WHERE id = 1", crate::db::q(&db))).unwrap();
+        assert_eq!(rows.rows[0][0].as_deref(), Some("Ada"));
+        assert!(struktur_sql(&dbc.schema(&db).unwrap(), &table, &columns).is_none());
+        dbc.exec(&format!("DROP DATABASE {}", crate::db::q(&db)), ()).unwrap();
+    }
+
+    #[test]
+    fn semikolon_nach_jdbc_url_und_klammern_ohne_strings() {
+        let file = PathBuf::from("Main.java");
+        let text = "class Main {\n void f() {\n String url = \"jdbc:mysql://localhost/db\" // Kommentar\n";
+        let d = Diag { file: file.clone(), line: 2, col: None, message: "';' expected".into(), error: true };
+        let Some(Fix::Edit(edit)) = fix_for_diag(&d, text).and_then(|s| s.fix) else { panic!() };
+        assert!(super::super::lsp::apply_edits(text, &edit.files[0].edits).contains("\"jdbc:mysql://localhost/db\"; //"));
+        let d = Diag { file, line: 2, col: None, message: "reached end of file while parsing".into(), error: true };
+        let Some(Fix::Edit(edit)) = fix_for_diag(&d, text).and_then(|s| s.fix) else { panic!() };
+        let fixed = super::super::lsp::apply_edits(text, &edit.files[0].edits);
+        assert!(fixed.ends_with("}\n}\n"));
+        assert!(fix_for_diag(&d, &fixed).is_none());
     }
 
     #[test]

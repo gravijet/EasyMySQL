@@ -202,7 +202,6 @@ impl EasyApp {
 
             // Erkannte Fehler eines Programms: Erklaerung und Behebung
             let local = self.is_local();
-            let project = self.project.clone();
             if let Some(t) = self.terminal.tabs.get_mut(active)
                 && t.program
             {
@@ -210,7 +209,7 @@ impl EasyApp {
                 let due = t.session.exited() || t.analyzed.1.is_none_or(|at| at.elapsed() >= Duration::from_millis(1500));
                 if len != t.analyzed.0 && due {
                     let log = t.session.log.lock().map(|l| l.clone()).unwrap_or_default();
-                    t.fixes = crate::dev::autofix::analyze_output(&log, project.as_deref(), None, local);
+                    t.fixes = crate::dev::autofix::analyze_output(&log, Some(t.session.cwd()), None, local);
                     t.analyzed = (len, Some(Instant::now()));
                     t.applied.clear();
                 } else if len != t.analyzed.0 {
@@ -220,8 +219,10 @@ impl EasyApp {
                     let (apply, rerun) = fix_bar(ui, &t.fixes, &t.applied, t.session.exited());
                     for i in apply {
                         if let Some(f) = t.fixes[i].fix.clone() {
+                            if !matches!(f, crate::dev::autofix::Fix::Schema { .. }) {
+                                t.applied.push(i);
+                            }
                             fixes.push(f);
-                            t.applied.push(i);
                         }
                     }
                     if rerun {
@@ -287,6 +288,28 @@ impl EasyApp {
                 None => self.error(crate::i18n::text("Nicht verbunden").to_string()),
             },
             Fix::NewTable(db) => self.handle_actions(vec![Action::NewTable(db)]),
+            Fix::Schema { db, table, columns } => {
+                let db = db.unwrap_or_else(|| self.current_db.clone());
+                if db.is_empty() {
+                    self.error(crate::i18n::tr("Bitte zuerst die Zieldatenbank wählen.", "Choose the target database first."));
+                    return;
+                }
+                let Some(dbc) = &self.db else { return };
+                let schema = match dbc.schema(&db) {
+                    Ok(s) => s,
+                    Err(e) => { self.error(e); return; }
+                };
+                let Some(sql) = crate::dev::autofix::struktur_sql(&schema, &table, &columns) else {
+                    self.toast(crate::i18n::tr("Die vorgeschlagene Struktur ist bereits vorhanden.", "The proposed structure already exists."));
+                    return;
+                };
+                let host = &dbc.info.host;
+                let port = dbc.info.port;
+                self.dialogs.push(super::dialogs::Dialog::Confirm {
+                    text: crate::tr_format!("Struktur auf {host}:{port} in {db} erstellen? Bitte mit dem JDBC-Ziel vergleichen. Typen sind aus dem Code abgeleitet; Schlüssel, Standardwerte und Beziehungen müssen geprüft werden. Vorhandene Spalten werden nicht verändert.", "Create structure on {host}:{port} in {db}? Compare with the JDBC target. Types are inferred from code; keys, defaults and relationships need review. Existing columns will not be changed."),
+                    db: Some(db), sql,
+                });
+            }
             Fix::StartServer => {
                 if let Some(ctx) = CTX.lock().unwrap().clone() {
                     self.start_server(&ctx);
@@ -325,12 +348,12 @@ fn fix_bar(ui: &mut egui::Ui, fixes: &[crate::dev::autofix::Suggestion], applied
                 }
             });
         }
-        if open.len() > 1 || (exited && !applied.is_empty()) {
+        if open.len() > 1 || exited {
             ui.horizontal(|ui| {
                 if open.len() > 1 && icons::primary_button(ui, Icon::Sparkles, crate::i18n::tr("Alle beheben", "Fix all")).clicked() {
                     apply.extend(open.iter().copied());
                 }
-                if exited && !applied.is_empty() && icons::run_button(ui, crate::i18n::tr("Erneut ausführen", "Run again")).clicked() {
+                if exited && icons::run_button(ui, crate::i18n::tr("Erneut ausführen", "Run again")).clicked() {
                     rerun = true;
                 }
             });
