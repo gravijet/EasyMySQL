@@ -21,6 +21,7 @@ pub enum Fix {
         table: String,
         columns: Vec<(String, String)>,
     },
+    DeklarierteStruktur { datenbank: Option<String>, plaene: Vec<crate::sqledit::TabellenPlan>, quelle: String },
     StartServer,
     ConnectionSettings,
     Install(Tool),
@@ -759,6 +760,13 @@ fn java_struktur_fix(
     } else {
         files.extend(file.map(Path::to_path_buf));
     }
+    if let Some(root) = project.or_else(|| file.and_then(Path::parent)) {
+        match deklarierter_fix(root, &files, db, table, column) {
+            Ok(Some(fix)) => return Some(fix),
+            Ok(None) => {},
+            Err(_) => return None,
+        }
+    }
     let mut result = None;
     for path in files
         .into_iter()
@@ -777,6 +785,82 @@ fn java_struktur_fix(
         }
     }
     result
+}
+
+fn migrations_dateien(root: &Path, out: &mut Vec<PathBuf>, depth: usize) {
+    if depth > 12 || out.len() >= 3000 { return; }
+    let Ok(rd) = std::fs::read_dir(root) else { return };
+    for entry in rd.flatten() {
+        let Ok(kind) = entry.file_type() else { continue };
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if kind.is_dir() && !name.starts_with('.') && !matches!(name.as_str(), "node_modules" | "target" | "build" | "bin" | "out" | "dist" | "lib") {
+            migrations_dateien(&entry.path(), out, depth + 1);
+        } else if kind.is_file() && entry.path().extension().is_some_and(|e| e == "sql") { out.push(entry.path()); }
+    }
+}
+
+fn deklarierter_fix(root: &Path, files: &[PathBuf], db: Option<&str>, table: Option<&str>, column: Option<&str>) -> Result<Option<Fix>, String> {
+    let mut migrations = Vec::new(); migrations_dateien(root, &mut migrations, 0);
+    // Versionsnummern natuerlich sortieren: V2 vor V10, auch ueber mehrere Migrationen hinweg.
+    migrations.sort_by_cached_key(|p| {
+        let mut key = String::new(); let path = p.to_string_lossy(); let mut chars = path.chars().peekable();
+        while let Some(c) = chars.next() {
+            if c.is_ascii_digit() {
+                let mut n = String::from(c);
+                while chars.peek().is_some_and(|c| c.is_ascii_digit()) { n.push(chars.next().unwrap()); }
+                key.push_str(&format!("{n:0>20}"));
+            } else { key.push(c); }
+        }
+        key
+    });
+    let mut sql = String::new();
+    for path in &migrations {
+        let text = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+        if text.len() > crate::sqledit::MAX_CHARS * 4 || sql.len() + text.len() > 8_000_000 { return Err("Migration zu gross".into()); }
+        sql.push_str(&text); sql.push_str("\n;\n");
+    }
+    let mut plans = crate::sqledit::migrationen(&sql)?;
+    let texts = files.iter().filter(|f| f.extension().is_some_and(|e| e == "java")).filter_map(|f| std::fs::read_to_string(f).ok()).collect::<Vec<_>>();
+    let mut has_jpa = false;
+    let migration_keys = plans.iter().map(|p| (p.datenbank.clone(), p.tabelle.clone())).collect::<Vec<_>>();
+    match crate::sqledit::jpa_modelle(&texts) {
+        Ok(models) => {
+            for model in models {
+                if migration_keys.contains(&(model.datenbank.clone(), model.tabelle.clone())) { continue; }
+                if let Some(old) = plans.iter().find(|p| p.tabelle == model.tabelle && p.datenbank == model.datenbank) {
+                    if *old != model { return Err("Widerspruechliche JPA-Modelle".into()); }
+                } else { plans.push(model); has_jpa = true; }
+            }
+        }
+        Err(e) if !plans.iter().any(|p| table.is_none_or(|t| p.tabelle == t) && column.is_none_or(|c| p.teile.iter().any(|d| d.name.as_deref() == Some(c)))) => return Err(e),
+        Err(_) => {},
+    }
+    let source = if has_jpa { tr("SQL-Migrationen/JPA-Modelle", "SQL migrations/JPA models") } else { tr("SQL-Migrationen", "SQL migrations") };
+    plans.retain(|p| db.zip(p.datenbank.as_deref()).is_none_or(|(a, b)| a == b));
+    let targets = plans.iter().filter(|p| table.is_none_or(|t| p.tabelle == t) && column.is_none_or(|c| p.teile.iter().any(|d| d.name.as_deref() == Some(c)))).collect::<Vec<_>>();
+    if targets.len() != 1 { return Ok(None); }
+    let target = targets[0].tabelle.clone();
+    let database = db.map(str::to_string).or_else(|| targets[0].datenbank.clone());
+    plans.retain(|p| p.datenbank.as_ref().is_none_or(|d| Some(d) == database.as_ref()));
+    // Nur das Ziel und deklarierte FK-Abhaengigkeiten vorschlagen, keine fremden Projekttabellen.
+    let mut selected = vec![target];
+    loop {
+        let mut added = false;
+        for p in plans.iter().filter(|p| selected.contains(&p.tabelle)).collect::<Vec<_>>() {
+            for t in p.teile.iter().filter(|t| t.kennung.starts_with("FOREIGN ")) {
+                if let Some((ref_db, ref_table)) = &t.referenz {
+                    if ref_db.as_ref().is_some_and(|d| Some(d) != database.as_ref()) { return Err("Datenbankuebergreifende Beziehung".into()); }
+                    if plans.iter().any(|p| &p.tabelle == ref_table) && !selected.contains(ref_table) {
+                        selected.push(ref_table.clone()); added = true;
+                    }
+                }
+            }
+        }
+        if !added { break; }
+    }
+    plans.retain(|p| selected.contains(&p.tabelle));
+    for p in &mut plans { p.datenbank = database.clone(); }
+    Ok(Some(Fix::DeklarierteStruktur { datenbank: database, plaene: plans, quelle: source.into() }))
 }
 
 
@@ -1198,6 +1282,24 @@ Caused by: java.sql.SQLSyntaxErrorException: Unknown database 'schule1'\n\
     }
 
     #[test]
+    fn projektmigration_bevorzugen_und_abhaengigkeiten_einbeziehen() {
+        let root = tmp("deklaration");
+        let migrations = root.join("src/main/resources/db/migration");
+        std::fs::create_dir_all(&migrations).unwrap();
+        std::fs::write(migrations.join("V1__basis.sql"), "CREATE TABLE kunde (id BIGINT PRIMARY KEY AUTO_INCREMENT); CREATE TABLE auftrag (id BIGINT PRIMARY KEY, kunde_id BIGINT, FOREIGN KEY (kunde_id) REFERENCES kunde(id)); CREATE TABLE fremd (id INT);").unwrap();
+        std::fs::write(migrations.join("V2__spalte.sql"), "ALTER TABLE auftrag ADD name VARCHAR(80) DEFAULT 'neu';").unwrap();
+        std::fs::write(migrations.join("V10__spalte.sql"), "ALTER TABLE auftrag ADD aktiv BOOLEAN DEFAULT TRUE;").unwrap();
+        let fix = java_struktur_fix(Some(&root), None, Some("shop"), Some("auftrag"), None).unwrap();
+        let Fix::DeklarierteStruktur { datenbank, plaene, .. } = fix else { panic!() };
+        assert_eq!(datenbank.as_deref(), Some("shop"));
+        assert_eq!(plaene.len(), 2);
+        assert!(plaene.iter().any(|p| p.tabelle == "kunde"));
+        let sql = crate::sqledit::plan_sql(&plaene, &crate::db::Schema { name: "shop".into(), ..Default::default() }, &[]).unwrap();
+        assert!(sql.contains("VARCHAR(80) DEFAULT 'neu'")); assert!(!sql.contains("`fremd`"));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     #[ignore = "braucht isolierten MariaDB-Testserver auf EASYMYSQL_AUTOFIX_TEST_PORT"]
     fn struktur_gegen_mariadb() {
         let port = std::env::var("EASYMYSQL_AUTOFIX_TEST_PORT").unwrap().parse().unwrap();
@@ -1215,6 +1317,27 @@ Caused by: java.sql.SQLSyntaxErrorException: Unknown database 'schule1'\n\
         let rows = dbc.query(&format!("SELECT name FROM {}.kunde WHERE id = 1", crate::db::q(&db))).unwrap();
         assert_eq!(rows.rows[0][0].as_deref(), Some("Ada"));
         assert!(struktur_sql(&dbc.schema(&db).unwrap(), &table, &columns).is_none());
+        let plans = crate::sqledit::migrationen("CREATE TABLE kunde (id BIGINT PRIMARY KEY, name TEXT); CREATE TABLE auftrag (id BIGINT AUTO_INCREMENT PRIMARY KEY, kunde_id BIGINT NOT NULL, status VARCHAR(20) DEFAULT 'offen', FOREIGN KEY (kunde_id) REFERENCES kunde(id) ON DELETE RESTRICT);").unwrap();
+        let schema = dbc.schema(&db).unwrap();
+        let existing = schema.tables.iter().map(|t| crate::sqledit::bestehender_plan(&schema, t, &dbc.indexes(&db, &t.name).unwrap(), &dbc.create_statement(&db, &t.name).unwrap())).collect::<Vec<_>>();
+        let sql = crate::sqledit::plan_sql(&plans, &schema, &existing).unwrap();
+        crate::sqledit::pruefe_daten(&dbc, &db, &plans).unwrap();
+        dbc.exec_schema(&db, &sql).unwrap();
+        dbc.exec_in(&db, "INSERT INTO auftrag (kunde_id) VALUES (1)").unwrap();
+        assert!(dbc.exec_in(&db, "INSERT INTO auftrag (kunde_id) VALUES (999)").is_err());
+        let rows = dbc.query(&format!("SELECT status FROM {}.auftrag", crate::db::q(&db))).unwrap();
+        assert_eq!(rows.rows[0][0].as_deref(), Some("offen"));
+        let schema = dbc.schema(&db).unwrap();
+        let existing = schema.tables.iter().map(|t| crate::sqledit::bestehender_plan(&schema, t, &dbc.indexes(&db, &t.name).unwrap(), &dbc.create_statement(&db, &t.name).unwrap())).collect::<Vec<_>>();
+        assert!(crate::sqledit::plan_sql(&plans, &schema, &existing).is_none());
+        let required = crate::sqledit::migrationen("ALTER TABLE kunde ADD pflicht INT NOT NULL").unwrap();
+        assert!(crate::sqledit::pruefe_daten(&dbc, &db, &required).is_err());
+        dbc.exec_in(&db, "CREATE TABLE ungueltig (n INT NULL); INSERT INTO ungueltig VALUES (NULL),(1),(1)").unwrap();
+        for sql in ["ALTER TABLE ungueltig ADD PRIMARY KEY(n)", "ALTER TABLE ungueltig ADD UNIQUE KEY uk_n(n)"] {
+            let plan = crate::sqledit::migrationen(sql).unwrap();
+            assert!(crate::sqledit::pruefe_daten(&dbc, &db, &plan).is_err());
+        }
+        assert_eq!(dbc.query(&format!("SELECT COUNT(*) FROM {}.ungueltig", crate::db::q(&db))).unwrap().rows[0][0].as_deref(), Some("3"));
         dbc.exec(&format!("DROP DATABASE {}", crate::db::q(&db)), ()).unwrap();
     }
 

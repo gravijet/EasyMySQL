@@ -20,6 +20,7 @@ pub struct Diagnostic {
     pub end: (usize, usize),
     pub message: String,
     pub error: bool,
+    pub original: Value,
 }
 
 /// Textaenderung: (von, bis, neuer Text), Positionen als (Zeile, Spalte in UTF-16)
@@ -68,6 +69,7 @@ pub struct Server {
     settings: Value,
     /// Der Server liefert Meldungen nur auf Anfrage (textDocument/diagnostic, z. B. TypeScript 7)
     pull: std::sync::atomic::AtomicBool,
+    resolve_fixes: std::sync::atomic::AtomicBool,
     ctx: eframe::egui::Context,
 }
 
@@ -359,6 +361,7 @@ pub fn get(lang: Lang, root: &Path, ctx: &eframe::egui::Context) -> Option<Arc<S
         progress: Mutex::new(String::new()),
         settings: init_options.get("settings").cloned().unwrap_or(Value::Null),
         pull: std::sync::atomic::AtomicBool::new(false),
+        resolve_fixes: std::sync::atomic::AtomicBool::new(false),
         ctx: ctx.clone(),
     });
     {
@@ -390,12 +393,14 @@ pub fn get(lang: Lang, root: &Path, ctx: &eframe::egui::Context) -> Option<Arc<S
                         "definition": { "linkSupport": false },
                         "hover": { "contentFormat": ["plaintext", "markdown"] },
                         "rename": { "prepareSupport": false },
+                        "codeAction": { "codeActionLiteralSupport": { "codeActionKind": { "valueSet": ["quickfix", "source.organizeImports", "source.fixAll"] } }, "dataSupport": true, "resolveSupport": { "properties": ["edit"] }, "disabledSupport": true },
                     },
                     "window": { "workDoneProgress": true },
                 },
             });
             match s.request_blocking("initialize", params, std::time::Duration::from_secs(120)) {
                 Ok(result) => {
+                    s.resolve_fixes.store(result["capabilities"]["codeActionProvider"]["resolveProvider"].as_bool().unwrap_or(false), Ordering::Relaxed);
                     s.pull.store(result["capabilities"].get("diagnosticProvider").is_some_and(|d| !d.is_null()), Ordering::Relaxed);
                     s.notify("initialized", json!({}));
                     if !s.settings.is_null() {
@@ -558,6 +563,19 @@ impl Server {
         self.request("textDocument/formatting", json!({ "textDocument": { "uri": uri(path) }, "options": { "tabSize": indent, "insertSpaces": true } }))
     }
 
+    /// Echte Java-Korrekturen mit den unverkuerzten Diagnosen des Servers anfordern.
+    pub fn korrekturen(&self, path: &Path, text: &str, index: usize) -> Reply {
+        let diagnostics: Vec<Value> = self.diagnostics(path).map(|(_, d)| d.into_iter().map(|d| d.original).collect()).unwrap_or_default();
+        let pos = to_pos(text, index);
+        self.request("textDocument/codeAction", json!({ "textDocument": { "uri": uri(path) },
+            "range": { "start": { "line": pos.0, "character": pos.1 }, "end": { "line": pos.0, "character": pos.1 } },
+            "context": { "diagnostics": diagnostics, "only": ["quickfix", "source.organizeImports", "source.fixAll"], "triggerKind": 1 } }))
+    }
+
+    pub fn korrektur_auflosen(&self, action: Value) -> Option<Reply> {
+        self.resolve_fixes.load(Ordering::Relaxed).then(|| self.request("codeAction/resolve", action))
+    }
+
     fn read_loop(&self, stdout: impl Read, tools: &Tools) {
         let mut r = BufReader::new(stdout);
         loop {
@@ -683,6 +701,7 @@ fn parse_diagnostics(v: &Value) -> Vec<Diagnostic> {
                     end: read_pos(&d["range"]["end"]),
                     message: d["message"].as_str().unwrap_or("").to_string(),
                     error: d["severity"].as_u64().unwrap_or(1) == 1,
+                    original: d.clone(),
                 })
                 .collect()
         })
@@ -741,6 +760,41 @@ pub fn parse_workspace_edit(v: &Value) -> WorkspaceEdit {
     out
 }
 
+/// JDT liefert manche Fixes als Client-Befehl mit WorkspaceEdit statt als edit.
+pub fn korrektur_edit(action: &Value) -> Result<WorkspaceEdit, String> {
+    if let Some(reason) = action["disabled"]["reason"].as_str() { return Err(reason.to_string()); }
+    let command = if action["command"].is_string() { action } else { &action["command"] };
+    let edit = if command["command"].as_str() == Some("java.apply.workspaceEdit") {
+        &command["arguments"][0]
+    } else if command.is_null() {
+        &action["edit"]
+    } else {
+        return Err(crate::i18n::tr("Diese Korrektur benötigt einen zusätzlichen Serverbefehl.", "This fix requires an additional server command.").into());
+    };
+    if edit["documentChanges"].as_array().is_some_and(|v| v.iter().any(|c| c.get("kind").is_some())) {
+        return Err(crate::i18n::tr("Dateioperationen bitte über Umbenennen ausführen.", "Use Rename for file operations.").into());
+    }
+    let mut lists = Vec::new();
+    if let Some(changes) = edit["changes"].as_object() { lists.extend(changes.values()); }
+    if let Some(changes) = edit["documentChanges"].as_array() { lists.extend(changes.iter().map(|c| &c["edits"])); }
+    for list in lists {
+        let Some(edits) = list.as_array() else { return Err("Invalid text edits".into()) };
+        if edits.iter().any(|e| !e["newText"].is_string() || ["start", "end"].iter().any(|p| !e["range"][p]["line"].is_u64() || !e["range"][p]["character"].is_u64())) {
+            return Err(crate::i18n::tr("Ungültige Textänderung des Sprachservers.", "Invalid text edit from the language server.").into());
+        }
+    }
+    let result = parse_workspace_edit(edit);
+    for f in &result.files {
+        let mut ranges = f.edits.iter().map(|(a,b,_)| (*a,*b)).collect::<Vec<_>>(); ranges.sort();
+        if ranges.iter().any(|(a,b)| a > b) || ranges.windows(2).any(|w| w[0].1 > w[1].0) {
+            return Err(crate::i18n::tr("Überlappende Textänderungen des Sprachservers.", "Overlapping text edits from the language server.").into());
+        }
+    }
+    if result.files.is_empty() {
+        Err(crate::i18n::tr("Keine Textänderung verfügbar.", "No text edit available.").into())
+    } else { Ok(result) }
+}
+
 /// Aenderungen auf einen Text anwenden (von hinten, damit die Positionen stimmen)
 pub fn apply_edits(text: &str, edits: &[TextEdit]) -> String {
     let mut ranges: Vec<(usize, usize, &str)> = edits.iter().map(|(a, b, t)| (from_pos(text, *a), from_pos(text, *b), t.as_str())).collect();
@@ -756,6 +810,21 @@ pub fn apply_edits(text: &str, edits: &[TextEdit]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn java_korrekturen_behalten_edit_und_melden_unterstuetzungsgrenzen() {
+        let edit = json!({"changes": {"file:///p/Main.java": [{"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":0}},"newText":"import java.util.List;\n"}]}});
+        let direct = korrektur_edit(&json!({"title":"Import", "edit": edit})).unwrap();
+        let command = korrektur_edit(&json!({"title":"Import", "command":{"command":"java.apply.workspaceEdit","arguments":[edit]}})).unwrap();
+        assert_eq!(direct, command);
+        assert_eq!(direct.files[0].edits[0].2, "import java.util.List;\n");
+        assert!(korrektur_edit(&json!({"disabled":{"reason":"nicht verfuegbar"},"edit":edit})).is_err());
+        assert!(korrektur_edit(&json!({"command":{"command":"beliebiger.befehl"},"edit":edit})).is_err());
+        assert!(korrektur_edit(&json!({"edit":{"documentChanges":[{"kind":"delete","uri":"file:///p/Main.java"}]}})).is_err());
+        let d = parse_diagnostics(&json!([{"range":{"start":{"line":1,"character":0},"end":{"line":1,"character":4}},"message":"missing type","code":"16777218","data":{"id":7},"severity":1}]));
+        assert_eq!(d[0].original["code"], "16777218");
+        assert_eq!(d[0].original["data"]["id"], 7);
+    }
 
     #[test]
     fn uris_and_positions() {

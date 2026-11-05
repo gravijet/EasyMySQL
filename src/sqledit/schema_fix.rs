@@ -25,45 +25,9 @@ fn jdbc_typ(methode: &str) -> Option<&'static str> {
     })
 }
 
-/// Nur geschlossene Literale, auch konstante Verkettungen und Textbloecke.
-fn abfragen(text: &str) -> Vec<String> {
-    let chars: Vec<char> = text.chars().collect();
-    let lits = source::literals(&chars);
-    let mut out = Vec::new();
-    let mut i = 0;
-    while i < lits.len() {
-        let l = &lits[i];
-        let mut sql: String = chars[l.content.0..l.content.1].iter().collect();
-        let mut ende = l.content.1 + if l.block { 3 } else { 1 };
-        let anfang = l.content.0 - if l.block { 3 } else { 1 };
-        let mut sicher =
-            !l.open && chars[..anfang].iter().rev().find(|c| !c.is_whitespace()) != Some(&'+');
-        while let Some(n) = lits.get(i + 1) {
-            let start = n.content.0 - if n.block { 3 } else { 1 };
-            if chars[ende..start].iter().collect::<String>().trim() != "+" {
-                break;
-            }
-            sql.extend(chars[n.content.0..n.content.1].iter());
-            ende = n.content.1 + if n.block { 3 } else { 1 };
-            sicher &= !n.open;
-            i += 1;
-        }
-        sicher &= chars[ende.min(chars.len())..]
-            .iter()
-            .find(|c| !c.is_whitespace())
-            != Some(&'+');
-        // shortcut: Java-Escapes werden nicht interpretiert; solche Abfragen brauchen manuelle Pruefung.
-        if sicher && !sql.contains('\\') && source::looks_like_sql(&sql) {
-            out.push(sql);
-        }
-        i += 1;
-    }
-    out
-}
-
 /// Aus einfachen INSERT/SELECT/UPDATE/DELETE-Anweisungen benoetigte Spalten und JDBC-Typen sammeln.
 /// Joins, Unterabfragen, Ausdruecke und unbekannte Typen bleiben beim Designer.
-fn struktur(sql: &str, java: &str) -> Option<Struktur> {
+fn struktur(sql: &str, java: &str, receiver: Option<&str>) -> Option<Struktur> {
     let chars: Vec<char> = sql.chars().collect();
     let l = lex(&chars);
     if !l.problems.is_empty() {
@@ -147,8 +111,8 @@ fn struktur(sql: &str, java: &str) -> Option<Struktur> {
                     Kind::Op if t.text == "?" => {
                         parameter += 1;
                         // Nur ein PreparedStatement: damit gehoeren die Setter eindeutig zur Abfrage.
-                        if java.matches("prepareStatement").count() == 1 {
-                            setter_typ(java, parameter)
+                        if receiver.is_some() || java.matches("prepareStatement").count() == 1 {
+                            setter_typ(java, parameter, receiver)
                         } else {
                             None
                         }
@@ -203,9 +167,14 @@ fn struktur(sql: &str, java: &str) -> Option<Struktur> {
     Some((db, table, cols))
 }
 
-fn setter_typ(java: &str, index: usize) -> Option<String> {
+fn setter_typ(java: &str, index: usize, receiver: Option<&str>) -> Option<String> {
     let mut found = None;
     for (i, _) in java.match_indices(".set") {
+        if let Some(receiver) = receiver {
+            let before = &java[..i];
+            let name = before.trim_end().rsplit(|c: char| !c.is_alphanumeric() && c != '_' && c != '$').next().unwrap_or("");
+            if name != receiver { continue; }
+        }
         let rest = &java[i + 4..];
         let (method, args) = rest.split_once('(')?;
         let Some(typ) = jdbc_typ(method.trim()) else {
@@ -259,10 +228,10 @@ pub(crate) fn java_struktur(
                 .map(move |c| if kind == Span::Comment { ' ' } else { *c })
         })
         .collect();
-    let sqls = abfragen(&java);
+    let sqls = super::schema_java::abfragen(&java);
     let mut result: Option<Struktur> = None;
-    for sql in &sqls {
-        let Some((database, tab, cols)) = struktur(sql, &java) else {
+    for (sql, receiver) in &sqls {
+        let Some((database, tab, cols)) = struktur(sql, &java, receiver.as_deref()) else {
             continue;
         };
         if table.is_some_and(|t| t != tab)

@@ -219,7 +219,7 @@ impl EasyApp {
                     let (apply, rerun) = fix_bar(ui, &t.fixes, &t.applied, t.session.exited());
                     for i in apply {
                         if let Some(f) = t.fixes[i].fix.clone() {
-                            if !matches!(f, crate::dev::autofix::Fix::Schema { .. }) {
+                            if !matches!(f, crate::dev::autofix::Fix::Schema { .. } | crate::dev::autofix::Fix::DeklarierteStruktur { .. }) {
                                 t.applied.push(i);
                             }
                             fixes.push(f);
@@ -288,6 +288,29 @@ impl EasyApp {
                 None => self.error(crate::i18n::text("Nicht verbunden").to_string()),
             },
             Fix::NewTable(db) => self.handle_actions(vec![Action::NewTable(db)]),
+            Fix::DeklarierteStruktur { datenbank, plaene, quelle } => {
+                let db = datenbank.unwrap_or_else(|| self.current_db.clone());
+                if db.is_empty() { self.error(crate::i18n::tr("Bitte zuerst die Zieldatenbank wählen.", "Choose the target database first.")); return; }
+                let Some(dbc) = &self.db else { return };
+                let schema = match dbc.schema(&db) { Ok(s) => s, Err(e) => { self.error(e); return; } };
+                let mut existing = Vec::new();
+                for plan in &plaene {
+                    if let Some(table) = schema.tables.iter().find(|t| t.name == plan.tabelle) {
+                        let result = dbc.indexes(&db, &plan.tabelle).and_then(|indexes| {
+                            dbc.create_statement(&db, &plan.tabelle).map(|ddl| crate::sqledit::bestehender_plan(&schema, table, &indexes, &ddl))
+                        });
+                        match result { Ok(p) => existing.push(p), Err(e) => { self.error(e); return; } }
+                    }
+                }
+                let Some(sql) = crate::sqledit::plan_sql(&plaene, &schema, &existing) else {
+                    self.toast(crate::i18n::tr("Keine eindeutige fehlende Struktur gefunden.", "No unambiguous missing structure found.")); return;
+                };
+                let host = &dbc.info.host; let port = dbc.info.port;
+                self.dialogs.push(super::dialogs::Dialog::ConfirmStructure {
+                    text: crate::tr_format!("Struktur aus {quelle} auf {host}:{port} in {db} ergänzen? SQL und JDBC-Ziel prüfen. Benötigte Tabellen, Spalten und deklarierte Schlüssel/Beziehungen werden ergänzt. Bestehende Spalten und Daten werden nicht ersetzt.", "Add structure from {quelle} on {host}:{port} in {db}? Review the SQL and JDBC target. Required tables, columns and declared keys/relationships will be added. Existing columns and data will not be replaced."),
+                    db: Some(db), sql,
+                });
+            }
             Fix::Schema { db, table, columns } => {
                 let db = db.unwrap_or_else(|| self.current_db.clone());
                 if db.is_empty() {
@@ -305,7 +328,7 @@ impl EasyApp {
                 };
                 let host = &dbc.info.host;
                 let port = dbc.info.port;
-                self.dialogs.push(super::dialogs::Dialog::Confirm {
+                self.dialogs.push(super::dialogs::Dialog::ConfirmStructure {
                     text: crate::tr_format!("Struktur auf {host}:{port} in {db} erstellen? Bitte mit dem JDBC-Ziel vergleichen. Typen sind aus dem Code abgeleitet; Schlüssel, Standardwerte und Beziehungen müssen geprüft werden. Vorhandene Spalten werden nicht verändert.", "Create structure on {host}:{port} in {db}? Compare with the JDBC target. Types are inferred from code; keys, defaults and relationships need review. Existing columns will not be changed."),
                     db: Some(db), sql,
                 });

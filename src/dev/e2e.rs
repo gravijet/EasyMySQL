@@ -11,6 +11,20 @@ use std::process::Command;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+fn freier_port() -> u16 {
+    std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap().local_addr().unwrap().port()
+}
+
+struct TestProzess(std::process::Child);
+impl Drop for TestProzess {
+    fn drop(&mut self) { let _ = self.0.kill(); let _ = self.0.wait(); }
+}
+
+struct TestServer(crate::server::Server, crate::db::ConnInfo);
+impl Drop for TestServer {
+    fn drop(&mut self) { self.0.stop_blocking(&self.1); }
+}
+
 fn kunde() -> TableInfo {
     let col = |name: &str, ty: &str, key: &str, extra: &str| ColumnInfo { name: name.into(), col_type: ty.into(), nullable: key.is_empty(), key: key.into(), extra: extra.into(), ..Default::default() };
     TableInfo { name: "kunde".into(), columns: vec![col("id", "int(11)", "PRI", "auto_increment"), col("name", "varchar(50)", "", ""), col("geboren", "date", "", "")], ..Default::default() }
@@ -158,6 +172,27 @@ fn lsp_roundtrip(lang: crate::sqledit::Lang, root: &Path, file: &Path, broken: &
         assert!(Instant::now() < deadline, "{lang:?}: keine Fehlermeldung");
         std::thread::sleep(Duration::from_millis(300));
     }
+    if lang == crate::sqledit::Lang::Java {
+        let diagnostics = server.diagnostics(file).unwrap().1;
+        let index = lsp::from_pos(broken, diagnostics.iter().find(|d| d.error).unwrap().start);
+        let actions = server.korrekturen(file, broken, index).recv_timeout(Duration::from_secs(60)).unwrap().unwrap();
+        let mut valid = false;
+        let folder = fresh("lsp-java-autofix"); std::fs::create_dir_all(&folder).unwrap();
+        let target = folder.join("Main.java");
+        for action in actions.as_array().unwrap() {
+            let action = if action.get("edit").is_none() && action.get("data").is_some() {
+                match server.korrektur_auflosen(action.clone()).and_then(|r| r.recv_timeout(Duration::from_secs(60)).ok()).and_then(Result::ok) { Some(v) => v, None => continue }
+            } else { action.clone() };
+            let Ok(edit) = lsp::korrektur_edit(&action) else { continue };
+            let edits = edit.files.iter().filter(|f| f.path == file).flat_map(|f| f.edits.clone()).collect::<Vec<_>>();
+            if edits.is_empty() { continue; }
+            let fixed = lsp::apply_edits(broken, &edits);
+            std::fs::write(&target, fixed).unwrap();
+            let out = Command::new(tools().jdk.as_ref().unwrap().javac()).arg("-encoding").arg("UTF-8").arg("-d").arg(&folder).arg(&target).output().unwrap();
+            if out.status.success() { valid = true; break; }
+        }
+        assert!(valid, "Kein Java-CodeAction-Fix kompiliert: {actions}");
+    }
     let v = server.definition(file, broken, defn_at).recv_timeout(Duration::from_secs(60)).unwrap().unwrap();
     let loc = lsp::parse_location(&v);
     println!("{lang:?}: Definition {loc:?} ({:.0?})", start.elapsed());
@@ -274,27 +309,32 @@ fn e2e_java_build_tools_run_tests_and_jar_against_the_database() {
 #[ignore = "startet einen MariaDB-Server (mariadbd im PATH) und laedt den JDBC-Treiber"]
 fn e2e_tls_own_certificate() {
     let Some(bin) = ["/usr/sbin", "/usr/bin"].iter().map(Path::new).find(|b| b.join("mariadbd").is_file()) else { return };
+    let port = freier_port();
     let dir = fresh("tls");
     std::fs::create_dir_all(&dir).unwrap();
     let data = dir.join("data");
     let st = Command::new(bin.join("mariadb-install-db").to_string_lossy().replace("/sbin/", "/bin/")).args(["--no-defaults", "--auth-root-authentication-method=normal"]).arg(format!("--datadir={}", data.display())).output();
     assert!(st.is_ok_and(|o| o.status.success()));
     let mut lines = crate::tls::ini_lines(crate::tls::Mode::Required, "").unwrap();
-    lines.extend(["port=3409".into(), "bind-address=127.0.0.1".into(), format!("datadir={}", data.display()), format!("socket={}", dir.join("s.sock").display())]);
+    lines.extend([format!("port={port}"), "bind-address=127.0.0.1".into(), format!("datadir={}", data.display()), format!("socket={}", dir.join("s.sock").display())]);
     let ini = dir.join("my.ini");
     std::fs::write(&ini, format!("[mysqld]\n{}\n", lines.join("\n"))).unwrap();
-    let mut server = Command::new(bin.join("mariadbd")).arg(format!("--defaults-file={}", ini.display())).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn().unwrap();
+    let mut cmd = Command::new(bin.join("mariadbd"));
+    cmd.arg(format!("--defaults-file={}", ini.display()));
+    #[cfg(not(windows))]
+    if crate::server::is_root_user() { cmd.arg("--user=root"); }
+    let _server = TestProzess(cmd.stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn().unwrap());
     let t0 = Instant::now();
-    while !crate::server::port_open(3409) && t0.elapsed() < Duration::from_secs(20) {
+    while !crate::server::port_open(port) && t0.elapsed() < Duration::from_secs(20) {
         std::thread::sleep(Duration::from_millis(200));
     }
-    let info = crate::db::ConnInfo { host: "127.0.0.1".into(), port: 3409, user: "root".into(), password: String::new() };
+    let info = crate::db::ConnInfo { host: "127.0.0.1".into(), port, user: "root".into(), password: String::new() };
     // Ohne TLS: abgewiesen (require_secure_transport)
     crate::db::set_local_tls(None);
     let plain = crate::db::Db::connect(&info);
     assert!(plain.is_err(), "unverschluesselt darf nicht gehen");
     // Mit der eigenen CA: verschluesselt und geprueft
-    crate::db::set_local_tls(Some((3409, crate::tls::files().ca)));
+    crate::db::set_local_tls(Some((port, crate::tls::files().ca)));
     let db = crate::db::Db::connect(&info).unwrap_or_else(|e| panic!("TLS: {e}"));
     // Danach darf der Treiber auf den Unix-Socket wechseln (gilt als sicher); der Handschlag lief ueber TLS
     let rows = db.rows("SHOW GLOBAL STATUS LIKE 'Ssl_accepts'", ()).unwrap();
@@ -304,7 +344,7 @@ fn e2e_tls_own_certificate() {
     // JDBC mit verify-ca
     super::set_config(Config::default());
     ensure(&[Tool::Jdk, Tool::JavaDrivers]);
-    let url = super::java::jdbc_url(super::java::Driver::MariaDb, "127.0.0.1", 3409, "");
+    let url = super::java::jdbc_url(super::java::Driver::MariaDb, "127.0.0.1", port, "");
     assert!(url.contains("sslMode=verify-ca"), "{url}");
     let src = dir.join("Tls.java");
     std::fs::write(&src, format!("import java.sql.*;\npublic class Tls {{ public static void main(String[] a) throws Exception {{ try (Connection c = DriverManager.getConnection(\"{url}\", \"root\", \"\"); ResultSet r = c.createStatement().executeQuery(\"SHOW SESSION STATUS LIKE 'Ssl_cipher'\")) {{ r.next(); System.out.println(\"cipher=\" + r.getString(2)); }} }} }}\n")).unwrap();
@@ -313,8 +353,6 @@ fn e2e_tls_own_certificate() {
     let out = Command::new(t.jdk.as_ref().unwrap().java()).arg("-cp").arg(cp).arg(&src).output().unwrap();
     let text = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
     crate::db::set_local_tls(None);
-    let _ = server.kill();
-    let _ = server.wait();
     assert!(text.contains("cipher=") && !text.contains("cipher=\n"), "JDBC: {text}");
     println!("JDBC: {}", text.trim());
 }
@@ -349,13 +387,15 @@ fn e2e_github_read_only() {
 #[ignore = "laedt MariaDB (mehrere hundert MB) und startet Server"]
 fn e2e_mariadb_update_in_place() {
     use crate::mariadb_update as mu;
+    let port = freier_port();
     let data = fresh("mariadb-update");
-    let cfg = crate::server::Config { port: 3410, data_dir: Some(data.join("data")), ..Default::default() };
+    let cfg = crate::server::Config { port, data_dir: Some(data.join("data")), ..Default::default() };
     let server = crate::server::Server::new(cfg);
     let Some(paths) = server.paths() else { return };
     let before = mu::installed_version(&paths.bin).unwrap();
+    let info = crate::db::ConnInfo { host: "127.0.0.1".into(), port, user: "root".into(), password: String::new() };
+    let _guard = TestServer(server.clone(), info.clone());
     server.start_blocking(&|| {}).unwrap();
-    let info = crate::db::ConnInfo { host: "127.0.0.1".into(), port: 3410, user: "root".into(), password: String::new() };
     let db = crate::db::Db::connect(&info).unwrap();
     db.exec("CREATE DATABASE upd", ()).unwrap();
     db.exec("CREATE TABLE upd.t (id INT PRIMARY KEY, txt VARCHAR(20))", ()).unwrap();

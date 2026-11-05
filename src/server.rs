@@ -445,6 +445,10 @@ pub fn app_data_dir() -> PathBuf {
 }
 
 fn find_app_data_dir() -> PathBuf {
+    #[cfg(test)]
+    if let Some(p) = std::env::var_os("EASYMYSQL_TEST_DATA_DIR") {
+        return PathBuf::from(p);
+    }
     #[cfg(windows)]
     {
         if let Ok(p) = std::env::var("ProgramData") {
@@ -506,9 +510,11 @@ fn slash(p: &Path) -> String {
 }
 
 #[cfg(not(windows))]
-fn is_root_user() -> bool {
-    std::env::var("USER").map(|u| u == "root").unwrap_or(false)
-        || std::env::var("HOME").map(|h| h == "/root").unwrap_or(false)
+pub(crate) fn is_root_user() -> bool {
+    // UID pruefen: Benutzername und HOME koennen auch fuer UID 0 anders gesetzt sein.
+    static ROOT: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ROOT.get_or_init(|| Command::new("id").arg("-u").output()
+        .is_ok_and(|o| o.status.success() && String::from_utf8_lossy(&o.stdout).trim() == "0"))
 }
 
 pub fn hidden(cmd: &mut Command) -> &mut Command {
