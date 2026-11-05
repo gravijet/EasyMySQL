@@ -54,6 +54,8 @@ fn main() {
     let out = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap());
     let ico = out.join("easymysql.ico");
     write_ico(&ico);
+    // Das Fenstersymbol fertig mitliefern: so rechnet nicht jeder Programmstart eine Million Bildpunkte
+    std::fs::write(out.join("icon256.rgba"), icon::icon_rgba(256)).unwrap();
     // Kopie fuer das Setup-Skript
     let _ = std::fs::create_dir_all("target");
     let _ = std::fs::copy(&ico, "target/easymysql.ico");

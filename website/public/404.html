@@ -5,14 +5,16 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>404 · EasyMySQL</title>
 <meta name="robots" content="noindex">
+<meta name="color-scheme" content="dark">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <script src="/boot.js"></script>
 <link rel="stylesheet" href="/style.css">
 </head>
-<body class="nf">
-<h1>404</h1>
-<p data-en="This page does not exist.">Diese Seite gibt es nicht.</p>
-<p><a class="btn" href="/" data-en="Back to start">Zur Startseite</a></p>
-<script src="/app.js"></script>
+<body>
+<main class="nf">
+  <h1 class="mega" aria-label="404"><span aria-hidden="true"><i>4</i><i>0</i><i>4</i></span></h1>
+  <p class="lead"><a class="u" href="/" id="back">Zur Startseite</a></p>
+</main>
+<script>if (document.documentElement.lang === "en") document.getElementById("back").textContent = "Back to the start";</script>
 </body>
 </html>

@@ -173,7 +173,8 @@ pub fn scan(dir: &Path) -> Node {
                             return None;
                         }
                         let path = e.path();
-                        let is_dir = path.is_dir();
+                        // Der Typ kommt mit dem Ordnereintrag (unter Windows ohne eigenen Dateizugriff); nur Links brauchen einen
+                        let is_dir = e.file_type().map(|t| if t.is_symlink() { path.is_dir() } else { t.is_dir() }).unwrap_or(false);
                         let children = if is_dir && depth < 12 { walk(&path, depth + 1) } else { Vec::new() };
                         Some(Node { name, path, is_dir, children })
                     })
