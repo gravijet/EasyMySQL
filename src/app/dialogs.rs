@@ -85,7 +85,9 @@ impl EasyApp {
                 Dialog::Confirm { text, db, sql } => {
                     ui.label(RichText::new(text.as_str()).strong());
                     ui.add_space(4.0);
-                    ui.label(RichText::new(sql.as_str()).monospace().small().color(pal.text_weak));
+                    egui::ScrollArea::vertical().max_height(240.0).show(ui, |ui| {
+                        ui.label(RichText::new(sql.as_str()).monospace().small().color(pal.text_weak));
+                    });
                     ui.add_space(8.0);
                     ui.horizontal(|ui| {
                         if ui.button(crate::i18n::text("Ja")).clicked() {

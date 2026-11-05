@@ -13,6 +13,8 @@ mod highlight;
 mod lang;
 mod lint;
 mod scan;
+mod schema_fix;
+pub(crate) use schema_fix::java_struktur;
 mod text;
 
 pub use highlight::*;
@@ -282,11 +284,48 @@ impl SqlEditor {
     fn problems(&self, text: &str) -> Vec<Problem> {
         let mut v = match self.lang {
             Lang::Sql => lint(text, &self.lint_env()),
-            Lang::Java | Lang::Python | Lang::JavaScript | Lang::TypeScript if prefs().sql_in_strings => lang::code_sql_problems(text, &self.lint_env(), self.lang),
+            Lang::Java | Lang::Python | Lang::JavaScript | Lang::TypeScript
+                if prefs().sql_in_strings =>
+            {
+                lang::code_sql_problems(text, &self.lint_env(), self.lang)
+            }
             _ => Vec::new(),
         };
+        if self.lang == Lang::Java {
+            v.extend(crate::dev::autofix::java_probleme(text));
+        }
         v.extend(self.diagnostics.iter().cloned());
         v.extend(self.external.iter().cloned());
+        if self.lang == Lang::Java {
+            for p in &mut v {
+                if p.fix.is_some() {
+                    continue;
+                }
+                let (line, col) = line_col(text, p.start);
+                let diag = crate::dev::process::Diag {
+                    file: "Editor.java".into(),
+                    line,
+                    col: Some(col),
+                    message: p.message.clone(),
+                    error: p.severity == Severity::Error,
+                };
+                if let Some(crate::dev::autofix::Fix::Edit(e)) =
+                    crate::dev::autofix::fix_for_diag(&diag, text).and_then(|s| s.fix)
+                    && e.files.len() == 1
+                    && e.files[0].edits.len() == 1
+                {
+                    let (a, b, replacement) = &e.files[0].edits[0];
+                    // Umbenennungen brauchen den echten Dateinamen und bleiben im Ausgabefenster.
+                    if replacement != "Editor" {
+                        p.fix = Some(Fix {
+                            start: crate::dev::lsp::from_pos(text, *a),
+                            end: crate::dev::lsp::from_pos(text, *b),
+                            text: replacement.clone(),
+                        });
+                    }
+                }
+            }
+        }
         v.sort_by_key(|p| p.start);
         v
     }
@@ -411,6 +450,9 @@ impl SqlEditor {
                 break;
             }
             *text = fixed;
+            // Compiler- und LSP-Positionen beziehen sich auf den alten Text.
+            self.diagnostics.clear();
+            self.external.clear();
             total += n;
         }
         if total > 0 {
@@ -1410,5 +1452,17 @@ mod indent_tests {
         // Enter und der naechste Buchstabe im selben Bild
         frame(&mut ed, &mut text, vec![egui::Event::Text("y;".into()), enter, egui::Event::Text("z".into())]);
         assert_eq!(text, "class A {\n    void m() {\n        x;\n        y;\n        z\n    }\n}");
+    }
+
+    #[test]
+    fn java_sprachserver_fix_vor_dem_kompilieren() {
+        let mut ed = SqlEditor::new(egui::Id::new("java-fix"));
+        ed.lang = Lang::Java;
+        let mut text = "class Main {\n void f() {\n  int x = 1\n }\n}\n".to_string();
+        let at = text.find("int x").unwrap();
+        ed.set_external(vec![(at, at + 3, "Syntax error, insert \";\" to complete LocalVariableDeclarationStatement".into(), true)]);
+        assert_eq!(ed.fix_all(&mut text), 1);
+        assert!(text.contains("int x = 1;\n"));
+        assert_eq!(ed.fix_all(&mut text), 0);
     }
 }
