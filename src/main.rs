@@ -6,6 +6,7 @@ mod backup;
 mod repair;
 mod db;
 mod grid;
+#[cfg_attr(not(windows), allow(dead_code))] // ausserhalb von Windows nur fuer Tests und build.rs
 mod icon;
 mod i18n;
 mod icons;

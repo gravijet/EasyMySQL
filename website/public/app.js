@@ -272,9 +272,13 @@
       return r;
     }
     function lerp3(a, b, w) { for (var j = 0; j < 3; j++) v[j] = a[j] + (b[j] - a[j]) * w; return v; }
+    // Uebergaenge nach Zeit, nicht nach Bildern: auf langsamen Geraeten gleich schnell
+    var prev = 0;
     function draw(t) {
-      cs += (scene - cs) * (still ? 1 : .06);
-      mx += (px - mx) * .04; my += (py - my) * .04;
+      var k = still || !prev ? 1 : 1 - Math.exp(-Math.min(t - prev, 250) / 300);
+      prev = t;
+      cs += (scene - cs) * k;
+      mx += (px - mx) * k * .7; my += (py - my) * k * .7;
       var i = Math.min(2, Math.floor(cs)), w = cs - i, a = moods[i], b = moods[i + 1];
       gl.uniform3fv(u.A, lerp3(a[0], b[0], w));
       gl.uniform3fv(u.B, lerp3(a[1], b[1], w));
