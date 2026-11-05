@@ -2,107 +2,120 @@
 <html lang="de">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>EasyMySQL</title>
-<meta name="description" content="EasyMySQL ist ein Windows-Programm, das einen MariaDB-Server mitbringt und Datenbanken verwaltet: Abfragen, Tabellen, ER-Diagramme, Sicherungen.">
-<meta name="theme-color" content="#f4f7fc">
+<meta name="description" content="MariaDB-Server und Datenbank-Werkzeug für Windows: SQL-Editor, Tabellen, Diagramme, Import und Export, Java, Python und JavaScript.">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#050608">
 <link rel="canonical" href="https://mysql.benjaminberger.at/">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preload" href="/fonts/InterTight.woff2" as="font" type="font/woff2" crossorigin>
 <meta property="og:type" content="website">
 <meta property="og:title" content="EasyMySQL">
-<meta property="og:description" content="MariaDB-Server und Datenbank-Verwaltung für Windows.">
+<meta property="og:description" content="MariaDB-Server und Datenbank-Werkzeug für Windows.">
 <meta property="og:url" content="https://mysql.benjaminberger.at/">
-<meta property="og:image" content="https://mysql.benjaminberger.at/og.png">
+<meta property="og:image" content="https://mysql.benjaminberger.at/og.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
 <script src="/boot.js"></script>
 <link rel="stylesheet" href="/style.css">
+<script src="/app.js" defer></script>
 </head>
 <body>
+<a class="skip" href="#tour" data-en="Skip to content">Zum Inhalt</a>
+<canvas class="sky" aria-hidden="true"></canvas>
 
-<header class="top">
-  <span class="brand"><img src="/favicon.svg" alt="" width="26" height="26"> EasyMySQL</span>
+<header class="bar">
+  <a class="mark" href="#top" aria-label="EasyMySQL">
+    <svg viewBox="0 0 32 32" aria-hidden="true"><ellipse cx="16" cy="7" rx="11" ry="4"/><path d="M5 7v18c0 2.2 4.9 4 11 4s11-1.8 11-4V7M5 13c0 2.2 4.9 4 11 4s11-1.8 11-4M5 19c0 2.2 4.9 4 11 4s11-1.8 11-4"/></svg>
+  </a>
   <div class="lang" role="group" aria-label="Sprache / Language">
     <button type="button" data-lang="de" aria-pressed="true">DE</button>
     <button type="button" data-lang="en" aria-pressed="false">EN</button>
   </div>
+  <a class="pill" href="/download/setup" data-dl="setup" data-en="Download">Herunterladen</a>
 </header>
 
 <main>
 
-<section class="hero" id="start">
-  <h1 data-en="Your own database, set up quickly">Deine eigene Datenbank, schnell eingerichtet</h1>
-  <p class="sub" data-en="A MariaDB server and everything to work with it in one window: queries, tables, diagrams, backups.">Ein MariaDB-Server und alles, um damit zu arbeiten, in einem Fenster: Abfragen, Tabellen, Diagramme, Sicherungen.</p>
-  <p class="cta">
-    <a class="btn big" href="/download/setup" id="dl-main" data-en="Download for Windows">Für Windows herunterladen</a>
-  </p>
-  <p class="meta"><span id="dl-info"></span> <a href="/download/portable" id="dl-portable" data-en="Portable (ZIP)">Portable (ZIP)</a></p>
-  <p class="hint" data-en="Free and open source, Windows 64-bit. If Windows warns about an unknown publisher, choose “More info” and “Run anyway”.">Kostenlos und quelloffen, Windows 64-bit. Warnt Windows vor einem unbekannten Herausgeber: „Weitere Informationen“ und „Trotzdem ausführen“.</p>
+<section class="hero" id="top">
+  <p class="lead" data-en="MariaDB server and database tool for Windows.">MariaDB-Server und Datenbank&shy;werkzeug für Windows.</p>
+  <h1 class="mega" aria-label="EasyMySQL"><span aria-hidden="true"><i>E</i><i>a</i><i>s</i><i>y</i><br><i>M</i><i>y</i><i>S</i><i>Q</i><i>L</i></span></h1>
+  <span class="hint" aria-hidden="true"><span></span></span>
+</section>
 
-  <div class="gallery" id="gallery">
-    <div class="tabs" role="tablist" aria-label="Ansichten">
-      <button type="button" role="tab" id="t-sql" aria-selected="true" aria-controls="p-sql" data-en="SQL editor">SQL-Editor</button>
-      <button type="button" role="tab" id="t-data" aria-selected="false" aria-controls="p-data" tabindex="-1" data-en="Tables">Tabellen</button>
-      <button type="button" role="tab" id="t-er" aria-selected="false" aria-controls="p-er" tabindex="-1" data-en="Diagram">Diagramm</button>
-      <button type="button" role="tab" id="t-builder" aria-selected="false" aria-controls="p-builder" tabindex="-1" data-en="Query builder">Assistent</button>
-      <button type="button" role="tab" id="t-import" aria-selected="false" aria-controls="p-import" tabindex="-1" data-en="Import">Import</button>
-      <button type="button" role="tab" id="t-export" aria-selected="false" aria-controls="p-export" tabindex="-1" data-en="Export">Export</button>
-      <button type="button" role="tab" id="t-users" aria-selected="false" aria-controls="p-users" tabindex="-1" data-en="Users">Benutzer</button>
-    </div>
-    <div class="frame">
-      <img id="p-sql" role="tabpanel" aria-labelledby="t-sql" src="/shots/sql.webp" width="1200" height="760" alt="Der SQL-Editor mit einer Abfrage und dem Ergebnis darunter" data-en-alt="The SQL editor with a query and its result below">
-      <img id="p-data" role="tabpanel" aria-labelledby="t-data" src="/shots/data.webp" width="1200" height="760" loading="lazy" hidden alt="Eine Tabelle mit Produktdaten" data-en-alt="A table with product data">
-      <img id="p-er" role="tabpanel" aria-labelledby="t-er" src="/shots/er.webp" width="1200" height="760" loading="lazy" hidden alt="Das ER-Diagramm einer Shop-Datenbank" data-en-alt="The ER diagram of a shop database">
-      <img id="p-builder" role="tabpanel" aria-labelledby="t-builder" src="/shots/builder.webp" width="1200" height="760" loading="lazy" hidden alt="Der Abfrage-Assistent mit dem erzeugten SQL" data-en-alt="The query builder with the generated SQL">
-      <img id="p-import" role="tabpanel" aria-labelledby="t-import" src="/shots/import.webp" width="1200" height="760" loading="lazy" hidden alt="Der Import aus einem anderen Datenbankserver" data-en-alt="Importing from another database server">
-      <img id="p-export" role="tabpanel" aria-labelledby="t-export" src="/shots/export.webp" width="1200" height="760" loading="lazy" hidden alt="Der Export auf einen PostgreSQL-Server" data-en-alt="Exporting to a PostgreSQL server">
-      <img id="p-users" role="tabpanel" aria-labelledby="t-users" src="/shots/users.webp" width="1200" height="760" loading="lazy" hidden alt="Die Verwaltung von Benutzern und ihren Rechten" data-en-alt="Managing users and their privileges">
-    </div>
+<section class="scrub" aria-label="EasyMySQL">
+  <div class="pin">
+    <p class="say" data-split data-en="Install, open, get going. The server is already running.">Installieren, öffnen, loslegen. Der Server läuft schon.</p>
   </div>
 </section>
 
-<section class="features" id="funktionen">
+<section class="tour" id="tour">
+  <div class="stage">
+    <div class="copy">
+      <p class="count" aria-hidden="true"><span class="now">01</span><span> / 06</span></p>
+      <div class="chs">
+        <div class="ch on"><h2 data-split>SQL</h2><p data-en="Suggestions as you type, mistakes underlined. Ctrl + . fixes them.">Vorschläge beim Tippen, Fehler unterstrichen. Strg + . behebt sie.</p></div>
+        <div class="ch"><h2 data-split data-en="Tables">Tabellen</h2><p data-en="Change values and columns right in the table. Ctrl + Z undoes it.">Werte und Spalten direkt in der Tabelle ändern. Strg + Z macht es rückgängig.</p></div>
+        <div class="ch"><h2 data-split data-en="Diagrams">Diagramme</h2><p data-en="Even large databases, clearly laid out. Export as SVG.">Auch große Datenbanken, klar angeordnet. Export als SVG.</p></div>
+        <div class="ch"><h2 data-split data-en="Builder">Assistent</h2><p data-en="Click a query together, the SQL appears next to it.">Abfragen zusammenklicken, das SQL entsteht daneben.</p></div>
+        <div class="ch"><h2 data-split>Code</h2><p data-en="Java, Python and JavaScript. Create a project, press run. Runtime and drivers download themselves.">Java, Python und JavaScript. Projekt anlegen, starten. Laufzeit und Treiber laden sich selbst.</p></div>
+        <div class="ch"><h2 data-split>Git</h2><p data-en="Commits, branches and pull requests without leaving the app.">Commits, Branches und Pull Requests, ohne die App zu verlassen.</p></div>
+      </div>
+    </div>
+    <div class="win">
+      <div class="tilt">
+        <picture class="shot on"><source type="image/avif" srcset="/shots/sql-1000.avif 1000w, /shots/sql-2000.avif 2000w" sizes="(min-width: 60em) 66vw, 160vw"><img src="/shots/sql-2000.webp" srcset="/shots/sql-1000.webp 1000w, /shots/sql-2000.webp 2000w" sizes="(min-width: 60em) 66vw, 160vw" width="2000" height="1250" alt="Der SQL-Editor mit einer Abfrage und ihrem Ergebnis" data-en-alt="The SQL editor with a query and its result"></picture>
+        <picture class="shot"><source type="image/avif" srcset="/shots/data-1000.avif 1000w, /shots/data-2000.avif 2000w" sizes="(min-width: 60em) 66vw, 160vw"><img src="/shots/data-2000.webp" srcset="/shots/data-1000.webp 1000w, /shots/data-2000.webp 2000w" sizes="(min-width: 60em) 66vw, 160vw" width="2000" height="1250" loading="lazy" decoding="async" alt="Eine Tabelle mit Produkten zum direkten Bearbeiten" data-en-alt="A table of products to edit in place"></picture>
+        <picture class="shot"><source type="image/avif" srcset="/shots/er-1000.avif 1000w, /shots/er-2000.avif 2000w" sizes="(min-width: 60em) 66vw, 160vw"><img src="/shots/er-2000.webp" srcset="/shots/er-1000.webp 1000w, /shots/er-2000.webp 2000w" sizes="(min-width: 60em) 66vw, 160vw" width="2000" height="1250" loading="lazy" decoding="async" alt="Das ER-Diagramm einer Shop-Datenbank" data-en-alt="The ER diagram of a shop database"></picture>
+        <picture class="shot"><source type="image/avif" srcset="/shots/builder-1000.avif 1000w, /shots/builder-2000.avif 2000w" sizes="(min-width: 60em) 66vw, 160vw"><img src="/shots/builder-2000.webp" srcset="/shots/builder-1000.webp 1000w, /shots/builder-2000.webp 2000w" sizes="(min-width: 60em) 66vw, 160vw" width="2000" height="1250" loading="lazy" decoding="async" alt="Der Abfrage-Assistent mit dem erzeugten SQL" data-en-alt="The query builder with the generated SQL"></picture>
+        <picture class="shot"><source type="image/avif" srcset="/shots/code-1000.avif 1000w, /shots/code-2000.avif 2000w" sizes="(min-width: 60em) 66vw, 160vw"><img src="/shots/code-2000.webp" srcset="/shots/code-1000.webp 1000w, /shots/code-2000.webp 2000w" sizes="(min-width: 60em) 66vw, 160vw" width="2000" height="1250" loading="lazy" decoding="async" alt="Ein Java-Projekt mit Code und dem laufenden Programm im Terminal" data-en-alt="A Java project with code and the running program in the terminal"></picture>
+        <picture class="shot"><source type="image/avif" srcset="/shots/git-1000.avif 1000w, /shots/git-2000.avif 2000w" sizes="(min-width: 60em) 66vw, 160vw"><img src="/shots/git-2000.webp" srcset="/shots/git-1000.webp 1000w, /shots/git-2000.webp 2000w" sizes="(min-width: 60em) 66vw, 160vw" width="2000" height="1250" loading="lazy" decoding="async" alt="Die Quellcodeverwaltung mit Änderungen und Unterschieden" data-en-alt="Source control with changes and a diff"></picture>
+      </div>
+    </div>
+    <nav class="steps" aria-label="Kapitel" data-en-label="Chapters">
+      <button type="button" aria-label="SQL"></button><button type="button" aria-label="Tabellen" data-en-label="Tables"></button><button type="button" aria-label="Diagramme" data-en-label="Diagrams"></button><button type="button" aria-label="Assistent" data-en-label="Builder"></button><button type="button" aria-label="Code"></button><button type="button" aria-label="Git"></button>
+    </nav>
+  </div>
+</section>
+
+<section class="formats">
+  <h2 class="display" data-split>Import &amp; Export</h2>
+  <div class="rows" aria-hidden="true">
+    <p class="row"><span>MariaDB</span><b>MySQL</b><span>PostgreSQL</span><b>SQLite</b><span>MongoDB</span><b>Redis</b><span>CSV</span><b>MariaDB</b><span>MySQL</span><b>PostgreSQL</b><span>SQLite</span></p>
+    <p class="row rev"><b>JSON</b><span>XML</span><b>SQL</b><span>CSV</span><b>SQLite</b><span>Redis</span><b>PostgreSQL</b><span>MongoDB</span><b>JSON</b><span>XML</span><b>SQL</b></p>
+  </div>
+  <p class="lead side" data-reveal data-en="MariaDB, MySQL, PostgreSQL, SQLite, MongoDB, Redis, CSV, JSON and XML. As a file or straight from server to server, also over SSH.">MariaDB, MySQL, PostgreSQL, SQLite, MongoDB, Redis, CSV, JSON und XML. Als Datei oder direkt von Server zu Server, auch über SSH.</p>
+</section>
+
+<section class="safe">
   <ul>
-    <li>
-      <h3 data-en="Server included">Server inklusive</h3>
-      <p data-en="The newest MariaDB LTS comes with the program and starts with it. Port, memory and network access are up to you; each query file can also use another server, even through an SSH tunnel.">Das neueste MariaDB-LTS gehört zum Programm und startet mit ihm. Port, Speicher und Netzwerkzugriff stellt man selbst ein; jede Abfragedatei kann auch einen anderen Server nutzen, sogar über SSH-Tunnel.</p>
-    </li>
-    <li>
-      <h3 data-en="Java, Python and JavaScript">Java, Python und JavaScript</h3>
-      <p data-en="New projects with a ready connection and code for every table. Runtimes and drivers download themselves, ▶ runs the program, tests and a Java debugger are built in, and language servers show errors while you type.">Neue Projekte mit fertiger Verbindung und Code für jede Tabelle. Laufzeit und Treiber laden sich selbst, ▶ startet das Programm, Tests und ein Java-Debugger sind dabei, Sprachserver zeigen Fehler schon beim Tippen.</p>
-    </li>
-    <li>
-      <h3 data-en="Git and GitHub">Git und GitHub</h3>
-      <p data-en="Commit, branches, pull and push in the sidebar; publish to GitHub, clone, and create pull requests and issues without leaving the app.">Commit, Branches, Pull und Push in der Seitenleiste; auf GitHub veröffentlichen, klonen sowie Pull Requests und Issues anlegen, ohne die App zu verlassen.</p>
-    </li>
-    <li>
-      <h3 data-en="Queries and tables">Abfragen und Tabellen</h3>
-      <p data-en="An editor with suggestions and error marking, tables you edit in place, and a query builder with the SQL next to it.">Ein Editor mit Vorschlägen und Fehlermarkierung, Tabellen zum direkten Bearbeiten und ein Abfrage-Assistent mit dem SQL daneben.</p>
-    </li>
-    <li>
-      <h3 data-en="Clear diagrams">Klare Diagramme</h3>
-      <p data-en="Even large databases are laid out with few crossings and right-angled lines.">Auch große Datenbanken werden kreuzungsarm mit rechtwinkligen Linien angeordnet.</p>
-    </li>
-    <li>
-      <h3 data-en="Import and export">Import und Export</h3>
-      <p data-en="MariaDB, MySQL, PostgreSQL, SQLite, MongoDB, Redis and CSV. As files or straight from and to other servers.">MariaDB, MySQL, PostgreSQL, SQLite, MongoDB, Redis und CSV. Als Dateien oder direkt von und zu anderen Servern.</p>
-    </li>
-    <li>
-      <h3 data-en="Safe and up to date">Sicher und aktuell</h3>
-      <p data-en="Backups before risky commands and on a schedule. Updates install in the background.">Sicherungen vor riskanten Befehlen und nach Zeitplan. Updates installieren sich im Hintergrund.</p>
-    </li>
+    <li data-reveal><h3 data-en="Backups">Sicherungen</h3><p data-en="Before risky commands and on a schedule.">Vor riskanten Befehlen und nach Zeitplan.</p></li>
+    <li data-reveal><h3>Updates</h3><p data-en="App and MariaDB, in the background.">App und MariaDB, im Hintergrund.</p></li>
+    <li data-reveal><h3 data-en="Encrypted">Verschlüsselt</h3><p data-en="TLS with its own certificate authority.">TLS mit eigener Zertifizierungsstelle.</p></li>
   </ul>
+</section>
+
+<section class="get" id="download">
+  <a class="big" href="/download/setup" data-dl="setup"><span class="t" data-en="Download">Herunterladen</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v17m-7-7 7 7 7-7"/></svg></a>
+  <div class="info">
+    <p class="meta"><span id="dl-info">Windows 10 &amp; 11 · 64-bit</span></p>
+    <p class="alt">
+      <a class="u" href="/download/portable" data-dl="portable" data-en="Portable (ZIP)">Portable (ZIP)</a>
+      <button class="u" type="button" id="sha" hidden>SHA-256</button>
+    </p>
+    <p class="fine" data-en="Free and open source. If Windows warns about an unknown publisher: “More info”, then “Run anyway”.">Kostenlos und quelloffen. Warnt Windows vor einem unbekannten Herausgeber: „Weitere Informationen“, dann „Trotzdem ausführen“.</p>
+  </div>
 </section>
 
 </main>
 
-<footer>
-  <p><span data-en="A program by">Ein Programm von</span> <a href="https://benjaminberger.at">Benjamin Berger</a></p>
-  <p class="legal">
-    <a href="https://benjaminberger.at/impressum">Impressum</a>
-    <a href="https://benjaminberger.at/datenschutz" data-en="Privacy">Datenschutz</a>
-  </p>
+<footer class="foot">
+  <a class="u" href="https://benjaminberger.at">Benjamin Berger</a>
+  <a class="u" href="https://github.com/gravijet/EasyMySQL">GitHub</a>
+  <a class="u" href="https://benjaminberger.at/impressum" data-en="Imprint">Impressum</a>
+  <a class="u" href="https://benjaminberger.at/datenschutz" data-en="Privacy">Datenschutz</a>
 </footer>
-
-<script src="/app.js"></script>
 </body>
 </html>
