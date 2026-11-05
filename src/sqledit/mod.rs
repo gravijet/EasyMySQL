@@ -1230,7 +1230,7 @@ impl SqlEditor {
                         let chars = p.items.iter().map(|i| i.label.chars().count()).max().unwrap_or(10) as f32;
                         let detail = p.items.iter().map(|i| i.detail.chars().count() + i.kind.chars().count() + 5).max().unwrap_or(10) as f32;
                         let width = (chars * font_size() * 0.62 + detail * 6.2 + 36.0).clamp(260.0, 640.0);
-                        ui.set_min_width(width);
+                        ui.set_width(width);
                         egui::ScrollArea::vertical().max_height(height).min_scrolled_height(height).auto_shrink([false, true]).show(ui, |ui| {
                             for (i, it) in p.items.iter().enumerate() {
                                 let sel = i == p.selected;

@@ -78,7 +78,7 @@ fn main() -> eframe::Result {
     }
     let icon = egui::IconData {
         // Gross genug fuer hochaufloesende Bildschirme (verkleinert wird glatt, vergroessert waere pixelig)
-        rgba: icon::icon_rgba(256),
+        rgba: include_bytes!(concat!(env!("OUT_DIR"), "/icon256.rgba")).to_vec(),
         width: 256,
         height: 256,
     };
