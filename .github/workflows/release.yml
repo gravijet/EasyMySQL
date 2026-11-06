@@ -196,7 +196,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-latest
+          # Intel baut beide Architekturen; der ARM-Testjob bleibt in ci.yml.
+          # So haengt das Release nicht an den knappen macOS-ARM-Runnern.
+          - os: macos-15-intel
             kind: macos
           - os: ubuntu-22.04
             kind: linux
