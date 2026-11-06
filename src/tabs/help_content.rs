@@ -1001,6 +1001,39 @@ pub const CHAPTERS: &[Chapter] = &[
         ],
     },
     Chapter {
+        title: "KI-Assistenten (MCP)",
+        sections: &[
+            Section {
+                id: "ki",
+                title: "Claude Code und Codex verbinden",
+                blocks: &[
+                    P("EasyMySQL enthält einen MCP-Server (Model Context Protocol). Darüber lesen KI-Assistenten wie Claude Code, Codex, Cursor oder Claude Desktop das Schema Ihrer Datenbanken, führen Abfragen aus und schreiben passendes SQL und Code."),
+                    Steps(&[
+                        "Einstellungen → KI-Assistenten öffnen und Claude Code oder Codex anklicken. EasyMySQL trägt den Server und eine Anleitung (Skill) für die KI ein.",
+                        "Den Assistenten neu starten und etwa fragen: „Welche Tabellen hat meine Datenbank shop?“",
+                    ]),
+                    P("Dasselbe in der Eingabeaufforderung:"),
+                    Shell("easymysql setup-ai"),
+                    P("Andere Programme starten den Server mit diesem Befehl (Transport stdio):"),
+                    Shell("easymysql mcp"),
+                    Open("Einstellungen für KI-Assistenten", Settings("ki")),
+                ],
+            },
+            Section {
+                id: "ki-rechte",
+                title: "Was die KI darf",
+                blocks: &[
+                    List(&[
+                        "Standard: nur lesen. Jede Abfrage läuft in einer READ-ONLY-Transaktion; Dateien schreiben (INTO OUTFILE) ist gesperrt.",
+                        "Mit „KI darf Daten und Struktur ändern“ sind INSERT, UPDATE, DELETE und DDL erlaubt. Vor DROP, TRUNCATE und DELETE/UPDATE ohne WHERE sichert EasyMySQL die betroffenen Datenbanken.",
+                        "Die KI verwendet dieselbe Verbindung wie EasyMySQL (Einstellungen → Verbindung, auch über SSH). Ein gespeicherter Server lässt sich mit --profile wählen, das Passwort mit der Umgebungsvariable EASYMYSQL_PASSWORD übergeben.",
+                    ]),
+                    Tip("Läuft der Server nicht, startet die KI ihn mit dem Werkzeug start_server: EasyMySQL öffnet sich dafür."),
+                ],
+            },
+        ],
+    },
+    Chapter {
         title: "Verlauf",
         sections: &[Section {
             id: "verlauf",

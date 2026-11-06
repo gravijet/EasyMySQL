@@ -4,18 +4,19 @@
   var $ = function (s, r) { return (r || document).querySelector(s); };
   var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
   var still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var lang = root.lang === "en" ? "en" : "de";
   var de = function () { return lang === "de"; };
+  var t = function (d, e) { return de() ? d : e; };
 
   // ---- Sprache -------------------------------------------------------------
-  var lang = root.lang === "en" ? "en" : "de";
   var texts = $$("[data-en]").map(function (el) { return [el, el.textContent]; });
   var alts = $$("[data-en-alt]").map(function (el) { return [el, el.alt]; });
   var labels = $$("[data-en-label]").map(function (el) { return [el, el.getAttribute("aria-label")]; });
   var desc = {
-    de: "MariaDB-Server und Datenbank-Werkzeug für Windows: SQL-Editor, Tabellen, Diagramme, Import und Export, Java, Python und JavaScript.",
-    en: "MariaDB server and database tool for Windows: SQL editor, tables, diagrams, import and export, Java, Python and JavaScript.",
+    de: "MariaDB-Server, SQL-Editor und KI-Anbindung in einer App. Für Windows, macOS und Linux, mit einem Befehl installiert.",
+    en: "MariaDB server, SQL editor and AI bridge in one app. For Windows, macOS and Linux, installed with one command.",
   };
-  var rel = null, demo = null, langBtn = $("#lang");
+  var rel = null, langBtn = $("#lang");
 
   function applyLang(l) {
     lang = l;
@@ -29,13 +30,14 @@
     langBtn.setAttribute("aria-label", other === "en" ? "English" : "Deutsch");
     $('meta[name="description"]').content = desc[l];
     if (rel) render(rel);
-    if (demo) demo.relang();
   }
   langBtn.addEventListener("click", function () {
     var l = de() ? "en" : "de";
     try { localStorage.setItem("em-lang", l); } catch (e) {}
     applyLang(l);
+    term.relang();
   });
+  if (lang === "en") applyLang("en");
 
   // ---- Neueste Version -----------------------------------------------------
   function mb(n) {
@@ -43,20 +45,17 @@
     return (v >= 100 ? Math.round(v) : v.toFixed(1)).toString().replace(".", de() ? "," : ".") + "\u00a0MB";
   }
   function render(r) {
-    var f = r.files || {}, s = f.setup;
-    var parts = ["Version " + r.version];
-    if (r.published) {
-      var d = new Date(r.published);
-      if (!isNaN(d)) parts.push(d.toLocaleDateString(de() ? "de-AT" : "en-GB", { day: "numeric", month: "long", year: "numeric" }));
-    }
-    if (s && s.size) parts.push(mb(s.size));
-    $("#dl-info").textContent = parts.join(" · ");
-    $$("[data-ver]").forEach(function (el) { el.textContent = "Version " + r.version + " · Windows 10 & 11"; });
-    if (r.mariadb) $("#spec-db").textContent = "MariaDB " + r.mariadb + (de() ? ", mitinstalliert" : ", included");
-    $$("[data-dl]").forEach(function (a) { var x = f[a.dataset.dl]; if (x && x.url) a.href = x.url; });
-    var sha = $("#sha");
-    sha.hidden = !(s && s.sha256);
-    sha.dataset.sum = (s && s.sha256) || "";
+    var f = r.files || {};
+    $("#spec-ver").textContent = r.version;
+    if (r.mariadb) $("#spec-db").textContent = "MariaDB " + r.mariadb;
+    $$("[data-dl]").forEach(function (a) {
+      var x = f[a.dataset.dl];
+      var ok = !!(x && x.url && x.sha256);
+      if (ok) a.href = x.url;
+      a.setAttribute("aria-disabled", ok ? "false" : "true");
+      if (ok && x.size) a.title = x.name + ", " + mb(x.size);
+      else if (!ok) a.title = t("Kommt mit dem nächsten Release", "Arrives with the next release");
+    });
   }
   try { var c = JSON.parse(localStorage.getItem("em-rel") || "null"); if (c && c.version) { rel = c; render(c); } } catch (e) {}
   fetch("/api/release", { headers: { accept: "application/json" } })
@@ -67,228 +66,327 @@
     })
     .catch(function () {});
 
+  // ---- Kopieren ------------------------------------------------------------
   var toast;
-  $("#sha").addEventListener("click", function () {
-    var sum = this.dataset.sum;
-    var done = function () {
-      if (!toast) { toast = document.createElement("div"); toast.className = "toast"; toast.setAttribute("role", "status"); document.body.appendChild(toast); }
-      toast.textContent = de() ? "SHA-256 kopiert" : "SHA-256 copied";
-      toast.classList.add("on");
-      clearTimeout(toast.t);
-      toast.t = setTimeout(function () { toast.classList.remove("on"); }, 2200);
-    };
-    if (navigator.clipboard) navigator.clipboard.writeText(sum).then(done, function () { prompt("SHA-256", sum); });
-    else prompt("SHA-256", sum);
-  });
-
-  // ---- Sichtbarkeit --------------------------------------------------------
-  function watch(el, fn, opts) {
-    if (!("IntersectionObserver" in window)) { fn(true); return; }
-    new IntersectionObserver(function (es) { fn(es[es.length - 1].isIntersecting); }, opts).observe(el);
+  function say(msg) {
+    if (!toast) { toast = document.createElement("div"); toast.className = "toast"; toast.setAttribute("role", "status"); document.body.appendChild(toast); }
+    toast.textContent = msg;
+    toast.classList.add("on");
+    clearTimeout(toast.t);
+    toast.t = setTimeout(function () { toast.classList.remove("on"); }, 2000);
   }
-  $$("[data-reveal]").forEach(function (el) {
-    $$("tbody tr", el).forEach(function (tr, i) { tr.style.setProperty("--i", i); });
-    watch(el, function (v) { if (v) el.classList.add("in"); }, { rootMargin: "0px 0px -10% 0px" });
-  });
-
-  // ---- Kopfzeile und Lichtfleck --------------------------------------------
-  var nav = $(".nav"), hero = $(".hero"), ticking = false;
-  function onScroll() {
-    ticking = false;
-    nav.classList.toggle("on-paper", hero.getBoundingClientRect().bottom < 70);
-  }
-  addEventListener("scroll", function () { if (!ticking) { ticking = true; requestAnimationFrame(onScroll); } }, { passive: true });
-  onScroll();
-  if (!still && matchMedia("(pointer: fine)").matches) {
-    hero.addEventListener("pointermove", function (e) {
-      var r = hero.getBoundingClientRect();
-      hero.style.setProperty("--gx", (e.clientX - r.left) + "px");
-      hero.style.setProperty("--gy", (e.clientY - r.top) + "px");
-    }, { passive: true });
-  }
-
-  // ---- Konsole: tippt Abfragen wie im Editor --------------------------------
-  var KW = /^(SELECT|FROM|WHERE|ORDER|GROUP|BY|DESC|ASC|LIMIT|AS|AND|OR)$/i, FN = /^(COUNT|SUM|AVG|MIN|MAX)$/i;
-  var esc = function (s) { return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); };
-  var RUN = function () { return de() ? "Strg + Enter" : "Ctrl + Enter"; };
-  var SCENES = [
-    { // Vervollstaendigen
-      steps: [["type", "SELECT name, price\nFROM pro"], ["pop", [["product", ""], ["product_sales", "v"]]], ["wait", 1100], ["key", "Tab"], ["swap", "pro", "product"],
-        ["type", "\nORDER BY price DESC\nLIMIT 5;"], ["wait", 450], ["key", RUN], ["result"]],
-      cols: ["name", "price"], num: [0, 1], ms: 2,
-      rows: [["Aero 16 Pro", "1899.00"], ["Aero 14 Laptop", "1299.99"], ["Slate 13", "999.00"], ["Pixel Phone X", "799.50"], ["Curve 34", "649.50"]],
-    },
-    { // Ausfuehren, mit Balken
-      steps: [["type", "SELECT city, COUNT(*) AS customers\nFROM customer\nGROUP BY city\nORDER BY customers DESC\nLIMIT 5;"], ["wait", 450], ["key", RUN], ["result"]],
-      cols: ["city", "customers"], num: [0, 1], bar: 1, ms: 3,
-      rows: [["Munich", "8"], ["Salzburg", "7"], ["Graz", "6"], ["Vienna", "6"], ["Berlin", "4"]],
-    },
-    { // Beheben
-      steps: [["type", "SELECT name, stock\nFROM prodcut\nWHERE stock < 20;"], ["wait", 500], ["mark", "prodcut"], ["wait", 450], ["tip"], ["wait", 2000],
-        ["key", function () { return de() ? "Strg + ." : "Ctrl + ."; }], ["swap", "prodcut", "product"], ["wait", 650], ["key", RUN], ["result"]],
-      tip: function () { return de() ? "Die Tabelle „prodcut“ gibt es in „shop“ nicht. Meinten Sie „product“?" : "Table “prodcut” does not exist in “shop”. Did you mean “product”?"; },
-      cols: ["name", "stock"], num: [0, 1], ms: 2,
-      rows: [["Pixel Phone Mini", "15"], ["Controller Pro", "10"], ["Gaming Headset", "17"], ["Smart Bulb Set", "15"]],
-    },
-  ];
-
-  demo = (function () {
-    var code = $("#code"), ln = $("#ln"), res = $("#res"), stat = $("#stat"), press = $("#press");
-    var chips = $$(".chips button");
-    var doc = "", mark = -1, pop = null, tip = null, idle = true, scene = 0, token = 0, shown = null, visible = true, timer = 0, pending = false;
-
-    function paint() {
-      var html = "", re = /([A-Za-z_][A-Za-z0-9_]*)|(\d+(?:\.\d+)?)|(\s+)|([^\sA-Za-z0-9_])/g, m;
-      while ((m = re.exec(doc))) {
-        var t = m[0], cls = m[1] ? (KW.test(t) ? "k" : FN.test(t) ? "f" : "i") : m[2] ? "n" : m[4] ? "o" : "";
-        var part = cls ? '<span class="' + cls + '">' + esc(t) + "</span>" : esc(t);
-        if (m.index === mark) part = '<span class="bad">' + part + (tip ? '<span class="tip">' + esc(tip) + "</span>" : "") + "</span>";
-        html += part;
-      }
-      var p = pop ? '<span class="pop">' + pop.map(function (o) { return '<span class="' + o[1] + '">' + esc(o[0]) + "<em>" + (o[1] ? "view" : "table") + "</em></span>"; }).join("") + "</span>" : "";
-      code.innerHTML = html + '<span class="car' + (idle ? " idle" : "") + '">' + p + "</span>";
-      var n = doc.split("\n").length, l = [];
-      for (var i = 1; i <= n; i++) l.push(i);
-      ln.textContent = l.join("\n");
-    }
-
-    function table(s) {
-      res.textContent = "";
-      var head = res.createTHead().insertRow();
-      head.appendChild(document.createElement("th"));
-      s.cols.forEach(function (c, k) { var th = document.createElement("th"); th.textContent = c; if (s.num[k]) th.className = "num"; head.appendChild(th); });
-      var body = res.createTBody(), max = 0;
-      if (s.bar != null) s.rows.forEach(function (r) { max = Math.max(max, +r[s.bar]); });
-      s.rows.forEach(function (r, i) {
-        var tr = body.insertRow();
-        tr.style.setProperty("--i", i);
-        tr.insertCell().textContent = i + 1;
-        r.forEach(function (v, k) {
-          var td = tr.insertCell();
-          if (s.num[k]) td.className = "num";
-          if (k === s.bar) {
-            td.className += " bar";
-            var bar = document.createElement("i"), b = document.createElement("b");
-            bar.style.setProperty("--w", +v / max);
-            b.textContent = v;
-            td.appendChild(bar); td.appendChild(b);
-          } else td.textContent = v;
-        });
-      });
-      shown = s;
-      statLine();
-    }
-    function statLine() {
-      stat.textContent = "";
-      if (!shown) return;
-      var a = document.createElement("span"), b = document.createElement("span");
-      a.textContent = shown.rows.length + (de() ? " Zeilen" : " rows");
-      b.textContent = shown.ms + " ms";
-      stat.appendChild(a); stat.appendChild(b);
-    }
-
-    function sleep(ms, t) {
-      return new Promise(function (ok, no) { setTimeout(function () { t === token ? ok() : no(); }, ms); });
-    }
-    function key(label) {
-      press.textContent = typeof label === "function" ? label() : label;
-      press.classList.remove("on");
-      void press.offsetWidth;
-      press.classList.add("on");
-    }
-
-    function play(i, instant) {
-      var t = ++token, s = SCENES[i];
-      clearTimeout(timer);
-      scene = i;
-      chips.forEach(function (c, k) { c.setAttribute("aria-pressed", String(k === i)); });
-      doc = ""; mark = -1; pop = null; tip = null; idle = false; shown = null;
-      res.textContent = ""; statLine();
-      var chain = Promise.resolve();
-      s.steps.forEach(function (st) {
-        chain = chain.then(function () {
-          var kind = st[0];
-          if (kind === "type") {
-            if (instant) { doc += st[1]; return; }
-            var text = st[1], k = 0;
-            var next = function () {
-              if (k >= text.length) return;
-              var ch = text[k++];
-              doc += ch; paint();
-              return sleep(28 + Math.random() * 46 + (ch === " " || ch === "\n" ? 60 : 0), t).then(next);
-            };
-            return next();
-          }
-          if (kind === "swap") {
-            var at = doc.lastIndexOf(st[1]);
-            doc = doc.slice(0, at) + st[2] + doc.slice(at + st[1].length);
-            pop = null; mark = -1; tip = null;
-            if (!instant) paint();
-            return;
-          }
-          if (kind === "result") { if (instant) table(s); else return sleep(220, t).then(function () { table(s); }); return; }
-          if (instant) return;
-          if (kind === "wait") return sleep(st[1], t);
-          if (kind === "key") key(st[1]);
-          else if (kind === "pop") { pop = st[1]; paint(); }
-          else if (kind === "mark") { mark = doc.indexOf(st[1]); paint(); }
-          else if (kind === "tip") { tip = s.tip(); paint(); }
-        });
-      });
-      chain.then(function () {
-        if (t !== token) return;
-        idle = true; paint();
-        if (!still) queue();
-      }, function () {});
-    }
-    // Naechste Szene erst, wenn die Konsole zu sehen ist
-    function queue() {
-      timer = setTimeout(function () {
-        if (visible) play((scene + 1) % SCENES.length); else pending = true;
-      }, 4200);
-    }
-
-    chips.forEach(function (c, k) { c.addEventListener("click", function () { play(k, still); }); });
-    watch($(".con"), function (v) {
-      visible = v;
-      if (v && pending) { pending = false; play((scene + 1) % SCENES.length); }
-    }, { threshold: .35 });
-    play(0, still);
-
-    return {
-      // Sprache gewechselt: Hinweis und Statuszeile neu
-      relang: function () {
-        if (tip) tip = SCENES[scene].tip();
-        paint(); statLine();
-      },
-    };
-  })();
-
-  // ---- Kapitel -------------------------------------------------------------
-  var tour = $(".tour"), items = $$(".tour .it"), shots = $$(".shot"), cur = 0;
-  function pick(i, focus) {
-    cur = i;
-    items.forEach(function (b, k) {
-      b.classList.toggle("on", k === i);
-      b.setAttribute("aria-selected", String(k === i));
-      b.tabIndex = k === i ? 0 : -1;
+  $$("[data-copy-from]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      var text = $(b.getAttribute("data-copy-from")).textContent.trim();
+      var done = function () {
+        b.classList.add("done");
+        setTimeout(function () { b.classList.remove("done"); }, 1600);
+        say(t("Kopiert: ", "Copied: ") + text);
+      };
+      if (navigator.clipboard) navigator.clipboard.writeText(text).then(done, function () { prompt("", text); });
+      else prompt("", text);
     });
-    shots.forEach(function (s, k) { s.classList.toggle("on", k === i); });
-    if (focus) items[i].focus();
-  }
-  items.forEach(function (b, i) {
-    b.addEventListener("click", function () { if (i !== cur) pick(i); });
-    $("i", b).addEventListener("animationend", function () { if (i === cur) pick((i + 1) % items.length); });
   });
-  $(".list").addEventListener("keydown", function (e) {
-    var d = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[e.key];
-    if (!d) return;
-    e.preventDefault();
-    pick((cur + d + items.length) % items.length, true);
-  });
-  tour.classList.add("idle");
-  pick(0);
-  watch(tour, function (v) { tour.classList.toggle("idle", !v); }, { threshold: .3 });
 
-  if (lang === "en") applyLang("en");
+  // ---- Funktionen: Zeile waehlen -------------------------------------------
+  var rows = $$(".row"), shots = $$(".shot");
+  function pick(row, focus) {
+    rows.forEach(function (r) { var on = r === row; r.setAttribute("aria-selected", on); r.tabIndex = on ? 0 : -1; });
+    shots.forEach(function (s) { s.classList.toggle("on", s.dataset.shot === row.dataset.shot); });
+    if (focus) row.focus();
+  }
+  rows.forEach(function (r, i) {
+    r.tabIndex = i === 0 ? 0 : -1;
+    r.addEventListener("click", function () { pick(r); });
+    r.addEventListener("keydown", function (e) {
+      var n = e.key === "ArrowDown" ? 1 : e.key === "ArrowUp" ? -1 : 0;
+      if (!n) return;
+      e.preventDefault();
+      pick(rows[(i + n + rows.length) % rows.length], true);
+    });
+  });
+
+  // ---- Demo-Datenbank ------------------------------------------------------
+  var DB = {
+    customer: {
+      cols: [["id", "int(10) unsigned", "NO", "PRI", "auto_increment"], ["name", "varchar(80)", "NO", "", ""], ["city", "varchar(60)", "YES", "", ""], ["joined", "date", "NO", "", ""]],
+      rows: [[1, "Ada Lovelace", "London", "2025-02-11"], [2, "Linus Berg", "Innsbruck", "2025-04-03"], [3, "Grace Hopper", "Graz", "2025-06-19"], [4, "Alan Kurz", "Vienna", "2025-09-30"], [5, "Hedy Lamarr", "Salzburg", "2026-01-08"], [6, "Ken Thompson", "Munich", "2026-03-22"]],
+    },
+    product: {
+      cols: [["id", "int(10) unsigned", "NO", "PRI", "auto_increment"], ["name", "varchar(80)", "NO", "", ""], ["price", "decimal(10,2)", "NO", "", ""], ["stock", "int(11)", "NO", "", ""]],
+      rows: [[1, "Aero 16 Pro", "1899.00", 12], [2, "Aero 14 Laptop", "1299.99", 31], [3, "Slate 13", "999.00", 24], [4, "Pixel Phone X", "799.50", 40], [5, "Curve 34", "649.50", 18], [6, "Controller Pro", "69.90", 10], [7, "Gaming Headset", "89.00", 17], [8, "Smart Bulb Set", "39.95", 15]],
+    },
+    orders: {
+      cols: [["id", "int(10) unsigned", "NO", "PRI", "auto_increment"], ["customer_id", "int(10) unsigned", "NO", "MUL", ""], ["total", "decimal(10,2)", "NO", "", ""], ["ordered_at", "date", "NO", "", ""]],
+      rows: [[1, 1, "1299.99", "2026-03-02"], [2, 3, "860.25", "2026-03-14"], [3, 2, "912.00", "2026-04-01"], [4, 1, "-15.49", "2026-04-02"], [5, 5, "129.85", "2026-05-17"], [6, 4, "649.50", "2026-06-09"], [7, 6, "69.90", "2026-07-21"], [8, 2, "39.95", "2026-08-30"]],
+    },
+  };
+
+  // ASCII-Tabelle wie im MariaDB-Client
+  function table(cols, data) {
+    var w = cols.map(function (c, i) {
+      return Math.max(String(c).length, data.reduce(function (m, r) { return Math.max(m, r[i] == null ? 4 : String(r[i]).length); }, 0));
+    });
+    var num = cols.map(function (c, i) { return data.length > 0 && data.every(function (r) { return r[i] == null || /^-?\d+(\.\d+)?$/.test(String(r[i])); }); });
+    var line = "+" + w.map(function (n) { return new Array(n + 3).join("-"); }).join("+") + "+";
+    var fmt = function (r, head) {
+      return "| " + r.map(function (v, i) {
+        var s = v == null ? "NULL" : String(v), pad = new Array(w[i] - s.length + 1).join(" ");
+        return !head && num[i] ? pad + s : s + pad;
+      }).join(" | ") + " |";
+    };
+    return [line, fmt(cols, true), line].concat(data.map(function (r) { return fmt(r); }), [line]).join("\n");
+  }
+  function inSet(n, ms) { return n === 0 ? "Empty set (0.00 sec)" : n + (n === 1 ? " row" : " rows") + " in set (0.0" + (ms || 0) + " sec)"; }
+  function err(code, state, msg) { return { err: "ERROR " + code + " (" + state + "): " + msg }; }
+
+  var dbName = "shop";
+  function run(sql) {
+    var s = sql.trim().replace(/;+\s*$/, "").trim();
+    var m;
+    if (!s) return { text: "" };
+    if (/^(help|\\h|\?)$/i.test(s)) return { text: t(
+      "Diese Demo kennt:\n  SHOW DATABASES; SHOW TABLES; DESCRIBE product;\n  SELECT * FROM customer; SELECT name, price FROM product WHERE price > 500 ORDER BY price DESC LIMIT 3;\n  SELECT COUNT(*) FROM orders; SELECT VERSION(); clear; exit\nDie echte Konsole kann alles: mysql -u root, sobald EasyMySQL installiert ist.",
+      "This demo knows:\n  SHOW DATABASES; SHOW TABLES; DESCRIBE product;\n  SELECT * FROM customer; SELECT name, price FROM product WHERE price > 500 ORDER BY price DESC LIMIT 3;\n  SELECT COUNT(*) FROM orders; SELECT VERSION(); clear; exit\nThe real console does everything: mysql -u root, once EasyMySQL is installed.") };
+    if (/^(exit|quit|\\q)$/i.test(s)) return { text: "Bye", exit: true };
+    if (/^(clear|cls|\\c)$/i.test(s)) return { clear: true };
+    if (/^show\s+databases$/i.test(s)) return { text: table(["Database"], [["information_schema"], ["mysql"], ["shop"]]) + "\n" + inSet(3) };
+    if ((m = /^use\s+`?(\w+)`?$/i.exec(s))) {
+      if (!/^(shop|mysql|information_schema)$/i.test(m[1])) return err(1049, "42000", "Unknown database '" + m[1] + "'");
+      dbName = m[1].toLowerCase();
+      return { text: "Database changed", db: dbName };
+    }
+    var tab = function (name) {
+      var k = name.replace(/`/g, "").toLowerCase().replace(/^shop\./, "");
+      return dbName === "shop" ? DB[k] : null;
+    };
+    if (/^show\s+tables$/i.test(s)) {
+      var names = dbName === "shop" ? Object.keys(DB).map(function (k) { return [k]; }) : [];
+      return { text: names.length ? table(["Tables_in_" + dbName], names) + "\n" + inSet(names.length) : inSet(0) };
+    }
+    if ((m = /^(?:describe|desc|show\s+columns\s+from)\s+([`\w.]+)$/i.exec(s))) {
+      var d = tab(m[1]);
+      if (!d) return err(1146, "42S02", "Table '" + dbName + "." + m[1] + "' doesn't exist");
+      return { text: table(["Field", "Type", "Null", "Key", "Extra"], d.cols) + "\n" + inSet(d.cols.length, 1) };
+    }
+    if (/^select\s+version\(\)$/i.test(s)) return { text: table(["VERSION()"], [[(rel && rel.mariadb ? rel.mariadb : "12.3.3") + "-MariaDB"]]) + "\n" + inSet(1) };
+    if (/^select\s+(now|current_timestamp)\(\)$/i.test(s)) {
+      var now = new Date(), p = function (n) { return (n < 10 ? "0" : "") + n; };
+      var v = now.getFullYear() + "-" + p(now.getMonth() + 1) + "-" + p(now.getDate()) + " " + p(now.getHours()) + ":" + p(now.getMinutes()) + ":" + p(now.getSeconds());
+      return { text: table([/now/i.test(s) ? "NOW()" : "CURRENT_TIMESTAMP()"], [[v]]) + "\n" + inSet(1) };
+    }
+    m = /^select\s+(.+?)\s+from\s+([`\w.]+)(?:\s+where\s+(\w+)\s*(=|<>|!=|>=|<=|>|<|like)\s*('[^']*'|-?[\d.]+))?(?:\s+order\s+by\s+(\w+)(?:\s+(asc|desc))?)?(?:\s+limit\s+(\d+))?$/i.exec(s);
+    if (m) {
+      var tb = tab(m[2]);
+      if (!tb) return err(1146, "42S02", "Table '" + dbName + "." + m[2].replace(/`/g, "") + "' doesn't exist");
+      var names2 = tb.cols.map(function (c) { return c[0]; });
+      var idx = function (c) { return names2.indexOf(c.replace(/`/g, "").toLowerCase()); };
+      var data = tb.rows.slice();
+      if (m[3]) {
+        var ci = idx(m[3]);
+        if (ci < 0) return err(1054, "42S22", "Unknown column '" + m[3] + "' in 'WHERE'");
+        var raw = m[5], isStr = raw[0] === "'", val = isStr ? raw.slice(1, -1) : parseFloat(raw), op = m[4].toLowerCase();
+        data = data.filter(function (r) {
+          var x = isStr ? String(r[ci]) : parseFloat(r[ci]);
+          if (op === "like") { var re = new RegExp("^" + String(val).replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/%/g, ".*").replace(/_/g, ".") + "$", "i"); return re.test(String(r[ci])); }
+          if (isStr) { x = x.toLowerCase(); val = String(val).toLowerCase(); }
+          return op === "=" ? x == val : op === "<>" || op === "!=" ? x != val : op === ">" ? x > val : op === "<" ? x < val : op === ">=" ? x >= val : x <= val;
+        });
+      }
+      if (/^count\(\s*\*\s*\)$/i.test(m[1].trim())) return { text: table(["COUNT(*)"], [[data.length]]) + "\n" + inSet(1) };
+      if (m[6]) {
+        var oi = idx(m[6]);
+        if (oi < 0) return err(1054, "42S22", "Unknown column '" + m[6] + "' in 'ORDER BY'");
+        var dir = (m[7] || "asc").toLowerCase() === "desc" ? -1 : 1;
+        data.sort(function (a, b) { var x = a[oi], y = b[oi], nx = parseFloat(x), ny = parseFloat(y); if (!isNaN(nx) && !isNaN(ny)) { x = nx; y = ny; } return (x > y ? 1 : x < y ? -1 : 0) * dir; });
+      }
+      if (m[8]) data = data.slice(0, +m[8]);
+      var want = m[1].trim() === "*" ? names2 : m[1].split(",").map(function (c) { return c.trim(); });
+      for (var i = 0; i < want.length; i++) {
+        if (idx(want[i]) < 0) return err(1054, "42S22", "Unknown column '" + want[i] + "' in 'SELECT'");
+      }
+      var out = data.map(function (r) { return want.map(function (c) { return r[idx(c)]; }); });
+      return { text: out.length ? table(want.map(function (c) { return c.replace(/`/g, ""); }), out) + "\n" + inSet(out.length) : inSet(0) };
+    }
+    if (/^(insert|update|delete|drop|create|alter|truncate|replace)\b/i.test(s))
+      return err(1290, "HY000", t("Die Demo auf der Website ist nur lesend. In EasyMySQL geht das natürlich.", "The demo on the website is read-only. In EasyMySQL this works, of course."));
+    return err(1064, "42000", t("Das kennt diese Demo nicht. Tippe help für Beispiele.", "This demo does not know that. Type help for examples."));
+  }
+
+  // ---- Terminal ------------------------------------------------------------
+  var OS = {
+    win: { ps: "PS>", prompt: "PS C:\\Users\\du>", promptEn: "PS C:\\Users\\you>", cmd: "irm mysql.benjaminberger.at/install | iex", sys: "Windows 11, 64-bit (build 26100)", mode: "installer, for all users", file: "EasyMySQL-Setup-", ext: ".exe", size: 73.2, dir: "C:\\Program Files\\EasyMySQL", extra: "MariaDB, Start menu entry, PATH (easymysql, mysql)", client: "mysql -u root" },
+    mac: { ps: "%", prompt: "du@mac ~ %", promptEn: "you@mac ~ %", cmd: "curl -fsSL mysql.benjaminberger.at/install | sh", sys: "macOS 15.4, arm64 (universal app: Apple Silicon and Intel)", file: "EasyMySQL-macos-universal-", ext: ".tar.gz", size: 21.4, dir: "/Applications/EasyMySQL.app", extra: "Command: ~/.local/bin/easymysql", mariadb: "MariaDB found: /opt/homebrew/bin/mariadbd", client: "mariadb -u root" },
+    linux: { ps: "$", prompt: "du@linux:~$", promptEn: "you@linux:~$", cmd: "curl -fsSL mysql.benjaminberger.at/install | sh", sys: "Ubuntu 24.04 LTS, x86_64", file: "EasyMySQL-linux-x64-", ext: ".tar.gz", size: 19.8, dir: "~/.local/share/easymysql-app/easymysql", extra: "Menu entry: ~/.local/share/applications/easymysql.desktop", mariadb: "MariaDB found: /usr/sbin/mariadbd", client: "mariadb -u root" },
+  };
+
+  var term = (function () {
+    var screen = $("#screen"), out = $("#out"), form = $("#sql"), input = $("#sql-in"), promptEl = $("#prompt");
+    var os = "win", token = 0, history = [], hpos = 0;
+
+    function atBottom() { return screen.scrollHeight - screen.scrollTop - screen.clientHeight < 24; }
+    function stick(fn) {
+      var b = atBottom();
+      fn();
+      if (b) screen.scrollTop = screen.scrollHeight;
+    }
+    // Zeile aus Teilen [Klasse, Text]
+    function line(parts) {
+      var el = document.createElement("span");
+      el.className = "ln";
+      (typeof parts === "string" ? [["", parts]] : parts).forEach(function (p) {
+        var s = document.createElement("span");
+        if (p[0]) s.className = p[0];
+        s.textContent = p[1];
+        el.appendChild(s);
+      });
+      el.appendChild(document.createTextNode("\n"));
+      stick(function () { out.appendChild(el); });
+      return el;
+    }
+    function sleep(ms, tk) { return new Promise(function (ok, no) { setTimeout(function () { tk === token ? ok() : no(); }, still ? 0 : ms); }); }
+    function type(promptText, text, tk) {
+      var el = line([["w", promptText + " "], ["c", ""], ["cur", ""]]);
+      var c = el.children[1];
+      if (still) { c.textContent = text; el.removeChild(el.children[2]); return Promise.resolve(); }
+      var i = 0;
+      return new Promise(function (ok, no) {
+        (function next() {
+          if (tk !== token) return no();
+          if (i >= text.length) { el.removeChild(el.children[2]); return ok(); }
+          c.textContent += text[i++];
+          setTimeout(next, 18 + Math.random() * 38);
+        })();
+      });
+    }
+    function version() { return rel && rel.version ? rel.version : "7.0.0"; }
+    function me() { return de() ? OS[os].prompt : OS[os].promptEn; }
+
+    async function play() {
+      var tk = ++token, o = OS[os];
+      out.textContent = "";
+      form.hidden = true;
+      dbName = "shop";
+      try {
+        await sleep(500, tk);
+        await type(me(), o.cmd, tk);
+        await sleep(300, tk);
+        line(""); line([["a", "     .-~~~~~~-.   "], ["w", "EasyMySQL"]]);
+        line([["a", "    (~~~~~~~~~~)  "], ["", "MariaDB server and database manager"]]);
+        line([["a", "    |~~~~~~~~~~|  "], ["d", "SQL editor, ER diagrams, backups, AI assistants"]]);
+        line([["a", "    (__________)  "], ["d", "mysql.benjaminberger.at"]]);
+        var steps = [
+          ["Checking this " + (os === "win" ? "PC" : "computer"), [["g", "+ "], ["", o.sys]]],
+          ["Finding the newest version", [["g", "+ "], ["", "EasyMySQL " + version() + (rel && rel.mariadb && os === "win" ? ", MariaDB " + rel.mariadb : "")]]],
+        ];
+        for (var i = 0; i < steps.length; i++) {
+          await sleep(380, tk);
+          line(""); line([["d", "  " + (i + 1) + "/5  "], ["w", steps[i][0]]]);
+          await sleep(260, tk);
+          line([["", "        "]].concat(steps[i][1]));
+        }
+        await sleep(300, tk);
+        line(""); line([["d", "  3/5  "], ["w", "Downloading"]]);
+        var bar = line([["y", ""]]), total = o.size;
+        for (var p = 0; p <= 28; p += still ? 28 : 2) {
+          var done = (total * p / 28).toFixed(1);
+          bar.children[0].textContent = "        [" + new Array(p + 1).join("#") + new Array(29 - p).join("-") + "] " + String(Math.round(p / 28 * 100)).padStart(3) + "%  " + done + " / " + total.toFixed(1) + " MB";
+          await sleep(70, tk);
+        }
+        line(""); line([["d", "  4/5  "], ["w", "Verifying the SHA-256 checksum"]]);
+        await sleep(350, tk);
+        var f = rel && rel.files && rel.files[os === "win" ? "setup" : os === "mac" ? "macos" : "linux"];
+        line([["", "        "], ["g", "+ "], ["m", f && f.sha256 ? f.sha256 : "4f1c9e0b7a6d52e83c1f0a9b8e7d6c5b4a39281706f5e4d3c2b1a09f8e7d6c5b"]]);
+        await sleep(300, tk);
+        line(""); line([["d", "  5/5  "], ["w", "Installing"]]);
+        if (os === "win") { await sleep(300, tk); line([["", "        "], ["d", ". "], ["m", "Windows asks for administrator rights now ..."]]); }
+        await sleep(700, tk);
+        line([["", "        "], ["g", "+ "], ["", (os === "linux" ? "Program: " : os === "mac" ? "App: " : "Installed to ") + o.dir]]);
+        line([["", "        "], ["g", "+ "], ["", o.extra]]);
+        if (o.mariadb) { await sleep(250, tk); line(""); line([["", "        "], ["g", "+ "], ["", o.mariadb]]); }
+        await sleep(350, tk);
+        line(""); line([["", "        "], ["d", ". "], ["m", "Found: Claude Code, Codex"]]);
+        line([["", "        "], ["a", "? "], ["", "Connect EasyMySQL to your AI assistants (read-only until you allow changes)? [Y/n] "], ["w", "y"]]);
+        await sleep(450, tk);
+        line([["", "  "], ["g", "+ "], ["", "Claude Code  MCP server (user scope), skill in ~/.claude/skills/easymysql"]]);
+        line([["", "  "], ["g", "+ "], ["", "Codex        MCP server in ~/.codex/config.toml, skill in ~/.agents/skills/easymysql"]]);
+        await sleep(400, tk);
+        line(""); line([["g", "  Done. "], ["w", "EasyMySQL " + version() + " is installed."]]);
+        line("");
+        await sleep(900, tk);
+        await type(me(), o.client, tk);
+        line("Welcome to the MariaDB monitor.  Commands end with ; or \\g.");
+        line("Your MariaDB connection id is 3");
+        line("Server version: " + (rel && rel.mariadb ? rel.mariadb : "12.3.3") + "-MariaDB EasyMySQL");
+        line("");
+        line([["m", "Type 'help;' or '\\h' for help. Type '\\c' to clear the current input statement."]]);
+        line("");
+        await sleep(500, tk);
+        await type("MariaDB [(none)]>", "USE shop;", tk);
+        line("Database changed");
+        await sleep(400, tk);
+        var q = "SELECT name, price FROM product WHERE price > 500 ORDER BY price DESC LIMIT 4;";
+        await type("MariaDB [shop]>", q, tk);
+        line(run(q).text);
+        line("");
+        promptEl.textContent = "MariaDB [" + dbName + "]>";
+        stick(function () { form.hidden = false; });
+      } catch (e) { /* neu gestartet */ }
+    }
+
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var v = input.value;
+      input.value = "";
+      if (v.trim()) { history.push(v); hpos = history.length; }
+      line([["w", "MariaDB [" + dbName + "]> "], ["c", v]]);
+      var r = run(v);
+      if (r.clear) { out.textContent = ""; return; }
+      if (r.err) line([["e", r.err]]);
+      else if (r.text) line(r.text);
+      if (r.exit) {
+        form.hidden = true;
+        line([["d", t("Zum Neustarten: Nochmal abspielen.", "To start again: Replay.")]]);
+        return;
+      }
+      line("");
+      promptEl.textContent = "MariaDB [" + dbName + "]>";
+      screen.scrollTop = screen.scrollHeight;
+    });
+    input.addEventListener("keydown", function (e) {
+      if (e.key === "ArrowUp" && hpos > 0) { input.value = history[--hpos]; e.preventDefault(); }
+      else if (e.key === "ArrowDown") { hpos = Math.min(history.length, hpos + 1); input.value = history[hpos] || ""; e.preventDefault(); }
+    });
+    // Klick ins Terminal setzt den Cursor in die Eingabe (ohne Markieren zu stoeren)
+    screen.addEventListener("click", function () {
+      if (!form.hidden && !String(getSelection())) input.focus({ preventScroll: true });
+    });
+
+    function setOs(next) {
+      os = next;
+      $$(".os button").forEach(function (b) { b.setAttribute("aria-selected", b.dataset.os === os); b.tabIndex = b.dataset.os === os ? 0 : -1; });
+      $("#hero-ps").textContent = OS[os].ps;
+      $("#hero-cmd").textContent = OS[os].cmd;
+      play();
+    }
+    var tabs = $$(".os button");
+    tabs.forEach(function (b, i) {
+      b.tabIndex = i === 0 ? 0 : -1;
+      b.addEventListener("click", function () { if (b.dataset.os !== os) setOs(b.dataset.os); });
+      b.addEventListener("keydown", function (e) {
+        var n = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+        if (!n) return;
+        var nb = tabs[(i + n + tabs.length) % tabs.length];
+        nb.focus();
+        setOs(nb.dataset.os);
+      });
+    });
+    $("#replay").addEventListener("click", play);
+
+    // Passendes System vorwaehlen
+    var ua = navigator.userAgent;
+    var guess = /Mac OS X|Macintosh/.test(ua) && !/iPhone|iPad/.test(ua) ? "mac" : /Linux|X11|CrOS/.test(ua) && !/Android/.test(ua) ? "linux" : "win";
+    return { start: function () { setOs(guess); }, relang: function () { /* Ausgabe bleibt englisch wie das echte Skript */ } };
+  })();
+  term.start();
 })();

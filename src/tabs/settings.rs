@@ -34,6 +34,7 @@ pub const SECTIONS: &[(&str, &str)] = &[
     ("verbindung", "Verbindung"),
     ("server", "Server"),
     ("sicherungen", "Sicherungen"),
+    ("ki", "KI-Assistenten"),
     ("tastenkuerzel", "Tastenkürzel"),
 ];
 
@@ -42,7 +43,7 @@ const GROUPS: &[(&str, &[&str])] = &[
     ("Allgemein", &["darstellung", "start", "updates", "maus", "dateien", "speicherorte"]),
     ("Editor", &["editor", "abfragen", "tastenkuerzel"]),
     ("Programmieren", &["ausfuehren", "java", "python", "javascript", "sprachserver", "git", "terminal"]),
-    ("Datenbank", &["verbindung", "server", "sicherungen"]),
+    ("Datenbank", &["verbindung", "server", "sicherungen", "ki"]),
 ];
 
 fn section_icon(id: &str) -> crate::icons::Icon {
@@ -66,6 +67,7 @@ fn section_icon(id: &str) -> crate::icons::Icon {
         "server" => Icon::Database,
         "sicherungen" => Icon::Shield,
         "tastenkuerzel" => Icon::Key,
+        "ki" => Icon::Sparkles,
         _ => Icon::Settings,
     }
 }
@@ -106,6 +108,9 @@ pub struct SettingsTab {
     pending_root: Option<std::path::PathBuf>,
     /// Neuer Datenordner des Servers, wartet auf "Daten mitnehmen?" (None im Inneren = Standard)
     pending_data: Option<Option<std::path::PathBuf>>,
+    /// Laufende Einrichtung in Claude Code/Codex und ihr letztes Ergebnis (ok?, Text)
+    ai_job: Option<std::sync::mpsc::Receiver<Vec<(bool, String)>>>,
+    ai_report: Vec<(bool, String)>,
 }
 
 impl SettingsTab {
@@ -122,6 +127,8 @@ impl SettingsTab {
             server_edit: None,
             pending_root: None,
             pending_data: None,
+            ai_job: None,
+            ai_report: Vec::new(),
         }
     }
 
@@ -777,6 +784,94 @@ impl TabView for SettingsTab {
                     if self.backup != old {
                         self.backup.save();
                     }
+                }
+                if page == "ki" {
+                    self.heading(ui, "ki", crate::i18n::text("KI-Assistenten"));
+                    ui.label(RichText::new(crate::i18n::tr(
+                        "Claude Code, Codex und andere KI-Assistenten arbeiten über den MCP-Server von EasyMySQL mit Ihren Datenbanken: Schema lesen, Abfragen ausführen und – wenn erlaubt – Daten ändern.",
+                        "Claude Code, Codex and other AI assistants work with your databases through the EasyMySQL MCP server: they read the schema, run queries and – if allowed – change data.",
+                    )).color(pal.text_weak));
+                    ui.add_space(8.0);
+                    grid(ui, "g-ai", &mut |ui| {
+                        crate::widgets::row(ui, crate::i18n::tr("Änderungen", "Changes"), |ui| {
+                            crate::widgets::switch(ui, &mut s.ai.allow_write, crate::i18n::tr("KI darf Daten und Struktur ändern", "AI may change data and structure"))
+                                .on_hover_text(crate::i18n::tr(
+                                    "Aus: nur lesen (SELECT, SHOW, EXPLAIN …), jede Abfrage in einer READ-ONLY-Transaktion. An: vor DROP, TRUNCATE und DELETE/UPDATE ohne WHERE sichert EasyMySQL die betroffenen Datenbanken.",
+                                    "Off: read only (SELECT, SHOW, EXPLAIN …), every query in a READ ONLY transaction. On: before DROP, TRUNCATE and DELETE/UPDATE without WHERE, EasyMySQL backs up the affected databases.",
+                                ));
+                        });
+                        crate::widgets::row(ui, crate::i18n::tr("Standard-Datenbank", "Default database"), |ui| {
+                            ui.add(egui::TextEdit::singleline(&mut s.ai.database).hint_text(crate::i18n::tr("keine", "none")).desired_width(220.0));
+                        });
+                        crate::widgets::row(ui, crate::i18n::tr("Zeilen je Abfrage", "Rows per query"), |ui| {
+                            crate::widgets::drag(ui, &mut s.ai.max_rows, 1..=5000, "");
+                        });
+                    });
+                    ui.add_space(8.0);
+                    if let Some(rx) = &self.ai_job {
+                        match rx.try_recv() {
+                            Ok(r) => {
+                                self.ai_report = r;
+                                self.ai_job = None;
+                            }
+                            Err(std::sync::mpsc::TryRecvError::Disconnected) => self.ai_job = None,
+                            Err(std::sync::mpsc::TryRecvError::Empty) => ctx.request_repaint_after(std::time::Duration::from_millis(200)),
+                        }
+                    }
+                    grid(ui, "g-ai-setup", &mut |ui| {
+                        use crate::mcp::setup::{Target, available};
+                        crate::widgets::row(ui, crate::i18n::tr("Eintragen in", "Register in"), |ui| {
+                            ui.horizontal(|ui| {
+                                let busy = self.ai_job.is_some();
+                                let mut start: Option<(Vec<Target>, bool)> = None;
+                                for t in [Target::Claude, Target::Codex] {
+                                    let label = if available(t) { t.label().to_string() } else { crate::tr_format!("{} (nicht gefunden)", "{} (not found)", t.label()) };
+                                    if ui.add_enabled(!busy, egui::Button::new(label)).clicked() {
+                                        start = Some((vec![t], false));
+                                    }
+                                }
+                                let remove = ui
+                                    .add_enabled(!busy, egui::Button::new(crate::i18n::tr("Entfernen", "Remove")))
+                                    .on_hover_text(crate::i18n::tr("Eintrag und Skill aus beiden Assistenten entfernen", "Remove the entry and skill from both assistants"));
+                                if remove.clicked() {
+                                    start = Some((vec![Target::Claude, Target::Codex], true));
+                                }
+                                if busy {
+                                    ui.spinner();
+                                }
+                                if let Some((targets, remove)) = start {
+                                    let (tx, rx) = std::sync::mpsc::channel();
+                                    let ctx = ui.ctx().clone();
+                                    std::thread::spawn(move || {
+                                        let r = crate::mcp::setup::apply(&targets, remove)
+                                            .into_iter()
+                                            .map(|(t, r)| match r {
+                                                Ok(m) => (true, format!("{}: {m}", t.label())),
+                                                Err(e) => (false, format!("{}: {e}", t.label())),
+                                            })
+                                            .collect();
+                                        let _ = tx.send(r);
+                                        ctx.request_repaint();
+                                    });
+                                    self.ai_job = Some(rx);
+                                }
+                            });
+                        });
+                        for (ok, text) in &self.ai_report {
+                            ui.label(RichText::new(format!("{} {text}", if *ok { "✓" } else { "✗" })).color(if *ok { pal.ok_text } else { pal.error_text }));
+                        }
+                        crate::widgets::row(ui, crate::i18n::tr("Andere Programme", "Other clients"), |ui| {
+                            let cmd = format!("\"{}\" mcp", crate::updates::exe_path().display());
+                            ui.horizontal(|ui| {
+                                ui.label(RichText::new(&cmd).monospace().size(12.0));
+                                if ui.small_button(crate::i18n::tr("Kopieren", "Copy")).clicked() {
+                                    ui.ctx().copy_text(cmd.clone());
+                                }
+                            })
+                            .response
+                            .on_hover_text(crate::i18n::tr("Befehl für jeden MCP-Client (stdio), etwa Cursor, VS Code oder Claude Desktop.", "Command for any MCP client (stdio), e.g. Cursor, VS Code or Claude Desktop."));
+                        });
+                    });
                 }
                 if page == "tastenkuerzel" {
                     self.heading(ui, "tastenkuerzel", crate::i18n::text("Tastenkürzel"));

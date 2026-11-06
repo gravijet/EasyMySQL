@@ -1,0 +1,12 @@
+{
+  "name": "easymysql",
+  "interface": { "displayName": "EasyMySQL" },
+  "plugins": [
+    {
+      "name": "easymysql",
+      "source": { "source": "local", "path": "./plugins/easymysql" },
+      "policy": { "installation": "AVAILABLE", "authentication": "ON_INSTALL" },
+      "category": "Developer Tools"
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "name": "easymysql",
+  "version": "7.0.0",
+  "description": "MariaDB/MySQL databases for Claude Code: schema, read-only queries and safe changes through the EasyMySQL MCP server.",
+  "author": { "name": "Benjamin Berger", "url": "https://benjaminberger.at" },
+  "homepage": "https://mysql.benjaminberger.at",
+  "repository": "https://github.com/gravijet/EasyMySQL",
+  "license": "MIT",
+  "keywords": ["mariadb", "mysql", "sql", "database", "mcp"]
+}

@@ -22,6 +22,25 @@ jobs:
           git config --global user.email "ci@example.invalid"
           cargo test --locked
 
+  # macOS: bauen und testen, damit das Release fuer Mac nicht erst beim Veroeffentlichen scheitert
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Tests
+        run: |
+          git config --global user.name "CI"
+          git config --global user.email "ci@example.invalid"
+          cargo test --locked -- --skip debugging_a_program_stops_at_breakpoints
+      - name: MCP-Server antwortet
+        run: |
+          cargo build --locked
+          printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}' '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
+            | ./target/debug/easymysql mcp | tee out.txt
+          grep -q '"name":"get_schema"' out.txt
+
   windows-ui:
     runs-on: windows-latest
     timeout-minutes: 30

@@ -184,7 +184,8 @@ impl EasyApp {
             );
         }
         // Ohne automatischen Start startet man den Server ueber das Menue "Server"
-        if settings.server_autostart {
+        // Das MCP-Werkzeug `start_server` oeffnet EasyMySQL, damit der Server laeuft
+        if settings.server_autostart || std::env::var_os(crate::mcp::START_SERVER_VAR).is_some() {
             let ctx = cc.egui_ctx.clone();
             server.start(move || ctx.request_repaint());
         }

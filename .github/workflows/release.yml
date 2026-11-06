@@ -1,4 +1,4 @@
-# Build the Windows installer and publish a GitHub release.
+# Build Windows (installer, portable), macOS (universal app) and Linux packages and publish one GitHub release.
 name: EasyMySQL Release
 
 on:
@@ -179,62 +179,192 @@ jobs:
           Copy-Item target/release/easymysql.exe build/app/EasyMySQL.exe
           Compress-Archive -Path build/app/EasyMySQL.exe -DestinationPath "dist/EasyMySQL-app-${{ steps.ver.outputs.version }}.zip" -CompressionLevel Optimal
           Get-ChildItem dist | Select-Object Name, Length
-          # Pruefsummen als eigene Datei: die Website liest sie auch, wenn die GitHub-API gerade nicht antwortet
-          Get-ChildItem dist -File | Where-Object { $_.Name -ne 'SHA256SUMS.txt' } | ForEach-Object { "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)" } | Set-Content -Encoding ascii dist/SHA256SUMS.txt
-          Get-Content dist/SHA256SUMS.txt
+          # Die MariaDB-Version braucht der Veroeffentlichungsschritt fuer den Text des Releases
+          Set-Content -Encoding ascii dist/mariadb-version.txt "${{ steps.mdb.outputs.version }}"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: EasyMySQL-Setup
+          name: release-windows
           path: dist/*
+
+  # macOS (one universal app for Apple Silicon and Intel) and Linux (x86_64).
+  # MariaDB is not bundled there: install.sh installs it with Homebrew or the package manager.
+  unix:
+    needs: check
+    if: needs.check.outputs.new == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            kind: macos
+          - os: ubuntu-22.04
+            kind: linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.kind == 'macos' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-${{ matrix.kind }}
+
+      - name: Read version
+        id: ver
+        run: echo "version=$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"(.+)".*/\1/')" >> "$GITHUB_OUTPUT"
+
+      - name: Unit tests
+        run: cargo test --locked -- --skip debugging_a_program_stops_at_breakpoints
+
+      - name: Build macOS app (universal)
+        if: matrix.kind == 'macos'
+        env:
+          MACOSX_DEPLOYMENT_TARGET: "11.0"
+        run: |
+          set -euo pipefail
+          v="${{ steps.ver.outputs.version }}"
+          cargo build --release --locked --target aarch64-apple-darwin
+          cargo build --release --locked --target x86_64-apple-darwin
+          app="build/EasyMySQL.app/Contents"
+          mkdir -p "$app/MacOS" "$app/Resources" dist
+          lipo -create -output "$app/MacOS/easymysql" target/aarch64-apple-darwin/release/easymysql target/x86_64-apple-darwin/release/easymysql
+          lipo -info "$app/MacOS/easymysql"
+          # Icon: 256 px PNG from the program itself, scaled into an .icns
+          "$app/MacOS/easymysql" __write-icon build/icon.png
+          mkdir -p build/EasyMySQL.iconset
+          for s in 16 32 64 128 256; do
+            sips -z $s $s build/icon.png --out "build/EasyMySQL.iconset/icon_${s}x${s}.png" >/dev/null
+          done
+          for s in 16 32 64 128; do cp "build/EasyMySQL.iconset/icon_$((s*2))x$((s*2)).png" "build/EasyMySQL.iconset/icon_${s}x${s}@2x.png"; done
+          iconutil -c icns build/EasyMySQL.iconset -o "$app/Resources/EasyMySQL.icns"
+          cat > "$app/Info.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>CFBundleName</key><string>EasyMySQL</string>
+            <key>CFBundleDisplayName</key><string>EasyMySQL</string>
+            <key>CFBundleIdentifier</key><string>at.benjaminberger.easymysql</string>
+            <key>CFBundleVersion</key><string>$v</string>
+            <key>CFBundleShortVersionString</key><string>$v</string>
+            <key>CFBundleExecutable</key><string>easymysql</string>
+            <key>CFBundleIconFile</key><string>EasyMySQL</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>LSMinimumSystemVersion</key><string>11.0</string>
+            <key>NSHighResolutionCapable</key><true/>
+            <key>CFBundleDocumentTypes</key><array><dict>
+              <key>CFBundleTypeName</key><string>SQL</string>
+              <key>CFBundleTypeRole</key><string>Editor</string>
+              <key>CFBundleTypeExtensions</key><array><string>sql</string></array>
+            </dict></array>
+          </dict></plist>
+          PLIST
+          plutil -lint "$app/Info.plist"
+          # Ad-hoc signature: Apple Silicon only runs signed code
+          codesign --force --deep --sign - build/EasyMySQL.app
+          "$app/MacOS/easymysql" --version
+          tar -C build -czf "dist/EasyMySQL-macos-universal-$v.tar.gz" EasyMySQL.app
+
+      - name: Build Linux package
+        if: matrix.kind == 'linux'
+        run: |
+          set -euo pipefail
+          v="${{ steps.ver.outputs.version }}"
+          cargo build --release --locked
+          p="build/EasyMySQL"
+          mkdir -p "$p" dist
+          cp target/release/easymysql "$p/easymysql"
+          "$p/easymysql" __write-icon "$p/easymysql.png"
+          printf '%s\n' '[Desktop Entry]' 'Type=Application' 'Name=EasyMySQL' 'Comment=MariaDB server and database manager' \
+            'Exec=easymysql %F' 'Icon=easymysql' 'Terminal=false' 'Categories=Development;Database;' 'MimeType=application/sql;' > "$p/easymysql.desktop"
+          "$p/easymysql" --version
+          tar -C build -czf "dist/EasyMySQL-linux-x64-$v.tar.gz" EasyMySQL
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.kind }}
+          path: dist/*
+
+  # One release with every package. macOS/Linux are optional: a failure there never blocks Windows.
+  publish:
+    needs: [check, windows, unix]
+    if: always() && needs.check.outputs.new == 'true' && needs.windows.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        id: sums
+        run: |
+          set -euo pipefail
+          v=$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"(.+)".*/\1/')
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          mdb=$(cat dist/mariadb-version.txt 2>/dev/null || echo "")
+          echo "mariadb=$mdb" >> "$GITHUB_OUTPUT"
+          rm -f dist/mariadb-version.txt
+          # Pruefsummen als eigene Datei: die Website liest sie auch, wenn die GitHub-API gerade nicht antwortet
+          (cd dist && sha256sum -- * | sed 's/ \*/  /' > SHA256SUMS.txt && cat SHA256SUMS.txt)
+          ls dist/EasyMySQL-macos-universal-*.tar.gz >/dev/null 2>&1 && echo "mac=true" >> "$GITHUB_OUTPUT" || echo "mac=false" >> "$GITHUB_OUTPUT"
+          ls dist/EasyMySQL-linux-x64-*.tar.gz >/dev/null 2>&1 && echo "linux=true" >> "$GITHUB_OUTPUT" || echo "linux=false" >> "$GITHUB_OUTPUT"
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.ver.outputs.version }}
-          name: EasyMySQL ${{ steps.ver.outputs.version }}
+          tag_name: v${{ steps.sums.outputs.version }}
+          name: EasyMySQL ${{ steps.sums.outputs.version }}
           target_commitish: ${{ github.sha }}
           make_latest: true
-          files: |
-            dist/EasyMySQL-Setup-${{ steps.ver.outputs.version }}.exe
-            dist/EasyMySQL-portable-${{ steps.ver.outputs.version }}.zip
-            dist/EasyMySQL-app-${{ steps.ver.outputs.version }}.zip
-            dist/SHA256SUMS.txt
+          files: dist/*
           body: |
-            ## EasyMySQL ${{ steps.ver.outputs.version }}
+            ## EasyMySQL ${{ steps.sums.outputs.version }}
 
-            MariaDB server and graphical database manager for Windows (64-bit) in one application.
+            MariaDB server and graphical database manager in one application — for Windows, macOS and Linux.
 
-            ### Download
+            ### Install with one command
 
-            - **`EasyMySQL-Setup-${{ steps.ver.outputs.version }}.exe`** — recommended. Installs MariaDB, optional drivers and environment variables. Works offline; MariaDB is included.
-            - `EasyMySQL-portable-${{ steps.ver.outputs.version }}.zip` — extract and run `EasyMySQL.exe`. Does not modify `PATH`.
+            ```powershell
+            # Windows (PowerShell)
+            irm https://mysql.benjaminberger.at/install.ps1 | iex
+            ```
 
-            ### Installation
+            ```sh
+            # macOS and Linux
+            curl -fsSL https://mysql.benjaminberger.at/install.sh | sh
+            ```
 
-            1. Download and run `EasyMySQL-Setup-${{ steps.ver.outputs.version }}.exe`.
-               If Windows SmartScreen reports an unknown publisher, choose *More info → Run anyway*.
-            2. Launch EasyMySQL. The database server is initialized automatically on first launch.
-            3. Open Command Prompt (cmd) and enter `mysql -u root`.
+            The script verifies the SHA-256 checksum, installs EasyMySQL (and MariaDB on macOS/Linux) and offers to connect Claude Code and Codex.
+
+            ### Downloads
+
+            - **`EasyMySQL-Setup-${{ steps.sums.outputs.version }}.exe`** — Windows 10/11 (64-bit), recommended. Installs MariaDB, optional drivers and environment variables. Works offline; MariaDB is included.
+            - `EasyMySQL-portable-${{ steps.sums.outputs.version }}.zip` — Windows; extract and run `EasyMySQL.exe`. Does not modify `PATH`.
+            - `EasyMySQL-macos-universal-${{ steps.sums.outputs.version }}.tar.gz` — macOS 11+ (Apple Silicon and Intel). Needs MariaDB from Homebrew (`brew install mariadb`).${{ steps.sums.outputs.mac != 'true' && ' *Not built for this release.*' || '' }}
+            - `EasyMySQL-linux-x64-${{ steps.sums.outputs.version }}.tar.gz` — Linux x86_64 (glibc 2.35+). Needs the MariaDB server binaries from your package manager.${{ steps.sums.outputs.linux != 'true' && ' *Not built for this release.*' || '' }}
+
+            If Windows SmartScreen reports an unknown publisher, choose *More info → Run anyway*. On macOS the app is ad-hoc signed; when it was downloaded in a browser, right-click → *Open* the first time.
+
+            ### AI assistants (new)
+
+            - `easymysql mcp` is an MCP server: Claude Code, Codex, Cursor and others read schemas, run read-only queries and — when allowed under *Settings → AI assistants* — change data, with a backup before destructive statements.
+            - `easymysql setup-ai` registers the server and a skill in Claude Code and Codex. Plugins: `/plugin marketplace add gravijet/EasyMySQL` (Claude Code), `codex plugin marketplace add gravijet/EasyMySQL` (Codex).
 
             ### Features
 
-            - Title bar with minimize, maximize and close built into the window; English interface by default, German selectable.
-            - Import from SQLite, MongoDB, CSV, Redis, MariaDB/MySQL and PostgreSQL, from files, web addresses, SSH or servers (TLS, SSH tunnel).
-            - Export to SQL, JSON, CSV, XML, SQLite, PostgreSQL, MongoDB, Redis files or straight to another MariaDB/MySQL, PostgreSQL or Redis server.
-            - ER diagrams with right-angled lines and shared tracks, readable at any zoom.
-            - Updates download and install in the background; a button restarts the app afterwards.
-            - SQL editor, query builder, users and privileges, integrated terminal, automatic backups.
-            - Java, Python and JavaScript/TypeScript: projects with a ready database connection, runtimes and drivers download themselves, tests, a Java debugger, a self-contained .jar, a library search and language servers (errors while typing, go to definition, rename).
-            - Git and GitHub in the sidebar: commit, branches, pull/push, publish, clone, pull requests, issues and Actions.
-            - TLS with an own certificate for the built-in server and MariaDB updates in existing installations (with backup and automatic rollback).
+            - SQL editor with suggestions, checks and fixes; table editing; ER diagrams; query builder; users and privileges; integrated terminal; automatic backups.
+            - Import from SQLite, MongoDB, CSV, Redis, MariaDB/MySQL and PostgreSQL; export to SQL, JSON, CSV, XML, SQLite, PostgreSQL, MongoDB, Redis files or straight to another server.
+            - Java, Python and JavaScript/TypeScript projects with a ready database connection, tests, a Java debugger and language servers.
+            - Git and GitHub in the sidebar; TLS with an own certificate; MariaDB updates with backup and automatic rollback.
 
-            ### Included
+            ### Included (Windows)
 
-            - EasyMySQL ${{ steps.ver.outputs.version }} (Rust)
-            - MariaDB ${{ steps.mdb.outputs.version }} (server and command-line tools such as `mysql` and `mysqldump`)
+            - EasyMySQL ${{ steps.sums.outputs.version }} (Rust)
+            - MariaDB ${{ steps.sums.outputs.mariadb }} (server and command-line tools such as `mysql` and `mysqldump`)
             - MariaDB ODBC driver 3.2.9 and the “EasyMySQL” ODBC data source (optional)
             - Microsoft Visual C++ runtime
-            - Environment variables: `PATH`, `EASYMYSQL_HOME`, `MARIADB_HOME`
+            - Environment variables: `PATH` (`easymysql`, `mysql`), `EASYMYSQL_HOME`, `MARIADB_HOME`
 
-            The database server runs while EasyMySQL is open, including when minimized to the system tray. It does not start automatically with Windows.
+            The database server runs while EasyMySQL is open, including when minimized to the system tray. It does not start automatically with the system.

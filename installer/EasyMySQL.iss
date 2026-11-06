@@ -122,6 +122,8 @@ Root: HKLM; Subkey: "Software\EasyMySQL\Capabilities\FileAssociations"; ValueTyp
 Root: HKLM; Subkey: "Software\RegisteredApplications"; ValueType: string; ValueName: "EasyMySQL"; ValueData: "Software\EasyMySQL\Capabilities"; Flags: uninsdeletevalue
 ; Make mysql, mysqldump and mariadb available in Command Prompt.
 Root: HKLM; Subkey: "SYSTEM\CurrentControlSet\Control\Session Manager\Environment"; ValueType: expandsz; ValueName: "Path"; ValueData: "{olddata};{app}\mariadb\bin"; Check: NeedsAddPath(ExpandConstant('{app}\mariadb\bin'))
+; `easymysql` in every terminal: AI assistants start the MCP server with `easymysql mcp`.
+Root: HKLM; Subkey: "SYSTEM\CurrentControlSet\Control\Session Manager\Environment"; ValueType: expandsz; ValueName: "Path"; ValueData: "{olddata};{app}"; Check: NeedsAddPath(ExpandConstant('{app}'))
 Root: HKLM; Subkey: "SYSTEM\CurrentControlSet\Control\Session Manager\Environment"; ValueType: string; ValueName: "EASYMYSQL_HOME"; ValueData: "{app}"; Flags: uninsdeletevalue
 Root: HKLM; Subkey: "SYSTEM\CurrentControlSet\Control\Session Manager\Environment"; ValueType: string; ValueName: "MARIADB_HOME"; ValueData: "{app}\mariadb"; Flags: uninsdeletevalue
 
@@ -238,6 +240,7 @@ begin
   if CurUninstallStep = usPostUninstall then
   begin
     RemovePath(ExpandConstant('{app}\mariadb\bin'));
+    RemovePath(ExpandConstant('{app}'));
     RegDeleteKeyIncludingSubkeys(HKLM64, DsnKey);
     RegDeleteValue(HKLM64, OdbcSources, 'EasyMySQL');
     MsgBox(CustomMessage('Uninstalled') + #13#10 + #13#10 +

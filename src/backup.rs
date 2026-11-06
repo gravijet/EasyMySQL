@@ -130,6 +130,7 @@ pub fn reason_text(r: &str) -> &str {
         "rettung" => crate::i18n::text("Server-Rettung"),
         "vor-reparatur" => crate::i18n::text("vor der Reparatur"),
         "vor-mariadb-update" => crate::i18n::tr("vor dem MariaDB-Update", "before the MariaDB update"),
+        "vor-ki" => crate::i18n::tr("vor einer Änderung durch KI", "before an AI change"),
         other => other,
     }
 }

@@ -1,0 +1,13 @@
+{
+  "name": "easymysql",
+  "owner": { "name": "Benjamin Berger", "url": "https://benjaminberger.at" },
+  "metadata": { "description": "EasyMySQL for Claude Code" },
+  "plugins": [
+    {
+      "name": "easymysql",
+      "source": "./plugins/easymysql",
+      "description": "MariaDB/MySQL databases through the EasyMySQL MCP server: schema, read-only queries and safe changes.",
+      "category": "database"
+    }
+  ]
+}

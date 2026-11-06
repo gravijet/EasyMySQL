@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "easymysql": {
+      "command": "easymysql",
+      "args": ["mcp"]
+    }
+  }
+}

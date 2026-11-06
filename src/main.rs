@@ -16,6 +16,7 @@ mod mariadb_update;
 mod git;
 mod javagen;
 mod keymap;
+mod mcp;
 mod platform;
 mod profiles;
 mod qhistory;
@@ -57,6 +58,10 @@ fn main() -> eframe::Result {
     // Erhoehter Helfer des Updates: Programmdatei austauschen und beenden
     let args: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
     if let Some(code) = updates::run_helper(&args) {
+        std::process::exit(code);
+    }
+    // Befehle wie `easymysql mcp` (KI-Assistenten) oder `easymysql --version` laufen ohne Fenster
+    if let Some(code) = mcp::run_cli(&args) {
         std::process::exit(code);
     }
     // Nach einem Update neu gestartet: auf das Ende der alten Instanz warten

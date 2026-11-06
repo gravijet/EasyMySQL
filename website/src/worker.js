@@ -11,7 +11,12 @@ const KINDS = {
   app: { match: /^EasyMySQL-app-[\d.]+\.zip$/, name: (v) => `EasyMySQL-app-${v}.zip`, type: "application/zip" },
   setup: { match: /^EasyMySQL-Setup-[\d.]+\.exe$/, name: (v) => `EasyMySQL-Setup-${v}.exe`, type: "application/vnd.microsoft.portable-executable" },
   portable: { match: /^EasyMySQL-portable-[\d.]+\.zip$/, name: (v) => `EasyMySQL-portable-${v}.zip`, type: "application/zip" },
+  macos: { match: /^EasyMySQL-macos-universal-[\d.]+\.tar\.gz$/, name: (v) => `EasyMySQL-macos-universal-${v}.tar.gz`, type: "application/gzip" },
+  linux: { match: /^EasyMySQL-linux-x64-[\d.]+\.tar\.gz$/, name: (v) => `EasyMySQL-linux-x64-${v}.tar.gz`, type: "application/gzip" },
 };
+
+// Installationsskripte: `irm …/install | iex` (PowerShell) und `curl -fsSL …/install | sh` landen beim passenden
+const SCRIPTS = { "/install.ps1": "/install.ps1", "/install.sh": "/install.sh" };
 
 const JSON_HEADERS = {
   "content-type": "application/json; charset=utf-8",
@@ -25,6 +30,7 @@ export default {
     const url = new URL(request.url);
     try {
       if (url.pathname === "/api/release") return await releaseJson(request, env, ctx);
+      if (url.pathname === "/install" || SCRIPTS[url.pathname]) return await script(request, env, url);
       if (url.pathname.startsWith("/download/")) return await download(request, env, ctx, url.pathname.slice("/download/".length));
     } catch (e) {
       return json({ error: "unavailable" }, 503);
@@ -156,6 +162,30 @@ async function releaseJson(request, env, ctx) {
     files[kind] = { name: KINDS[kind].name(rel.version), url: `/download/${kind}`, size: f.size, sha256: f.sha256 };
   }
   return json({ version: rel.version, published: rel.published, mariadb: rel.mariadb, files });
+}
+
+// ---------------------------------------------------------------------------
+// Installationsskripte als Text ausliefern (PowerShell braucht text/plain, sonst liefert irm Bytes)
+
+async function script(request, env, url) {
+  let path = SCRIPTS[url.pathname];
+  if (!path) {
+    const ua = request.headers.get("user-agent") || "";
+    if (/PowerShell/i.test(ua)) path = "/install.ps1";
+    else if (/^(curl|Wget|fetch)\b/i.test(ua) || !/Mozilla/i.test(ua)) path = "/install.sh";
+    // Im Browser: zur Anleitung auf der Seite
+    else return Response.redirect(new URL("/#install", url).toString(), 302);
+  }
+  const asset = await env.ASSETS.fetch(new Request(new URL(path, url), { method: "GET" }));
+  if (!asset.ok) return new Response("Not found", { status: 404 });
+  return new Response(request.method === "HEAD" ? null : asset.body, {
+    headers: {
+      "content-type": "text/plain; charset=utf-8",
+      "cache-control": "public, max-age=300",
+      "x-content-type-options": "nosniff",
+      "access-control-allow-origin": "*",
+    },
+  });
 }
 
 // ---------------------------------------------------------------------------

@@ -1,0 +1,23 @@
+{
+  "name": "easymysql",
+  "version": "7.0.0",
+  "description": "MariaDB/MySQL databases for Codex: schema, read-only queries and safe changes through the EasyMySQL MCP server.",
+  "author": { "name": "Benjamin Berger", "url": "https://benjaminberger.at" },
+  "homepage": "https://mysql.benjaminberger.at",
+  "repository": "https://github.com/gravijet/EasyMySQL",
+  "license": "MIT",
+  "keywords": ["mariadb", "mysql", "sql", "database", "mcp"],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "EasyMySQL",
+    "shortDescription": "Query and manage your MariaDB databases",
+    "longDescription": "Connects Codex to the MariaDB server in EasyMySQL. Codex reads schemas, runs read-only queries in a READ ONLY transaction and, when you allow it in EasyMySQL, changes data with an automatic backup before destructive statements.",
+    "developerName": "Benjamin Berger",
+    "category": "Developer Tools",
+    "capabilities": ["Read", "Write"],
+    "defaultPrompt": ["Show me the tables in my database and how they are related."],
+    "brandColor": "#FF5B23",
+    "websiteURL": "https://mysql.benjaminberger.at"
+  }
+}

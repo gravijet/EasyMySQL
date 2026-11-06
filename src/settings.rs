@@ -78,6 +78,25 @@ pub struct Settings {
     pub backup_before_delete: bool,
     /// Nach neuen EasyMySQL-Versionen alle so viele Stunden suchen
     pub app_update_hours: u64,
+    /// KI-Assistenten (MCP-Server `easymysql mcp`)
+    pub ai: AiConfig,
+}
+
+/// Was KI-Assistenten ueber den MCP-Server duerfen
+#[derive(Clone, Debug, PartialEq)]
+pub struct AiConfig {
+    /// Aenderungen (INSERT, UPDATE, DDL …) erlauben; sonst nur lesen
+    pub allow_write: bool,
+    /// Datenbank, wenn ein Aufruf keine nennt (leer = keine)
+    pub database: String,
+    /// Hoechstens so viele Zeilen je Abfrage
+    pub max_rows: usize,
+}
+
+impl Default for AiConfig {
+    fn default() -> Self {
+        Self { allow_write: false, database: String::new(), max_rows: 200 }
+    }
 }
 
 /// Schriftgroesse im SQL-Editor (Pixel): Standard und Grenzen
@@ -132,6 +151,7 @@ impl Default for Settings {
             history_max: 3000,
             backup_before_delete: true,
             app_update_hours: 6,
+            ai: AiConfig::default(),
         }
     }
 }
@@ -225,6 +245,9 @@ impl Settings {
                 "git_default_branch" if !v.is_empty() => s.git.default_branch = unescape(&v),
                 "git_private_repos" => s.git.private_repos = on,
                 "git_panel_refresh" => s.git_panel_refresh = on,
+                "ai_allow_write" => s.ai.allow_write = on,
+                "ai_database" => s.ai.database = unescape(&v),
+                "ai_max_rows" => s.ai.max_rows = v.parse().unwrap_or(200).clamp(1, 5000),
                 k if k.starts_with("dev_") => {
                     s.dev.set(&k[4..], &v);
                 }
@@ -326,6 +349,7 @@ impl Settings {
             b(self.backup_before_delete),
             self.app_update_hours
         ));
+        text.push_str(&format!("ai_allow_write={}\nai_database={}\nai_max_rows={}\n", b(self.ai.allow_write), escape(&self.ai.database), self.ai.max_rows));
         text.push_str(&self.dev.to_lines());
         for r in &self.recent {
             text.push_str(&format!("recent={}\n", r.display()));
@@ -403,7 +427,10 @@ mod tests {
         s.terminal.custom_shell = "C:\\Git\\bin\\bash.exe --login".into();
         s.git.user_name = "Ada".into();
         s.git.pull_mode = "rebase".into();
+        s.ai = AiConfig { allow_write: true, database: "shop".into(), max_rows: 750 };
         assert_eq!(Settings::from_text(&s.to_text()), s);
+        assert!(!Settings::from_text("").ai.allow_write, "KI darf ohne Zustimmung nur lesen");
+        assert_eq!(Settings::from_text("ai_max_rows=999999\n").ai.max_rows, 5000);
         assert_eq!(Settings::from_text("java_driver=mysql\n").dev.java_driver, crate::dev::java::Driver::MySql);
         assert_eq!(Settings::from_text("").server, crate::server::Config::default());
     }

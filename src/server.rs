@@ -477,6 +477,10 @@ fn find_app_data_dir() -> PathBuf {
     }
 }
 
+/// Programmordner von Homebrew (macOS), in dem `brew install mariadb` die Programme ablegt
+#[cfg(not(windows))]
+const HOMEBREW_BIN: &[&str] = &["/opt/homebrew/opt/mariadb/bin", "/opt/homebrew/bin", "/usr/local/opt/mariadb/bin", "/usr/local/bin"];
+
 fn find_bin_dir() -> Option<PathBuf> {
     let server = format!("mariadbd{EXE}");
     let mut candidates = Vec::new();
@@ -492,6 +496,10 @@ fn find_bin_dir() -> Option<PathBuf> {
         candidates.push(PathBuf::from("/usr/sbin"));
         candidates.push(PathBuf::from("/usr/local/sbin"));
         candidates.push(PathBuf::from("/usr/bin"));
+        // macOS: MariaDB aus Homebrew (Apple Silicon bzw. Intel)
+        for d in HOMEBREW_BIN {
+            candidates.push(PathBuf::from(d));
+        }
     }
     candidates.into_iter().find(|d| d.join(&server).exists())
 }
@@ -503,7 +511,7 @@ pub fn find_tool(bin: &Path, name: &str) -> PathBuf {
         return p;
     }
     #[cfg(not(windows))]
-    for d in ["/usr/bin", "/usr/local/bin", "/usr/sbin"] {
+    for d in ["/usr/bin", "/usr/local/bin", "/usr/sbin"].iter().chain(HOMEBREW_BIN) {
         let p = Path::new(d).join(&file);
         if p.exists() {
             return p;
