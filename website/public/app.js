@@ -52,6 +52,8 @@
       var x = f[a.dataset.dl];
       var ok = !!(x && x.url && x.sha256);
       if (ok) a.href = x.url;
+      else a.removeAttribute("href");
+      a.tabIndex = ok ? 0 : -1;
       a.setAttribute("aria-disabled", ok ? "false" : "true");
       if (ok && x.size) a.title = x.name + ", " + mb(x.size);
       else if (!ok) a.title = t("Kommt mit dem nächsten Release", "Arrives with the next release");
@@ -215,9 +217,9 @@
 
   // ---- Terminal ------------------------------------------------------------
   var OS = {
-    win: { ps: "PS>", prompt: "PS C:\\Users\\du>", promptEn: "PS C:\\Users\\you>", cmd: "irm mysql.benjaminberger.at/install | iex", sys: "Windows 11, 64-bit (build 26100)", mode: "installer, for all users", file: "EasyMySQL-Setup-", ext: ".exe", size: 73.2, dir: "C:\\Program Files\\EasyMySQL", extra: "MariaDB, Start menu entry, PATH (easymysql, mysql)", client: "mysql -u root" },
-    mac: { ps: "%", prompt: "du@mac ~ %", promptEn: "you@mac ~ %", cmd: "curl -fsSL mysql.benjaminberger.at/install | sh", sys: "macOS 15.4, arm64 (universal app: Apple Silicon and Intel)", file: "EasyMySQL-macos-universal-", ext: ".tar.gz", size: 21.4, dir: "/Applications/EasyMySQL.app", extra: "Command: ~/.local/bin/easymysql", mariadb: "MariaDB found: /opt/homebrew/bin/mariadbd", client: "mariadb -u root" },
-    linux: { ps: "$", prompt: "du@linux:~$", promptEn: "you@linux:~$", cmd: "curl -fsSL mysql.benjaminberger.at/install | sh", sys: "Ubuntu 24.04 LTS, x86_64", file: "EasyMySQL-linux-x64-", ext: ".tar.gz", size: 19.8, dir: "~/.local/share/easymysql-app/easymysql", extra: "Menu entry: ~/.local/share/applications/easymysql.desktop", mariadb: "MariaDB found: /usr/sbin/mariadbd", client: "mariadb -u root" },
+    win: { ps: "PS>", prompt: "PS C:\\Users\\du>", promptEn: "PS C:\\Users\\you>", cmd: "irm https://mysql.benjaminberger.at/install | iex", sys: "Windows 11, 64-bit (build 26100)", mode: "installer, for all users", file: "EasyMySQL-Setup-", ext: ".exe", size: 73.2, dir: "C:\\Program Files\\EasyMySQL", extra: "MariaDB, Start menu entry, PATH (easymysql, mysql)", client: "mysql -u root" },
+    mac: { ps: "%", prompt: "du@mac ~ %", promptEn: "you@mac ~ %", cmd: "curl -fsSL https://mysql.benjaminberger.at/install | sh", sys: "macOS 15.4, arm64 (universal app: Apple Silicon and Intel)", file: "EasyMySQL-macos-universal-", ext: ".tar.gz", size: 21.4, dir: "/Applications/EasyMySQL.app", extra: "Command: ~/.local/bin/easymysql", mariadb: "MariaDB found: /opt/homebrew/bin/mariadbd", client: "mariadb -u root" },
+    linux: { ps: "$", prompt: "du@linux:~$", promptEn: "you@linux:~$", cmd: "curl -fsSL https://mysql.benjaminberger.at/install | sh", sys: "Ubuntu 24.04 LTS, x86_64", file: "EasyMySQL-linux-x64-", ext: ".tar.gz", size: 19.8, dir: "~/.local/share/easymysql-app/easymysql", extra: "Menu entry: ~/.local/share/applications/easymysql.desktop", mariadb: "MariaDB found: /usr/sbin/mariadbd", client: "mariadb -u root" },
   };
 
   var term = (function () {
@@ -376,6 +378,7 @@
       b.addEventListener("keydown", function (e) {
         var n = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
         if (!n) return;
+        e.preventDefault();
         var nb = tabs[(i + n + tabs.length) % tabs.length];
         nb.focus();
         setOs(nb.dataset.os);

@@ -21,6 +21,12 @@ Ein Release entsteht nur, wenn `Cargo.toml` eine Version ohne vorhandenes Tag ha
 
 ## Bauen und prüfen
 
+Schnelle Verifikation (Clippy und Tests; `&&` in PowerShell ab Version 7):
+
+```sh
+cargo clippy --locked && cargo test --locked
+```
+
 ```sh
 cargo build
 cargo test --locked                              # alle Tests ohne Netz
@@ -29,6 +35,13 @@ cargo test e2e_ -- --ignored --test-threads=1    # echte Downloads (Python, Node
 ```
 
 `cargo clippy` soll ohne neue Warnungen bleiben.
+
+## Architektur-Kurzuebersicht
+
+- `src/mcp/`: MCP-Server, Protokoll, SQL-Schutz und Setup fuer KI-Assistenten.
+- `plugins/easymysql/`: Claude-/Codex-Plugin mit dem eingebetteten EasyMySQL-Skill.
+- `website/public/install.*`: Installer fuer Windows (`install.ps1`) und macOS/Linux (`install.sh`).
+- `.github/workflows/release.yml`: Windows-Installer, universelle macOS-App, Linux-Paket und Veroeffentlichung.
 
 ## Konventionen
 

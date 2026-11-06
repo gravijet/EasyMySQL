@@ -280,6 +280,10 @@ jobs:
           "$p/easymysql" --version
           tar -C build -czf "dist/EasyMySQL-linux-x64-$v.tar.gz" EasyMySQL
 
+      - name: Archiv, Signatur und MCP pruefen
+        shell: bash
+        run: bash .github/scripts/verify-unix.sh '${{ matrix.kind }}' '${{ steps.ver.outputs.version }}'
+
       - uses: actions/upload-artifact@v4
         with:
           name: release-${{ matrix.kind }}

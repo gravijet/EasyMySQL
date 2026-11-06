@@ -1,10 +1,28 @@
 # EasyMySQL
 
-MariaDB server and database manager for Windows. Includes an SQL editor, table editing, ER diagrams, a query builder and backups.
+MariaDB server and database manager for Windows, macOS and Linux. Includes an SQL editor, table editing, ER diagrams, a query builder and backups.
 
 ## Install
 
-Download the installer or portable ZIP from [mysql.benjaminberger.at](https://mysql.benjaminberger.at). MariaDB is included (each release bundles the newest stable long-term-support version). Launch EasyMySQL to initialize the server.
+Install the newest release with one command. The scripts verify its SHA-256 checksum and offer to connect Claude Code and Codex.
+
+Windows 10/11 (64-bit), in PowerShell:
+
+```powershell
+irm https://mysql.benjaminberger.at/install.ps1 | iex
+```
+
+macOS 11+ (Apple Silicon and Intel) or Linux x86_64 (glibc 2.35+), in a terminal:
+
+```sh
+curl -fsSL https://mysql.benjaminberger.at/install | sh
+```
+
+On Windows, MariaDB is included (the newest stable long-term-support version). On macOS, install [Homebrew](https://brew.sh) first; the script offers `brew install mariadb`. On Linux, it offers MariaDB installation through apt, dnf, pacman or zypper. The Unix script installs the `easymysql` command in `~/.local/bin`; add that folder to `PATH` if prompted.
+
+Alternatively, download the Windows installer/portable ZIP, macOS app or Linux archive from [mysql.benjaminberger.at](https://mysql.benjaminberger.at). Launch EasyMySQL to initialize the server.
+
+To connect AI assistants later, run `easymysql setup-ai`. For other MCP clients, use `easymysql mcp` over standard input/output. `easymysql --version` checks the installed version without opening a window.
 
 The default connection uses port `3306`, user `root` and an empty password. The server accepts connections from the same PC only (both can be changed under *Settings → Server*). The installer adds the command-line tools to `PATH`:
 
@@ -51,10 +69,11 @@ Requires stable Rust.
 
 ```console
 cargo build --release --locked
+cargo clippy --locked
 cargo test --locked
 ```
 
-The [release workflow](.github/workflows/release.yml) builds the Windows installer. Some ignored tests require a running database or are manual rendering benchmarks.
+The [release workflow](.github/workflows/release.yml) builds the Windows installer and portable ZIP, a universal macOS app and a Linux archive. Some ignored tests require a running database or are manual rendering benchmarks.
 
 Linux development builds use `/usr/sbin/mariadbd`; set `EASYMYSQL_MARIADB_BIN` to use a different binary.
 

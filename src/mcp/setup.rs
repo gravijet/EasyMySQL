@@ -274,6 +274,9 @@ mod tests {
 
     #[test]
     fn skill_has_frontmatter() {
-        assert!(SKILL.starts_with("---\nname: easymysql\ndescription: "), "SKILL.md braucht name und description");
+        let mut zeilen = SKILL.lines();
+        assert_eq!(zeilen.next(), Some("---"));
+        assert_eq!(zeilen.next(), Some("name: easymysql"));
+        assert!(zeilen.next().is_some_and(|zeile| zeile.starts_with("description: ")), "SKILL.md braucht eine Beschreibung");
     }
 }
