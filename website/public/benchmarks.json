@@ -1,59 +1,1070 @@
 {
-  "measured_at": "2026-11-07T15:18:50Z",
-  "version": "7.3.0",
-  "source_base": "f71fdf5ccc38da3a28bd853b11d6e926b7a002ac",
-  "command": "cargo test --release --locked performance_render -- --ignored --nocapture --test-threads=1",
-  "profile": "release; opt-level=3; lto=true; codegen-units=1",
-  "cpu": "AMD Ryzen 7 8700G w/ Radeon 780M Graphics",
-  "os": "Microsoft Windows 11 Pro",
-  "viewport": {
-    "height": 760,
-    "width": 1200
+  "schema": "easymysql-client-runtime-v1",
+  "measured_at": "2026-11-07T16:26:01Z",
+  "platform": "Windows-11-10.0.26300-SP0",
+  "cpu": "AMD Ryzen 7 8700G",
+  "logical_processors": 16,
+  "physical_ram_gib": 31.1,
+  "runs_per_app": 5,
+  "settle_seconds": 8,
+  "idle_measurement_seconds": 10,
+  "versions": {
+    "easy": "7.1.0",
+    "workbench": "26.10.0",
+    "xampp": "8.2.12 Portable",
+    "phpmyadmin": "5.2.1",
+    "apache": "2.4.58",
+    "php": "8.2.12",
+    "chrome": "156.0.8078.81",
+    "shared_mariadb": "10.4.32"
   },
-  "repetitions": 7,
-  "scope": "CPU UI preparation in headless egui. Excludes GPU presentation, SQL execution, data loading, startup and RAM. Median of per-run mean frame times.",
-  "editor": {
-    "median_ms": 0.127,
-    "warmup_frames": 3,
-    "samples_ms": [0.151, 0.128, 0.127, 0.127, 0.127, 0.126, 0.133],
-    "measured_frames_per_run": 10,
-    "sql_lines": 5000,
-    "source": "src/sqledit/mod.rs::performance_render_large_editor"
-  },
-  "grid": {
-    "columns": 12,
-    "warmup_frames": 5,
-    "samples_ms": [0.435, 0.44, 0.443, 0.434, 0.437, 0.435, 0.449],
-    "measured_frames_per_run": 30,
-    "source": "src/tabs/sql.rs::performance_render_large_result",
-    "median_ms": 0.437,
-    "rows": 50000
-  },
-  "download_sizes_checked_at": "2026-11-07",
-  "downloads": [
-    {
-      "app": "EasyMySQL",
-      "source": "https://github.com/gravijet/EasyMySQL/releases/tag/v7.1.0",
-      "version": "7.1.0",
-      "bytes": 76907468
+  "scope": "Client start view, no active query, isolated profiles. Private resident working set (USS), all client subprocesses; XAMPP includes Apache/PHP and dedicated headless Chrome. Shared MariaDB excluded from every client. GPU memory is excluded. Start markers differ by application; these are instrumented warm-start readiness measurements, not identical first-paint measurements. Disk/OS caches remain warm; one unrecorded warmup per app.",
+  "results": {
+    "easy": {
+      "runs": [
+        {
+          "private_working_set_mib": 133.015625,
+          "private_commit_mib": 475.29296875,
+          "idle_cpu_percent_total": 0.0,
+          "sample_seconds": 10.080993100000342,
+          "samples": [
+            {
+              "private_working_set_mib": 133.015625,
+              "private_commit_mib": 475.29296875,
+              "processes": ["EasyMySQL.exe"]
+            },
+            {
+              "private_working_set_mib": 133.015625,
+              "private_commit_mib": 475.29296875,
+              "processes": ["EasyMySQL.exe"]
+            },
+            {
+              "private_working_set_mib": 133.015625,
+              "private_commit_mib": 475.29296875,
+              "processes": ["EasyMySQL.exe"]
+            },
+            {
+              "private_working_set_mib": 133.015625,
+              "private_commit_mib": 475.29296875,
+              "processes": ["EasyMySQL.exe"]
+            },
+            {
+              "private_working_set_mib": 133.015625,
+              "private_commit_mib": 475.29296875,
+              "processes": ["EasyMySQL.exe"]
+            }
+          ],
+          "startup_ms": 459.9205000013171,
+          "readiness_marker": "Windows WaitForInputIdle; GUI message loop ready, not a first-paint measurement"
+        },
+        {
+          "private_working_set_mib": 133.32421875,
+          "private_commit_mib": 475.53125,
+          "idle_cpu_percent_total": 0.0,
+          "sample_seconds": 10.07983410000088,
+          "samples": [
+            {
+              "private_working_set_mib": 133.32421875,
+              "private_commit_mib": 475.53125,
+              "processes": ["EasyMySQL.exe"]
+            },
+            {
+              "private_working_set_mib": 133.32421875,
+              "private_commit_mib": 475.53125,
+              "processes": ["EasyMySQL.exe"]
+            },
+            {
+              "private_working_set_mib": 133.32421875,
+              "private_commit_mib": 475.53125,
+              "processes": ["EasyMySQL.exe"]
+            },
+            {
+              "private_working_set_mib": 133.35546875,
+              "private_commit_mib": 475.53125,
+              "processes": ["EasyMySQL.exe"]
+            },
+            {
+              "private_working_set_mib": 133.35546875,
+              "private_commit_mib": 475.53125,
+              "processes": ["EasyMySQL.exe"]
+            }
+          ],
+          "startup_ms": 467.00289999716915,
+          "readiness_marker": "Windows WaitForInputIdle; GUI message loop ready, not a first-paint measurement"
+        },
+        {
+          "private_working_set_mib": 133.24609375,
+          "private_commit_mib": 474.77734375,
+          "idle_cpu_percent_total": 0.0,
+          "sample_seconds": 10.0825748999996,
+          "samples": [
+            {
+              "private_working_set_mib": 133.24609375,
+              "private_commit_mib": 474.77734375,
+              "processes": ["EasyMySQL.exe"]
+            },
+            {
+              "private_working_set_mib": 133.24609375,
+              "private_commit_mib": 474.77734375,
+              "processes": ["EasyMySQL.exe"]
+            },
+            {
+              "private_working_set_mib": 133.24609375,
+              "private_commit_mib": 474.77734375,
+              "processes": ["EasyMySQL.exe"]
+            },
+            {
+              "private_working_set_mib": 133.24609375,
+              "private_commit_mib": 474.77734375,
+              "processes": ["EasyMySQL.exe"]
+            },
+            {
+              "private_working_set_mib": 133.24609375,
+              "private_commit_mib": 474.77734375,
+              "processes": ["EasyMySQL.exe"]
+            }
+          ],
+          "startup_ms": 485.42599999927916,
+          "readiness_marker": "Windows WaitForInputIdle; GUI message loop ready, not a first-paint measurement"
+        },
+        {
+          "private_working_set_mib": 133.25,
+          "private_commit_mib": 475.671875,
+          "idle_cpu_percent_total": 0.0,
+          "sample_seconds": 10.084088300001895,
+          "samples": [
+            {
+              "private_working_set_mib": 133.25,
+              "private_commit_mib": 475.671875,
+              "processes": ["EasyMySQL.exe"]
+            },
+            {
+              "private_working_set_mib": 133.25,
+              "private_commit_mib": 475.671875,
+              "processes": ["EasyMySQL.exe"]
+            },
+            {
+              "private_working_set_mib": 133.25,
+              "private_commit_mib": 475.671875,
+              "processes": ["EasyMySQL.exe"]
+            },
+            {
+              "private_working_set_mib": 133.265625,
+              "private_commit_mib": 475.671875,
+              "processes": ["EasyMySQL.exe"]
+            },
+            {
+              "private_working_set_mib": 133.265625,
+              "private_commit_mib": 475.671875,
+              "processes": ["EasyMySQL.exe"]
+            }
+          ],
+          "startup_ms": 457.75660000072094,
+          "readiness_marker": "Windows WaitForInputIdle; GUI message loop ready, not a first-paint measurement"
+        },
+        {
+          "private_working_set_mib": 133.49609375,
+          "private_commit_mib": 474.18359375,
+          "idle_cpu_percent_total": 0.009679547686292951,
+          "sample_seconds": 10.088926999997057,
+          "samples": [
+            {
+              "private_working_set_mib": 133.49609375,
+              "private_commit_mib": 474.18359375,
+              "processes": ["EasyMySQL.exe"]
+            },
+            {
+              "private_working_set_mib": 133.49609375,
+              "private_commit_mib": 474.18359375,
+              "processes": ["EasyMySQL.exe"]
+            },
+            {
+              "private_working_set_mib": 133.49609375,
+              "private_commit_mib": 474.18359375,
+              "processes": ["EasyMySQL.exe"]
+            },
+            {
+              "private_working_set_mib": 133.5234375,
+              "private_commit_mib": 474.18359375,
+              "processes": ["EasyMySQL.exe"]
+            },
+            {
+              "private_working_set_mib": 133.5234375,
+              "private_commit_mib": 474.18359375,
+              "processes": ["EasyMySQL.exe"]
+            }
+          ],
+          "startup_ms": 486.9208999989496,
+          "readiness_marker": "Windows WaitForInputIdle; GUI message loop ready, not a first-paint measurement"
+        }
+      ],
+      "median": {
+        "private_working_set_mib": 133.25,
+        "private_commit_mib": 475.29296875,
+        "startup_ms": 467.00289999716915,
+        "idle_cpu_percent_total": 0.0
+      }
     },
-    {
-      "app": "XAMPP",
-      "source": "https://www.apachefriends.org/download.html",
-      "version": "8.5.12",
-      "bytes": 200178909,
-      "file": "xampp-windows-x64-8.5.12-0-VS17-installer.exe"
+    "workbench": {
+      "runs": [
+        {
+          "private_working_set_mib": 269.30859375,
+          "private_commit_mib": 487.578125,
+          "idle_cpu_percent_total": 0.028927056182420245,
+          "sample_seconds": 10.127845300001354,
+          "samples": [
+            {
+              "private_working_set_mib": 269.3046875,
+              "private_commit_mib": 487.5703125,
+              "processes": [
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "mysqlsh.exe",
+                "conhost.exe"
+              ]
+            },
+            {
+              "private_working_set_mib": 269.30859375,
+              "private_commit_mib": 487.57421875,
+              "processes": [
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "mysqlsh.exe",
+                "conhost.exe"
+              ]
+            },
+            {
+              "private_working_set_mib": 269.30859375,
+              "private_commit_mib": 487.578125,
+              "processes": [
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "mysqlsh.exe",
+                "conhost.exe"
+              ]
+            },
+            {
+              "private_working_set_mib": 269.3125,
+              "private_commit_mib": 487.58203125,
+              "processes": [
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "mysqlsh.exe",
+                "conhost.exe"
+              ]
+            },
+            {
+              "private_working_set_mib": 269.3125,
+              "private_commit_mib": 487.58203125,
+              "processes": [
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "mysqlsh.exe",
+                "conhost.exe"
+              ]
+            }
+          ],
+          "startup_ms": 6072.06049999877,
+          "readiness_marker": "Workbench welcome page visible and fonts ready via CDP"
+        },
+        {
+          "private_working_set_mib": 268.484375,
+          "private_commit_mib": 490.78125,
+          "idle_cpu_percent_total": 0.0,
+          "sample_seconds": 10.129963100000168,
+          "samples": [
+            {
+              "private_working_set_mib": 268.48046875,
+              "private_commit_mib": 490.7734375,
+              "processes": [
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "mysqlsh.exe",
+                "conhost.exe"
+              ]
+            },
+            {
+              "private_working_set_mib": 268.484375,
+              "private_commit_mib": 490.77734375,
+              "processes": [
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "mysqlsh.exe",
+                "conhost.exe"
+              ]
+            },
+            {
+              "private_working_set_mib": 268.484375,
+              "private_commit_mib": 490.78125,
+              "processes": [
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "mysqlsh.exe",
+                "conhost.exe"
+              ]
+            },
+            {
+              "private_working_set_mib": 268.48828125,
+              "private_commit_mib": 490.78125,
+              "processes": [
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "mysqlsh.exe",
+                "conhost.exe"
+              ]
+            },
+            {
+              "private_working_set_mib": 268.48828125,
+              "private_commit_mib": 490.78125,
+              "processes": [
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "mysqlsh.exe",
+                "conhost.exe"
+              ]
+            }
+          ],
+          "startup_ms": 7734.05719999937,
+          "readiness_marker": "Workbench welcome page visible and fonts ready via CDP"
+        },
+        {
+          "private_working_set_mib": 269.62109375,
+          "private_commit_mib": 496.453125,
+          "idle_cpu_percent_total": 0.01929190440919288,
+          "sample_seconds": 10.12406529999862,
+          "samples": [
+            {
+              "private_working_set_mib": 269.61328125,
+              "private_commit_mib": 496.4453125,
+              "processes": [
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "mysqlsh.exe",
+                "conhost.exe"
+              ]
+            },
+            {
+              "private_working_set_mib": 269.6171875,
+              "private_commit_mib": 496.44921875,
+              "processes": [
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "mysqlsh.exe",
+                "conhost.exe"
+              ]
+            },
+            {
+              "private_working_set_mib": 269.62109375,
+              "private_commit_mib": 496.453125,
+              "processes": [
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "mysqlsh.exe",
+                "conhost.exe"
+              ]
+            },
+            {
+              "private_working_set_mib": 269.625,
+              "private_commit_mib": 496.453125,
+              "processes": [
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "mysqlsh.exe",
+                "conhost.exe"
+              ]
+            },
+            {
+              "private_working_set_mib": 269.625,
+              "private_commit_mib": 496.453125,
+              "processes": [
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "mysqlsh.exe",
+                "conhost.exe"
+              ]
+            }
+          ],
+          "startup_ms": 6005.563099999563,
+          "readiness_marker": "Workbench welcome page visible and fonts ready via CDP"
+        },
+        {
+          "private_working_set_mib": 261.63671875,
+          "private_commit_mib": 482.38671875,
+          "idle_cpu_percent_total": 0.0,
+          "sample_seconds": 10.122720300001674,
+          "samples": [
+            {
+              "private_working_set_mib": 261.6328125,
+              "private_commit_mib": 482.375,
+              "processes": [
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "mysqlsh.exe",
+                "conhost.exe"
+              ]
+            },
+            {
+              "private_working_set_mib": 261.63671875,
+              "private_commit_mib": 482.37890625,
+              "processes": [
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "mysqlsh.exe",
+                "conhost.exe"
+              ]
+            },
+            {
+              "private_working_set_mib": 261.63671875,
+              "private_commit_mib": 482.38671875,
+              "processes": [
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "mysqlsh.exe",
+                "conhost.exe"
+              ]
+            },
+            {
+              "private_working_set_mib": 261.640625,
+              "private_commit_mib": 482.38671875,
+              "processes": [
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "mysqlsh.exe",
+                "conhost.exe"
+              ]
+            },
+            {
+              "private_working_set_mib": 261.640625,
+              "private_commit_mib": 482.38671875,
+              "processes": [
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "mysqlsh.exe",
+                "conhost.exe"
+              ]
+            }
+          ],
+          "startup_ms": 4236.112300000968,
+          "readiness_marker": "Workbench welcome page visible and fonts ready via CDP"
+        },
+        {
+          "private_working_set_mib": 269.2890625,
+          "private_commit_mib": 486.50390625,
+          "idle_cpu_percent_total": 0.019283919081992562,
+          "sample_seconds": 10.128257600001234,
+          "samples": [
+            {
+              "private_working_set_mib": 269.27734375,
+              "private_commit_mib": 486.4921875,
+              "processes": [
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "mysqlsh.exe",
+                "conhost.exe"
+              ]
+            },
+            {
+              "private_working_set_mib": 269.28515625,
+              "private_commit_mib": 486.5,
+              "processes": [
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "mysqlsh.exe",
+                "conhost.exe"
+              ]
+            },
+            {
+              "private_working_set_mib": 269.2890625,
+              "private_commit_mib": 486.50390625,
+              "processes": [
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "mysqlsh.exe",
+                "conhost.exe"
+              ]
+            },
+            {
+              "private_working_set_mib": 269.29296875,
+              "private_commit_mib": 486.50390625,
+              "processes": [
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "mysqlsh.exe",
+                "conhost.exe"
+              ]
+            },
+            {
+              "private_working_set_mib": 269.29296875,
+              "private_commit_mib": 486.50390625,
+              "processes": [
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "MySQL Workbench.exe",
+                "mysqlsh.exe",
+                "conhost.exe"
+              ]
+            }
+          ],
+          "startup_ms": 4239.33119999856,
+          "readiness_marker": "Workbench welcome page visible and fonts ready via CDP"
+        }
+      ],
+      "median": {
+        "private_working_set_mib": 269.2890625,
+        "private_commit_mib": 487.578125,
+        "startup_ms": 6005.563099999563,
+        "idle_cpu_percent_total": 0.019283919081992562
+      }
     },
-    {
-      "app": "MySQL Workbench",
-      "source": "https://dev.mysql.com/downloads/workbench/",
-      "version": "26.10.0",
-      "bytes": 273432576,
-      "file": "mysql-workbench-26.10.0-winx64.msi"
+    "xampp": {
+      "runs": [
+        {
+          "private_working_set_mib": 333.7421875,
+          "private_commit_mib": 479.359375,
+          "idle_cpu_percent_total": 0.0,
+          "sample_seconds": 10.263868800000637,
+          "samples": [
+            {
+              "private_working_set_mib": 333.72265625,
+              "private_commit_mib": 479.109375,
+              "processes": [
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "httpd.exe",
+                "httpd.exe",
+                "conhost.exe"
+              ]
+            },
+            {
+              "private_working_set_mib": 333.73828125,
+              "private_commit_mib": 479.359375,
+              "processes": [
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "httpd.exe",
+                "httpd.exe",
+                "conhost.exe"
+              ]
+            },
+            {
+              "private_working_set_mib": 333.7421875,
+              "private_commit_mib": 479.359375,
+              "processes": [
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "httpd.exe",
+                "httpd.exe",
+                "conhost.exe"
+              ]
+            },
+            {
+              "private_working_set_mib": 333.74609375,
+              "private_commit_mib": 479.359375,
+              "processes": [
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "httpd.exe",
+                "httpd.exe",
+                "conhost.exe"
+              ]
+            },
+            {
+              "private_working_set_mib": 333.75390625,
+              "private_commit_mib": 479.359375,
+              "processes": [
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "httpd.exe",
+                "httpd.exe",
+                "conhost.exe"
+              ]
+            }
+          ],
+          "startup_ms": 711.1503000014636,
+          "readiness_marker": "Dedicated headless Chrome: phpMyAdmin loaded, port 13307 visible and fonts ready; Apache/PHP already running"
+        },
+        {
+          "private_working_set_mib": 332.2265625,
+          "private_commit_mib": 478.0703125,
+          "idle_cpu_percent_total": 0.0284921526138243,
+          "sample_seconds": 10.282436500001495,
+          "samples": [
+            {
+              "private_working_set_mib": 332.2265625,
+              "private_commit_mib": 478.0703125,
+              "processes": [
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "httpd.exe",
+                "httpd.exe",
+                "conhost.exe"
+              ]
+            },
+            {
+              "private_working_set_mib": 332.2265625,
+              "private_commit_mib": 478.0703125,
+              "processes": [
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "httpd.exe",
+                "httpd.exe",
+                "conhost.exe"
+              ]
+            },
+            {
+              "private_working_set_mib": 332.2265625,
+              "private_commit_mib": 478.0703125,
+              "processes": [
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "httpd.exe",
+                "httpd.exe",
+                "conhost.exe"
+              ]
+            },
+            {
+              "private_working_set_mib": 332.234375,
+              "private_commit_mib": 478.32421875,
+              "processes": [
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "httpd.exe",
+                "httpd.exe",
+                "conhost.exe"
+              ]
+            },
+            {
+              "private_working_set_mib": 332.2421875,
+              "private_commit_mib": 478.32421875,
+              "processes": [
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "httpd.exe",
+                "httpd.exe",
+                "conhost.exe"
+              ]
+            }
+          ],
+          "startup_ms": 676.1167000004207,
+          "readiness_marker": "Dedicated headless Chrome: phpMyAdmin loaded, port 13307 visible and fonts ready; Apache/PHP already running"
+        },
+        {
+          "private_working_set_mib": 332.96875,
+          "private_commit_mib": 476.91796875,
+          "idle_cpu_percent_total": 0.028494702396238213,
+          "sample_seconds": 10.281516399998509,
+          "samples": [
+            {
+              "private_working_set_mib": 332.93359375,
+              "private_commit_mib": 476.875,
+              "processes": [
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "httpd.exe",
+                "httpd.exe",
+                "conhost.exe"
+              ]
+            },
+            {
+              "private_working_set_mib": 332.96875,
+              "private_commit_mib": 476.91796875,
+              "processes": [
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "httpd.exe",
+                "httpd.exe",
+                "conhost.exe"
+              ]
+            },
+            {
+              "private_working_set_mib": 332.96875,
+              "private_commit_mib": 476.91796875,
+              "processes": [
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "httpd.exe",
+                "httpd.exe",
+                "conhost.exe"
+              ]
+            },
+            {
+              "private_working_set_mib": 332.98046875,
+              "private_commit_mib": 477.16796875,
+              "processes": [
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "httpd.exe",
+                "httpd.exe",
+                "conhost.exe"
+              ]
+            },
+            {
+              "private_working_set_mib": 332.984375,
+              "private_commit_mib": 477.16796875,
+              "processes": [
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "httpd.exe",
+                "httpd.exe",
+                "conhost.exe"
+              ]
+            }
+          ],
+          "startup_ms": 631.3182000012603,
+          "readiness_marker": "Dedicated headless Chrome: phpMyAdmin loaded, port 13307 visible and fonts ready; Apache/PHP already running"
+        },
+        {
+          "private_working_set_mib": 334.15625,
+          "private_commit_mib": 477.23046875,
+          "idle_cpu_percent_total": 0.009489232227792674,
+          "sample_seconds": 10.29126990000077,
+          "samples": [
+            {
+              "private_working_set_mib": 334.125,
+              "private_commit_mib": 477.1953125,
+              "processes": [
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "httpd.exe",
+                "httpd.exe",
+                "conhost.exe"
+              ]
+            },
+            {
+              "private_working_set_mib": 334.15625,
+              "private_commit_mib": 477.23046875,
+              "processes": [
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "httpd.exe",
+                "httpd.exe",
+                "conhost.exe"
+              ]
+            },
+            {
+              "private_working_set_mib": 334.15625,
+              "private_commit_mib": 477.23046875,
+              "processes": [
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "httpd.exe",
+                "httpd.exe",
+                "conhost.exe"
+              ]
+            },
+            {
+              "private_working_set_mib": 334.15625,
+              "private_commit_mib": 477.23046875,
+              "processes": [
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "httpd.exe",
+                "httpd.exe",
+                "conhost.exe"
+              ]
+            },
+            {
+              "private_working_set_mib": 334.15625,
+              "private_commit_mib": 477.23046875,
+              "processes": [
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "httpd.exe",
+                "httpd.exe",
+                "conhost.exe"
+              ]
+            }
+          ],
+          "startup_ms": 636.2613999990572,
+          "readiness_marker": "Dedicated headless Chrome: phpMyAdmin loaded, port 13307 visible and fonts ready; Apache/PHP already running"
+        },
+        {
+          "private_working_set_mib": 333.94140625,
+          "private_commit_mib": 480.32421875,
+          "idle_cpu_percent_total": 0.018995926184125798,
+          "sample_seconds": 10.281809799998882,
+          "samples": [
+            {
+              "private_working_set_mib": 333.90625,
+              "private_commit_mib": 480.2890625,
+              "processes": [
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "httpd.exe",
+                "httpd.exe",
+                "conhost.exe"
+              ]
+            },
+            {
+              "private_working_set_mib": 333.94140625,
+              "private_commit_mib": 480.32421875,
+              "processes": [
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "httpd.exe",
+                "httpd.exe",
+                "conhost.exe"
+              ]
+            },
+            {
+              "private_working_set_mib": 333.94140625,
+              "private_commit_mib": 480.32421875,
+              "processes": [
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "httpd.exe",
+                "httpd.exe",
+                "conhost.exe"
+              ]
+            },
+            {
+              "private_working_set_mib": 333.94140625,
+              "private_commit_mib": 480.32421875,
+              "processes": [
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "httpd.exe",
+                "httpd.exe",
+                "conhost.exe"
+              ]
+            },
+            {
+              "private_working_set_mib": 333.94140625,
+              "private_commit_mib": 480.32421875,
+              "processes": [
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "chrome.exe",
+                "httpd.exe",
+                "httpd.exe",
+                "conhost.exe"
+              ]
+            }
+          ],
+          "startup_ms": 661.6684000000532,
+          "readiness_marker": "Dedicated headless Chrome: phpMyAdmin loaded, port 13307 visible and fonts ready; Apache/PHP already running"
+        }
+      ],
+      "median": {
+        "private_working_set_mib": 333.7421875,
+        "private_commit_mib": 478.0703125,
+        "startup_ms": 661.6684000000532,
+        "idle_cpu_percent_total": 0.018995926184125798
+      }
     }
-  ],
-  "source_hashes": {
-    "src/sqledit/mod.rs": "838039d9938171a5cc514ad58a8195df464f04116306b6ae24fc16329d809d38",
-    "src/tabs/sql.rs": "085442196492c4e0013a7f90e2cdfd2c88462e70e32ee7381d04e2299ed39cd0"
-  }
+  },
+  "sources": {
+    "easy": "https://github.com/gravijet/EasyMySQL/releases/tag/v7.1.0",
+    "workbench": "https://dev.mysql.com/downloads/workbench/",
+    "xampp": "https://sourceforge.net/projects/xampp/files/XAMPP%20Windows/8.2.12/"
+  },
+  "binary_sha256": {
+    "easy": "2696096844c7d3ce5f2f28a25b6c094b67d48f59d3811a63e029c71dcc200cc7",
+    "workbench": "a524468c82461a9c93805d2b4e8d5b91ba54a70f9d1811b905acad7c3b6326b8",
+    "apache": "7bd994ae100f079c7c2e36414ec40c059b38d440f0c48e89c0946896c8b0aeea"
+  },
+  "measurement_tools": {
+    "python": "3.14.3",
+    "psutil": "7.2.2",
+    "playwright": "1.60.0"
+  },
+  "source_notes": "Workbench 26 is Electron-based; legacy Workbench 8 modeling claims are not applied to this tested version. XAMPP is the official 8.2.12 portable package; newer 8.5 installer was not used."
 }

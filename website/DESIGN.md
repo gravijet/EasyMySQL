@@ -1,188 +1,185 @@
 ---
 name: EasyMySQL Website
-description: A restrained dark product page with real application evidence and clear installation controls.
+description: A WinMorph-derived full-viewport product scene that becomes a pinned
+  application gallery.
 colors:
-  bg: "#0b0e14"
-  surface: "#131820"
-  fg: "#f1f4fa"
-  mute: "#a5b0c0"
-  line: "#29313e"
-  blue: "#91bcff"
-  action: "#2363db"
-  ok: "#8ed4ae"
-  control: "#212b39"
-  selected-bg: "#243a59"
-  selected-fg: "#d5e6ff"
-  command-bg: "#171e29"
-  copy-bg: "#283549"
+  bg: '#07080c'
+  fg: '#f4f1ea'
+  mute: '#b2b6c1'
+  line: '#343945'
+  blue: '#a7c3ff'
+  scene: '#537bdf'
+  scene-data: '#337e7c'
+  scene-er: '#9a6e39'
+  scene-builder: '#745ea8'
+  scene-code: '#467a55'
+  scene-git: '#446682'
+  scrollbar: '#6d788c'
+  nav-solid: '#07080cf0'
+  primary-hover: '#fff'
+  veil: '#000b'
+  text-shadow: '#0008'
+  screen: '#171c23'
 typography:
   display:
-    fontFamily: '"Instrument Sans", system-ui, sans-serif'
-    fontSize: "clamp(2.9rem, 4.5vw, 4.4rem)"
-    fontWeight: 600
-    lineHeight: 1.07
-    letterSpacing: "-0.04em"
+    fontFamily: '"Inter Tight", system-ui, sans-serif'
+    fontSize: clamp(4rem, 12.3vw, 11rem)
+    fontWeight: 750
+    lineHeight: 0.9
+    letterSpacing: -0.04em
   headline:
-    fontFamily: '"Instrument Sans", system-ui, sans-serif'
-    fontSize: "clamp(2rem, 3.5vw, 3rem)"
-    fontWeight: 600
-    lineHeight: 1.12
-    letterSpacing: "-0.035em"
-  title:
-    fontFamily: '"Instrument Sans", system-ui, sans-serif'
-    fontSize: "1.3rem"
-    fontWeight: 600
-    lineHeight: 1.35
-    letterSpacing: "-0.02em"
+    fontFamily: '"Inter Tight", system-ui, sans-serif'
+    fontSize: clamp(2.6rem, 6vw, 6rem)
+    fontWeight: 700
+    lineHeight: 1
+    letterSpacing: -0.04em
   body:
-    fontFamily: '"Instrument Sans", system-ui, sans-serif'
-    fontSize: "1rem"
+    fontFamily: '"Inter Tight", system-ui, sans-serif'
+    fontSize: 17px
     fontWeight: 400
-    lineHeight: 1.6
+    lineHeight: 1.5
+  lead:
+    fontFamily: '"Inter Tight", system-ui, sans-serif'
+    fontSize: clamp(1.05rem, 1.8vw, 1.5rem)
+    lineHeight: 1.35
   label:
-    fontFamily: '"Instrument Sans", system-ui, sans-serif'
-    fontSize: "0.9rem"
+    fontFamily: '"Inter Tight", system-ui, sans-serif'
+    fontSize: 0.88rem
     fontWeight: 600
+  gallery-note:
+    fontFamily: '"Inter Tight", system-ui, sans-serif'
+    fontSize: 0.75rem
   code:
-    fontFamily: '"Martian Mono", ui-monospace, Consolas, monospace'
-    fontSize: "0.75rem"
+    fontFamily: '"Martian Mono", Consolas, monospace'
+    fontSize: 0.75rem
     fontWeight: 400
     lineHeight: 1.7
-rounded:
-  inset: "8px"
-  control: "12px"
-  surface: "16px"
-  pill: "100px"
 spacing:
-  gutter: "clamp(1.25rem, 4.5vw, 4rem)"
-  compact: "0.5rem"
-  item: "1rem"
-  group: "1.5rem"
-  column: "2rem"
-  wide: "3rem"
+  gutter: clamp(20px, 4vw, 64px)
+  small: 1rem
+  group: 1.5rem
+  column: 2rem
+  wide: 4rem
+  section: clamp(72px, 10svh, 120px)
 components:
   button-primary:
-    backgroundColor: "{colors.action}"
-    textColor: "#fff"
-    rounded: "{rounded.control}"
-    padding: "0.7rem 1.05rem"
-    typography: "{typography.label}"
-  button-secondary:
-    backgroundColor: "{colors.control}"
-    textColor: "{colors.fg}"
-    rounded: "{rounded.control}"
-    padding: "0.7rem 1.05rem"
+    backgroundColor: '{colors.fg}'
+    textColor: '{colors.bg}'
+    padding: 0.5rem 0.95rem
+  button-primary-hover:
+    backgroundColor: '{colors.primary-hover}'
+    textColor: '{colors.bg}'
+  download-link:
+    textColor: '{colors.blue}'
   tab-selected:
-    backgroundColor: "{colors.selected-bg}"
-    textColor: "{colors.selected-fg}"
-    rounded: "{rounded.pill}"
-    padding: "0.6rem 1.1rem"
-  feature-container:
-    backgroundColor: "{colors.surface}"
-    rounded: "{rounded.surface}"
+    textColor: '{colors.fg}'
+    padding: 15px 10px 6px 0
   command:
-    backgroundColor: "{colors.command-bg}"
-    rounded: "{rounded.control}"
-    padding: "0.5rem 0.5rem 0.5rem 1rem"
+    textColor: '{colors.fg}'
+    padding: 0.25rem 0 0.5rem
+  comparison:
+    backgroundColor: '{colors.bg}'
+    textColor: '{colors.fg}'
 ---
 
 # Design System: EasyMySQL Website
 
 ## Overview
 
-**Creative North Star: "The working database, in view"**
+**Creative North Star: "The application becomes the stage"**
 
-This descriptive name records the existing refinement direction; it is not a new visual-world selection. The website pairs a quiet dark blue canvas with actual application screenshots, readable sans typography and compact installation controls. Rounded surfaces soften a technical product without replacing its established identity.
+The actual WinMorph template supplies the visual structure: an application screenshot fills the viewport behind a centered name and immediately usable installation controls. Scrolling reduces that image to a readable screen, then advances six real application views in the same pinned stage. Quiet moving color fields connect the states; comparison and MCP continue on the same dark ground.
+
+This records the implemented adaptation of the user's named WinMorph template, not a newly proposed metaphor or an approved comp. Scope is the website; native application UI has its own rules. The earlier static dark/light comparison system is superseded. Inter Tight and the radial color fields are explicitly scoped, user-directed template choices supported by the source, not general defaults for unrelated surfaces.
 
 **Key Characteristics:**
-- Real application imagery provides the main visual evidence.
-- Blue distinguishes actions, selection and useful numeric emphasis.
-- Compact controls sit within spacious sections.
-
-Source of truth: `public/style.css`, sampled against `public/index.html` and `public/app.js`. This system applies to the website only. No seed, generated comp or world-replacement workshop was used for this scoped refinement.
+- Full-viewport application imagery becomes a contained screen through scroll.
+- Terminal and file installation share the first viewport.
+- Six features share one pinned stage and progress rail.
+- Dark surfaces, square controls and restrained template-derived color fields.
 
 ## Colors
 
-The palette is a near-black navy foundation with cool readable text and restrained blue emphasis; frontmatter records the canonical values.
+Frontmatter records all actual CSS and scene colors, including translucent functional values. There is no light comparison palette.
 
 ### Primary
-- **Action blue** (`action`): filled primary download controls.
-- **Light blue** (`blue`): headline emphasis, benchmark figures, brand mark and focus outline.
-- **Selected blue** (`selected-bg`, `selected-fg`): selected feature and operating-system controls.
-
-### Secondary
-- **Status green** (`ok`): the small status dot beside the application preview caption.
+- **Link blue** (`blue`): links, OS selection and selected progress-rail base; also selection background.
+- **Feature hues** (`scene`, `scene-data`, `scene-er`, `scene-builder`, `scene-code`, `scene-git`): the six sequential radial-field hues in `public/scene.js`. They provide background continuity rather than action semantics.
 
 ### Neutral
-- **Canvas** (`bg`), **raised surface** (`surface`): page and screenshot/container distinction.
-- **Reading white** (`fg`), **muted text** (`mute`): hierarchy for primary and supporting content.
-- **Divider** (`line`): comparison tables, fact rows and platform separators.
-- **Control navy** (`control`), **command navy** (`command-bg`), **copy navy** (`copy-bg`): compact interactive and command surfaces.
-
-**The Useful Blue Rule.** Use blue for actions, selected state and meaningful emphasis, as the page already does.
+- **Stage** (`bg`), **warm foreground** (`fg`), **muted copy** (`mute`) and **fine rule** (`line`): all content, comparison and MCP surfaces.
+- **Solid navigation** (`nav-solid`): translucent dark header after scrolling.
+- **Screen backing** (`screen`): behind actual app images.
+- **Veil** (`veil`) and **text shadow** (`text-shadow`): foreground readability over the full-viewport screenshot; the veil color also supplies the screen shadow.
+- **Primary hover** (`primary-hover`): brighter light download fill.
+- **Scrollbar** (`scrollbar`): page, rail and comparison overflow.
 
 ## Typography
 
-**Display and body font:** self-hosted Instrument Sans, with system-ui and sans-serif fallbacks.
-**Code font:** self-hosted Martian Mono, with ui-monospace, Consolas and monospace fallbacks.
+**Display and body:** self-hosted Inter Tight, with system-ui and sans-serif fallbacks. **Commands:** self-hosted Martian Mono, with Consolas and monospace fallbacks. The font files expose variable weights; frontmatter records the roles actually used.
 
-The hierarchy uses modest weight differences and tighter headline tracking. Reading copy stays in sans; commands use mono. Frontmatter records the desktop hierarchy. Supporting text commonly uses 0.75–0.95rem; the lead uses 1.14rem and a 37ch measure. Ordinary descriptive blocks range around 31–58ch.
+The single product-name heading is heavy and tightly tracked. Supporting copy is centered at up to 52ch. Installation labels stay compact. Runtime figures use tabular numerals at 1.55rem; supporting text commonly uses 0.78-0.97rem. The one gallery sample-data label is 0.75rem (12px at the default root size), a local annotation rather than a general reading-text size.
 
-At widths up to 800px the display becomes `clamp(2.9rem, 8vw, 4rem)`; up to 420px it becomes `clamp(2.25rem, 10vw, 2.6rem)`. The lead reduces to 1.05rem on the smallest layout. Hero command text is 0.68rem. Benchmark figures use tabular numerals.
+At widths up to 600px the name uses 14.8vw and lead copy becomes 1.05rem with a 32ch measure. In short landscape layouts up to 650px high the name uses `clamp(3.5rem, 9vw, 6rem)`. Hero commands use 0.78rem and wrap. Pinned gallery captions use `clamp(1.1rem, 2.1vw, 1.8rem)`; up to 760px they use `clamp(1.25rem, 4.7vw, 1.8rem)` and a 31ch measure. Runtime figures reduce to 1.12rem below 800px and 1.02rem below 600px.
 
-**The Reading and Commands Rule.** Keep explanatory prose in Instrument Sans and executable commands in Martian Mono.
+**The Reading and Commands Rule.** Use Inter Tight for reading and Martian Mono for executable commands.
 
 ## Layout
 
-The centered container caps at 88rem with the fluid gutter token. Desktop hero columns use a 1:1.22 ratio and a 3rem gap; performance and integration sections use equal columns with 5rem gaps. Platform requirements form three columns. Section top spacing is 5.5rem, with major content blocks at 7rem.
+A fixed header is 68px tall. Normal content caps at 1440px with the fluid gutter token. The centered installation grid is at most 1040px wide, with 1.25:1 columns and a 4rem gap. It stacks below 800px, where its maximum width is 540px. Below 600px navigation and installation spacing tighten without a second installation region.
 
-At 1100px, the hero becomes equal columns and gaps tighten. At 800px, primary content, platform requirements and script options stack, navigation links disappear, and section spacing becomes 4.5rem. At 420px, the three direct-download controls form an equal-width grid with format labels beneath names. At 1500px the hero gap expands to 4rem. The comparison table preserves its 800px minimum width inside horizontal scrolling; the benchmark table overrides that minimum. Feature tabs scroll horizontally.
+With JavaScript, the gallery scene is `calc(100svh + 6 * 52svh)` high and holds a 100svh sticky stage. Its first 65vh of scroll transforms a viewport-covering image into an 8:5 screen. The final desktop screen width is `min(88vw, calc((100svh - 300px) * 1.6))`; up to 760px it becomes 92vw. Captions sit beneath the fixed header and the progress rail sits near the bottom. A single sample-data annotation sits below the rail.
 
-The current landing page places terminal installation before file downloads and the real screenshot; its composition belongs to this surface rather than every future page.
+The remaining scroll range advances the six feature states. Gallery links open full-size images. Requirements, numerical/feature comparison and MCP follow in normal flow. Major sections use the fluid section-spacing token. Comparison remains dark: desktop uses a four-column table with a 760px minimum width; below 800px each row label spans the full width above three equal app columns. One sticky app-heading row sits below the fixed header. Numeric units stay together. MCP stacks below 800px; its two-column fact list becomes one column below 600px.
+
+At heights up to 650px with a landscape aspect ratio the pinned composition compresses. At heights up to 500px and an aspect ratio of at least 1:1, pinning is removed and the installer, rail, images and captions flow normally. Without JavaScript the page also uses normal flow, retaining the initial screenshot, feature structure and download links.
 
 ## Elevation & Depth
 
-Tonal layering and rounded clipping provide most separation. Shadows are soft and limited: the hero media uses `0 24px 60px -12px #0009`; the transient toast uses `0 8px 25px #0006`. Ordinary feature containers and buttons remain flat.
+Depth comes from the actual application image: it begins behind a dark contrast veil with a 3px backdrop blur, then shrinks toward the reader as the veil clears. The screen uses `0 50px 120px -30px #000b`; the installation overlay uses `0 2px 20px #0008` text shadow. These soft template effects do not establish card elevation elsewhere.
 
-The desktop hero preview rests at a slight negative rotation with a counter-rotated caption. Its arrival animation runs for 700ms with the source easing; mobile removes rotation and animation. Reduced-motion preferences disable transitions, animations and smooth scrolling.
+The three template color fields are radial gradients ending in transparency at 62%. Their opacities are 0.23, 0.2 and 0.1; they drift at 38s, 46s and 30s with staggered negative delays. Feature hue transitions take 1.4s. This radial-field treatment is a deliberate exception from the user's actual WinMorph template, not a license for unrelated ornamental glows.
+
+Overlay arrival lasts 1.2s, with the installation delayed 0.12s. A successfully changed image reveals with a 12% right inset and opacity 0.65 to 1 over 520ms. The easing is `cubic-bezier(0.19, 1, 0.22, 1)`. Pointer movement can tilt the contained screen; scroll drives scale and progress, with no timed slideshow. The fading installation becomes inert to prevent focus on hidden controls.
+
+Reduced motion stops ambient drift, transitions, entrance and wipe effects. The full-stage composition remains, with a direct cut between cover and contained-screen states instead of interpolated zoom. Pointer tilt is disabled. Short landscape uses the separate normal-flow fallback regardless of motion preference.
+
+**The Shared Stage Rule.** Keep scroll, keyboard and tab selection connected to the same decoded screenshot and caption.
 
 ## Shapes
 
-Controls and command surfaces use the control radius; major media and table containers use the surface radius. Screenshot insets and copy buttons use the smaller inset radius. Feature tabs, OS selectors and the header download link are pills. The language control and status dot are circular. Borders are thin separators, not heavy outlines around every region.
+There is no radius scale: controls, media and structural regions are square. Fine rules organize tables and commands. OS selection uses a two-pixel bottom border. Progress-rail tracks and fills are two pixels high above each label. The SVG database mark keeps its native rounded line caps; the no-pill direction concerns containers, not icon stroke geometry.
 
 ## Components
 
-### Buttons
+### Downloads and commands
 
-Download links are compact rounded filled controls, with a minimum height of 50px. The primary uses action blue; secondary downloads use control navy. Hover lightens the fill and moves downloads up 2px over 180ms with the source easing. Unavailable downloads use a muted fill/text treatment and no movement. All interactive elements inherit a light-blue 2px focus outline with a 5px offset. At small widths hero downloads are at least 58px high.
+The primary download is a light rectangle with dark text, 0.5rem by 0.95rem padding and a 44px minimum height; hover brightens the fill. Other files are open links. Missing packages become muted, transparent, unpadded links with unavailable status; API failure exposes the release fallback. Copy is an underlined blue text button with a 44px target. Command rows wrap above a fine divider. Clipboard feedback uses a fixed light rectangle with dark text, a status role and a 2200ms dismissal.
 
-### Selection controls
+### Gallery progress rail
 
-Feature tabs are pill buttons with a selected tonal fill, at least 46px high. The OS selector uses the same selected colors and at least 44px targets. Source JS maintains selected states, roving tab focus and keyboard navigation; these controls are functional selection, not decorative tags.
+Six open buttons share the stage, with muted idle labels, light selected labels, a blue selected base track and a foreground progress fill driven by `--p`. Each has at least 48px height and 15px top padding to separate its label from the track. At narrow widths the rail scrolls horizontally. Arrow keys, Home and End use roving tab stops and ARIA selection. Direct selection updates scroll position and hue; scroll selection updates the same content.
 
-### Media containers
+A requested image is decoded before selected state, caption and visibility change. A newer request supersedes an older pending decode; failure leaves the previous view and announces an error. The actual `img` receives the wipe. In the pinned stage `picture` uses `display: contents` to avoid the observed browser paint issue while its image is positioned inside the screen. Normal-flow fallback restores natural image sizing. Preserve this interaction rather than treating the gallery as independent cards.
 
-Actual screenshots sit inside softly clipped dark containers. Feature captions have 1.5rem by 2rem padding on desktop; at 800px they stack with 1.3rem padding. Screenshots keep their natural aspect ratio.
+### Navigation, focus and data
 
-### Commands and copy
+The fixed header carries the database mark, version/license, two section links and language switch; GitHub is a footer link. It gains a translucent solid background after 80px of scrolling. Links have 44px minimum targets. The skip link becomes visible on focus. Global focus is a 2px foreground outline with a 4px offset. Language switching updates page copy, accessible labels, metadata and release/error text.
 
-Command rows pair wrapping monospace text with a compact copy button of at least 44px height. The copy button has an inset radius and lightens on hover. OS selection changes both command and shell label. Copy feedback appears in a temporary rounded toast.
-
-### Navigation and data
-
-The header is a simple brand, inline links, language switch and download link. Navigation links are muted at rest and brighten on hover, with at least 44px targets. Comparison tables use subtle row dividers and a toned EasyMySQL column. Benchmarks pair descriptive row labels with large right-aligned blue values and a native details disclosure for methodology. There is no text-input primitive on this page.
+Comparison uses muted row labels, thin rules, blue EasyMySQL values and larger measured figures. Native details expose method and raw-data links. Preserve exact tested versions and the differing readiness-signal explanation from PRODUCT.md and `public/benchmarks.json`. The page has no input, chip or card primitive.
 
 ## Do's and Don'ts
 
 ### Do:
-- **Do** use real application screenshots with truthful captions.
-- **Do** preserve the existing dark palette, locally hosted fonts and bilingual layouts.
-- **Do** retain visible keyboard focus, selection states and reduced-motion behavior.
-- **Do** use rounded controls and measured section spacing from the shipped CSS.
+- **Do** preserve the actual template structure, first-viewport installation and six-state gallery.
+- **Do** decode a requested screenshot before changing its selected tab and caption.
+- **Do** retain bilingual copy, keyboard navigation, visible focus and reduced-motion behavior.
+- **Do** keep runtime units together and expose exact tested versions and methodology.
 
 ### Don't:
-- **Don't** replace the established website identity during routine extensions.
-- **Don't** add decorative filler or an oversized script demonstration.
-- **Don't** turn this landing page's installation sequence into a mandatory composition for unrelated surfaces.
+- **Don't** add rounded cards, pill containers or repeated installation areas.
+- **Don't** replace real app imagery with an unrelated decorative background.
+- **Don't** turn the scroll gallery into an automatic slideshow.
+- **Don't** extend the template color-field exception into arbitrary gradients or glows.
 
-Not canonized: no craft-floor defect was identified in the sampled components; the small hero-command typography remains a local implementation detail, not a general body-text rule. No UI was repaired by this documentation pass.
+Not canonized: no new craft-floor defect identified in the sampled components. Template-specific Inter Tight and radial fields are user-directed exceptions; small gallery annotation text remains local. This documentation pass repairs no UI.

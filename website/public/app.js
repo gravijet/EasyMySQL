@@ -84,7 +84,6 @@
 
   function zeigeRelease() {
     if (!release) return;
-    $("#spec-ver").textContent = release.version;
     $$("[data-release-version]").forEach(function (el) {
       el.textContent = "v" + release.version;
     });
@@ -233,22 +232,77 @@
 
   // Tabs: Pfeiltasten, Home/End und eine einzige Tabposition pro Gruppe.
   var tabs = $$("[role=tab]");
-  function waehleTab(tab, fokus) {
+  var bewegungReduziert = window.matchMedia("(prefers-reduced-motion: reduce)");
+  var bildAnfrage = 0;
+  function waehleTab(tab, fokus, ausSzene) {
+    var anfrage = ++bildAnfrage;
+    var bild = document
+      .getElementById(tab.getAttribute("aria-controls"))
+      .querySelector("img");
+    bild.loading = "eager";
+    if (bild.complete && bild.naturalWidth) {
+      zeigeTab(tab, fokus, ausSzene);
+      return;
+    }
+    $(".feature-panels").setAttribute("aria-busy", "true");
+    bild
+      .decode()
+      .then(function () {
+        if (anfrage !== bildAnfrage) return;
+        $(".feature-panels").removeAttribute("aria-busy");
+        zeigeTab(tab, fokus, ausSzene);
+      })
+      .catch(function () {
+        if (anfrage !== bildAnfrage) return;
+        $(".feature-panels").removeAttribute("aria-busy");
+        zeigeMeldung(
+          text(
+            "Bild nicht geladen. Bitte erneut versuchen.",
+            "Image could not load. Please try again.",
+          ),
+        );
+      });
+  }
+  function zeigeTab(tab, fokus, ausSzene) {
+    var vorher = $("[role=tab][aria-selected=true]");
     tabs.forEach(function (el) {
       var aktiv = el === tab;
       el.setAttribute("aria-selected", String(aktiv));
       el.tabIndex = aktiv ? 0 : -1;
       document.getElementById(el.getAttribute("aria-controls")).hidden = !aktiv;
     });
+    var bild = document
+      .getElementById(tab.getAttribute("aria-controls"))
+      .querySelector("img");
+    if (vorher !== tab && bild.animate && !bewegungReduziert.matches) {
+      bild.animate(
+        [
+          { clipPath: "inset(0 12% 0 0)", opacity: 0.65 },
+          { clipPath: "inset(0 0% 0 0)", opacity: 1 },
+        ],
+        { duration: 520, easing: "cubic-bezier(0.19, 1, 0.22, 1)" },
+      );
+    }
     if (fokus) {
       tab.focus({ preventScroll: true });
-      tab.scrollIntoView({
-        block: "nearest",
-        inline: "nearest",
+    }
+    var leiste = tab.parentElement;
+    if (
+      tab.offsetLeft < leiste.scrollLeft ||
+      tab.offsetLeft + tab.offsetWidth > leiste.scrollLeft + leiste.clientWidth
+    )
+      leiste.scrollTo({
+        left: Math.max(0, tab.offsetLeft - 20),
         behavior: "instant",
       });
-    }
+    if (!ausSzene)
+      document.dispatchEvent(
+        new CustomEvent("easymysql-feature", { detail: tabs.indexOf(tab) }),
+      );
   }
+  document.addEventListener("easymysql-scene-feature", function (ereignis) {
+    waehleTab(tabs[ereignis.detail], false, true);
+  });
   tabs.forEach(function (tab, index) {
     tab.tabIndex = index === 0 ? 0 : -1;
     tab.addEventListener("click", function () {

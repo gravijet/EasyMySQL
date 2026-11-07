@@ -1,6 +1,9 @@
 # Misst die vorhandenen UI-Benchmarks im optimierten Build, ohne Datenbank oder GUI-Fenster.
 # Auf Windows im Repository ausfuehren: powershell -File website/measure-performance.ps1
-param([ValidateRange(3, 21)][int]$Wiederholungen = 7)
+param(
+    [ValidateRange(3, 21)][int]$Wiederholungen = 7,
+    [string]$Ausgabepfad = (Join-Path $PSScriptRoot 'public/render-benchmarks.json')
+)
 
 $ErrorActionPreference = 'Stop'
 $Projekt = Split-Path $PSScriptRoot -Parent
@@ -55,7 +58,7 @@ try {
             @{ app = 'MySQL Workbench'; version = '26.10.0'; bytes = 273432576; source = 'https://dev.mysql.com/downloads/workbench/'; file = 'mysql-workbench-26.10.0-winx64.msi' }
         )
     }
-    [System.IO.File]::WriteAllText((Join-Path $PSScriptRoot 'public/benchmarks.json'), ($Daten | ConvertTo-Json -Depth 6) + "`n", [System.Text.UTF8Encoding]::new($false))
+    [System.IO.File]::WriteAllText($Ausgabepfad, ($Daten | ConvertTo-Json -Depth 6) + "`n", [System.Text.UTF8Encoding]::new($false))
 } finally {
     Pop-Location
 }

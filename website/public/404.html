@@ -1,22 +1,28 @@
 <!doctype html>
 <html lang="de">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>404 · EasyMySQL</title>
-<meta name="robots" content="noindex">
-<meta name="color-scheme" content="dark">
-<link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<script src="/boot.js"></script>
-<link rel="stylesheet" href="/style.css">
-</head>
-<body>
-<main class="nf">
-  <p><span class="p">MariaDB [shop]&gt;</span> SELECT * FROM pages WHERE url = ?;</p>
-  <p id="msg">Empty set (0.00 sec)</p>
-  <h1>404</h1>
-  <p><a class="u" href="/" id="back">Zur Startseite</a></p>
-</main>
-<script>if (document.documentElement.lang === "en") document.getElementById("back").textContent = "Back to the start";</script>
-</body>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>404 · EasyMySQL</title>
+    <meta name="robots" content="noindex" />
+    <meta name="color-scheme" content="dark" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <script src="/boot.js"></script>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <main class="nf">
+      <p>
+        <span class="p">MariaDB [shop]&gt;</span> SELECT * FROM pages WHERE url
+        = ?;
+      </p>
+      <p id="msg">Empty set (0.00 sec)</p>
+      <h1>404</h1>
+      <p><a class="u" href="/" id="back">Zur Startseite</a></p>
+    </main>
+    <script>
+      if (document.documentElement.lang === "en")
+        document.getElementById("back").textContent = "Back to the start";
+    </script>
+  </body>
 </html>
