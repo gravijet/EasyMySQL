@@ -128,6 +128,7 @@ pub struct EasyApp {
     tree_scan: Option<Instant>,
     tree_job: Option<Receiver<(PathBuf, crate::workspace::Node)>>,
     side_view: SideView,
+    assistenten: [crate::tabs::ai::AiTab; 2],
     explorer_dlg: Option<ExplorerDlg>,
     /// Auswahl und Zwischenablage im Explorer
     explorer: side::ExplorerState,
@@ -240,6 +241,7 @@ impl EasyApp {
             tree_scan: None,
             tree_job: None,
             side_view: SideView::Explorer,
+            assistenten: [crate::tabs::ai::AiTab::new(crate::mcp::setup::Target::Claude, None), crate::tabs::ai::AiTab::new(crate::mcp::setup::Target::Codex, None)],
             explorer_dlg: None,
             explorer: Default::default(),
             project_dlg: None,
@@ -710,7 +712,7 @@ impl EasyApp {
                     }
                 }
                 Action::OpenLog => self.open_tab(Box::new(LogTab::new())),
-                Action::OpenAi(target) => self.open_tab(Box::new(crate::tabs::ai::AiTab::new(target, self.project.clone()))),
+                Action::OpenAi(target) => self.show_side(match target { crate::mcp::setup::Target::Claude => SideView::Claude, crate::mcp::setup::Target::Codex => SideView::Codex }),
                 Action::UpdateInstall => {
                     if let Some(ctx) = CTX.lock().unwrap().clone() {
                         self.updater.install_now(&ctx);
@@ -953,6 +955,10 @@ impl EasyApp {
             self.settings.save();
         }
         self.toast(crate::tr_format!("Editor-Schrift: {px} px", "Editor font size: {px} px"));
+    }
+
+    fn chat_side(&mut self, ui: &mut egui::Ui, actions: &mut Vec<Action>, index: usize) {
+        self.assistenten[index].ui(ui, &mut cx!(self, actions));
     }
 
     fn show_side(&mut self, v: SideView) {
@@ -1361,7 +1367,8 @@ impl eframe::App for EasyApp {
             self.activity_bar(ui);
         });
         if self.settings.sidebar {
-            egui::Panel::left("sidebar").resizable(true).show_separator_line(true).default_size((ctx.content_rect().width() * 0.22).clamp(200.0, 280.0)).min_size(170.0).max_size((ctx.content_rect().width() * 0.36).max(180.0)).frame(flat(pal.sidebar_bg, egui::Margin::ZERO)).show(ui, |ui| {
+            let chat = matches!(self.side_view, SideView::Claude | SideView::Codex);
+            egui::Panel::left(if chat { "sidebar-chat" } else { "sidebar" }).resizable(true).show_separator_line(true).default_size(if chat { 360.0 } else { (ctx.content_rect().width() * 0.22).clamp(200.0, 280.0) }).min_size(if chat { 250.0 } else { 170.0 }).max_size((ctx.content_rect().width() * if chat { 0.7 } else { 0.36 }).max(250.0)).frame(flat(pal.sidebar_bg, egui::Margin::ZERO)).show(ui, |ui| {
                 style::panel_card(ui, pal.sidebar_bg, egui::Margin { left: 4, right: 4, top: 2, bottom: 6 }, |ui| {
                     self.side_panel(ui, &mut actions);
                 });

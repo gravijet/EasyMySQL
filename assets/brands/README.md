@@ -1,0 +1,1 @@
+Claude and Codex brand marks from [Lobe Icons](https://github.com/lobehub/lobe-icons) (MIT; see LICENSE). SVG originals and transparent 128 px PNG renderings are included. Brand marks belong to Anthropic and OpenAI respectively. Used to identify the connected providers.

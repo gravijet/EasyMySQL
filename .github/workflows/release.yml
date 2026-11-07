@@ -2,12 +2,6 @@
 name: EasyMySQL Release
 
 on:
-  push:
-    branches: [main]
-    paths-ignore:
-      - "**.md"
-      - "docs/**"
-      - "website/**"
   workflow_dispatch:
 
 permissions:
@@ -26,8 +20,7 @@ env:
   VCREDIST_URL: https://aka.ms/vs/17/release/vc_redist.x64.exe
 
 jobs:
-  # A release is only built when Cargo.toml carries a version that has no tag yet,
-  # so every published version is a deliberate decision (see "Versioning" in the README).
+  # Releases werden ausschliesslich manuell gestartet, um Actions-Minuten zu sparen.
   check:
     runs-on: ubuntu-latest
     outputs:

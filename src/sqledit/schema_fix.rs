@@ -211,13 +211,13 @@ fn getter_typ(java: &str, col: &str) -> Option<String> {
 }
 
 /// Vorschlag nur bei eindeutiger Struktur aus einer Datei; nie DDL aus dem Projekt ausfuehren.
-pub(crate) fn java_struktur(
+fn struktur_teile(
     text: &str,
     db: Option<&str>,
     table: Option<&str>,
     column: Option<&str>,
-) -> Option<Struktur> {
-    if text.chars().count() > super::MAX_CHARS { return None; }
+) -> Result<Option<Struktur>, ()> {
+    if text.chars().count() > super::MAX_CHARS { return Err(()); }
     let chars: Vec<char> = text.chars().collect();
     // Kommentare ausblenden, damit Beispiele keine Typinformationen liefern.
     let java: String = source::spans(&chars)
@@ -239,19 +239,20 @@ pub(crate) fn java_struktur(
         {
             continue;
         }
+        let database = db.map(str::to_string).or(database);
         if column.is_some_and(|c| !cols.iter().any(|(n, _)| n == c)) {
             continue;
         }
         if let Some((old_db, old_tab, old_cols)) = &mut result {
             if *old_tab != tab || *old_db != database {
-                return None;
+                return Err(());
             }
             for (n, t) in cols {
                 if let Some((_, old)) = old_cols.iter_mut().find(|(c, _)| *c == n) {
                     if old.is_empty() {
                         *old = t;
                     } else if !t.is_empty() && *old != t {
-                        return None;
+                        return Err(());
                     }
                 } else {
                     old_cols.push((n, t));
@@ -261,20 +262,53 @@ pub(crate) fn java_struktur(
             result = Some((database, tab, cols));
         }
     }
-    result.and_then(|(database, tab, mut cols)| {
+    Ok(result.map(|(database, tab, mut cols)| {
         if let Some(c) = column {
             cols.retain(|(n, _)| n == c);
         }
-        if cols.iter().any(|(_, t)| t.is_empty()) {
-            return None;
-        }
-        Some((db.map(str::to_string).or(database), tab, cols))
-    })
+        (db.map(str::to_string).or(database), tab, cols)
+    }))
+}
+
+#[cfg(test)]
+pub(crate) fn java_struktur(text: &str, db: Option<&str>, table: Option<&str>, column: Option<&str>) -> Option<Struktur> {
+    struktur_teile(text, db, table, column).ok().flatten().filter(|(_, _, cols)| cols.iter().all(|(_, typ)| !typ.is_empty()))
+}
+
+/// DAO-Dateien duerfen einander ergaenzen; widerspruechliche Typen bleiben bei der Vorschau.
+pub(crate) fn java_struktur_projekt(texte: &[String], db: Option<&str>, table: Option<&str>, column: Option<&str>) -> Option<Struktur> {
+    let mut result: Option<Struktur> = None;
+    for text in texte {
+        let Some((datenbank, tabelle, spalten)) = struktur_teile(text, db, table, column).ok()? else { continue };
+        if let Some((ziel_db, ziel_tabelle, ziel_spalten)) = &mut result {
+            if *ziel_tabelle != tabelle || *ziel_db != datenbank { return None; }
+            for (name, typ) in spalten {
+                if let Some((_, alt)) = ziel_spalten.iter_mut().find(|(n, _)| *n == name) {
+                    if alt.is_empty() { *alt = typ; }
+                    else if !typ.is_empty() && *alt != typ { return None; }
+                } else { ziel_spalten.push((name, typ)); }
+            }
+        } else { result = Some((datenbank, tabelle, spalten)); }
+    }
+    result.filter(|(_, _, cols)| cols.iter().all(|(_, typ)| !typ.is_empty()))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn mehrere_java_dateien_ergeben_die_ganze_tabelle() {
+        let mut texte = vec![r#"var p=c.prepareStatement("INSERT INTO kunde (id, name) VALUES (?, ?)"); p.setLong(1, id); p.setString(2, name);"#.into(),
+            r#"var p=c.prepareStatement("UPDATE kunde SET aktiv=? WHERE id=?"); r.getBoolean("aktiv"); r.getLong("id");"#.into()];
+        let (_, _, cols) = java_struktur_projekt(&texte, Some("shop"), Some("kunde"), None).unwrap();
+        assert_eq!(cols.len(), 3);
+        assert!(cols.contains(&("aktiv".into(), "BOOLEAN".into())));
+        texte.push(r#"var p=c.prepareStatement("SELECT id FROM kunde"); r.getString("id");"#.into());
+        assert!(java_struktur_projekt(&texte, Some("shop"), Some("kunde"), None).is_none());
+        let texte = vec![texte[0].clone(), r#"var a=c.prepareStatement("INSERT INTO kunde(id) VALUES (?)"); a.setInt(1,x); var b=c.prepareStatement("SELECT id FROM kunde"); r.getString("id");"#.into()];
+        assert!(java_struktur_projekt(&texte, Some("shop"), Some("kunde"), None).is_none());
+    }
+
     #[test]
     fn insert_parameter_und_konstante_verkettung() {
         let java = r#"var p = c.prepareStatement("INSERT INTO `schule`.`kunde` (id, name) " + "VALUES (?, ?)");

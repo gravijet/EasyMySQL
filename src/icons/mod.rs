@@ -57,6 +57,8 @@ pub enum Icon {
     Check,
     Info,
     Sparkles,
+    Claude,
+    Codex,
     Layers,
     ArrowLeft,
     ArrowRight,
@@ -146,6 +148,8 @@ impl Icon {
             Icon::Check => "circle-check",
             Icon::Info => "info",
             Icon::Sparkles => "sparkles",
+            Icon::Claude => "claude",
+            Icon::Codex => "codex",
             Icon::Layers => "layers",
             Icon::ArrowLeft => "arrow-left",
             Icon::ArrowRight => "arrow-right",
@@ -202,6 +206,18 @@ fn shapes(icon: Icon) -> &'static [path::Poly] {
 
 /// Zeichnet `icon` in `r` (die Groesse passt sich dem Rechteck an, Entwurf fuer 24 px).
 pub fn paint(p: &egui::Painter, r: Rect, icon: Icon, color: Color32) {
+    if matches!(icon, Icon::Claude | Icon::Codex) {
+        let id = egui::Id::new(("marke", icon.name()));
+        let texture = p.ctx().data(|d| d.get_temp::<egui::TextureHandle>(id)).unwrap_or_else(|| {
+                let bytes: &[u8] = if icon == Icon::Claude { include_bytes!("../../assets/brands/claude.png") } else { include_bytes!("../../assets/brands/codex.png") };
+                let img = image::load_from_memory(bytes).expect("eingebettetes Markensymbol").to_rgba8();
+                let texture = p.ctx().load_texture(icon.name(), egui::ColorImage::from_rgba_unmultiplied([img.width() as usize, img.height() as usize], img.as_raw()), egui::TextureOptions::LINEAR);
+                p.ctx().data_mut(|d| d.insert_temp(id, texture.clone()));
+                texture
+        });
+        p.image(texture.id(), r, Rect::from_min_max(Pos2::ZERO, pos2(1.0, 1.0)), color);
+        return;
+    }
     let k = r.width().min(r.height()) / 24.0;
     let width = (1.75 * k).clamp(1.1, 3.0);
     let stroke = Stroke::new(width, color);

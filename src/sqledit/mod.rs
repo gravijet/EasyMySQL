@@ -19,7 +19,10 @@ mod schema_jpa;
 mod schema_java;
 pub(crate) use schema_decl::{TabellenPlan, migrationen, plan_sql, pruefe_daten, bestehender_plan};
 pub(crate) use schema_jpa::jpa_modelle;
+pub(crate) use schema_fix::java_struktur_projekt;
+#[cfg(test)]
 pub(crate) use schema_fix::java_struktur;
+pub(crate) use schema_java::abfragen as java_abfragen;
 mod text;
 
 pub use highlight::*;

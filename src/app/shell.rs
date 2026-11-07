@@ -248,7 +248,7 @@ impl EasyApp {
                 ui.menu_button("Plugins", |ui| {
                     style::menu_item_look(ui);
                     for target in [crate::mcp::setup::Target::Claude, crate::mcp::setup::Target::Codex] {
-                        if icons::menu_item(ui, Some(Icon::Sparkles), target.label(), "").clicked() {
+                        if icons::menu_item(ui, Some(match target { crate::mcp::setup::Target::Claude => Icon::Claude, crate::mcp::setup::Target::Codex => Icon::Codex }), target.label(), "").clicked() {
                             actions.push(Action::OpenAi(target));
                             ui.close();
                         }
@@ -456,6 +456,13 @@ impl EasyApp {
                         self.search.focus = true;
                     }
                 }
+            }
+        }
+        ui.add_space(6.0);
+        for (icon, view, label) in [(Icon::Claude, SideView::Claude, "Claude Code"), (Icon::Codex, SideView::Codex, "Codex")] {
+            let active = self.settings.sidebar && self.side_view == view;
+            if button(ui, icon, active, label.into()) {
+                if active { self.settings.sidebar = false; self.settings.save(); } else { self.show_side(view); }
             }
         }
         // Einstellungen unten, getrennt von den Ansichten

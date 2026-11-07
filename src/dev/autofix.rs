@@ -519,7 +519,7 @@ pub fn analyze_output(raw: &str, project: Option<&Path>, file: Option<&Path>, lo
             None,
         );
         v.push(if let Some(fix) = inferred {
-            Suggestion::new(p, tr("Struktur erstellen …", "Create structure …"), fix)
+            Suggestion::new(p, if matches!(fix, Fix::DeklarierteStruktur { .. }) { tr("Tabelle samt Struktur erstellen", "Create table with structure") } else { tr("Struktur erstellen …", "Create structure …") }, fix)
         } else if db.is_empty() {
             Suggestion::hint(p)
         } else {
@@ -767,24 +767,9 @@ fn java_struktur_fix(
             Err(_) => return None,
         }
     }
-    let mut result = None;
-    for path in files
-        .into_iter()
-        .filter(|p| p.extension().is_some_and(|e| e == "java"))
-    {
-        let Ok(text) = std::fs::read_to_string(path) else {
-            continue;
-        };
-        if let Some((db, table, columns)) = crate::sqledit::java_struktur(&text, db, table, column)
-        {
-            let fix = Fix::Schema { db, table, columns };
-            if result.as_ref().is_some_and(|old| *old != fix) {
-                return None;
-            }
-            result = Some(fix);
-        }
-    }
-    result
+    let texts = files.into_iter().filter(|p| p.extension().is_some_and(|e| e == "java"))
+        .filter_map(|p| std::fs::read_to_string(p).ok()).collect::<Vec<_>>();
+    crate::sqledit::java_struktur_projekt(&texts, db, table, column).map(|(db, table, columns)| Fix::Schema { db, table, columns })
 }
 
 fn migrations_dateien(root: &Path, out: &mut Vec<PathBuf>, depth: usize) {
@@ -821,6 +806,18 @@ fn deklarierter_fix(root: &Path, files: &[PathBuf], db: Option<&str>, table: Opt
     }
     let mut plans = crate::sqledit::migrationen(&sql)?;
     let texts = files.iter().filter(|f| f.extension().is_some_and(|e| e == "java")).filter_map(|f| std::fs::read_to_string(f).ok()).collect::<Vec<_>>();
+    let migration_schluessel = plans.iter().map(|p| (p.datenbank.clone(), p.tabelle.clone())).collect::<Vec<_>>();
+    let mut hat_jdbc_ddl = false;
+    for text in &texts {
+        for (sql, _) in crate::sqledit::java_abfragen(text) {
+            for plan in crate::sqledit::migrationen(&sql)? {
+                if migration_schluessel.contains(&(plan.datenbank.clone(), plan.tabelle.clone())) { continue; }
+                if let Some(old) = plans.iter().find(|p| p.tabelle == plan.tabelle && p.datenbank == plan.datenbank) {
+                    if *old != plan { return Err("Widerspruechliche JDBC-DDL und Migration".into()); }
+                } else { plans.push(plan); hat_jdbc_ddl = true; }
+            }
+        }
+    }
     let mut has_jpa = false;
     let migration_keys = plans.iter().map(|p| (p.datenbank.clone(), p.tabelle.clone())).collect::<Vec<_>>();
     match crate::sqledit::jpa_modelle(&texts) {
@@ -835,7 +832,7 @@ fn deklarierter_fix(root: &Path, files: &[PathBuf], db: Option<&str>, table: Opt
         Err(e) if !plans.iter().any(|p| table.is_none_or(|t| p.tabelle == t) && column.is_none_or(|c| p.teile.iter().any(|d| d.name.as_deref() == Some(c)))) => return Err(e),
         Err(_) => {},
     }
-    let source = if has_jpa { tr("SQL-Migrationen/JPA-Modelle", "SQL migrations/JPA models") } else { tr("SQL-Migrationen", "SQL migrations") };
+    let source = if hat_jdbc_ddl { tr("SQL-Migrationen/JDBC-DDL/JPA-Modelle", "SQL migrations/JDBC DDL/JPA models") } else if has_jpa { tr("SQL-Migrationen/JPA-Modelle", "SQL migrations/JPA models") } else { tr("SQL-Migrationen", "SQL migrations") };
     plans.retain(|p| db.zip(p.datenbank.as_deref()).is_none_or(|(a, b)| a == b));
     let targets = plans.iter().filter(|p| table.is_none_or(|t| p.tabelle == t) && column.is_none_or(|c| p.teile.iter().any(|d| d.name.as_deref() == Some(c)))).collect::<Vec<_>>();
     if targets.len() != 1 { return Ok(None); }
@@ -1289,6 +1286,7 @@ Caused by: java.sql.SQLSyntaxErrorException: Unknown database 'schule1'\n\
         std::fs::write(migrations.join("V1__basis.sql"), "CREATE TABLE kunde (id BIGINT PRIMARY KEY AUTO_INCREMENT); CREATE TABLE auftrag (id BIGINT PRIMARY KEY, kunde_id BIGINT, FOREIGN KEY (kunde_id) REFERENCES kunde(id)); CREATE TABLE fremd (id INT);").unwrap();
         std::fs::write(migrations.join("V2__spalte.sql"), "ALTER TABLE auftrag ADD name VARCHAR(80) DEFAULT 'neu';").unwrap();
         std::fs::write(migrations.join("V10__spalte.sql"), "ALTER TABLE auftrag ADD aktiv BOOLEAN DEFAULT TRUE;").unwrap();
+        std::fs::write(root.join("Main.java"), r#"static final String ALT = "CREATE TABLE auftrag(id BIGINT PRIMARY KEY)";"#).unwrap();
         let fix = java_struktur_fix(Some(&root), None, Some("shop"), Some("auftrag"), None).unwrap();
         let Fix::DeklarierteStruktur { datenbank, plaene, .. } = fix else { panic!() };
         assert_eq!(datenbank.as_deref(), Some("shop"));
@@ -1296,6 +1294,23 @@ Caused by: java.sql.SQLSyntaxErrorException: Unknown database 'schule1'\n\
         assert!(plaene.iter().any(|p| p.tabelle == "kunde"));
         let sql = crate::sqledit::plan_sql(&plaene, &crate::db::Schema { name: "shop".into(), ..Default::default() }, &[]).unwrap();
         assert!(sql.contains("VARCHAR(80) DEFAULT 'neu'")); assert!(!sql.contains("`fremd`"));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn jdbc_ddl_liefert_schluessel_defaults_und_abhaengigkeiten() {
+        let root = tmp("jdbc-ddl");
+        std::fs::write(root.join("Main.java"), r#"
+            static final String BASIS = "CREATE TABLE kunde (id BIGINT PRIMARY KEY AUTO_INCREMENT, name VARCHAR(80) NOT NULL UNIQUE)";
+            static final String AUFTRAG = "CREATE TABLE auftrag (id BIGINT PRIMARY KEY AUTO_INCREMENT, kunde_id BIGINT NOT NULL, status VARCHAR(20) DEFAULT 'offen', FOREIGN KEY(kunde_id) REFERENCES kunde(id))";
+            void laden() { c.prepareStatement("SELECT * FROM auftrag"); }
+        "#).unwrap();
+        let fixes = analyze_output("Table 'shop.auftrag' doesn't exist", Some(&root), None, true);
+        assert_eq!(fixes[0].label, tr("Tabelle samt Struktur erstellen", "Create table with structure"));
+        let Some(Fix::DeklarierteStruktur { plaene, .. }) = &fixes[0].fix else { panic!("{fixes:?}") };
+        assert_eq!(plaene.len(), 2);
+        let sql = crate::sqledit::plan_sql(plaene, &crate::db::Schema { name: "shop".into(), ..Default::default() }, &[]).unwrap();
+        for regel in ["AUTO_INCREMENT", "PRIMARY KEY", "UNIQUE", "NOT NULL", "DEFAULT 'offen'", "FOREIGN KEY"] { assert!(sql.contains(regel), "{sql}"); }
         std::fs::remove_dir_all(root).unwrap();
     }
 

@@ -131,7 +131,7 @@ fn atom(ts: &[String], at: &mut usize, vars: &HashMap<String, String>) -> Option
 }
 
 /// SQL plus eindeutiger PreparedStatement-Empfaenger fuer mehrere Abfragen in einer Datei.
-pub(super) fn abfragen(text: &str) -> Vec<(String, Option<String>)> {
+pub(crate) fn abfragen(text: &str) -> Vec<(String, Option<String>)> {
     let ts = java_tokens(text);
     let mut vars = HashMap::new();
     let mut unknown = HashSet::new();
@@ -187,6 +187,8 @@ pub(super) fn abfragen(text: &str) -> Vec<(String, Option<String>)> {
             }
         }
     }
+    // Deklarierte DDL-Konstanten gehoeren auch dann zum Schema, wenn andere JDBC-Aufrufe existieren.
+    out.extend(vars.values().filter(|s| s.trim_start().to_ascii_uppercase().starts_with("CREATE TABLE ")).cloned());
     if !jdbc {
         out.extend(
             vars.iter().filter(|(n, s)| !builders.contains(*n) && crate::dev::java::source::looks_like_sql(s)).map(|(_, s)| s.clone()),

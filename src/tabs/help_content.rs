@@ -1007,9 +1007,9 @@ pub const CHAPTERS: &[Chapter] = &[
                 id: "ki-chat",
                 title: "Claude und Codex direkt in der App",
                 blocks: &[
-                    P("Plugins → Claude Code oder Codex öffnet einen eigenen Chat mit Nachrichtenverlauf und Codeblöcken. Installieren lädt das offizielle Programm mit Prüfsumme; Anmelden öffnet die Anmeldung beim Anbieter im Browser."),
+                    P("Claude Code und Codex öffnen links in der Seitenleiste eigene Chats mit Markensymbolen. Modell und Aufwand stehen unter der Eingabe; der Verlauf speichert Gespräche lokal. Kontext komprimieren nutzt die echte Anbieterfunktion und erhält den sichtbaren Verlauf. Installation und Anmeldung stehen im Menü oben rechts."),
                     P("Wählen Sie einen vertrauenswürdigen Projektordner. Dateiänderungen erlauben gibt Änderungen frei; ein Wechsel des Ordners beginnt einen neuen Chat. Datenbankrechte gelten separat unter Einstellungen → KI-Assistenten."),
-                    P("Senden oder Strg+Enter schickt die Nachricht. Abbrechen stoppt die laufende Anfrage. SQL-Codeblöcke lassen sich im SQL-Editor öffnen und dort prüfen. Beim Schließen endet der sichtbare Verlauf; die Assistenten speichern ihre Sitzungen selbst."),
+                    P("Senden oder Strg+Enter schickt die Nachricht. Abbrechen stoppt die laufende Anfrage. SQL-Codeblöcke lassen sich im SQL-Editor öffnen und dort prüfen. Gespeicherte Chats stehen unter dem Verlaufssymbol; ein neuer Chat löscht ältere Gespräche nicht."),
                     P("Nachrichten und gelesene Projektdateien werden an den gewählten Anbieter gesendet. Sie benötigen ein passendes Anbieter-Konto; dessen Limits und Kosten gelten."),
                 ],
             },
@@ -1326,7 +1326,7 @@ pub const CHAPTERS: &[Chapter] = &[
                     P("EasyMySQL liest die Ausgabe von Programmen, Compilern und SQL-Anweisungen mit. Erkannte Fehler erscheinen über dem Terminal bzw. unter der Meldung mit einer Erklärung und, wo möglich, einem Knopf zum Beheben. „Alle beheben“ wendet alle Vorschläge auf einmal an, „Erneut ausführen“ startet das Programm danach neu."),
                     Table(&[
                         ("Unknown database", "Datenbank anlegen"),
-                        ("Table … doesn't exist", "Tabelle im Designer anlegen"),
+                        ("Table … doesn't exist", "Deklarierte Tabelle samt Struktur mit einem Klick erstellen; sonst SQL-Vorschau oder Designer"),
                         ("Server nicht erreichbar", "eigenen Server starten bzw. Verbindung prüfen"),
                         ("com.mysql.jdbc.Driver", "veraltete Treiberklasse im ganzen Projekt durch com.mysql.cj.jdbc.Driver ersetzen"),
                         ("No suitable driver", "Adresse auf jdbc:mariadb:// umstellen, Treiber laden, Class.forName entfernen"),
@@ -1338,6 +1338,7 @@ pub const CHAPTERS: &[Chapter] = &[
                         ("No module named", "Python-Paket in requirements.txt bzw. pyproject.toml eintragen"),
                         ("Cannot find module", "npm-Paket in package.json eintragen"),
                     ]),
+                    P("Der Java-SQL-Autofix liest SQL-Migrationen, JPA-Modelle und konstante JDBC-DDL. Neue, eindeutig deklarierte Tabellen werden einschließlich Spalten, Primär- und Fremdschlüsseln, Indizes, Standardwerten und benötigten Tabellen mit einem Klick erstellt. Existierende Tabellen und nur abgeleitete JDBC-Typen benötigen weiterhin eine SQL-Vorschau. Widersprüchliche oder dynamische Definitionen werden nicht geraten."),
                     Tip("Dateiverweise in der Ausgabe (z. B. Main.java:13 oder File \"main.py\", line 5) sind anklickbar und öffnen die Datei an der Zeile."),
                 ],
             },

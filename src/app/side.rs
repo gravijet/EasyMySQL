@@ -14,6 +14,8 @@ pub enum SideView {
     Databases,
     History,
     Git,
+    Claude,
+    Codex,
 }
 
 impl SideView {
@@ -24,6 +26,8 @@ impl SideView {
             SideView::Databases => "datenbanken",
             SideView::History => "verlauf",
             SideView::Git => "git",
+            SideView::Claude => "claude",
+            SideView::Codex => "codex",
         }
     }
     pub fn from_name(s: &str) -> SideView {
@@ -32,6 +36,8 @@ impl SideView {
             "suche" => SideView::Search,
             "verlauf" => SideView::History,
             "git" => SideView::Git,
+            "claude" => SideView::Claude,
+            "codex" => SideView::Codex,
             _ => SideView::Explorer,
         }
     }
@@ -298,6 +304,10 @@ impl EasyApp {
             SideView::Databases => self.databases_side(ui, actions),
             SideView::History => self.history_side(ui, actions),
             SideView::Git => self.git_side(ui, actions),
+            SideView::Claude | SideView::Codex => {
+                let index = usize::from(self.side_view == SideView::Codex);
+                self.chat_side(ui, actions, index);
+            }
         }
     }
 

@@ -305,6 +305,26 @@ impl EasyApp {
                 let Some(sql) = crate::sqledit::plan_sql(&plaene, &schema, &existing) else {
                     self.toast(crate::i18n::tr("Keine eindeutige fehlende Struktur gefunden.", "No unambiguous missing structure found.")); return;
                 };
+                // Vollstaendig deklarierte neue Tabellen brauchen keine zweite Freigabe.
+                if datenbank_festgelegt(&plaene, &schema) {
+                    let result = crate::sqledit::pruefe_daten(dbc, &db, &plaene).and_then(|_| dbc.exec_schema(&db, &sql));
+                    match result {
+                        Ok(_) => {
+                            for terminal in &mut self.terminal.tabs {
+                                for (i, vorschlag) in terminal.fixes.iter().enumerate() {
+                                    if matches!(&vorschlag.fix, Some(Fix::DeklarierteStruktur { plaene: p, .. }) if *p == plaene) { terminal.applied.push(i); }
+                                }
+                            }
+                            self.toast(crate::tr_format!("Tabellen samt Struktur in {db} erstellt.", "Created tables with structure in {db}."));
+                            self.handle_actions(vec![Action::SchemaChanged(db)]);
+                        }
+                        Err(e) => {
+                            self.handle_actions(vec![Action::SchemaChanged(db)]);
+                            self.error(crate::tr_format!("Die Struktur konnte nicht vollständig erstellt werden. Bereits ausgeführte DDL bleibt bestehen.\n{e}", "The structure could not be created completely. DDL already executed remains applied.\n{e}"));
+                        }
+                    }
+                    return;
+                }
                 let host = &dbc.info.host; let port = dbc.info.port;
                 self.dialogs.push(super::dialogs::Dialog::ConfirmStructure {
                     text: crate::tr_format!("Struktur aus {quelle} auf {host}:{port} in {db} ergänzen? SQL und JDBC-Ziel prüfen. Benötigte Tabellen, Spalten und deklarierte Schlüssel/Beziehungen werden ergänzt. Bestehende Spalten und Daten werden nicht ersetzt.", "Add structure from {quelle} on {host}:{port} in {db}? Review the SQL and JDBC target. Required tables, columns and declared keys/relationships will be added. Existing columns and data will not be replaced."),
@@ -348,6 +368,12 @@ impl EasyApp {
     }
 }
 
+fn datenbank_festgelegt(plaene: &[crate::sqledit::TabellenPlan], schema: &crate::db::Schema) -> bool {
+    !plaene.is_empty() && plaene.iter().all(|p| p.datenbank.as_deref() == Some(&schema.name)
+        && !schema.tables.iter().any(|t| t.name.eq_ignore_ascii_case(&p.tabelle))
+        && p.teile.iter().any(|t| t.name.is_some()))
+}
+
 /// Leiste mit erkannten Fehlern ueber dem Terminal. Liefert die angeklickten Behebungen und "Erneut ausfuehren".
 fn fix_bar(ui: &mut egui::Ui, fixes: &[crate::dev::autofix::Suggestion], applied: &[usize], exited: bool) -> (Vec<usize>, bool) {
     let pal = style::pal();
@@ -384,4 +410,51 @@ fn fix_bar(ui: &mut egui::Ui, fixes: &[crate::dev::autofix::Suggestion], applied
     });
     ui.add_space(6.0);
     (apply, rerun)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    #[ignore = "braucht isolierten MariaDB-Testserver auf EASYMYSQL_AUTOFIX_TEST_PORT"]
+    fn e2e_java_tabellenfix_mit_vollstaendiger_struktur() {
+        let port = std::env::var("EASYMYSQL_AUTOFIX_TEST_PORT").unwrap().parse().unwrap();
+        let dbc = crate::db::Db::connect(&crate::db::ConnInfo { port, ..Default::default() }).unwrap();
+        let db = format!("ein_klick_{}", std::process::id());
+        let root = std::env::temp_dir().join(&db); std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("Main.java"), r#"
+            static final String KUNDE = "CREATE TABLE kunde(id BIGINT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(80) NOT NULL UNIQUE)";
+            static final String AUFTRAG = "CREATE TABLE auftrag(id BIGINT AUTO_INCREMENT PRIMARY KEY, kunde_id BIGINT NOT NULL, status VARCHAR(20) NOT NULL DEFAULT 'offen', FOREIGN KEY(kunde_id) REFERENCES kunde(id))";
+            void laden() { c.prepareStatement("SELECT * FROM auftrag"); }
+        "#).unwrap();
+        dbc.exec(&format!("CREATE DATABASE {}", crate::db::q(&db)), ()).unwrap();
+        let ergebnis = (|| {
+            let fixes = crate::dev::autofix::analyze_output(&format!("Table '{db}.auftrag' doesn't exist"), Some(&root), None, true);
+            let Some(crate::dev::autofix::Fix::DeklarierteStruktur { plaene, .. }) = &fixes[0].fix else { panic!("{fixes:?}") };
+            let schema = dbc.schema(&db)?;
+            assert!(datenbank_festgelegt(plaene, &schema));
+            let sql = crate::sqledit::plan_sql(plaene, &schema, &[]).unwrap();
+            crate::sqledit::pruefe_daten(&dbc, &db, plaene)?; dbc.exec_schema(&db, &sql)?;
+            dbc.exec_in(&db, "INSERT INTO kunde(name) VALUES ('Ada'); INSERT INTO auftrag(kunde_id) VALUES(1)")?;
+            let rows = dbc.query(&format!("SELECT id, status FROM {}.auftrag", crate::db::q(&db)))?;
+            assert_eq!(rows.rows[0], vec![Some("1".into()), Some("offen".into())]);
+            assert!(dbc.exec_in(&db, "INSERT INTO kunde(name) VALUES ('Ada')").is_err());
+            assert!(dbc.exec_in(&db, "INSERT INTO kunde(name) VALUES (NULL)").is_err());
+            assert!(dbc.exec_in(&db, "INSERT INTO auftrag(kunde_id) VALUES(999)").is_err());
+            assert!(!datenbank_festgelegt(plaene, &dbc.schema(&db)?));
+            Ok::<_, String>(())
+        })();
+        dbc.exec(&format!("DROP DATABASE {}", crate::db::q(&db)), ()).unwrap(); std::fs::remove_dir_all(root).unwrap();
+        ergebnis.unwrap();
+    }
+    #[test]
+    fn ein_klick_nur_fuer_neue_vollstaendig_deklarierte_tabellen() {
+        let mut schema = crate::db::Schema { name: "shop".into(), ..Default::default() };
+        let mut plaene = crate::sqledit::migrationen("CREATE TABLE kunde(id BIGINT PRIMARY KEY)").unwrap();
+        assert!(!datenbank_festgelegt(&plaene, &schema));
+        plaene[0].datenbank = Some("shop".into());
+        assert!(datenbank_festgelegt(&plaene, &schema));
+        schema.tables.push(crate::db::TableInfo { name: "Kunde".into(), ..Default::default() });
+        assert!(!datenbank_festgelegt(&plaene, &schema));
+    }
 }
