@@ -1061,6 +1061,8 @@ mod performance_tests {
     fn performance_render_large_result() {
         let ctx = egui::Context::default();
         let mut tab = SqlTab::empty();
+        // Leere SQL-Tabs zeigen zuerst Meldungen; hier muss das Raster sichtbar sein.
+        tab.pane = Pane::Set(0);
         tab.results = vec![StmtResult {
             line: 0, preview: "SELECT".into(), affected: 0, error: None,
             error_line: None, elapsed: Duration::ZERO, returned: None,
@@ -1071,10 +1073,11 @@ mod performance_tests {
             }],
         }];
         let mut render = || {
-            let _ = ctx.run_ui(egui::RawInput {
+            let ausgabe = ctx.run_ui(egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 760.0))),
                 ..Default::default()
             }, |ui| { tab.results_ui(ui, 18.0, &[]); });
+            assert!(ausgabe.shapes.len() > 100, "Benchmark muss sichtbare Tabellenzellen zeichnen");
         };
         for _ in 0..5 { render(); }
         let start = Instant::now();

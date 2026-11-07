@@ -1,0 +1,59 @@
+{
+  "measured_at": "2026-11-07T15:18:50Z",
+  "version": "7.3.0",
+  "source_base": "f71fdf5ccc38da3a28bd853b11d6e926b7a002ac",
+  "command": "cargo test --release --locked performance_render -- --ignored --nocapture --test-threads=1",
+  "profile": "release; opt-level=3; lto=true; codegen-units=1",
+  "cpu": "AMD Ryzen 7 8700G w/ Radeon 780M Graphics",
+  "os": "Microsoft Windows 11 Pro",
+  "viewport": {
+    "height": 760,
+    "width": 1200
+  },
+  "repetitions": 7,
+  "scope": "CPU UI preparation in headless egui. Excludes GPU presentation, SQL execution, data loading, startup and RAM. Median of per-run mean frame times.",
+  "editor": {
+    "median_ms": 0.127,
+    "warmup_frames": 3,
+    "samples_ms": [0.151, 0.128, 0.127, 0.127, 0.127, 0.126, 0.133],
+    "measured_frames_per_run": 10,
+    "sql_lines": 5000,
+    "source": "src/sqledit/mod.rs::performance_render_large_editor"
+  },
+  "grid": {
+    "columns": 12,
+    "warmup_frames": 5,
+    "samples_ms": [0.435, 0.44, 0.443, 0.434, 0.437, 0.435, 0.449],
+    "measured_frames_per_run": 30,
+    "source": "src/tabs/sql.rs::performance_render_large_result",
+    "median_ms": 0.437,
+    "rows": 50000
+  },
+  "download_sizes_checked_at": "2026-11-07",
+  "downloads": [
+    {
+      "app": "EasyMySQL",
+      "source": "https://github.com/gravijet/EasyMySQL/releases/tag/v7.1.0",
+      "version": "7.1.0",
+      "bytes": 76907468
+    },
+    {
+      "app": "XAMPP",
+      "source": "https://www.apachefriends.org/download.html",
+      "version": "8.5.12",
+      "bytes": 200178909,
+      "file": "xampp-windows-x64-8.5.12-0-VS17-installer.exe"
+    },
+    {
+      "app": "MySQL Workbench",
+      "source": "https://dev.mysql.com/downloads/workbench/",
+      "version": "26.10.0",
+      "bytes": 273432576,
+      "file": "mysql-workbench-26.10.0-winx64.msi"
+    }
+  ],
+  "source_hashes": {
+    "src/sqledit/mod.rs": "838039d9938171a5cc514ad58a8195df464f04116306b6ae24fc16329d809d38",
+    "src/tabs/sql.rs": "085442196492c4e0013a7f90e2cdfd2c88462e70e32ee7381d04e2299ed39cd0"
+  }
+}
