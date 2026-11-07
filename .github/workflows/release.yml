@@ -3,6 +3,15 @@ name: EasyMySQL Release
 
 on:
   workflow_dispatch:
+    inputs:
+      platform:
+        description: Zu bauende Pakete
+        type: choice
+        required: true
+        default: windows
+        options:
+          - windows
+          - all
 
 permissions:
   contents: write
@@ -184,7 +193,7 @@ jobs:
   # MariaDB is not bundled there: install.sh installs it with Homebrew or the package manager.
   unix:
     needs: check
-    if: needs.check.outputs.new == 'true'
+    if: needs.check.outputs.new == 'true' && inputs.platform == 'all'
     strategy:
       fail-fast: false
       matrix:
