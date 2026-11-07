@@ -426,3 +426,16 @@ fn e2e_mariadb_update_in_place() {
     drop(db);
     server.stop_blocking(&info);
 }
+
+#[test]
+#[ignore = "laedt Claude Code und Codex mit Pruefsumme, ohne KI-Anfragen"]
+fn e2e_ai_plugins() {
+    use crate::mcp::setup::Target;
+    for ziel in [Target::Claude, Target::Codex] {
+        let exe = install::install_ai(ziel, &std::sync::atomic::AtomicBool::new(false)).unwrap();
+        let out = Command::new(&exe).arg("--version").output().unwrap();
+        assert!(out.status.success(), "{}: {}", exe.display(), String::from_utf8_lossy(&out.stderr));
+        println!("{}: {}", ziel.label(), String::from_utf8_lossy(&out.stdout).trim());
+        assert_eq!(ziel.program().as_deref(), Some(exe.as_path()));
+    }
+}

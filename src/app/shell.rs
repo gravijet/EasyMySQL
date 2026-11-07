@@ -245,6 +245,15 @@ impl EasyApp {
                     style::menu_item_look(ui);
                     self.server_items(ui, &ctx, actions, &mut cmd);
                 });
+                ui.menu_button("Plugins", |ui| {
+                    style::menu_item_look(ui);
+                    for target in [crate::mcp::setup::Target::Claude, crate::mcp::setup::Target::Codex] {
+                        if icons::menu_item(ui, Some(Icon::Sparkles), target.label(), "").clicked() {
+                            actions.push(Action::OpenAi(target));
+                            ui.close();
+                        }
+                    }
+                });
                 ui.menu_button(crate::i18n::text("Hilfe"), |ui| {
                     style::menu_item_look(ui);
                     item(ui, crate::i18n::text("Handbuch"), Cmd::Help, &mut cmd);

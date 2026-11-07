@@ -19,6 +19,10 @@ pub enum Target {
 }
 
 impl Target {
+    pub fn program(self) -> Option<PathBuf> {
+        find_program(match self { Self::Claude => "claude", Self::Codex => "codex" })
+    }
+
     pub fn label(self) -> &'static str {
         match self {
             Target::Claude => "Claude Code",
@@ -122,11 +126,18 @@ fn remove_skill(t: Target) {
 /// Programm im PATH suchen (unter Windows auch .exe und .cmd, wie npm sie anlegt)
 fn find_program(name: &str) -> Option<PathBuf> {
     let exts: &[&str] = if cfg!(windows) { &[".exe", ".cmd", ".bat"] } else { &[""] };
-    let mut dirs: Vec<PathBuf> = std::env::var_os("PATH").map(|p| std::env::split_paths(&p).collect()).unwrap_or_default();
+    let mut dirs = Vec::new();
+    for (_, dir) in crate::dev::versioned_dirs(&crate::dev::tool_root().join("ki"), &format!("{name}-")) {
+        dirs.push(dir.join("bin"));
+        dirs.push(dir);
+    }
+    dirs.extend(std::env::var_os("PATH").map(|p| std::env::split_paths(&p).collect::<Vec<_>>()).unwrap_or_default());
     // Der eigene Installer von Claude Code legt das Programm hier ab, auch wenn PATH noch nicht neu geladen ist
     if let Some(h) = home() {
         dirs.push(h.join(".local").join("bin"));
         dirs.push(h.join(".claude").join("local"));
+        dirs.push(h.join(".npm-global/bin"));
+        if cfg!(windows) { dirs.push(h.join("AppData/Roaming/npm")); }
     }
     dirs.iter().flat_map(|d| exts.iter().map(move |e| d.join(format!("{name}{e}")))).find(|p| p.is_file())
 }

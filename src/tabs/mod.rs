@@ -1,6 +1,7 @@
 // Registerkarten im Hauptbereich.
 
 pub mod builder;
+pub mod ai;
 pub mod code;
 pub mod data;
 pub mod designer;
@@ -58,6 +59,7 @@ pub enum Action {
     /// Einstellungen oeffnen, optional bei einem Abschnitt
     OpenSettings(Option<String>),
     OpenLog,
+    OpenAi(crate::mcp::setup::Target),
     /// Text in die Zwischenablage
     CopyText(String),
     /// Befehl ausfuehren (wie per Tastenkuerzel)

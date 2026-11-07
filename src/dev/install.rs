@@ -290,6 +290,60 @@ pub fn latest_gh() -> Result<Package, String> {
     Ok(Package { version, url: asset["browser_download_url"].as_str().ok_or("gh: url")?.into(), checksum, file: name })
 }
 
+/// Offizielle KI-Programme mit Pruefsumme, ohne Shell-Installationsskripte.
+pub fn install_ai(ziel: crate::mcp::setup::Target, cancel: &AtomicBool) -> Result<PathBuf, String> {
+    use crate::mcp::setup::Target;
+    if !cfg!(any(target_arch = "x86_64", target_arch = "aarch64")) {
+        return Err(crate::i18n::tr("Diese Prozessorarchitektur wird nicht unterstützt.", "This processor architecture is not supported.").into());
+    }
+    let name = if ziel == Target::Claude { "claude" } else { "codex" };
+    let paket = if ziel == Target::Claude {
+        let basis = "https://downloads.claude.ai/claude-code-releases";
+        let version = get_text(&format!("{basis}/latest"))?.trim().to_string();
+        if !is_stable(&version) { return Err("Claude: invalid version".into()); }
+        let os = if cfg!(windows) { "win32" } else if cfg!(target_os = "macos") { "darwin" } else { "linux" };
+        let arch = if cfg!(target_arch = "aarch64") { "arm64" } else { "x64" };
+        let plattform = format!("{os}-{arch}");
+        let manifest = get_json(&format!("{basis}/{version}/manifest.json"))?;
+        let summe = manifest["platforms"][&plattform]["checksum"].as_str().ok_or("Claude: checksum")?;
+        Package { url: format!("{basis}/{version}/{plattform}/claude{}", super::EXE), version,
+            checksum: Checksum::Sha256(summe.into()), file: format!("claude{}", super::EXE) }
+    } else {
+        let (tag, assets) = github_latest("openai/codex")?;
+        let version = tag.strip_prefix("rust-v").ok_or("Codex: release tag")?.to_string();
+        if !is_stable(&version) { return Err("Codex: invalid version".into()); }
+        let arch = if cfg!(target_arch = "aarch64") { "aarch64" } else { "x86_64" };
+        let os = if cfg!(windows) { "pc-windows-msvc" } else if cfg!(target_os = "macos") { "apple-darwin" } else { "unknown-linux-musl" };
+        let file = format!("codex-package-{arch}-{os}.tar.gz");
+        let asset = assets.iter().find(|a| a["name"] == file).ok_or("Codex: package")?;
+        Package { version, url: asset["browser_download_url"].as_str().ok_or("Codex: url")?.into(),
+            checksum: github_digest(asset).ok_or("Codex: checksum")?, file }
+    };
+    let root = tool_root().join("ki");
+    let zielordner = root.join(format!("{name}-{}", paket.version));
+    let rel = if ziel == Target::Claude { PathBuf::from(format!("claude{}", super::EXE)) } else { PathBuf::from(format!("bin/codex{}", super::EXE)) };
+    if zielordner.join(&rel).is_file() { return Ok(zielordner.join(rel)); }
+    let staging = root.join(format!(".{name}-installation"));
+    std::fs::create_dir_all(&staging).map_err(|e| e.to_string())?;
+    let result = (|| {
+        let datei = staging.join(&paket.file);
+        download(&paket.url, &datei, &paket.checksum, &Progress::default(), cancel)?;
+        let bereit = if ziel == Target::Codex { extract(&datei, &staging.join("paket"))? } else { staging.clone() };
+        let exe = bereit.join(&rel);
+        if !exe.is_file() { return Err("AI package: executable missing".into()); }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).map_err(|e| e.to_string())?;
+        }
+        if cancel.load(Ordering::Relaxed) { return Err(crate::i18n::tr("Abgebrochen.", "Cancelled.").into()); }
+        std::fs::rename(&bereit, &zielordner).map_err(|e| e.to_string())?;
+        Ok(zielordner.join(&rel))
+    })();
+    let _ = std::fs::remove_dir_all(staging);
+    result
+}
+
 /// Neueste stabile Version eines Werkzeugs (fuer Updates und die Anzeige)
 pub fn latest_version(tool: Tool) -> Result<String, String> {
     let cfg = super::config();

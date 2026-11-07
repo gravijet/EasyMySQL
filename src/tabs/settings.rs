@@ -787,6 +787,12 @@ impl TabView for SettingsTab {
                 }
                 if page == "ki" {
                     self.heading(ui, "ki", crate::i18n::text("KI-Assistenten"));
+                    ui.horizontal(|ui| {
+                        ui.label(crate::i18n::tr("Chat in EasyMySQL:", "Chat inside EasyMySQL:"));
+                        for ziel in [crate::mcp::setup::Target::Claude, crate::mcp::setup::Target::Codex] {
+                            if ui.button(ziel.label()).clicked() { cx.actions.push(Action::OpenAi(ziel)); }
+                        }
+                    });
                     ui.label(RichText::new(crate::i18n::tr(
                         "Claude Code, Codex und andere KI-Assistenten arbeiten über den MCP-Server von EasyMySQL mit Ihren Datenbanken: Schema lesen, Abfragen ausführen und – wenn erlaubt – Daten ändern.",
                         "Claude Code, Codex and other AI assistants work with your databases through the EasyMySQL MCP server: they read the schema, run queries and – if allowed – change data.",

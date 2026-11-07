@@ -710,6 +710,7 @@ impl EasyApp {
                     }
                 }
                 Action::OpenLog => self.open_tab(Box::new(LogTab::new())),
+                Action::OpenAi(target) => self.open_tab(Box::new(crate::tabs::ai::AiTab::new(target, self.project.clone()))),
                 Action::UpdateInstall => {
                     if let Some(ctx) = CTX.lock().unwrap().clone() {
                         self.updater.install_now(&ctx);

@@ -1004,6 +1004,16 @@ pub const CHAPTERS: &[Chapter] = &[
         title: "KI-Assistenten (MCP)",
         sections: &[
             Section {
+                id: "ki-chat",
+                title: "Claude und Codex direkt in der App",
+                blocks: &[
+                    P("Plugins → Claude Code oder Codex öffnet einen eigenen Chat mit Nachrichtenverlauf und Codeblöcken. Installieren lädt das offizielle Programm mit Prüfsumme; Anmelden öffnet die Anmeldung beim Anbieter im Browser."),
+                    P("Wählen Sie einen vertrauenswürdigen Projektordner. Dateiänderungen erlauben gibt Änderungen frei; ein Wechsel des Ordners beginnt einen neuen Chat. Datenbankrechte gelten separat unter Einstellungen → KI-Assistenten."),
+                    P("Senden oder Strg+Enter schickt die Nachricht. Abbrechen stoppt die laufende Anfrage. SQL-Codeblöcke lassen sich im SQL-Editor öffnen und dort prüfen. Beim Schließen endet der sichtbare Verlauf; die Assistenten speichern ihre Sitzungen selbst."),
+                    P("Nachrichten und gelesene Projektdateien werden an den gewählten Anbieter gesendet. Sie benötigen ein passendes Anbieter-Konto; dessen Limits und Kosten gelten."),
+                ],
+            },
+            Section {
                 id: "ki",
                 title: "Claude Code und Codex verbinden",
                 blocks: &[
