@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 
 mod complete;
 mod highlight;
+pub mod hover;
 mod lang;
 mod lint;
 mod schema_fix;
@@ -177,6 +178,8 @@ pub struct SqlEditor {
     pub exec_line: Option<usize>,
     /// Cursor beim naechsten Zeichnen setzen und dorthin scrollen (Sitzung wiederherstellen)
     pub restore: Option<usize>,
+    /// Wort unter dem Mauszeiger (Anfang) und seit wann: Hinweis zu Tabellen, Spalten und Funktionen
+    hover_at: Option<(usize, Instant)>,
 }
 
 #[derive(Default)]
@@ -224,6 +227,7 @@ impl SqlEditor {
             breakpoints_enabled: false,
             exec_line: None,
             restore: None,
+            hover_at: None,
         }
     }
 
@@ -251,8 +255,13 @@ impl SqlEditor {
         self.set_cursor(ctx, pos);
         // Zeilen weit oben brauchen kein Scrollen (sonst verschwinden bei kurzen Dateien die ersten Zeilen)
         let y = line as f32 * row_h;
-        let visible = if self.view.4 > 0.0 { self.view.4 * 0.6 } else { 300.0 };
-        self.scroll_to = Some(if y < visible { 0.0 } else { y - 80.0 });
+        // Vor dem ersten Zeichnen kennt der Editor seine Hoehe noch nicht: dann die des Fensters schaetzen
+        let view_h = if self.view.4 > 0.0 { self.view.4 } else { (ctx.content_rect().height() - 220.0).max(200.0) };
+        let (top, _) = (self.view.2, ());
+        let visible = y >= top && y + row_h <= top + view_h - row_h;
+        if !visible {
+            self.scroll_to = Some(if y < view_h * 0.75 { 0.0 } else { (y - view_h / 3.0).max(0.0) });
+        }
         ctx.memory_mut(|m| m.request_focus(self.id));
     }
 
@@ -1236,6 +1245,29 @@ impl SqlEditor {
                 tip.push_str(&format!("\n\n{}  ({})", crate::tr_format!("Korrigieren: {}", "Fix: {}", if f.text.is_empty() { crate::i18n::text("entfernen").to_string() } else { f.text.clone() }), crate::keymap::text(crate::keymap::Cmd::FixAll)));
             }
             o.response.response.clone().on_hover_text_at_pointer(tip);
+        } else if self.lang == Lang::Sql
+            && let Some(i) = out.hover
+            && o.response.response.hovered()
+            && let Some((a, _, _)) = hover::word_at(text, i)
+        {
+            // SQL: Tabelle, Spalte oder Funktion erklaeren, wenn die Maus kurz ruht
+            match self.hover_at {
+                Some((at, since)) if at == a => {
+                    if since.elapsed() >= Duration::from_millis(350) {
+                        if let Some((title, body)) = hover::sql_info(text, i, self.schema.as_deref()) {
+                            hover::card(&ctx, ui.layer_id(), self.id.with("sql-hover"), &title, &body, Lang::Sql);
+                        }
+                    } else {
+                        ctx.request_repaint_after(Duration::from_millis(360) - since.elapsed());
+                    }
+                }
+                _ => {
+                    self.hover_at = Some((a, Instant::now()));
+                    ctx.request_repaint_after(Duration::from_millis(360));
+                }
+            }
+        } else {
+            self.hover_at = None;
         }
 
         let cursor = o.cursor_range.map(|r| r.primary.index.0);

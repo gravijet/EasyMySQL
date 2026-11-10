@@ -784,16 +784,19 @@ pub fn parse_completion(v: &Value, text: &str, cursor: usize) -> (usize, Vec<Com
     (word_start, items.into_iter().map(|(_, c)| c).take(120).collect())
 }
 
-pub fn hover_text(v: &Value) -> Option<String> {
+/// Hinweis des Servers mit Code-Bloecken (```java …```), fuer die Karte mit Signatur
+pub fn hover_text_raw(v: &Value) -> Option<String> {
     let c = &v["contents"];
     let parts: Vec<String> = match c {
         Value::String(s) => vec![s.clone()],
-        Value::Array(a) => a.iter().filter_map(|x| x.as_str().map(str::to_string).or_else(|| x["value"].as_str().map(str::to_string))).collect(),
-        Value::Object(_) => c["value"].as_str().map(|s| vec![s.to_string()]).unwrap_or_default(),
+        Value::Array(a) => a
+            .iter()
+            .filter_map(|x| x.as_str().map(str::to_string).or_else(|| x["value"].as_str().map(|s| if x["language"].is_string() { format!("```\n{s}\n```") } else { s.to_string() })))
+            .collect(),
+        Value::Object(_) => c["value"].as_str().map(|s| vec![if c["language"].is_string() { format!("```\n{s}\n```") } else { s.to_string() }]).unwrap_or_default(),
         _ => vec![],
     };
-    let text = parts.join("\n\n").lines().filter(|l| !l.trim_start().starts_with("```")).collect::<Vec<_>>().join("\n");
-    let t = text.trim().to_string();
+    let t = parts.join("\n\n").trim().to_string();
     (!t.is_empty()).then_some(t)
 }
 
@@ -922,6 +925,7 @@ mod tests {
         assert_eq!(apply_edits("public class A {\n    A() {}\n}", &w.files[0].edits), "public class Kunde {\n    Kunde() {}\n}");
         let loc = json!([{ "uri": "file:///p/B.java", "range": { "start": { "line": 3, "character": 2 }, "end": { "line": 3, "character": 5 } } }]);
         assert_eq!(parse_location(&loc), Some((PathBuf::from("/p/B.java"), (3, 2))));
-        assert_eq!(hover_text(&json!({ "contents": { "kind": "markdown", "value": "```java\nint x\n```\nZahl" } })).as_deref(), Some("int x\nZahl"));
+        let raw = hover_text_raw(&json!({ "contents": { "kind": "markdown", "value": "```java\nint x\n```\nZahl" } })).unwrap();
+        assert_eq!(crate::sqledit::hover::split_lsp(&raw), ("int x".to_string(), "Zahl".to_string()));
     }
 }

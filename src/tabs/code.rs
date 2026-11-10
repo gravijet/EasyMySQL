@@ -651,31 +651,50 @@ impl CodeTab {
     }
 
     /// Hinweis des Sprachservers fuer die Stelle unter dem Mauszeiger
+    /// Hinweis zum Wort unter der Maus: sofort aus der Datei (Methode, Feld, Variable, Javadoc), der Sprachserver
+    /// ergaenzt Klassen des JDK und anderer Dateien
     fn poll_hover(&mut self, ui: &egui::Ui, index: Option<usize>) {
-        let Some(server) = self.lsp.clone().filter(|s| s.ready()) else { return };
-        match (index, &mut self.hover) {
-            (None, _) => self.hover = None,
-            (Some(i), Some((at, since, rx, text))) if *at == i => {
-                if rx.is_none() && text.is_none() && since.elapsed() > Duration::from_millis(600) && self.lsp_synced.as_deref() == Some(self.text.as_str()) {
-                    *rx = Some(server.hover(&self.file, &self.text, i));
+        if self.lang != Lang::Java {
+            return;
+        }
+        let Some((word_start, _, _)) = index.and_then(|i| sqledit::hover::word_at(&self.text, i)) else {
+            self.hover = None;
+            return;
+        };
+        let i = index.unwrap_or(word_start);
+        let server = self.lsp.clone().filter(|s| s.ready());
+        match &mut self.hover {
+            Some((at, since, rx, text)) if *at == word_start => {
+                if since.elapsed() < Duration::from_millis(350) {
+                    ui.ctx().request_repaint_after(Duration::from_millis(360) - since.elapsed());
+                    return;
+                }
+                if let Some(s) = &server
+                    && rx.is_none()
+                    && text.is_none()
+                    && self.lsp_synced.as_deref() == Some(self.text.as_str())
+                {
+                    *rx = Some(s.hover(&self.file, &self.text, i));
                 }
                 if let Some(r) = rx
                     && let Ok(res) = r.try_recv()
                 {
-                    *text = Some(res.ok().and_then(|v| lsp::hover_text(&v)).unwrap_or_default());
+                    *text = Some(res.ok().and_then(|v| lsp::hover_text_raw(&v)).unwrap_or_default());
                     *rx = None;
                 }
-                if let Some(t) = text.as_ref().filter(|t| !t.is_empty()) {
-                    let t: String = t.chars().take(1200).collect();
-                    egui::Tooltip::always_open(ui.ctx().clone(), ui.layer_id(), self.editor.id.with("hover"), egui::PopupAnchor::Pointer).show(|ui| {
-                        ui.set_max_width(520.0);
-                        ui.label(RichText::new(t).monospace().small());
-                    });
-                } else if rx.is_some() || text.is_none() {
-                    ui.ctx().request_repaint_after(Duration::from_millis(150));
+                let lsp_part = text.as_ref().filter(|t| !t.is_empty()).map(|t| sqledit::hover::split_lsp(&t.chars().take(2000).collect::<String>()));
+                let local = sqledit::hover::java_info(&self.text, i);
+                if let Some((title, body)) = lsp_part.filter(|(t, b)| !t.is_empty() || !b.is_empty()).or(local) {
+                    sqledit::hover::card(ui.ctx(), ui.layer_id(), self.editor.id.with("hover"), &title, &body, Lang::Java);
+                }
+                if rx.is_some() {
+                    ui.ctx().request_repaint_after(Duration::from_millis(100));
                 }
             }
-            (Some(i), _) => self.hover = Some((i, Instant::now(), None, None)),
+            _ => {
+                self.hover = Some((word_start, Instant::now(), None, None));
+                ui.ctx().request_repaint_after(Duration::from_millis(360));
+            }
         }
     }
 
@@ -1811,9 +1830,7 @@ impl TabView for CodeTab {
         if let Some(c) = out.ctrl_click {
             self.goto_definition(c, cx);
         }
-        if self.runnable() {
-            self.poll_hover(ui, out.hover);
-        }
+        self.poll_hover(ui, out.hover);
         self.history_dialog(&ctx);
         self.libs_dialog(&ctx, cx);
         self.rename_dialog(&ctx);
