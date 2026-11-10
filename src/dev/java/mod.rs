@@ -2,6 +2,7 @@
 
 pub mod format;
 pub mod jar;
+pub mod outline;
 pub mod project;
 pub mod run;
 pub mod source;

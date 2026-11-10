@@ -354,6 +354,7 @@ pub fn get(lang: Lang, root: &Path, ctx: &eframe::egui::Context) -> Option<Arc<S
                         "diagnostic": { "dynamicRegistration": false },
                         "definition": { "linkSupport": false },
                         "hover": { "contentFormat": ["plaintext", "markdown"] },
+                        "completion": { "completionItem": { "snippetSupport": false, "documentationFormat": ["plaintext", "markdown"], "labelDetailsSupport": true }, "contextSupport": true },
                         "rename": { "prepareSupport": false },
                         "codeAction": { "codeActionLiteralSupport": { "codeActionKind": { "valueSet": ["quickfix", "source.organizeImports", "source.fixAll"] } }, "dataSupport": true, "resolveSupport": { "properties": ["edit"] }, "disabledSupport": true },
                     },
@@ -533,6 +534,10 @@ impl Server {
         self.request("textDocument/definition", Self::doc_pos(path, text, index))
     }
 
+    pub fn completion(&self, path: &Path, text: &str, index: usize) -> Reply {
+        self.request("textDocument/completion", Self::doc_pos(path, text, index))
+    }
+
     pub fn hover(&self, path: &Path, text: &str, index: usize) -> Reply {
         self.request("textDocument/hover", Self::doc_pos(path, text, index))
     }
@@ -698,6 +703,87 @@ pub fn parse_location(v: &Value) -> Option<(PathBuf, (usize, usize))> {
 }
 
 /// Text eines Hover-Ergebnisses (Markdown wird als Text gezeigt, Codebloecke ohne Zaeune)
+/// Ein Vorschlag des Sprachservers, fertig fuer das Vorschlagsfenster
+#[derive(Clone, Debug, PartialEq)]
+pub struct Completion {
+    pub label: String,
+    pub insert: String,
+    pub detail: String,
+    pub kind: &'static str,
+    /// Cursor so viele Zeichen vor dem Ende (in die Klammern einer Methode)
+    pub back: usize,
+    /// Fehlender Import, der mit dem Vorschlag kommt ("java.util.ArrayList")
+    pub import: Option<String>,
+}
+
+fn kind_label(k: u64) -> &'static str {
+    use crate::i18n::tr;
+    match k {
+        2 | 3 => tr("Methode", "Method"),
+        4 => tr("Konstruktor", "Constructor"),
+        5 | 10 => tr("Feld", "Field"),
+        6 => tr("Variable", "Variable"),
+        7 | 22 => tr("Klasse", "Class"),
+        8 => "Interface",
+        9 => tr("Paket", "Package"),
+        13 => "Enum",
+        14 => tr("Schlüsselwort", "Keyword"),
+        15 => tr("Vorlage", "Snippet"),
+        20 | 21 => tr("Konstante", "Constant"),
+        25 => tr("Typparameter", "Type parameter"),
+        _ => "",
+    }
+}
+
+/// Antwort auf textDocument/completion: (Wortanfang als Zeichenindex, Vorschlaege). Der Wortanfang kommt aus dem
+/// textEdit des Servers, sonst aus dem Wort vor dem Cursor.
+pub fn parse_completion(v: &Value, text: &str, cursor: usize) -> (usize, Vec<Completion>) {
+    let list = v.get("items").unwrap_or(v).as_array().cloned().unwrap_or_default();
+    let chars: Vec<char> = text.chars().collect();
+    let mut word_start = cursor.min(chars.len());
+    while word_start > 0 && (chars[word_start - 1].is_alphanumeric() || chars[word_start - 1] == '_' || chars[word_start - 1] == '$') {
+        word_start -= 1;
+    }
+    let mut items: Vec<(String, Completion)> = Vec::new();
+    for it in list {
+        let label = it["label"].as_str().unwrap_or("").to_string();
+        if label.is_empty() {
+            continue;
+        }
+        let kind = it["kind"].as_u64().unwrap_or(0);
+        let mut insert = it["textEdit"]["newText"].as_str().or(it["insertText"].as_str()).unwrap_or(&label).to_string();
+        if let Some(r) = it["textEdit"].get("range").or(it["textEdit"].get("insert")) {
+            word_start = from_pos(text, read_pos(&r["start"])).min(cursor);
+        }
+        let mut back = 0;
+        if matches!(kind, 2 | 3 | 4) && !insert.contains('(') {
+            let has_params = label.split_once('(').is_some_and(|(_, rest)| !rest.starts_with(')'));
+            insert.push_str("()");
+            back = usize::from(has_params);
+        }
+        let detail = it["labelDetails"]["description"].as_str().or(it["detail"].as_str()).unwrap_or("").to_string();
+        // Interne Klassen des JDK sind fuer eigenen Code nicht gedacht
+        if ["com.sun.", "sun.", "jdk.internal", "jdk.jfr.internal"].iter().any(|p| detail.starts_with(p)) {
+            continue;
+        }
+        let import = it["additionalTextEdits"].as_array().and_then(|a| {
+            a.iter().find_map(|e| {
+                let t = e["newText"].as_str()?.trim();
+                let name = t.strip_prefix("import ")?.trim_end_matches(';').trim();
+                (!name.is_empty()).then(|| name.trim_start_matches("static ").to_string())
+            })
+        });
+        let full_label = match it["labelDetails"]["detail"].as_str() {
+            Some(d) if !label.contains('(') => format!("{label}{d}"),
+            _ => label,
+        };
+        let sort = it["sortText"].as_str().unwrap_or(&full_label).to_string();
+        items.push((sort, Completion { label: full_label, insert, detail, kind: kind_label(kind), back, import }));
+    }
+    items.sort_by(|a, b| a.0.cmp(&b.0));
+    (word_start, items.into_iter().map(|(_, c)| c).take(120).collect())
+}
+
 pub fn hover_text(v: &Value) -> Option<String> {
     let c = &v["contents"];
     let parts: Vec<String> = match c {

@@ -16,11 +16,13 @@ struct TermTab {
     analyzed: (usize, Option<Instant>),
     /// Schon angewendete Behebungen (Index in `fixes`)
     applied: Vec<usize>,
+    /// Die originalen Fehlerzeilen zu den Erklaerungen
+    original: String,
 }
 
 impl TermTab {
     fn new(uid: usize, title: String, session: Session, program: bool) -> Self {
-        TermTab { uid, title, session, program, fixes: Vec::new(), analyzed: (0, None), applied: Vec::new() }
+        TermTab { uid, title, session, program, fixes: Vec::new(), analyzed: (0, None), applied: Vec::new(), original: String::new() }
     }
 }
 
@@ -210,13 +212,14 @@ impl EasyApp {
                 if len != t.analyzed.0 && due {
                     let log = t.session.log.lock().map(|l| l.clone()).unwrap_or_default();
                     t.fixes = crate::dev::autofix::analyze_output(&log, Some(t.session.cwd()), None, local);
+                    t.original = crate::dev::autofix::error_excerpt(&log);
                     t.analyzed = (len, Some(Instant::now()));
                     t.applied.clear();
                 } else if len != t.analyzed.0 {
                     ctx.request_repaint_after(Duration::from_millis(500));
                 }
                 if !t.fixes.is_empty() {
-                    let (apply, rerun) = fix_bar(ui, &t.fixes, &t.applied, t.session.exited());
+                    let (apply, rerun) = fix_bar(ui, &t.fixes, &t.applied, &t.original, t.session.exited());
                     for i in apply {
                         if let Some(f) = t.fixes[i].fix.clone() {
                             if !matches!(f, crate::dev::autofix::Fix::Schema { .. } | crate::dev::autofix::Fix::DeklarierteStruktur { .. }) {
@@ -375,7 +378,7 @@ fn datenbank_festgelegt(plaene: &[crate::sqledit::TabellenPlan], schema: &crate:
 }
 
 /// Leiste mit erkannten Fehlern ueber dem Terminal. Liefert die angeklickten Behebungen und "Erneut ausfuehren".
-fn fix_bar(ui: &mut egui::Ui, fixes: &[crate::dev::autofix::Suggestion], applied: &[usize], exited: bool) -> (Vec<usize>, bool) {
+fn fix_bar(ui: &mut egui::Ui, fixes: &[crate::dev::autofix::Suggestion], applied: &[usize], original: &str, exited: bool) -> (Vec<usize>, bool) {
     let pal = style::pal();
     let mut apply = Vec::new();
     let mut rerun = false;
@@ -391,11 +394,25 @@ fn fix_bar(ui: &mut egui::Ui, fixes: &[crate::dev::autofix::Suggestion], applied
                 let (icon, color) = if done { (Icon::Check, pal.ok_text) } else if s.fix.is_some() { (Icon::Alert, pal.error_text) } else { (Icon::Info, pal.text_weak) };
                 let (r, _) = ui.allocate_exact_size(vec2(16.0, 16.0), Sense::hover());
                 icons::paint(ui.painter(), r, icon, color);
-                ui.add(egui::Label::new(egui::RichText::new(&s.problem).color(if done { pal.text_weak } else { pal.text })).truncate());
+                ui.add(egui::Label::new(egui::RichText::new(&s.problem).color(if done { pal.text_weak } else { pal.text })).wrap());
                 if s.fix.is_some() && !done && icons::text_button(ui, Icon::Wizard, &s.label).clicked() {
                     apply.push(i);
                 }
             });
+        }
+        // Die echte Meldung bleibt sichtbar: vollstaendig, markierbar und kopierbar
+        if !original.is_empty() {
+            egui::CollapsingHeader::new(crate::i18n::tr("Originale Fehlermeldung", "Original error message"))
+                .id_salt("fix-original")
+                .default_open(true)
+                .show(ui, |ui| {
+                    egui::ScrollArea::vertical().max_height(180.0).id_salt("fix-original-scroll").show(ui, |ui| {
+                        ui.add(egui::Label::new(egui::RichText::new(original).monospace().color(pal.error_text)).wrap().selectable(true));
+                    });
+                    if icons::text_button(ui, Icon::Copy, crate::i18n::tr("Kopieren", "Copy")).clicked() {
+                        ui.ctx().copy_text(original.to_string());
+                    }
+                });
         }
         if open.len() > 1 || exited {
             ui.horizontal(|ui| {

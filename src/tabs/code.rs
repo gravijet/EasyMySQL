@@ -100,6 +100,8 @@ pub struct CodeTab {
     lsp_wait: Option<LspWait>,
     /// Hinweis des Sprachservers fuer die Stelle unter dem Mauszeiger: (Stelle, seit, Anfrage, Text)
     hover: Option<(usize, Instant, Option<lsp::Reply>, Option<String>)>,
+    /// Laufende Anfrage nach Vorschlaegen: Antwort und Cursorstelle
+    completion: Option<(lsp::Reply, usize)>,
     rename: Option<(String, usize, bool)>,
     debug_eval: String,
     lsp_note: Option<String>,
@@ -211,6 +213,7 @@ impl CodeTab {
             lsp_diag_gen: 0,
             lsp_wait: None,
             hover: None,
+            completion: None,
             rename: None,
             debug_eval: String::new(),
             lsp_note: None,
@@ -479,6 +482,38 @@ impl CodeTab {
             self.lsp_diag_gen = n;
             let marks = list.iter().map(|d| (lsp::from_pos(&self.text, d.start), lsp::from_pos(&self.text, d.end), d.message.clone(), d.error)).collect();
             self.editor.set_external(marks);
+        }
+    }
+
+    /// Vorschlaege des Sprachservers anfordern und zeigen; angenommene Vorschlaege bekommen ihren Import
+    fn poll_completion(&mut self, ctx: &egui::Context, out: &sqledit::EditorOutput) {
+        if let Some(imp) = &out.add_import {
+            let caret = self.editor.caret(ctx);
+            let (text, added, at) = ensure_imports(&self.text, std::slice::from_ref(imp));
+            if added > 0 {
+                self.text = text;
+                self.last_edit = Instant::now();
+                self.editor.place_cursor(ctx, if caret >= at { caret + added } else { caret });
+            }
+        }
+        if let Some(c) = out.complete_at
+            && let Some(s) = self.lsp.clone().filter(|s| s.ready())
+        {
+            s.sync(&self.file, self.lang, &self.text);
+            self.lsp_synced = Some(self.text.clone());
+            self.completion = Some((s.completion(&self.file, &self.text, c), c));
+        }
+        let Some((rx, c)) = &self.completion else { return };
+        match rx.try_recv() {
+            Ok(Ok(v)) => {
+                let c = *c;
+                let (start, list) = lsp::parse_completion(&v, &self.text, c);
+                self.editor.offer(c, start, list);
+                self.completion = None;
+                ctx.request_repaint();
+            }
+            Ok(Err(_)) | Err(std::sync::mpsc::TryRecvError::Disconnected) => self.completion = None,
+            Err(std::sync::mpsc::TryRecvError::Empty) => ctx.request_repaint_after(Duration::from_millis(30)),
         }
     }
 
@@ -1769,6 +1804,7 @@ impl TabView for CodeTab {
         if out.changed {
             self.last_edit = Instant::now();
         }
+        self.poll_completion(&ctx, &out);
         if let Some(line) = out.toggle_breakpoint {
             self.toggle_breakpoint(line);
         }

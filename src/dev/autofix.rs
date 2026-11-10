@@ -1126,6 +1126,31 @@ pub enum LineKind {
     Plain,
 }
 
+/// Die echten Fehlerzeilen einer Ausgabe (Meldung, Ursachen, Stacktrace), damit man sie neben der Erklaerung
+/// vollstaendig sieht. Leer, wenn nichts nach Fehler aussieht.
+pub fn error_excerpt(log: &str) -> String {
+    let clean = strip_ansi(log);
+    let lines: Vec<&str> = clean.lines().collect();
+    let mut out: Vec<&str> = Vec::new();
+    let mut inside = false;
+    for l in lines {
+        match classify(l) {
+            LineKind::Error | LineKind::Cause => {
+                inside = true;
+                out.push(l);
+            }
+            LineKind::Frame if inside => out.push(l),
+            // Fortsetzungszeilen einer Meldung (z. B. javac: Quelltextzeile und ^)
+            LineKind::Plain if inside && !l.trim().is_empty() && out.len() < 400 => out.push(l),
+            _ => inside = false,
+        }
+        if out.len() >= 400 {
+            break;
+        }
+    }
+    out.join("\n")
+}
+
 pub fn classify(line: &str) -> LineKind {
     let t = line.trim_start();
     if t.is_empty() {
@@ -1171,6 +1196,15 @@ Caused by: java.sql.SQLSyntaxErrorException: Unknown database 'schule1'\n\
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         d
+    }
+
+    #[test]
+    fn the_original_error_lines_are_kept() {
+        let log = "Starte Main …\nException in thread \"main\" java.sql.SQLIntegrityConstraintViolationException: (conn=5) Duplicate entry '1' for key 'PRIMARY'\n\tat org.mariadb.jdbc.Foo.bar(Foo.java:10)\n\tat Main.main(Main.java:7)\nfertig\n\n";
+        let ex = error_excerpt(log);
+        assert!(ex.starts_with("Exception in thread") && ex.contains("Duplicate entry '1' for key 'PRIMARY'") && ex.contains("Main.java:7"), "{ex}");
+        assert!(!ex.contains("Starte Main"));
+        assert!(error_excerpt("alles gut\n").is_empty());
     }
 
     #[test]

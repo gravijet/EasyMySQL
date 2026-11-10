@@ -104,6 +104,8 @@ struct Popup {
     selected: usize,
     word_start: usize,
     cursor: usize,
+    /// Je Eintrag ein fehlender Import (Vorschlaege des Sprachservers)
+    imports: Vec<Option<String>>,
 }
 
 #[derive(Default)]
@@ -188,6 +190,10 @@ pub struct EditorOutput {
     pub ctrl_click: Option<usize>,
     /// Zeichen unter dem Mauszeiger
     pub hover: Option<usize>,
+    /// Vorschlaege des Sprachservers fuer diese Cursorstelle holen (Java-Code)
+    pub complete_at: Option<usize>,
+    /// Ein angenommener Vorschlag braucht diesen Import
+    pub add_import: Option<String>,
 }
 
 impl SqlEditor {
@@ -250,9 +256,10 @@ impl SqlEditor {
         ctx.memory_mut(|m| m.request_focus(self.id));
     }
 
-    fn accept(&mut self, ctx: &egui::Context, text: &mut String) {
-        let Some(p) = self.popup.take() else { return };
-        let Some(item) = p.items.get(p.selected) else { return };
+    fn accept(&mut self, ctx: &egui::Context, text: &mut String) -> Option<String> {
+        let p = self.popup.take()?;
+        let item = p.items.get(p.selected)?;
+        let import = p.imports.get(p.selected).cloned().flatten();
         let a = byte_of(text, p.word_start);
         let b = byte_of(text, p.cursor);
         // Mehrzeilige Vorlagen in Java & Co. bekommen die Einrueckung der aktuellen Zeile
@@ -272,8 +279,45 @@ impl SqlEditor {
         self.prev_text = text.clone();
         // Nach "alias." gleich die Spalten anbieten
         if item.insert.ends_with('.') {
-            self.popup = self.suggest(text, end, true).map(|s| Popup { items: s.items, selected: 0, word_start: s.word_start, cursor: end });
+            self.popup = self.suggest(text, end, true).map(|s| Popup { items: s.items, selected: 0, word_start: s.word_start, cursor: end, imports: Vec::new() });
         }
+        import
+    }
+
+    /// Cursorstelle laut Editor (auch direkt nach einer Eingabe im selben Bild)
+    pub fn caret(&self, ctx: &egui::Context) -> usize {
+        self.selection(ctx).map_or(self.cursor, |(_, b)| b)
+    }
+
+    /// Cursor setzen (von aussen, z. B. nach einem eingefuegten Import)
+    pub fn place_cursor(&mut self, ctx: &egui::Context, pos: usize) {
+        self.set_cursor(ctx, pos);
+        self.cursor = pos;
+    }
+
+    /// Vorschlaege des Sprachservers zeigen, wenn der Cursor noch an derselben Stelle steht. Eigene Vorschlaege
+    /// (Vorlagen, Variablen) bleiben dahinter erhalten.
+    pub fn offer(&mut self, cursor: usize, word_start: usize, list: Vec<crate::dev::lsp::Completion>) {
+        if self.cursor != cursor || list.is_empty() {
+            return;
+        }
+        let mut items: Vec<complete::Item> = Vec::new();
+        let mut imports: Vec<Option<String>> = Vec::new();
+        for c in list {
+            items.push(complete::Item { label: c.label, insert: c.insert, kind: c.kind, detail: c.detail, back: c.back });
+            imports.push(c.import);
+        }
+        let local = self.popup.take().filter(|p| p.cursor == cursor);
+        if let Some(p) = local {
+            // Vorlagen und Datenbank-Vorschlaege behalten, Doppeltes weglassen
+            for it in p.items {
+                if !items.iter().any(|x| x.insert == it.insert) && (it.kind == crate::i18n::tr("Vorlage", "Snippet") || items.len() < 8) {
+                    items.push(it);
+                    imports.push(None);
+                }
+            }
+        }
+        self.popup = Some(Popup { items, selected: 0, word_start: word_start.min(cursor), cursor, imports });
     }
 
     fn lint_env(&self) -> Env<'_> {
@@ -888,7 +932,7 @@ impl SqlEditor {
                         })
                     });
                 } else {
-                    self.accept(&ctx, text);
+                    out.add_import = self.accept(&ctx, text);
                     out.changed = true;
                 }
             }
@@ -1231,7 +1275,19 @@ impl SqlEditor {
         if (o.response.response.changed() && auto) || force {
             // Nach dem Einruecken steht der Cursor woanders als im Ergebnis des Editors
             let c = cursor.map(|c| if self.cursor_moved.take().is_some() { self.cursor } else { c });
-            self.popup = c.and_then(|c| self.suggest(text, c, force).map(|s| Popup { items: s.items, selected: 0, word_start: s.word_start, cursor: c }));
+            // Java-Code: auch der Sprachserver soll vorschlagen (nach einem Punkt, in einem Wort oder auf Wunsch)
+            if self.lang == Lang::Java
+                && let Some(c) = c
+            {
+                let chars: Vec<char> = text.chars().collect();
+                let prev = c.checked_sub(1).and_then(|i| chars.get(i)).copied();
+                let in_code = crate::dev::java::source::spans(&chars).iter().any(|(k, a, b)| *k == crate::dev::java::source::Span::Code && *a < c && c <= *b);
+                if in_code && (force || prev.is_some_and(|p| p == '.' || is_word_char(p))) {
+                    out.complete_at = Some(c);
+                    self.cursor = c;
+                }
+            }
+            self.popup = c.and_then(|c| self.suggest(text, c, force).map(|s| Popup { items: s.items, selected: 0, word_start: s.word_start, cursor: c, imports: Vec::new() }));
         } else if let (Some(p), Some(c)) = (&self.popup, cursor)
             && p.cursor != c {
                 self.popup = None;
@@ -1250,37 +1306,57 @@ impl SqlEditor {
             }
         }
 
-        // Vorschlagsfenster zeichnen
+        // Vorschlagsfenster zeichnen: kompakte Zeilen, bis zu 16 ohne Scrollen; reicht der Platz unten nicht, darueber
         let mut clicked = None;
         if let (Some(p), Some(c)) = (&self.popup, cursor) {
             let caret = o.galley.pos_from_cursor(CCursor::new(c));
-            let pos = o.galley_pos + caret.left_bottom().to_vec2() + egui::vec2(0.0, 2.0);
+            let row = (font_size() + 8.0).round().max(20.0);
+            let rows = p.items.len().min(16) as f32;
+            let list_h = rows * row;
+            let below = o.galley_pos + caret.left_bottom().to_vec2() + egui::vec2(-4.0, 3.0);
+            let screen = ctx.content_rect();
+            let pos = if below.y + list_h + 12.0 > screen.bottom() && below.y - caret.height() - list_h - 12.0 > screen.top() {
+                below - egui::vec2(0.0, caret.height() + list_h + 14.0)
+            } else {
+                below
+            };
+            let mono = FontId::monospace(font_size());
+            let small = FontId::proportional((font_size() - 1.0).max(11.0));
             let area = egui::Area::new(self.id.with("popup"))
                 .order(egui::Order::Foreground)
                 .fixed_pos(pos)
                 .show(&ctx, |ui| {
-                    egui::Frame::popup(&ctx.global_style()).inner_margin(egui::Margin::same(2)).show(ui, |ui| {
-                        // Groesse selbst bestimmen: egui kennt die Inhaltshoehe erst im naechsten Bild
-                        let row = 24.0;
-                        let height = (p.items.len() as f32 * row).min(9.5 * row);
+                    egui::Frame::popup(&ctx.global_style()).inner_margin(egui::Margin::same(3)).show(ui, |ui| {
                         let chars = p.items.iter().map(|i| i.label.chars().count()).max().unwrap_or(10) as f32;
-                        let detail = p.items.iter().map(|i| i.detail.chars().count() + i.kind.chars().count() + 5).max().unwrap_or(10) as f32;
-                        let width = (chars * font_size() * 0.62 + detail * 6.2 + 36.0).clamp(260.0, 640.0);
+                        let detail = p.items.iter().map(|i| i.detail.chars().count().min(40) + i.kind.chars().count() + 4).max().unwrap_or(10) as f32;
+                        let width = (chars * font_size() * 0.62 + detail * font_size() * 0.5 + 44.0).clamp(300.0, 720.0);
                         ui.set_width(width);
-                        egui::ScrollArea::vertical().max_height(height).min_scrolled_height(height).auto_shrink([false, true]).show(ui, |ui| {
+                        ui.spacing_mut().item_spacing.y = 0.0;
+                        egui::ScrollArea::vertical().max_height(list_h).min_scrolled_height(list_h).auto_shrink([false, true]).show(ui, |ui| {
                             for (i, it) in p.items.iter().enumerate() {
                                 let sel = i == p.selected;
-                                let right = if it.detail.is_empty() { it.kind.to_string() } else { format!("{}  ·  {}", it.detail, it.kind) };
-                                let r = ui.add(
-                                    egui::Button::selectable(sel, RichText::new(it.label.as_str()).monospace())
-                                        .right_text(RichText::new(right).small().color(pal.text_weak))
-                                        .wrap_mode(egui::TextWrapMode::Extend)
-                                        .min_size(egui::vec2(width - 8.0, row - 4.0)),
-                                );
+                                let (r, resp) = ui.allocate_exact_size(egui::vec2(width - 6.0, row), egui::Sense::click());
                                 if sel {
-                                    r.scroll_to_me(None);
+                                    ui.painter().rect_filled(r, 4.0, pal.selection);
+                                } else if resp.hovered() {
+                                    ui.painter().rect_filled(r, 4.0, pal.hover);
                                 }
-                                if r.clicked() {
+                                // Farbiges Kennzeichen je Art (Methode, Feld, Klasse …)
+                                let (mark, color) = kind_mark(it.kind, &pal);
+                                let mr = egui::Rect::from_center_size(egui::pos2(r.left() + 13.0, r.center().y), egui::vec2(16.0, 16.0));
+                                ui.painter().rect_filled(mr, 4.0, color.gamma_multiply(0.22));
+                                ui.painter().text(mr.center(), egui::Align2::CENTER_CENTER, mark, FontId::proportional(11.0), color);
+                                let fg = if sel && pal.dark { Color32::WHITE } else { pal.text };
+                                let label_g = ui.painter().layout_no_wrap(it.label.clone(), mono.clone(), fg);
+                                let right = if it.detail.is_empty() { it.kind.to_string() } else { it.detail.chars().take(40).collect::<String>() };
+                                let right_g = ui.painter().layout_no_wrap(right, small.clone(), if sel && pal.dark { Color32::from_white_alpha(190) } else { pal.text_weak });
+                                let rx = r.right() - 8.0 - right_g.size().x;
+                                ui.painter().with_clip_rect(egui::Rect::from_min_max(r.min, egui::pos2(rx - 10.0, r.bottom()))).galley(egui::pos2(r.left() + 28.0, r.center().y - label_g.size().y / 2.0), label_g, fg);
+                                ui.painter().galley(egui::pos2(rx, r.center().y - right_g.size().y / 2.0), right_g, pal.text_weak);
+                                if sel {
+                                    resp.scroll_to_me(None);
+                                }
+                                if resp.clicked() {
                                     clicked = Some(i);
                                 }
                             }
@@ -1295,7 +1371,7 @@ impl SqlEditor {
             if let Some(p) = self.popup.as_mut() {
                 p.selected = i;
             }
-            self.accept(&ctx, text);
+            out.add_import = self.accept(&ctx, text);
             out.changed = true;
             ctx.memory_mut(|m| m.request_focus(self.id));
         }
@@ -1313,6 +1389,46 @@ fn typed_before_cursor(old: &str, new: &[char], cursor: usize) -> bool {
     // Neu = Alt mit k Zeichen, die genau vor dem Cursor eingefuegt wurden
     let k = new.len() - old.len();
     cursor >= k && new[..cursor - k] == old[..cursor - k] && new[cursor..] == old[cursor - k..]
+}
+
+/// Buchstabe und Farbe fuer die Art eines Vorschlags (wie in IntelliJ: m, f, c, v …)
+fn kind_mark(kind: &str, pal: &crate::style::Pal) -> (&'static str, Color32) {
+    use crate::i18n::{text, tr};
+    if kind == text("Tabelle") || kind == text("Alias") {
+        return ("T", pal.syn_type);
+    }
+    if kind == text("Spalte") {
+        return ("c", pal.syn_variable);
+    }
+    if kind == text("Funktion") {
+        return ("f", pal.syn_function);
+    }
+    if kind == text("Join") {
+        return ("j", pal.accent);
+    }
+    if kind == text("Datenbank") {
+        return ("D", pal.syn_number);
+    }
+    if kind == text("Vorlage") {
+        return ("s", pal.accent);
+    }
+    if kind == tr("Methode", "Method") || kind == tr("Konstruktor", "Constructor") || kind == tr("Funktion", "Function") {
+        ("m", pal.syn_function)
+    } else if kind == tr("Feld", "Field") || kind == tr("Spalte", "Column") {
+        ("f", pal.syn_variable)
+    } else if kind == tr("Variable", "Variable") {
+        ("v", pal.syn_number)
+    } else if kind == tr("Klasse", "Class") || kind == "Interface" || kind == "Enum" || kind == tr("Typ", "Type") || kind == tr("Tabelle", "Table") {
+        ("C", pal.syn_type)
+    } else if kind == tr("Konstante", "Constant") {
+        ("K", pal.syn_const)
+    } else if kind == tr("Vorlage", "Snippet") {
+        ("s", pal.accent)
+    } else if kind == tr("Datenbank", "Database") {
+        ("D", pal.syn_type)
+    } else {
+        ("k", pal.syn_keyword)
+    }
 }
 
 /// Wellenlinie unter Text von `x0` bis `x1` auf Hoehe `y`

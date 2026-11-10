@@ -489,7 +489,162 @@ fn members(ty: &str) -> &'static [(&'static str, &'static str, &'static str)] {
         "System.out" => &[("println(x)", "println(\u{1})", "void"), ("print(x)", "print(\u{1})", "void"), ("printf(format, args)", "printf(\"\u{1}\")", "PrintStream")],
         "System" => &[("out", "out\u{1}", "PrintStream"), ("in", "in\u{1}", "InputStream"), ("getenv(name)", "getenv(\"\u{1}\")", "String"), ("currentTimeMillis()", "currentTimeMillis()\u{1}", "long")],
         "DriverManager" => &[("getConnection(url, user, password)", "getConnection(\u{1})", "Connection")],
+        "Map" | "HashMap" | "TreeMap" | "LinkedHashMap" => &[
+            ("put(key, value)", "put(\u{1})", "V"),
+            ("get(key)", "get(\u{1})", "V"),
+            ("getOrDefault(key, default)", "getOrDefault(\u{1})", "V"),
+            ("containsKey(key)", "containsKey(\u{1})", "boolean"),
+            ("remove(key)", "remove(\u{1})", "V"),
+            ("keySet()", "keySet()\u{1}", "Set<K>"),
+            ("values()", "values()\u{1}", "Collection<V>"),
+            ("entrySet()", "entrySet()\u{1}", "Set<Map.Entry<K, V>>"),
+            ("size()", "size()\u{1}", "int"),
+            ("isEmpty()", "isEmpty()\u{1}", "boolean"),
+            ("forEach(…)", "forEach((k, v) -> \u{1})", "void"),
+            ("merge(key, value, fn)", "merge(\u{1})", "V"),
+            ("putIfAbsent(key, value)", "putIfAbsent(\u{1})", "V"),
+            ("clear()", "clear()\u{1}", "void"),
+        ],
+        "Set" | "HashSet" | "TreeSet" => &[
+            ("add(element)", "add(\u{1})", "boolean"),
+            ("contains(element)", "contains(\u{1})", "boolean"),
+            ("remove(element)", "remove(\u{1})", "boolean"),
+            ("size()", "size()\u{1}", "int"),
+            ("isEmpty()", "isEmpty()\u{1}", "boolean"),
+            ("stream()", "stream()\u{1}", "Stream<E>"),
+            ("clear()", "clear()\u{1}", "void"),
+        ],
+        "StringBuilder" => &[
+            ("append(x)", "append(\u{1})", "StringBuilder"),
+            ("insert(i, x)", "insert(\u{1})", "StringBuilder"),
+            ("reverse()", "reverse()\u{1}", "StringBuilder"),
+            ("length()", "length()\u{1}", "int"),
+            ("setLength(n)", "setLength(\u{1})", "void"),
+            ("deleteCharAt(i)", "deleteCharAt(\u{1})", "StringBuilder"),
+            ("toString()", "toString()\u{1}", "String"),
+        ],
+        "Optional" => &[
+            ("isPresent()", "isPresent()\u{1}", "boolean"),
+            ("isEmpty()", "isEmpty()\u{1}", "boolean"),
+            ("get()", "get()\u{1}", "T"),
+            ("orElse(other)", "orElse(\u{1})", "T"),
+            ("orElseThrow()", "orElseThrow()\u{1}", "T"),
+            ("ifPresent(…)", "ifPresent(x -> \u{1})", "void"),
+            ("map(…)", "map(x -> \u{1})", "Optional<U>"),
+        ],
+        "Stream" => &[
+            ("filter(…)", "filter(x -> \u{1})", "Stream<T>"),
+            ("map(…)", "map(x -> \u{1})", "Stream<R>"),
+            ("forEach(…)", "forEach(x -> \u{1})", "void"),
+            ("toList()", "toList()\u{1}", "List<T>"),
+            ("sorted()", "sorted()\u{1}", "Stream<T>"),
+            ("count()", "count()\u{1}", "long"),
+            ("anyMatch(…)", "anyMatch(x -> \u{1})", "boolean"),
+            ("findFirst()", "findFirst()\u{1}", "Optional<T>"),
+            ("collect(…)", "collect(\u{1})", "R"),
+            ("mapToInt(…)", "mapToInt(x -> \u{1})", "IntStream"),
+            ("limit(n)", "limit(\u{1})", "Stream<T>"),
+            ("distinct()", "distinct()\u{1}", "Stream<T>"),
+        ],
+        "LocalDate" | "LocalDateTime" => &[
+            ("getYear()", "getYear()\u{1}", "int"),
+            ("getMonthValue()", "getMonthValue()\u{1}", "int"),
+            ("getDayOfMonth()", "getDayOfMonth()\u{1}", "int"),
+            ("plusDays(n)", "plusDays(\u{1})", "LocalDate"),
+            ("minusDays(n)", "minusDays(\u{1})", "LocalDate"),
+            ("isBefore(other)", "isBefore(\u{1})", "boolean"),
+            ("isAfter(other)", "isAfter(\u{1})", "boolean"),
+            ("format(formatter)", "format(\u{1})", "String"),
+        ],
+        // Statische Methoden: nach dem Klassennamen
+        "Math" => &[
+            ("abs(x)", "abs(\u{1})", "double"),
+            ("max(a, b)", "max(\u{1})", "double"),
+            ("min(a, b)", "min(\u{1})", "double"),
+            ("pow(a, b)", "pow(\u{1})", "double"),
+            ("sqrt(x)", "sqrt(\u{1})", "double"),
+            ("cbrt(x)", "cbrt(\u{1})", "double"),
+            ("round(x)", "round(\u{1})", "long"),
+            ("floor(x)", "floor(\u{1})", "double"),
+            ("ceil(x)", "ceil(\u{1})", "double"),
+            ("random()", "random()\u{1}", "double"),
+            ("floorDiv(a, b)", "floorDiv(\u{1})", "int"),
+            ("floorMod(a, b)", "floorMod(\u{1})", "int"),
+            ("hypot(x, y)", "hypot(\u{1})", "double"),
+            ("sin(a)", "sin(\u{1})", "double"),
+            ("cos(a)", "cos(\u{1})", "double"),
+            ("tan(a)", "tan(\u{1})", "double"),
+            ("log(x)", "log(\u{1})", "double"),
+            ("log10(x)", "log10(\u{1})", "double"),
+            ("exp(x)", "exp(\u{1})", "double"),
+            ("signum(x)", "signum(\u{1})", "double"),
+            ("toRadians(deg)", "toRadians(\u{1})", "double"),
+            ("toDegrees(rad)", "toDegrees(\u{1})", "double"),
+            ("clamp(v, min, max)", "clamp(\u{1})", "int"),
+            ("PI", "PI\u{1}", "double"),
+            ("E", "E\u{1}", "double"),
+        ],
+        "Integer" | "Long" | "Short" | "Byte" => &[
+            ("parseInt(text)", "parseInt(\u{1})", "int"),
+            ("valueOf(x)", "valueOf(\u{1})", "Integer"),
+            ("toString(x)", "toString(\u{1})", "String"),
+            ("compare(a, b)", "compare(\u{1})", "int"),
+            ("max(a, b)", "max(\u{1})", "int"),
+            ("min(a, b)", "min(\u{1})", "int"),
+            ("sum(a, b)", "sum(\u{1})", "int"),
+            ("toBinaryString(x)", "toBinaryString(\u{1})", "String"),
+            ("toHexString(x)", "toHexString(\u{1})", "String"),
+            ("MAX_VALUE", "MAX_VALUE\u{1}", "int"),
+            ("MIN_VALUE", "MIN_VALUE\u{1}", "int"),
+        ],
+        "Double" | "Float" => &[
+            ("parseDouble(text)", "parseDouble(\u{1})", "double"),
+            ("valueOf(x)", "valueOf(\u{1})", "Double"),
+            ("compare(a, b)", "compare(\u{1})", "int"),
+            ("isNaN(x)", "isNaN(\u{1})", "boolean"),
+            ("toString(x)", "toString(\u{1})", "String"),
+            ("MAX_VALUE", "MAX_VALUE\u{1}", "double"),
+            ("MIN_VALUE", "MIN_VALUE\u{1}", "double"),
+        ],
+        "Boolean" => &[("parseBoolean(text)", "parseBoolean(\u{1})", "boolean"), ("valueOf(x)", "valueOf(\u{1})", "Boolean"), ("TRUE", "TRUE\u{1}", "Boolean"), ("FALSE", "FALSE\u{1}", "Boolean")],
+        "Character" => &[("isDigit(c)", "isDigit(\u{1})", "boolean"), ("isLetter(c)", "isLetter(\u{1})", "boolean"), ("isUpperCase(c)", "isUpperCase(\u{1})", "boolean"), ("toUpperCase(c)", "toUpperCase(\u{1})", "char"), ("isWhitespace(c)", "isWhitespace(\u{1})", "boolean")],
+        "String." => &[("valueOf(x)", "valueOf(\u{1})", "String"), ("format(format, args)", "format(\"\u{1}\")", "String"), ("join(sep, parts)", "join(\u{1})", "String")],
+        "Arrays" => &[
+            ("toString(array)", "toString(\u{1})", "String"),
+            ("sort(array)", "sort(\u{1})", "void"),
+            ("asList(…)", "asList(\u{1})", "List<T>"),
+            ("stream(array)", "stream(\u{1})", "Stream<T>"),
+            ("fill(array, value)", "fill(\u{1})", "void"),
+            ("copyOf(array, length)", "copyOf(\u{1})", "T[]"),
+            ("equals(a, b)", "equals(\u{1})", "boolean"),
+            ("binarySearch(array, key)", "binarySearch(\u{1})", "int"),
+        ],
+        "Collections" => &[
+            ("sort(list)", "sort(\u{1})", "void"),
+            ("reverse(list)", "reverse(\u{1})", "void"),
+            ("shuffle(list)", "shuffle(\u{1})", "void"),
+            ("max(coll)", "max(\u{1})", "T"),
+            ("min(coll)", "min(\u{1})", "T"),
+            ("unmodifiableList(list)", "unmodifiableList(\u{1})", "List<T>"),
+            ("emptyList()", "emptyList()\u{1}", "List<T>"),
+        ],
+        "List." => &[("of(…)", "of(\u{1})", "List<E>"), ("copyOf(coll)", "copyOf(\u{1})", "List<E>")],
+        "Map." => &[("of(…)", "of(\u{1})", "Map<K, V>"), ("entry(k, v)", "entry(\u{1})", "Map.Entry<K, V>"), ("copyOf(map)", "copyOf(\u{1})", "Map<K, V>")],
+        "Set." => &[("of(…)", "of(\u{1})", "Set<E>")],
+        "Objects" => &[("equals(a, b)", "equals(\u{1})", "boolean"), ("hash(…)", "hash(\u{1})", "int"), ("requireNonNull(x)", "requireNonNull(\u{1})", "T"), ("isNull(x)", "isNull(\u{1})", "boolean"), ("toString(x)", "toString(\u{1})", "String")],
+        "LocalDate." | "LocalDateTime." => &[("now()", "now()\u{1}", "LocalDate"), ("of(y, m, d)", "of(\u{1})", "LocalDate"), ("parse(text)", "parse(\u{1})", "LocalDate")],
+        "Thread" => &[("sleep(ms)", "sleep(\u{1})", "void"), ("currentThread()", "currentThread()\u{1}", "Thread")],
+        "Optional." => &[("of(x)", "of(\u{1})", "Optional<T>"), ("ofNullable(x)", "ofNullable(\u{1})", "Optional<T>"), ("empty()", "empty()\u{1}", "Optional<T>")],
         _ => &[],
+    }
+}
+
+/// Statische Mitglieder einer Klasse des JDK (`Math.`, `List.`), sonst die Methoden ihrer Objekte
+fn static_members(class: &str) -> &'static [(&'static str, &'static str, &'static str)] {
+    let key = format!("{class}.");
+    match members(&key) {
+        [] => members(class),
+        m => m,
     }
 }
 
@@ -548,12 +703,62 @@ pub fn suggest_java(text: &str, cursor: usize, env: &Env, force: bool, has_datab
         }
         let qualifier: String = chars[q..s - 1].iter().collect();
         let before: String = chars[..q].iter().collect();
-        let ty = if qualifier == "System.out" || qualifier == "System.err" { Some("System.out".to_string()) } else { declared_type(&before, &qualifier) };
+        let classes = crate::dev::java::outline::outline(text);
+        let own = |name: &str| classes.iter().find(|c| c.name == name);
+        // this. / Klassenname. / Variable. aus dieser Datei
+        let (target, statics) = if qualifier == "this" {
+            (crate::dev::java::outline::class_at(&classes, cursor).map(|c| c.name.clone()), false)
+        } else if own(&qualifier).is_some() {
+            (Some(qualifier.clone()), true)
+        } else {
+            let ty = crate::dev::java::outline::locals(text, q)
+                .into_iter()
+                .rev()
+                .find(|(n, _, _)| *n == qualifier)
+                .map(|(_, t, _)| t)
+                .or_else(|| crate::dev::java::outline::class_at(&classes, cursor).and_then(|c| c.members.iter().find(|m| m.name == qualifier && m.kind == crate::dev::java::outline::Kind::Field)).map(|m| m.ty.clone()))
+                .map(|t| t.split('<').next().unwrap_or(&t).trim_end_matches("[]").to_string());
+            (ty.filter(|t| own(t).is_some()), false)
+        };
+        if let Some(c) = target.as_deref().and_then(own) {
+            use crate::dev::java::outline::Kind;
+            for m in &c.members {
+                let fits = if statics { m.is_static || m.kind == Kind::Constant } else { m.kind != Kind::Constructor };
+                if !fits || !matches(&m.name) {
+                    continue;
+                }
+                let (insert, back, kind) = match m.kind {
+                    Kind::Method => (format!("{}()", m.name), usize::from(!m.params.is_empty()), crate::i18n::tr("Methode", "Method")),
+                    Kind::Constant => (m.name.clone(), 0, crate::i18n::tr("Konstante", "Constant")),
+                    _ => (m.name.clone(), 0, crate::i18n::tr("Feld", "Field")),
+                };
+                let label = if m.kind == Kind::Method { format!("{}({})", m.name, m.params) } else { m.name.clone() };
+                items.push(Item { label, insert, kind, detail: m.ty.clone(), back });
+            }
+            if statics && c.kind == "enum" {
+                for (l, ins, b) in [("values()", "values()", 0), ("valueOf(name)", "valueOf()", 1)] {
+                    if matches(l) {
+                        items.push(Item { label: l.into(), insert: ins.into(), kind: crate::i18n::tr("Methode", "Method"), detail: format!("{}[]", c.name), back: b });
+                    }
+                }
+            }
+            return (!items.is_empty()).then_some(Suggestion { items, word_start: s });
+        }
+        let ty = if qualifier == "System.out" || qualifier == "System.err" {
+            Some("System.out".to_string())
+        } else if qualifier.starts_with(|c: char| c.is_uppercase()) && !static_members(&qualifier).is_empty() {
+            // Math., Integer., List. …: statische Mitglieder
+            Some(format!("{qualifier}."))
+        } else {
+            crate::dev::java::outline::locals(text, q).into_iter().rev().find(|(n, _, _)| *n == qualifier).map(|(_, t, _)| t.split('<').next().unwrap_or(&t).to_string()).or_else(|| declared_type(&before, &qualifier))
+        };
         let ty = ty?;
-        for (label, insert, ret) in members(&ty) {
+        let list = if let Some(class) = ty.strip_suffix('.') { static_members(class) } else { members(&ty) };
+        for (label, insert, ret) in list {
             if matches(label) {
                 let back = insert.chars().skip_while(|c| *c != '\u{1}').count().saturating_sub(1);
-                items.push(Item { label: (*label).into(), insert: insert.replace('\u{1}', ""), kind: crate::i18n::tr("Methode", "Method"), detail: (*ret).into(), back });
+                let kind = if label.contains('(') { crate::i18n::tr("Methode", "Method") } else { crate::i18n::tr("Konstante", "Constant") };
+                items.push(Item { label: (*label).into(), insert: insert.replace('\u{1}', ""), kind, detail: (*ret).into(), back });
             }
         }
         return (!items.is_empty()).then_some(Suggestion { items, word_start: s });
@@ -594,8 +799,41 @@ pub fn suggest_java(text: &str, cursor: usize, env: &Env, force: bool, has_datab
             items.push(Item { label: (*t).into(), insert: (*t).into(), kind: crate::i18n::tr("Typ", "Type"), detail: String::new(), back: 0 });
         }
     }
-    // Namen aus der Datei
+    // Variablen, Felder, Methoden und Klassen dieser Datei mit Art und Typ
     let mut seen: Vec<String> = items.iter().map(|i| i.label.clone()).collect();
+    {
+        use crate::dev::java::outline::{self, Kind};
+        let classes = outline::outline(text);
+        let mut own: Vec<Item> = Vec::new();
+        for (n, t, _) in outline::locals(text, s).into_iter().rev() {
+            if n != word && matches(&n) && !own.iter().any(|i| i.insert == n) {
+                own.push(Item { label: n.clone(), insert: n, kind: crate::i18n::tr("Variable", "Variable"), detail: t, back: 0 });
+            }
+        }
+        if let Some(c) = outline::class_at(&classes, cursor) {
+            for m in &c.members {
+                if m.name == word || !matches(&m.name) || m.kind == Kind::Constructor {
+                    continue;
+                }
+                let (label, insert, back, kind) = match m.kind {
+                    Kind::Method => (format!("{}({})", m.name, m.params), format!("{}()", m.name), usize::from(!m.params.is_empty()), crate::i18n::tr("Methode", "Method")),
+                    _ => (m.name.clone(), m.name.clone(), 0, crate::i18n::tr("Feld", "Field")),
+                };
+                if !own.iter().any(|i| i.insert == insert) {
+                    own.push(Item { label, insert, kind, detail: m.ty.clone(), back });
+                }
+            }
+        }
+        for c in &classes {
+            if c.name != word && matches(&c.name) {
+                own.push(Item { label: c.name.clone(), insert: c.name.clone(), kind: crate::i18n::tr("Klasse", "Class"), detail: c.kind.clone(), back: 0 });
+            }
+        }
+        seen.extend(own.iter().map(|i| i.insert.clone()));
+        // Genau passende Anfaenge zuerst, sonst Reihenfolge: Variablen, Mitglieder, Klassen
+        own.sort_by_key(|i| !i.label.starts_with(&word));
+        items.splice(0..0, own);
+    }
     for (kind, a, b) in &spans {
         if *kind != Span::Code {
             continue;
@@ -685,5 +923,21 @@ mod tests {
         assert_eq!(sg.items[0].insert, "System.out.println();");
         assert_eq!(sg.items[0].back, 2);
         assert!(suggest_java("// sou", 6, &env, true, false).is_none());
+    }
+
+    #[test]
+    fn dot_completion_for_jdk_and_own_classes() {
+        let env = Env { schema: None, databases: &[] };
+        let labels = |src: &str| suggest_java(src, src.chars().count(), &env, false, false).map(|s| s.items.into_iter().map(|i| i.label).collect::<Vec<_>>()).unwrap_or_default();
+        let head = "import java.util.*;\nclass A {\n    enum Farbe { ROT, GRUEN }\n    private int alter;\n    static int summe(int a, int b) { return a + b; }\n    void m() {\n        List<String> liste = new ArrayList<>();\n        ";
+        assert!(labels(&format!("{head}Math.")).contains(&"sqrt(x)".to_string()));
+        assert!(labels(&format!("{head}Math.sq")).iter().all(|l| l.starts_with("sq")));
+        assert_eq!(labels(&format!("{head}Farbe.")).iter().take(2).cloned().collect::<Vec<_>>(), vec!["ROT", "GRUEN"]);
+        let this = labels(&format!("{head}this."));
+        assert!(this.contains(&"alter".to_string()) && this.contains(&"summe(int a, int b)".to_string()), "{this:?}");
+        assert!(labels(&format!("{head}liste.")).contains(&"add(element)".to_string()));
+        assert!(labels(&format!("{head}Integer.")).contains(&"parseInt(text)".to_string()));
+        let plain = labels(&format!("{head}li"));
+        assert_eq!(plain.first().map(String::as_str), Some("liste"), "{plain:?}");
     }
 }
