@@ -602,7 +602,7 @@ impl SqlTab {
                         }
                         let p = ui.painter_at(r);
                         let meta = format!("{}  {} ms", e.short_time(), e.millis);
-                        p.text(egui::pos2(r.left() + 6.0, r.center().y), egui::Align2::LEFT_CENTER, meta, egui::FontId::proportional(11.5), pal.text_weak);
+                        p.text(egui::pos2(r.left() + 6.0, r.center().y), egui::Align2::LEFT_CENTER, meta, egui::FontId::proportional(12.5), pal.text_weak);
                         let sql: String = e.sql.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(200).collect();
                         p.text(egui::pos2(r.left() + 150.0, r.center().y), egui::Align2::LEFT_CENTER, sql, egui::FontId::monospace(12.0), if e.error { pal.error_text } else { pal.text });
                         let resp = resp.on_hover_text(e.sql.chars().take(1500).collect::<String>());

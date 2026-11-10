@@ -327,6 +327,34 @@ pub fn folder_color(name: &str) -> Color32 {
     }
 }
 
+/// Eigene Farbe je Symbol, damit Menues, Knoepfe und Leisten farbig und leicht unterscheidbar sind. Reine
+/// Steuerzeichen (Schliessen, Pfeile, Mehr) bleiben neutral. Im hellen Design etwas dunkler fuer guten Kontrast.
+pub fn tint(icon: Icon) -> Color32 {
+    let pal = style::pal();
+    let c = |r: u8, g: u8, b: u8| {
+        let c = Color32::from_rgb(r, g, b);
+        if pal.dark { c } else { c.lerp_to_gamma(Color32::BLACK, 0.28) }
+    };
+    match icon {
+        Icon::Files | Icon::File | Icon::FileText | Icon::NewFile | Icon::Book | Icon::Info | Icon::Link | Icon::External => c(0x5B, 0x9C, 0xF8),
+        Icon::Database | Icon::Table | Icon::Columns | Icon::Layers => c(0x2F, 0xC1, 0xB8),
+        Icon::Search | Icon::Diagram | Icon::Braces | Icon::Code | Icon::FileCode | Icon::Explain => c(0xB4, 0x8C, 0xF2),
+        Icon::History | Icon::Key | Icon::Package | Icon::FolderInput | Icon::NewFolder | Icon::Folder | Icon::FolderOpen => c(0xF0, 0xA0, 0x4B),
+        Icon::Coffee => c(0xE0, 0x7A, 0x4A),
+        Icon::Play | Icon::Check | Icon::Save | Icon::Download | Icon::CloudDownload | Icon::Upload | Icon::CloudUpload | Icon::Plus | Icon::Terminal | Icon::Flask => c(0x6C, 0xCB, 0x75),
+        Icon::Trash | Icon::Stop | Icon::Bug | Icon::Alert | Icon::Power => c(0xF0, 0x71, 0x78),
+        Icon::Sparkles | Icon::Wizard | Icon::Lock | Icon::Shield => c(0xE8, 0xC5, 0x47),
+        Icon::GitBranch | Icon::GitCommit | Icon::GitMerge | Icon::GitPullRequest | Icon::CircleDot => c(0xF0, 0x6A, 0x45),
+        Icon::Users | Icon::Edit => c(0xE8, 0x79, 0xB9),
+        Icon::StepOver | Icon::StepInto | Icon::StepOut | Icon::ArrowRight | Icon::ArrowLeft | Icon::Undo | Icon::Redo | Icon::RotateCcw => c(0x6F, 0xA8, 0xF0),
+        Icon::FileImage => c(0xA0, 0x7C, 0xD6),
+        Icon::FileSheet => c(0x4C, 0xAF, 0x50),
+        Icon::FileJson => c(0xD6, 0xB8, 0x4E),
+        Icon::Github | Icon::Settings | Icon::Copy | Icon::Clipboard | Icon::Scissors | Icon::Refresh => pal.text_weak.lerp_to_gamma(pal.text, 0.35),
+        _ => pal.text_weak,
+    }
+}
+
 /// Menueeintrag mit Symbol (Platz bleibt auch ohne Symbol frei, damit alle Texte buendig stehen) und Tastenkuerzel
 pub fn menu_item(ui: &mut egui::Ui, icon: Option<Icon>, text: &str, keys: &str) -> Response {
     menu_item_colored(ui, icon.map(|i| (i, None)), text, keys)
@@ -366,7 +394,7 @@ fn menu_row(ui: &mut egui::Ui, icon: Option<(Icon, Option<Color32>)>, text: &str
     }
     let fg = if !enabled { pal.text_weak.gamma_multiply(0.6) } else if hot && pal.dark { Color32::WHITE } else { pal.text };
     if let Some((i, tint)) = icon {
-        let c = if !enabled { fg } else { tint.unwrap_or(if hot { fg } else { pal.text_weak }) };
+        let c = if !enabled { fg } else { tint.unwrap_or_else(|| self::tint(i)) };
         paint(ui.painter(), Rect::from_center_size(pos2(r.left() + 17.0, r.center().y), vec2(15.0, 15.0)), i, c);
     }
     ui.painter().galley_with_override_text_color(pos2(r.left() + 34.0, r.center().y - g.size().y / 2.0), g, fg);
@@ -383,7 +411,7 @@ pub fn menu_heading(ui: &mut egui::Ui, text: &str) {
     ui.add_space(4.0);
     ui.horizontal(|ui| {
         ui.add_space(10.0);
-        ui.label(egui::RichText::new(text.to_uppercase()).size(10.5).color(pal.text_weak));
+        ui.label(egui::RichText::new(text.to_uppercase()).size(11.5).color(pal.text_weak));
     });
     ui.add_space(1.0);
 }
@@ -399,7 +427,8 @@ pub fn button_sized(ui: &mut egui::Ui, icon: Icon, tip: &str, size: f32) -> Resp
     if resp.hovered() {
         ui.painter().rect_filled(r, style::RADIUS as f32, pal.hover);
     }
-    let color = if ui.is_enabled() { if resp.hovered() { pal.text } else { pal.text_weak } } else { pal.text_weak.gamma_multiply(0.5) };
+    let own = tint(icon);
+    let color = if !ui.is_enabled() { pal.text_weak.gamma_multiply(0.5) } else if resp.hovered() { own.lerp_to_gamma(pal.text, 0.25) } else { own };
     paint(ui.painter(), r.shrink(size * 0.15), icon, color);
     if tip.is_empty() { resp } else { resp.on_hover_text(tip) }
 }
@@ -445,7 +474,7 @@ fn labelled_button_tinted(ui: &mut egui::Ui, icon: Icon, text: &str, primary: bo
     };
     ui.painter().rect(r, style::RADIUS as f32, fill, if primary { Stroke::NONE } else { visuals.bg_stroke }, egui::StrokeKind::Inside);
     let (icon_x, text_x) = if icon_right { (r.right() - 17.0, r.left() + 10.0) } else { (r.left() + 17.0, r.left() + 31.0) };
-    let icon_color = tint.filter(|_| enabled).unwrap_or(fg);
+    let icon_color = if !enabled { fg } else if primary { tint.unwrap_or(fg) } else { tint.unwrap_or_else(|| self::tint(icon)) };
     paint(ui.painter(), Rect::from_center_size(pos2(icon_x, r.center().y), vec2(14.0, 14.0)), icon, icon_color);
     ui.painter().galley_with_override_text_color(pos2(text_x, r.center().y - galley.size().y / 2.0), galley, fg);
     if resp.has_focus() {

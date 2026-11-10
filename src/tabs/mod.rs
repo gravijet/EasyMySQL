@@ -403,6 +403,29 @@ pub fn db_combo(ui: &mut egui::Ui, id: &str, dbs: &[String], value: &mut String)
     changed
 }
 
+/// Auswahl der Datenbank mit Symbol; leer heisst "Keine Datenbank" (statt eines Strichs)
+pub fn db_pick(ui: &mut egui::Ui, id: impl std::hash::Hash + std::fmt::Debug, items: &[String], value: &mut String, width: f32) -> bool {
+    let none = crate::i18n::tr("Keine Datenbank", "No database");
+    let mut changed = false;
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 6.0;
+        let (r, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
+        crate::icons::paint(ui.painter(), r, crate::icons::Icon::Database, crate::icons::tint(crate::icons::Icon::Database));
+        crate::widgets::combo(id)
+            .selected_text(if value.is_empty() { none } else { value.as_str() })
+            .width(width)
+            .show_ui(ui, |ui| {
+                for it in items {
+                    if ui.selectable_label(value == it, if it.is_empty() { none } else { it.as_str() }).clicked() {
+                        *value = it.clone();
+                        changed = true;
+                    }
+                }
+            });
+    });
+    changed
+}
+
 /// Einfaches Auswahlfeld fuer eine Liste von Strings.
 pub fn str_combo(ui: &mut egui::Ui, id: impl std::hash::Hash + std::fmt::Debug, items: &[String], value: &mut String, width: f32) -> bool {
     let mut changed = false;

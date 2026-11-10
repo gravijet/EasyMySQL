@@ -791,7 +791,7 @@ impl CodeTab {
                 let show_system = super::SHOW_SYSTEM_DBS.load(Ordering::Relaxed);
                 dbs.extend(cx.databases.iter().filter(|d| show_system || !super::is_system_db(d) || **d == self.database).cloned());
                 let mut d = self.database.clone();
-                if super::str_combo(ui, self.editor.id.with("db"), &dbs, &mut d, 150.0) {
+                if super::db_pick(ui, self.editor.id.with("db"), &dbs, &mut d, 160.0) {
                     self.set_database(d);
                 }
                 let busy = !matches!(self.run, RunState::Idle);

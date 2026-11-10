@@ -190,6 +190,8 @@ pub struct SqlEditor {
     rename: Option<menu::LocalRename>,
     /// Lage des Cursors auf dem Bildschirm (letztes Bild): dort erscheinen Auswahlliste und Umbenennen
     caret_screen: egui::Pos2,
+    /// Beim ersten Zeichnen den Fokus nehmen (neue Abfrage, geoeffnete Datei)
+    focus_next: bool,
 }
 
 #[derive(Default)]
@@ -246,6 +248,7 @@ impl SqlEditor {
             sel_stack: Vec::new(),
             rename: None,
             caret_screen: egui::Pos2::ZERO,
+            focus_next: true,
         }
     }
 
@@ -914,6 +917,9 @@ impl SqlEditor {
         if self.prev_text.is_empty() && !text.is_empty() {
             self.prev_text = text.clone();
         }
+        if std::mem::take(&mut self.focus_next) {
+            ctx.memory_mut(|m| m.request_focus(self.id));
+        }
         if let Some(pos) = self.restore.take() {
             let pos = pos.min(text.chars().count());
             let (line, _) = line_col(text, pos);
@@ -1164,7 +1170,7 @@ impl SqlEditor {
                             for (k, prob) in self.lint.problems.iter().enumerate() {
                                 let (line, end) = self.lint.marks[k];
                                 let Some(row) = o.galley.rows.get(line) else { continue };
-                                let (y0, rh) = (gp.y + row.min_y(), row.height());
+                                let (y0, rh) = (gp.y + row.min_y(), row.height().max(row_h));
                                 if y0 + rh < clip.top() || y0 > clip.bottom() {
                                     continue;
                                 }
@@ -1203,10 +1209,11 @@ impl SqlEditor {
                             {
                                 let active = cur_line == Some(n - 1);
                                 let err = self.error_line == Some(n - 1);
-                                let cy = gp.y + row.rect().center().y;
+                                // Mitte der Zeile (leere Zeilen haben bei egui keine Hoehe: dann die Zeilenhoehe)
+                                let cy = gp.y + row.min_y() + row.height().max(row_h) / 2.0;
                                 if self.breakpoints.contains(&(n - 1)) {
                                     p.circle_filled(egui::pos2(dot_x, cy), 5.0, pal.breakpoint_fg);
-                                } else if self.breakpoints_enabled && gutter_resp.hover_pos().is_some_and(|h| h.x < num_right && (h.y - cy).abs() < row.height() / 2.0) {
+                                } else if self.breakpoints_enabled && gutter_resp.hover_pos().is_some_and(|h| h.x < num_right && (h.y - cy).abs() < row_h / 2.0) {
                                     // Vorschau beim Zeigen: hier entsteht der Haltepunkt
                                     p.circle_filled(egui::pos2(dot_x, cy), 5.0, pal.breakpoint_fg.gamma_multiply(0.35));
                                 }

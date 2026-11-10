@@ -501,7 +501,7 @@ impl EasyApp {
                     let mut d = dlg.database.clone();
                     let mut list = vec![String::new()];
                     list.extend(databases.iter().cloned());
-                    if crate::tabs::str_combo(ui, "project-db", &list, &mut d, 200.0) {
+                    if crate::tabs::db_pick(ui, "project-db", &list, &mut d, 200.0) {
                         dlg.database = d;
                         db_changed = true;
                     }

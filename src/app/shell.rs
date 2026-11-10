@@ -441,7 +441,9 @@ impl EasyApp {
             } else if resp.hovered() {
                 ui.painter().rect_filled(r, radius, pal.hover);
             }
-            let color = if active { pal.activity_active } else if resp.hovered() { pal.text } else { pal.activity_fg };
+            // Farbige Symbole; ruhig, solange die Ansicht nicht offen ist
+            let own = icons::tint(icon);
+            let color = if active { own.lerp_to_gamma(pal.activity_active, if pal.dark { 0.15 } else { 0.0 }) } else if resp.hovered() { own } else { own.lerp_to_gamma(pal.activity_fg, 0.45) };
             icons::paint(ui.painter(), Rect::from_center_size(r.center(), vec2(20.0, 20.0)), icon, color);
             resp.on_hover_text(tip).clicked()
         };
@@ -716,7 +718,7 @@ impl EasyApp {
         p.text(pos2(logo.right() + 14.0, logo.center().y - 9.0), egui::Align2::LEFT_CENTER, "EasyMySQL", egui::FontId::proportional(22.0), pal.text);
         p.text(pos2(logo.right() + 14.0, logo.center().y + 13.0), egui::Align2::LEFT_CENTER, crate::tr_format!("Version {}", "Version {}", env!("CARGO_PKG_VERSION")), egui::FontId::proportional(12.0), pal.text_weak);
         let mut y = top + head_h - 18.0;
-        p.text(pos2(x0 + 4.0, y), egui::Align2::LEFT_CENTER, crate::i18n::tr("STARTEN", "START"), egui::FontId::proportional(10.5), pal.text_weak);
+        p.text(pos2(x0 + 4.0, y), egui::Align2::LEFT_CENTER, crate::i18n::tr("STARTEN", "START"), egui::FontId::proportional(11.5), pal.text_weak);
         y += 12.0;
         let mut run = None;
         let n_cmds = cmds.len();
@@ -734,7 +736,7 @@ impl EasyApp {
             p.text(pos2(r.left() + 36.0, cy), egui::Align2::LEFT_CENTER, cmd.label(), egui::FontId::proportional(13.0), c);
             let k = keymap::text(cmd);
             if !k.is_empty() && w >= 300.0 {
-                let g = p.layout_no_wrap(k, egui::FontId::proportional(11.5), pal.text_weak);
+                let g = p.layout_no_wrap(k, egui::FontId::proportional(12.5), pal.text_weak);
                 let kr = Rect::from_min_size(pos2(r.right() - 10.0 - g.size().x - 12.0, cy - 10.0), vec2(g.size().x + 12.0, 20.0));
                 p.rect(kr, 4.0, pal.face_light, Stroke::new(1.0, pal.border), egui::StrokeKind::Inside);
                 p.galley(pos2(kr.left() + 6.0, cy - g.size().y / 2.0), g, pal.text_weak);
@@ -746,7 +748,7 @@ impl EasyApp {
         y += ROW * n_cmds as f32;
         if !recent.is_empty() {
             y += 18.0;
-            p.text(pos2(x0 + 4.0, y), egui::Align2::LEFT_CENTER, crate::i18n::text("Zuletzt geöffnet").to_uppercase(), egui::FontId::proportional(10.5), pal.text_weak);
+            p.text(pos2(x0 + 4.0, y), egui::Align2::LEFT_CENTER, crate::i18n::text("Zuletzt geöffnet").to_uppercase(), egui::FontId::proportional(11.5), pal.text_weak);
             y += 12.0;
             let mut child = ui.new_child(egui::UiBuilder::new().max_rect(Rect::from_min_size(pos2(x0, y), vec2(w, recent.len() as f32 * 42.0))).layout(egui::Layout::top_down_justified(egui::Align::Min)));
             child.spacing_mut().item_spacing.y = 2.0;
@@ -913,7 +915,7 @@ fn paint_tab(p: &egui::Painter, r: Rect, look: &TabLook, sel: bool, hovered: boo
     let max_w = (r.right() - 30.0 - x).max(10.0);
     let mut job = egui::text::LayoutJob::simple_singleline(look.title.clone(), font.clone(), color);
     if !look.hint.is_empty() {
-        job.append(&format!("  {}", look.hint), 0.0, egui::TextFormat::simple(egui::FontId::proportional(11.5), pal.text_weak));
+        job.append(&format!("  {}", look.hint), 0.0, egui::TextFormat::simple(egui::FontId::proportional(12.5), pal.text_weak));
     }
     job.wrap = egui::text::TextWrapping { max_width: max_w, max_rows: 1, break_anywhere: true, overflow_character: Some('…') };
     let galley = p.layout_job(job);

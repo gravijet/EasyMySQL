@@ -81,7 +81,7 @@ fn nav_row(ui: &mut egui::Ui, icon: crate::icons::Icon, title: &str, active: boo
     // Sprachen mit ihrem Dateisymbol (wie im Explorer)
     match title {
         "Java" => crate::icons::paint_file(ui.painter(), ir, "x.java"),
-        _ => crate::icons::paint(ui.painter(), ir, icon, if active { fg } else { pal.text_weak }),
+        _ => crate::icons::paint(ui.painter(), ir, icon, crate::icons::tint(icon)),
     }
     ui.painter().text(egui::pos2(r.left() + 34.0, r.center().y), egui::Align2::LEFT_CENTER, title, egui::FontId::proportional(13.0), fg);
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
@@ -294,7 +294,7 @@ impl TabView for SettingsTab {
                         ui.add_space(8.0);
                         ui.horizontal(|ui| {
                             ui.add_space(10.0);
-                            ui.label(RichText::new(crate::i18n::text(group).to_uppercase()).size(10.5).color(pal.text_weak));
+                            ui.label(RichText::new(crate::i18n::text(group).to_uppercase()).size(11.5).color(pal.text_weak));
                         });
                         ui.add_space(2.0);
                         for id in *ids {

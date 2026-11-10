@@ -433,7 +433,7 @@ impl AiTab {
                     // Nur der erste Satz, einzeilig gekuerzt: lange Skill-Texte sprengen sonst die Liste
                     let kurz = b.beschreibung.split(". ").next().unwrap_or("").lines().next().unwrap_or("");
                     if !kurz.is_empty() {
-                        job.append(&format!("  {kurz}"), 0.0, egui::TextFormat { font_id: egui::FontId::proportional(11.5), color: pal.text_weak, ..Default::default() });
+                        job.append(&format!("  {kurz}"), 0.0, egui::TextFormat { font_id: egui::FontId::proportional(12.5), color: pal.text_weak, ..Default::default() });
                     }
                     job.wrap = egui::text::TextWrapping::truncate_at_width(ui.available_width());
                     let r = ui.add(egui::Button::selectable(gewaehlt, job).frame_when_inactive(false).wrap_mode(egui::TextWrapMode::Truncate)).on_hover_text(&b.beschreibung);
@@ -539,7 +539,7 @@ impl AiTab {
                 let mut job = egui::text::LayoutJob::default();
                 job.append(&m.name, 0.0, egui::TextFormat { font_id: egui::FontId::proportional(13.0), color: pal.text, ..Default::default() });
                 if !m.beschreibung.is_empty() {
-                    job.append(&format!("  {}", m.beschreibung), 0.0, egui::TextFormat { font_id: egui::FontId::proportional(11.5), color: pal.text_weak, ..Default::default() });
+                    job.append(&format!("  {}", m.beschreibung), 0.0, egui::TextFormat { font_id: egui::FontId::proportional(12.5), color: pal.text_weak, ..Default::default() });
                 }
                 let r = ui.add(egui::Button::selectable(self.auswahl.modell == m.id, job).wrap_mode(egui::TextWrapMode::Truncate));
                 let r = if m.beschreibung.is_empty() { r } else { r.on_hover_text(&m.beschreibung) };

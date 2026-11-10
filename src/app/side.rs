@@ -241,7 +241,7 @@ pub(super) fn section_header(ui: &mut egui::Ui, title: &str, add_buttons: impl F
             ui.add_space(6.0);
             ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                 ui.add_space(8.0);
-                ui.add(egui::Label::new(RichText::new(title).size(11.0).color(style::pal().text_weak)).truncate()).on_hover_text(title);
+                ui.add(egui::Label::new(RichText::new(title).size(12.0).color(style::pal().text_weak)).truncate()).on_hover_text(title);
             });
         });
     });
@@ -292,7 +292,7 @@ pub(super) fn recent_row(ui: &mut egui::Ui, p: &Path) -> egui::Response {
     if dir.chars().count() > max {
         dir = format!("…{}", dir.chars().rev().take(max - 1).collect::<Vec<_>>().into_iter().rev().collect::<String>());
     }
-    painter.text(egui::pos2(x, r.center().y + 8.0), egui::Align2::LEFT_CENTER, dir, egui::FontId::proportional(11.0), pal.text_weak);
+    painter.text(egui::pos2(x, r.center().y + 8.0), egui::Align2::LEFT_CENTER, dir, egui::FontId::proportional(12.0), pal.text_weak);
     resp.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(p.display().to_string())
 }
 
@@ -739,7 +739,7 @@ impl EasyApp {
                 let p = ui.painter_at(r);
                 p.text(pos2(r.left() + 10.0, r.top() + 11.0), egui::Align2::LEFT_CENTER, first, egui::FontId::monospace(12.0), color);
                 let meta = format!("{}  ·  {}  ·  {} ms", e.short_time(), if e.db.is_empty() { "–" } else { &e.db }, e.millis);
-                p.text(pos2(r.left() + 10.0, r.top() + 27.0), egui::Align2::LEFT_CENTER, meta, egui::FontId::proportional(11.0), pal.text_weak);
+                p.text(pos2(r.left() + 10.0, r.top() + 27.0), egui::Align2::LEFT_CENTER, meta, egui::FontId::proportional(12.0), pal.text_weak);
                 let resp = resp.on_hover_text(e.sql.chars().take(1500).collect::<String>());
                 if resp.double_clicked() {
                     actions.push(Action::OpenSql { db: Some(e.db.clone()), sql: e.sql.clone() + ";\n", run: false });

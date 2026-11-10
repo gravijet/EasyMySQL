@@ -156,7 +156,7 @@ impl UsersTab {
                 let g = ui.painter().layout_no_wrap(name, egui::FontId::proportional(13.0), pal.text);
                 let w = g.size().x;
                 ui.painter().galley(egui::pos2(r.left() + 28.0, r.center().y - g.size().y / 2.0), g, pal.text);
-                ui.painter().text(egui::pos2(r.left() + 34.0 + w, r.center().y), egui::Align2::LEFT_CENTER, &a.host, egui::FontId::proportional(11.5), pal.text_weak);
+                ui.painter().text(egui::pos2(r.left() + 34.0 + w, r.center().y), egui::Align2::LEFT_CENTER, &a.host, egui::FontId::proportional(12.5), pal.text_weak);
                 if resp.clicked() {
                     pick = Some(i);
                 }
