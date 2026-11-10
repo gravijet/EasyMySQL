@@ -368,7 +368,7 @@ impl TabView for SettingsTab {
                     self.heading(ui, "updates", "Updates");
                     grid(ui, "g-update", &mut |ui| {
                         crate::widgets::row(ui, crate::i18n::text("Installierte Version"), |ui| {
-                            ui.label(RichText::new(env!("CARGO_PKG_VERSION")).monospace());
+                            ui.label(RichText::new(env!("CARGO_PKG_VERSION")).monospace()).on_hover_text(concat!("Build ", env!("EASYMYSQL_BUILD")));
                         });
                         crate::widgets::row(ui, crate::i18n::text("Stand"), |ui| {
                             ui.vertical(|ui| {

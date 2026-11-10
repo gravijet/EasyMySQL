@@ -15,9 +15,13 @@ Diese Regeln gelten für jede automatisierte Arbeit an EasyMySQL.
 
 ## Version
 
-Die Version in `Cargo.toml` wächst mit dem Umfang der Änderung (siehe „Versioning“ in der README):
-große Umbauten → Hauptversion, neue Funktionen → Nebenversion, Fehlerbehebungen → Patch.
-Ein Release entsteht nur, wenn `Cargo.toml` eine Version ohne vorhandenes Tag hat.
+Versionen wachsen nur in kleinen Schritten (siehe „Versioning“ in der README). Aktuelle Linie: `1.1.x`.
+- Jede normale Änderung (Fehler, Verbesserung, neue Funktion, Redesign): nur den Patch erhöhen (`1.1.17` → `1.1.18`).
+- Nebenversion (`1.2.0`) nur auf ausdrücklichen Wunsch des Nutzers, Hauptversion nie ohne seine Entscheidung.
+- Pro Release höchstens um eins erhöhen, keine Nummern überspringen.
+- Zusätzlich bei jedem Release `build-number` in `Cargo.toml` um eins erhöhen (interne laufende Nummer, 1.1.17 = 30).
+Ein Release entsteht nur, wenn `Cargo.toml` eine Version ohne vorhandenes Tag hat. Alte Programme (bis 7.4.0)
+bekommen ihre Updates über die Nummernzuordnung in `website/src/worker.js`; diese nicht entfernen.
 
 ## Bauen und prüfen
 

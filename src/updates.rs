@@ -106,7 +106,8 @@ fn agent(timeout: Duration) -> ureq::Agent {
 }
 
 fn check() -> Result<Option<Release>, String> {
-    let response = agent(Duration::from_secs(20)).get(format!("{}/api/release", site())).header("Accept", "application/json").call();
+    // Neues Nummernschema (ab 1.1.17): sonst liefert die Website alten Programmen eine Ersatznummer.
+    let response = agent(Duration::from_secs(20)).get(format!("{}/api/release", site())).header("Accept", "application/json").header("X-Version-Scheme", "2").call();
     let mut response = match response {
         Ok(r) => r,
         Err(ureq::Error::StatusCode(404)) => return Ok(None),

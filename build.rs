@@ -51,6 +51,12 @@ fn write_ico(path: &std::path::Path) {
 fn main() {
     println!("cargo:rerun-if-changed=src/icon.rs");
     println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=Cargo.toml");
+    // Interne laufende Release-Nummer (README "Versioning"), sichtbar bleibt die Version 1.1.x
+    let toml = std::fs::read_to_string("Cargo.toml").unwrap();
+    let build = toml.lines().find_map(|l| l.strip_prefix("build-number = ")).expect("build-number in Cargo.toml").trim();
+    assert!(build.parse::<u32>().is_ok(), "build-number muss eine Zahl sein");
+    println!("cargo:rustc-env=EASYMYSQL_BUILD={build}");
     let out = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap());
     let ico = out.join("easymysql.ico");
     write_ico(&ico);

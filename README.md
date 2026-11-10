@@ -80,13 +80,17 @@ Linux development builds use `/usr/sbin/mariadbd`; set `EASYMYSQL_MARIADB_BIN` t
 
 ## Versioning
 
-The version number follows the size of the changes:
+Version numbers grow in **small steps**. The current line is `1.1.x`; numbers like `7.4.0` are gone.
 
 | Change | Number | Example |
 | --- | --- | --- |
-| Complete redesign or many new features at once | **major** (`4.0.0`) | new look, new importers, new updater |
-| A new feature or a clearly noticeable improvement | **minor** (`4.1.0`) | one more export format |
-| Bug fixes and small adjustments | **patch** (`4.1.1`) | a wrong label, a crash |
+| Normal release: fixes, improvements, new features | **patch** (`1.1.17` → `1.1.18`) | new chat panel, website redesign, a crash fix |
+| Rare milestone, only when explicitly requested | **minor** (`1.1.x` → `1.2.0`) | a complete rebuild of the app |
+| Never without the owner's explicit decision | **major** (`2.0.0`) | – |
+
+Every release also has an internal running number, `build-number` under `[package.metadata.easymysql]` in `Cargo.toml`: +1 per release (`1.0.0` = 1, `1.1.16` = 29, `1.1.17` = 30, the 1000th release = 1000). Users see only the version; the number appears as a tooltip on the version in Settings › Updates.
+
+On November 10, 2026 the 29 older releases were renumbered without rebuilding them: `1.0.0`–`3.5.0` became `1.0.0`–`1.0.11`, `4.0.0`–`7.4.0` became `1.1.0`–`1.1.16`. Programs installed before that still report their old number (up to `7.4.0`); `website/src/worker.js` maps the numbers for them so they keep receiving updates. New programs send `X-Version-Scheme: 2` and see the real number.
 
 App releases are built only on explicit request by manually running **EasyMySQL Release** in GitHub Actions. Pushes do not build Windows packages. The **Tests** workflow also skips the Windows UI build on pushes; its Windows job runs only when that workflow is started manually. Linux/macOS tests and the website workflow still run on pushes. Bump `Cargo.toml` normally; publish the new version when requested.
 

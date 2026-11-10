@@ -215,7 +215,8 @@ pub fn paint(p: &egui::Painter, r: Rect, icon: Icon, color: Color32) {
                 p.ctx().data_mut(|d| d.insert_temp(id, texture.clone()));
                 texture
         });
-        p.image(texture.id(), r, Rect::from_min_max(Pos2::ZERO, pos2(1.0, 1.0)), color);
+        // Markenzeichen in Originalfarbe; nur die Deckkraft folgt der Anfrage (deaktiviert, Puls).
+        p.image(texture.id(), r, Rect::from_min_max(Pos2::ZERO, pos2(1.0, 1.0)), Color32::from_white_alpha(color.a()));
         return;
     }
     let k = r.width().min(r.height()) / 24.0;

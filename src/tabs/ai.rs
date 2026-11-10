@@ -1,12 +1,13 @@
 // Native Werkzeugfenster fuer Claude und Codex, passend zur linken Seitenleiste.
+// Aufbau wie im Terminal: Verlauf, Statuszeile, Eingabe mit Befehlsvervollstaendigung, Modell und Aufwand.
 use super::{Action, Ctx, TabView};
-use crate::ai::{Anfrage, Auftrag, Auswahl, Modell, Nachricht, Rolle, Stand};
+use crate::ai::{Anfrage, Auftrag, Auswahl, Befehl, Konfig, Modell, Nachricht, Rolle, Sitzung, Stand};
 use crate::i18n::tr;
 use crate::icons::{self, Icon};
 use crate::mcp::setup::Target;
-use eframe::egui::{self, RichText};
+use eframe::egui::{self, Color32, RichText};
 use std::path::PathBuf;
-use std::sync::atomic::Ordering;
+use std::time::Instant;
 
 pub struct AiTab {
     ziel: Target,
@@ -17,11 +18,17 @@ pub struct AiTab {
     schreiben: bool,
     auswahl: Auswahl,
     modelle: Vec<Modell>,
-    modelle_geladen: bool,
+    befehle: Vec<Befehl>,
+    verbindung: Option<Sitzung>,
+    /// Startfehler nicht in jedem Bild erneut versuchen
+    start_versucht: bool,
     auftrag: Option<Auftrag>,
-    antwort: Stand,
-    verwaltung: bool,
-    kompakt: bool,
+    /// Anzeige der laufenden Antwort (Kopie des Hintergrundstands)
+    live: Stand,
+    meldung: Option<(bool, String)>,
+    seit: Option<Instant>,
+    vorschlag: usize,
+    vorschlag_aus: bool,
     tokens: Option<u64>,
     kontext: Option<u64>,
     speicher: PathBuf,
@@ -53,13 +60,32 @@ fn chat_lesen(pfad: &std::path::Path) -> Result<Chat, String> {
     serde_json::from_reader(datei).map_err(|e| e.to_string())
 }
 
+/// Markenfarbe fuer Punkte, Statuszeile und Senden
+fn farbe(ziel: Target) -> Color32 {
+    if ziel == Target::Claude { Color32::from_rgb(0xD9, 0x77, 0x57) } else { Color32::from_rgb(0x7A, 0x9D, 0xFF) }
+}
+
+/// Passende Befehle zum Wort am Cursor: `/…` am Anfang oder `$…` (Codex-Skills) irgendwo.
+fn vorschlaege<'a>(eingabe: &str, befehle: &'a [Befehl]) -> (usize, Vec<&'a Befehl>) {
+    let start = eingabe.rfind(char::is_whitespace).map(|i| i + 1).unwrap_or(0);
+    let wort = &eingabe[start..];
+    let passt = (wort.starts_with('/') && start == 0) || wort.starts_with('$');
+    if !passt || eingabe.ends_with(char::is_whitespace) {
+        return (start, Vec::new());
+    }
+    let klein = wort.to_lowercase();
+    let mut treffer = befehle.iter().filter(|b| b.name.to_lowercase().starts_with(&klein)).collect::<Vec<_>>();
+    treffer.extend(befehle.iter().filter(|b| !b.name.to_lowercase().starts_with(&klein) && b.name.to_lowercase().contains(&klein[1..])));
+    // Ein vollstaendig getippter Befehl braucht keine Liste mehr.
+    if treffer.len() == 1 && treffer[0].name == wort {
+        treffer.clear();
+    }
+    treffer.truncate(8);
+    (start, treffer)
+}
+
 impl AiTab {
     pub fn new(ziel: Target, ordner: Option<PathBuf>) -> Self {
-        let modelle = if ziel == Target::Claude {
-            [("sonnet", "Sonnet"), ("opus", "Opus"), ("haiku", "Haiku")].into_iter().map(|(id, name)| Modell { id: id.into(), name: name.into(), aufwand: Vec::new() }).collect()
-        } else {
-            Vec::new()
-        };
         Self {
             ziel,
             ordner,
@@ -68,12 +94,16 @@ impl AiTab {
             eingabe: String::new(),
             schreiben: false,
             auswahl: Auswahl::default(),
-            modelle,
-            modelle_geladen: false,
+            modelle: Vec::new(),
+            befehle: Vec::new(),
+            verbindung: None,
+            start_versucht: false,
             auftrag: None,
-            antwort: Stand::default(),
-            verwaltung: false,
-            kompakt: false,
+            live: Stand::default(),
+            meldung: None,
+            seit: None,
+            vorschlag: 0,
+            vorschlag_aus: false,
             tokens: None,
             kontext: None,
             speicher: neuer_speicher(ziel),
@@ -84,10 +114,22 @@ impl AiTab {
         self.sitzung = None;
         self.eingabe.clear();
         self.verlauf.clear();
-        self.antwort = Stand::default();
+        self.verbindung = None;
+        self.start_versucht = false;
+        self.live = Stand::default();
+        self.meldung = None;
         self.tokens = None;
         self.kontext = None;
         self.speicher = neuer_speicher(self.ziel);
+    }
+
+    fn konfig(&self) -> Option<Konfig> {
+        // Ohne Projektordner laeuft die Sitzung im Temp-Ordner, damit Modelle und Befehle schon da sind; senden geht erst mit Ordner.
+        Some(Konfig { ordner: self.ordner.clone().unwrap_or_else(std::env::temp_dir), schreiben: self.schreiben, auswahl: self.auswahl.clone() })
+    }
+
+    fn laeuft(&self) -> bool {
+        self.live.laeuft
     }
 
     fn speichern(&self) -> Result<(), String> {
@@ -121,7 +163,6 @@ impl AiTab {
                             self.verlauf = chat.verlauf;
                             self.auswahl = chat.auswahl;
                             self.speicher = pfad;
-                            self.eingabe.clear();
                             ui.close();
                         }
                     }
@@ -133,62 +174,435 @@ impl AiTab {
         });
     }
 
+    /// Hintergrundstand uebernehmen; fertige Antworten wandern in den Verlauf.
     fn abholen(&mut self, cx: &mut Ctx) {
-        let Some(auftrag) = &self.auftrag else { return };
-        self.antwort = auftrag.stand.lock().unwrap().clone();
-        if !self.antwort.fertig {
-            return;
+        if let Some(a) = &self.auftrag {
+            let s = a.stand.lock().unwrap().clone();
+            if s.fertig {
+                self.auftrag = None;
+                self.meldung = Some(match s.fehler {
+                    Some(e) => (true, e),
+                    None => (false, s.text.trim().to_string()),
+                });
+                // Nach Installation oder Anmeldung neu verbinden
+                self.verbindung = None;
+                self.start_versucht = false;
+            } else {
+                self.meldung = Some((false, s.text.trim().to_string()));
+            }
         }
-        self.auftrag = None;
-        if !self.antwort.modelle.is_empty() {
-            self.modelle = std::mem::take(&mut self.antwort.modelle);
+        let Some(v) = &self.verbindung else { return };
+        let mut s = v.stand.lock().unwrap();
+        if !s.modelle.is_empty() {
+            self.modelle = s.modelle.clone();
         }
-        if !self.verwaltung {
-            if let Some(id) = &self.antwort.sitzung {
+        if !s.befehle.is_empty() {
+            self.befehle = s.befehle.clone();
+        }
+        self.tokens = s.tokens.or(self.tokens);
+        self.kontext = s.kontext.or(self.kontext);
+        if s.zug_fertig {
+            s.zug_fertig = false;
+            // Erst nach einer echten Antwort gibt es etwas fortzusetzen (leere Sitzungen speichert der Anbieter nicht).
+            if let Some(id) = &s.sitzung {
                 self.sitzung = Some(id.clone());
             }
-            self.tokens = self.antwort.tokens.or(self.tokens);
-            self.kontext = self.antwort.kontext.or(self.kontext);
-            if self.antwort.nachrichten.is_empty() && !self.antwort.text.trim().is_empty() {
-                self.antwort.nachrichten.push(Nachricht { id: String::new(), rolle: Rolle::Assistent, titel: String::new(), text: self.antwort.text.clone(), fertig: true });
-            }
-            for n in std::mem::take(&mut self.antwort.nachrichten) {
+            for n in std::mem::take(&mut s.nachrichten) {
                 if !n.text.is_empty() {
                     self.verlauf.push((false, n));
                 }
             }
-            if self.antwort.komprimiert {
+            if s.komprimiert {
+                s.komprimiert = false;
                 self.verlauf.push((
                     false,
                     Nachricht { id: String::new(), rolle: Rolle::Status, titel: String::new(), text: tr("Kontext komprimiert", "Context compacted").into(), fertig: true },
                 ));
-                self.tokens = self.antwort.tokens;
+                self.tokens = s.tokens;
             }
-            self.antwort.text.clear();
-            if self.kompakt && !self.antwort.komprimiert && self.antwort.fehler.is_none() {
-                self.antwort.fehler = Some(tr("Die Komprimierung wurde vom Anbieter nicht bestätigt.", "The provider did not confirm compaction.").into());
-            }
+            self.seit = None;
             cx.actions.push(Action::FilesChanged);
             if let Err(e) = self.speichern() {
-                self.antwort.fehler = Some(crate::tr_format!("Chatverlauf konnte nicht gespeichert werden: {e}", "Could not save chat history: {e}"));
+                s.fehler = Some(crate::tr_format!("Chatverlauf konnte nicht gespeichert werden: {e}", "Could not save chat history: {e}"));
             }
+        }
+        self.live = Stand {
+            nachrichten: if s.laeuft { s.nachrichten.clone() } else { Vec::new() },
+            laeuft: s.laeuft,
+            denkt: s.denkt,
+            bereit: s.bereit,
+            beendet: s.beendet,
+            fehler: s.fehler.clone(),
+            modell: s.modell.clone(),
+            ..Default::default()
+        };
+    }
+
+    /// Haelt die Sitzung bereit: startet sie vorab und nach Aenderungen von Modell, Aufwand oder Rechten neu.
+    fn verbinden(&mut self, ui: &egui::Ui, erzwingen: bool) {
+        let Some(konfig) = self.konfig() else { return };
+        if self.auftrag.is_some() || self.ziel.program().is_none() || self.laeuft() {
+            return;
+        }
+        let veraltet = self.verbindung.as_ref().is_some_and(|v| v.konfig != konfig || (erzwingen && v.stand.lock().unwrap().beendet));
+        if veraltet {
+            self.verbindung = None;
+            self.start_versucht = false;
+        }
+        if self.verbindung.is_some() || (self.start_versucht && !erzwingen) {
+            return;
+        }
+        self.start_versucht = true;
+        match Sitzung::starten(ui.ctx(), self.ziel, konfig, self.sitzung.as_deref()) {
+            Ok(v) => {
+                self.verbindung = Some(v);
+                self.live = Stand::default();
+            }
+            Err(e) => self.live.fehler = Some(e),
         }
     }
 
-    fn starten(&mut self, ui: &egui::Ui, anfrage: Anfrage) {
-        let Some(ordner) = &self.ordner else { return };
-        self.verwaltung = matches!(anfrage, Anfrage::Anmelden | Anfrage::Modelle);
-        self.kompakt = matches!(anfrage, Anfrage::Kompakt);
-        self.antwort = Stand::default();
-        match Auftrag::starten(ui.ctx(), self.ziel, ordner, self.sitzung.as_deref(), self.schreiben, &self.auswahl, anfrage) {
-            Ok(a) => self.auftrag = Some(a),
-            Err(e) => self.antwort.fehler = Some(e),
+    fn senden(&mut self, ui: &egui::Ui) {
+        let text = self.eingabe.trim().to_string();
+        if text.is_empty() || self.laeuft() || self.ordner.is_none() {
+            return;
+        }
+        if text.len() > 128 * 1024 {
+            self.live.fehler = Some(tr("Die Nachricht ist zu lang (maximal 128 KiB).", "The message is too long (maximum 128 KiB).").into());
+            return;
+        }
+        let anfrage = match text.as_str() {
+            "/clear" | "/new" => {
+                self.neuer_chat();
+                return;
+            }
+            "/compact" => Anfrage::Kompakt,
+            _ => Anfrage::Text(text.clone()),
+        };
+        if matches!(anfrage, Anfrage::Kompakt) && self.sitzung.is_none() {
+            self.live.fehler = Some(tr("Bitte zuerst einen Chat beginnen.", "Please start a conversation first.").into());
+            return;
+        }
+        self.verbinden(ui, true);
+        let Some(v) = &self.verbindung else { return };
+        if v.senden(anfrage, &self.befehle).is_ok() {
+            self.verlauf.push((true, Nachricht { id: String::new(), rolle: Rolle::Assistent, titel: String::new(), text, fertig: true }));
+            self.eingabe.clear();
+            self.seit = Some(Instant::now());
+            self.live.laeuft = true;
+            self.live.fehler = None;
+            self.meldung = None;
         }
     }
 
     fn icon(&self) -> Icon {
         if self.ziel == Target::Claude { Icon::Claude } else { Icon::Codex }
     }
+
+    fn modell_name(&self) -> String {
+        let name = self.modelle.iter().find(|m| m.id == self.auswahl.modell).map(|m| m.name.clone()).unwrap_or_else(|| {
+            if self.auswahl.modell.is_empty() { self.live.modell.clone().unwrap_or_else(|| tr("Standardmodell", "Default model").into()) } else { self.auswahl.modell.clone() }
+        });
+        if self.auswahl.aufwand.is_empty() { name } else { format!("{name} · {}", self.auswahl.aufwand) }
+    }
+
+    fn kopf(&mut self, ui: &mut egui::Ui, cx: &mut Ctx, installiert: bool) {
+        let pal = crate::style::pal();
+        ui.horizontal(|ui| {
+            let (r, _) = ui.allocate_exact_size(egui::vec2(18.0, 18.0), egui::Sense::hover());
+            icons::paint(ui.painter(), r, self.icon(), pal.text);
+            ui.label(RichText::new(self.ziel.label()).strong());
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.add_enabled_ui(self.auftrag.is_none(), |ui| {
+                    ui.menu_button("…", |ui| {
+                        if ui.button(if installiert { tr("Aktualisieren", "Update") } else { tr("Installieren", "Install") }).clicked() {
+                            self.verbindung = None;
+                            self.auftrag = Some(Auftrag::installieren(ui.ctx(), self.ziel));
+                            ui.close();
+                        }
+                        if ui.add_enabled(installiert && self.ordner.is_some(), egui::Button::new(tr("Anmelden", "Sign in"))).clicked() {
+                            if let Some(ordner) = &self.ordner {
+                                match Auftrag::anmelden(ui.ctx(), self.ziel, ordner) {
+                                    Ok(a) => self.auftrag = Some(a),
+                                    Err(e) => self.meldung = Some((true, e)),
+                                }
+                            }
+                            ui.close();
+                        }
+                        if ui.add_enabled(self.sitzung.is_some() && !self.laeuft(), egui::Button::new(tr("Kontext komprimieren", "Compact context"))).clicked() {
+                            self.eingabe = "/compact".into();
+                            self.senden(ui);
+                            ui.close();
+                        }
+                        if ui.button(tr("Datenbankzugriff …", "Database access …")).clicked() {
+                            cx.actions.push(Action::OpenSettings(Some("ki".into())));
+                            ui.close();
+                        }
+                    });
+                    let verlauf = icons::button(ui, Icon::History, tr("Gespeicherte Chats", "Saved chats"));
+                    egui::Popup::menu(&verlauf).show(|ui| {
+                        self.verlauf_menue(ui);
+                    });
+                    if icons::button(ui, Icon::Plus, tr("Neuer Chat (/clear)", "New chat (/clear)")).clicked() {
+                        self.neuer_chat();
+                    }
+                });
+            });
+        });
+        // Projektordner wie das Arbeitsverzeichnis im Terminal
+        let name = self.ordner.as_ref().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().to_string());
+        let text = name.as_deref().unwrap_or(tr("Projektordner wählen", "Choose project folder")).to_string();
+        let knopf = ui.add_enabled_ui(!self.laeuft(), |ui| symbol_knopf(ui, Icon::Folder, &text, false)).inner;
+        if knopf.on_hover_text(self.ordner.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| tr("Projektordner wählen", "Choose project folder").into())).clicked()
+            && let Some(p) = rfd::FileDialog::new().pick_folder()
+        {
+            self.neuer_chat();
+            self.ordner = Some(p);
+        }
+        ui.add_space(2.0);
+        ui.separator();
+    }
+
+    fn eingabefeld(&mut self, ui: &mut egui::Ui, installiert: bool) {
+        let pal = crate::style::pal();
+        let akzent = farbe(self.ziel);
+        let feld_id = ui.id().with("chat-feld");
+        let fokus = ui.memory(|m| m.has_focus(feld_id));
+        let (start, treffer) = vorschlaege(&self.eingabe, &self.befehle);
+        let treffer = treffer.into_iter().cloned().collect::<Vec<_>>();
+        let zeigen = fokus && !treffer.is_empty() && !self.vorschlag_aus;
+        self.vorschlag = self.vorschlag.min(treffer.len().saturating_sub(1));
+        let mut uebernehmen = None;
+        let mut senden = false;
+        if fokus {
+            ui.input_mut(|i| {
+                if zeigen {
+                    if i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowDown) {
+                        self.vorschlag = (self.vorschlag + 1) % treffer.len();
+                    }
+                    if i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowUp) {
+                        self.vorschlag = (self.vorschlag + treffer.len() - 1) % treffer.len();
+                    }
+                    if i.consume_key(egui::Modifiers::NONE, egui::Key::Escape) {
+                        self.vorschlag_aus = true;
+                    }
+                    if i.consume_key(egui::Modifiers::NONE, egui::Key::Tab) || (!i.modifiers.shift && i.consume_key(egui::Modifiers::NONE, egui::Key::Enter)) {
+                        uebernehmen = Some(self.vorschlag);
+                    }
+                } else if (!i.modifiers.shift && i.consume_key(egui::Modifiers::NONE, egui::Key::Enter)) || i.consume_key(egui::Modifiers::COMMAND, egui::Key::Enter) {
+                    senden = true;
+                }
+            });
+        }
+        if let Some(i) = uebernehmen {
+            self.eingabe.truncate(start);
+            self.eingabe.push_str(&treffer[i].name);
+            self.eingabe.push(' ');
+            self.vorschlag = 0;
+            if let Some(mut st) = egui::TextEdit::load_state(ui.ctx(), feld_id) {
+                st.cursor.set_char_range(Some(egui::text::CCursorRange::one(egui::text::CCursor::new(self.eingabe.chars().count()))));
+                st.store(ui.ctx(), feld_id);
+            }
+        }
+        if zeigen && uebernehmen.is_none() {
+            crate::style::sunken_frame().show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                for (i, b) in treffer.iter().enumerate() {
+                    let gewaehlt = i == self.vorschlag;
+                    let mut job = egui::text::LayoutJob::default();
+                    job.append(&b.name, 0.0, egui::TextFormat { font_id: egui::FontId::monospace(12.0), color: if gewaehlt { akzent } else { pal.text }, ..Default::default() });
+                    if !b.hinweis.is_empty() {
+                        job.append(&format!(" {}", b.hinweis), 0.0, egui::TextFormat { font_id: egui::FontId::monospace(11.0), color: pal.text_weak, ..Default::default() });
+                    }
+                    // Nur der erste Satz, einzeilig gekuerzt: lange Skill-Texte sprengen sonst die Liste
+                    let kurz = b.beschreibung.split(". ").next().unwrap_or("").lines().next().unwrap_or("");
+                    if !kurz.is_empty() {
+                        job.append(&format!("  {kurz}"), 0.0, egui::TextFormat { font_id: egui::FontId::proportional(11.5), color: pal.text_weak, ..Default::default() });
+                    }
+                    job.wrap = egui::text::TextWrapping::truncate_at_width(ui.available_width());
+                    let r = ui.add(egui::Button::selectable(gewaehlt, job).frame_when_inactive(false).wrap_mode(egui::TextWrapMode::Truncate)).on_hover_text(&b.beschreibung);
+                    if r.clicked() {
+                        self.eingabe.truncate(start);
+                        self.eingabe.push_str(&b.name);
+                        self.eingabe.push(' ');
+                        ui.memory_mut(|m| m.request_focus(feld_id));
+                    }
+                }
+                ui.label(RichText::new(tr("Tab übernehmen · ↑↓ wählen · Esc schließen", "Tab complete · ↑↓ select · Esc close")).small().color(pal.text_weak));
+            });
+            ui.add_space(4.0);
+        }
+        let rahmen = if fokus { akzent.gamma_multiply(0.7) } else { pal.border };
+        egui::Frame::new().fill(pal.bg).stroke(egui::Stroke::new(1.0, rahmen)).corner_radius(8.0).inner_margin(egui::Margin { left: 8, right: 6, top: 6, bottom: 4 }).show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            let hinweis = if self.ziel == Target::Codex {
+                tr("Nachricht an Codex … (/ Befehle, $ Skills)", "Message Codex … (/ commands, $ skills)")
+            } else {
+                tr("Nachricht an Claude … (/ für Befehle)", "Message Claude … (/ for commands)")
+            };
+            let feld = ui.add(
+                egui::TextEdit::multiline(&mut self.eingabe)
+                    .id(feld_id)
+                    .frame(egui::Frame::NONE)
+                    .desired_rows(2)
+                    .lock_focus(true)
+                    .desired_width(f32::INFINITY)
+                    .hint_text(hinweis),
+            );
+            if feld.changed() {
+                self.vorschlag_aus = false;
+                self.vorschlag = 0;
+            }
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 4.0;
+                // Senden/Stopp rechts, Modell links mit dem restlichen Platz
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let (r, klick) = ui.allocate_exact_size(egui::vec2(26.0, 26.0), egui::Sense::click());
+                    let aktiv = self.laeuft() || (installiert && self.ordner.is_some() && !self.eingabe.trim().is_empty());
+                    let fuellung = if aktiv { akzent } else { pal.face_light };
+                    ui.painter().circle_filled(r.center(), 13.0, if klick.hovered() && aktiv { fuellung.gamma_multiply(1.15) } else { fuellung });
+                    if self.laeuft() {
+                        ui.painter().rect_filled(egui::Rect::from_center_size(r.center(), egui::vec2(9.0, 9.0)), 2.0, Color32::WHITE);
+                    } else {
+                        icons::paint(ui.painter(), r.shrink(6.0), Icon::ArrowUp, if aktiv { Color32::WHITE } else { pal.text_weak });
+                    }
+                    let klick = klick.on_hover_text(if self.laeuft() { tr("Abbrechen (Esc)", "Interrupt (Esc)") } else { tr("Senden (Enter)", "Send (Enter)") });
+                    if klick.clicked() {
+                        if self.laeuft() {
+                            if let Some(v) = &self.verbindung {
+                                v.unterbrechen();
+                            }
+                        } else {
+                            senden = true;
+                        }
+                    }
+                    if let Some(tokens) = self.tokens.filter(|t| *t > 0) {
+                        let text = self.kontext.map(|k| format!("{:.0}%", (tokens as f64 / k.max(1) as f64 * 100.0).min(100.0))).unwrap_or_else(|| format!("{tokens}"));
+                        ui.label(RichText::new(text).small().color(pal.text_weak)).on_hover_text(crate::tr_format!("Kontext: {tokens} Tokens", "Context: {tokens} tokens"));
+                    }
+                    let (r, stift) = ui.allocate_exact_size(egui::vec2(22.0, 22.0), egui::Sense::click());
+                    if self.schreiben || stift.hovered() {
+                        ui.painter().rect_filled(r, 4.0, if self.schreiben { akzent.gamma_multiply(0.18) } else { pal.hover });
+                    }
+                    icons::paint(ui.painter(), r.shrink(4.0), Icon::Edit, if self.schreiben { akzent } else { pal.text_weak });
+                    let stift = stift.on_hover_text(if self.schreiben {
+                            tr("Dateiänderungen erlaubt – klicken für nur lesen", "File edits allowed – click for read-only")
+                        } else {
+                            tr("Nur lesen – klicken, um Dateiänderungen zu erlauben", "Read-only – click to allow file edits")
+                        });
+                    if stift.clicked() {
+                        self.schreiben = !self.schreiben;
+                    }
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        self.modellwahl(ui);
+                    });
+                });
+            });
+        });
+        if senden {
+            self.senden(ui);
+        }
+    }
+
+    /// Ein Knopf fuer Modell und Aufwand, wie `/model` in der Konsole
+    fn modellwahl(&mut self, ui: &mut egui::Ui) {
+        let pal = crate::style::pal();
+        let breite = ui.available_width().max(60.0);
+        let knopf = symbol_knopf(ui, Icon::ChevronDown, &self.modell_name(), true).on_hover_text(tr("Modell und Aufwand", "Model and effort"));
+        egui::Popup::menu(&knopf).width(breite.max(220.0)).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
+            ui.set_min_width(240.0);
+            icons::menu_heading(ui, tr("Modell", "Model"));
+            if self.modelle.is_empty() {
+                ui.label(RichText::new(tr("Modelle werden geladen …", "Loading models …")).small().color(pal.text_weak));
+            }
+            let mut neu = None;
+            if ui.selectable_label(self.auswahl.modell.is_empty(), tr("Standard", "Default")).clicked() {
+                neu = Some(String::new());
+            }
+            for m in &self.modelle {
+                let mut job = egui::text::LayoutJob::default();
+                job.append(&m.name, 0.0, egui::TextFormat { font_id: egui::FontId::proportional(13.0), color: pal.text, ..Default::default() });
+                if !m.beschreibung.is_empty() {
+                    job.append(&format!("  {}", m.beschreibung), 0.0, egui::TextFormat { font_id: egui::FontId::proportional(11.5), color: pal.text_weak, ..Default::default() });
+                }
+                let r = ui.add(egui::Button::selectable(self.auswahl.modell == m.id, job).wrap_mode(egui::TextWrapMode::Truncate));
+                let r = if m.beschreibung.is_empty() { r } else { r.on_hover_text(&m.beschreibung) };
+                if r.clicked() {
+                    neu = Some(m.id.clone());
+                }
+            }
+            if let Some(id) = neu {
+                if id != self.auswahl.modell {
+                    self.auswahl.aufwand.clear();
+                }
+                self.auswahl.modell = id;
+            }
+            let stufen = self.modelle.iter().find(|m| m.id == self.auswahl.modell).map(|m| m.aufwand.clone()).unwrap_or_default();
+            if !stufen.is_empty() {
+                ui.add_space(4.0);
+                icons::menu_heading(ui, tr("Aufwand", "Effort"));
+                ui.horizontal_wrapped(|ui| {
+                    if ui.selectable_label(self.auswahl.aufwand.is_empty(), tr("Auto", "Auto")).clicked() {
+                        self.auswahl.aufwand.clear();
+                    }
+                    for e in stufen {
+                        if ui.selectable_label(self.auswahl.aufwand == e, &e).clicked() {
+                            self.auswahl.aufwand = e;
+                        }
+                    }
+                });
+            }
+        });
+    }
+
+    /// Statuszeile wie in der Konsole: pulsierendes Logo, Taetigkeit, Dauer
+    fn statuszeile(&self, ui: &mut egui::Ui) {
+        let pal = crate::style::pal();
+        let t = ui.input(|i| i.time);
+        let laufend = self.live.nachrichten.iter().rev().find(|n| n.rolle == Rolle::Werkzeug && !n.fertig);
+        let taetigkeit = if !self.live.bereit && self.live.nachrichten.is_empty() && self.seit.is_some_and(|s| s.elapsed().as_secs() < 1) {
+            tr("Sendet", "Sending").to_string()
+        } else if let Some(w) = laufend {
+            w.titel.split('(').next().unwrap_or("").to_string()
+        } else if self.live.denkt {
+            tr("Denkt nach", "Thinking").into()
+        } else if self.live.nachrichten.iter().any(|n| n.rolle == Rolle::Assistent && !n.text.is_empty()) {
+            tr("Schreibt", "Writing").into()
+        } else {
+            tr("Arbeitet", "Working").into()
+        };
+        ui.horizontal_wrapped(|ui| {
+            let (r, _) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
+            let puls = (0.55 + 0.45 * (t * 3.0).sin()) as f32;
+            let groesse = 9.0 + 3.0 * puls;
+            icons::paint(ui.painter(), egui::Rect::from_center_size(r.center(), egui::vec2(groesse, groesse)), self.icon(), Color32::from_white_alpha((120.0 + 135.0 * puls) as u8));
+            let sekunden = self.seit.map(|s| s.elapsed().as_secs()).unwrap_or(0);
+            ui.label(RichText::new(format!("{taetigkeit} …")).color(farbe(self.ziel)));
+            ui.label(RichText::new(crate::tr_format!("{sekunden} s · Esc zum Abbrechen", "{sekunden}s · Esc to interrupt")).small().color(pal.text_weak));
+        });
+    }
+}
+
+/// Flacher Knopf mit Symbol und gekuerztem Text (Symbol links oder rechts)
+fn symbol_knopf(ui: &mut egui::Ui, icon: Icon, text: &str, rechts: bool) -> egui::Response {
+    let pal = crate::style::pal();
+    let font = egui::FontId::proportional(12.0);
+    let breite = ui.painter().layout_no_wrap(text.to_string(), font.clone(), pal.text_weak).size().x + 22.0;
+    let (r, resp) = ui.allocate_exact_size(egui::vec2(breite.min(ui.available_width()).max(24.0), 22.0), egui::Sense::click());
+    if resp.hovered() {
+        ui.painter().rect_filled(r, 4.0, pal.hover);
+    }
+    let farbe = if resp.hovered() { pal.text } else { pal.text_weak };
+    let symbol = if rechts { r.right() - 9.0 } else { r.left() + 9.0 };
+    icons::paint(ui.painter(), egui::Rect::from_center_size(egui::pos2(symbol, r.center().y), egui::vec2(13.0, 13.0)), icon, farbe);
+    let galley = ui.painter().layout_job({
+        let mut job = egui::text::LayoutJob::simple_singleline(text.to_string(), font, farbe);
+        job.wrap = egui::text::TextWrapping::truncate_at_width((r.width() - 22.0).max(1.0));
+        job
+    });
+    let x = if rechts { r.left() + 4.0 } else { r.left() + 19.0 };
+    ui.painter().galley(egui::pos2(x, r.center().y - galley.size().y / 2.0), galley, farbe);
+    resp
 }
 
 fn absatz(ui: &mut egui::Ui, text: &str) {
@@ -196,14 +610,22 @@ fn absatz(ui: &mut egui::Ui, text: &str) {
     for zeile in text.trim().lines() {
         let (zeile, gross) =
             if let Some(s) = zeile.strip_prefix("### ").or_else(|| zeile.strip_prefix("## ")).or_else(|| zeile.strip_prefix("# ")) { (s, true) } else { (zeile, false) };
+        let einzug = zeile.len() - zeile.trim_start().len();
+        let (zeile, punkt) = match zeile.trim_start().strip_prefix("- ").or_else(|| zeile.trim_start().strip_prefix("* ")) {
+            Some(rest) => (rest, true),
+            None => (zeile, false),
+        };
         let mut job = egui::text::LayoutJob::default();
+        if punkt {
+            job.append("•  ", einzug as f32 * 4.0, egui::TextFormat { font_id: egui::FontId::proportional(13.0), color: pal.text_weak, ..Default::default() });
+        }
         let (mut rest, mut fett, mut code) = (zeile, gross, false);
         while !rest.is_empty() {
             let i = rest.find('`').into_iter().chain(rest.find("**")).min().unwrap_or(rest.len());
             let format = egui::TextFormat {
-                font_id: if code { egui::FontId::monospace(12.0) } else { egui::FontId::proportional(if fett { 14.0 } else { 13.0 }) },
-                color: pal.text,
-                background: if code { pal.face_light } else { egui::Color32::TRANSPARENT },
+                font_id: if code { egui::FontId::monospace(12.0) } else { egui::FontId::proportional(if gross { 15.0 } else { 13.0 }) },
+                color: if fett || code { pal.text } else { pal.text.gamma_multiply(0.92) },
+                background: if code { pal.face_light } else { Color32::TRANSPARENT },
                 ..Default::default()
             };
             job.append(&rest[..i], 0.0, format);
@@ -219,6 +641,9 @@ fn absatz(ui: &mut egui::Ui, text: &str) {
         if job.text.is_empty() {
             ui.add_space(4.0);
         } else {
+            if gross {
+                ui.add_space(4.0);
+            }
             ui.add(egui::Label::new(job).selectable(true).wrap());
         }
     }
@@ -238,14 +663,16 @@ fn nachricht(ui: &mut egui::Ui, text: &str, cx: &mut Ctx) {
         let (code, danach) = inhalt.split_once("```").unwrap_or((inhalt, ""));
         crate::style::sunken_frame().show(ui, |ui| {
             ui.set_width(ui.available_width());
-            ui.horizontal_wrapped(|ui| {
+            ui.horizontal(|ui| {
                 ui.label(RichText::new(sprache.trim()).small().color(crate::style::pal().text_weak));
-                if icons::button(ui, Icon::Copy, tr("Code kopieren", "Copy code")).clicked() {
-                    ui.ctx().copy_text(code.into());
-                }
-                if sprache.trim().eq_ignore_ascii_case("sql") && icons::button(ui, Icon::External, tr("Im SQL-Editor öffnen", "Open in SQL editor")).clicked() {
-                    cx.actions.push(Action::OpenSql { db: None, sql: code.into(), run: false });
-                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if icons::button(ui, Icon::Copy, tr("Code kopieren", "Copy code")).clicked() {
+                        ui.ctx().copy_text(code.into());
+                    }
+                    if sprache.trim().eq_ignore_ascii_case("sql") && icons::button(ui, Icon::External, tr("Im SQL-Editor öffnen", "Open in SQL editor")).clicked() {
+                        cx.actions.push(Action::OpenSql { db: None, sql: code.into(), run: false });
+                    }
+                });
             });
             egui::ScrollArea::horizontal().id_salt(ui.next_auto_id()).show(ui, |ui| {
                 ui.add(egui::Label::new(RichText::new(code.trim_end()).monospace().size(12.0)).selectable(true).extend());
@@ -258,40 +685,85 @@ fn nachricht(ui: &mut egui::Ui, text: &str, cx: &mut Ctx) {
     }
 }
 
+/// Spalte links fuer Punkt oder Logo, rechts der Inhalt
+fn mit_rand<R>(ui: &mut egui::Ui, malen: impl FnOnce(&egui::Painter, egui::Pos2), inhalt: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    let rand = 16.0;
+    let start = ui.cursor().min;
+    let r = ui
+        .horizontal(|ui| {
+            ui.add_space(rand);
+            ui.vertical(|ui| {
+                ui.set_width(ui.available_width());
+                inhalt(ui)
+            })
+            .inner
+        })
+        .inner;
+    malen(ui.painter(), start + egui::vec2(5.0, 9.0));
+    r
+}
+
 fn eintrag(ui: &mut egui::Ui, nutzer: bool, n: &Nachricht, ziel: Target, cx: &mut Ctx) {
     let pal = crate::style::pal();
+    let akzent = farbe(ziel);
     if n.rolle == Rolle::Status {
-        ui.label(RichText::new(&n.text).small().color(pal.text_weak));
+        ui.vertical_centered(|ui| ui.label(RichText::new(format!("— {} —", n.text)).small().color(pal.text_weak)));
+        ui.add_space(6.0);
         return;
     }
     if n.rolle == Rolle::Werkzeug {
-        let titel = egui::WidgetText::from(RichText::new(&n.titel).small().color(pal.text_weak)).into_galley(
+        let t = ui.input(|i| i.time);
+        let fertig = n.fertig;
+        mit_rand(
             ui,
-            Some(egui::TextWrapMode::Truncate),
-            (ui.available_width() - ui.spacing().indent - 8.0).max(1.0),
-            egui::TextStyle::Button,
+            |p, pos| {
+                let farbe = if fertig { pal.ok_text } else { akzent.gamma_multiply((0.5 + 0.5 * (t * 4.0).sin()) as f32) };
+                p.circle_filled(pos, 3.5, farbe);
+            },
+            |ui| {
+                let (name, arg) = n.titel.split_once('(').map(|(a, b)| (a, b.trim_end_matches(')'))).unwrap_or((&n.titel, ""));
+                let mut job = egui::text::LayoutJob::default();
+                job.append(name, 0.0, egui::TextFormat { font_id: egui::FontId::monospace(12.0), color: pal.text, ..Default::default() });
+                if !arg.is_empty() {
+                    job.append(&format!(" {arg}"), 0.0, egui::TextFormat { font_id: egui::FontId::monospace(12.0), color: pal.text_weak, ..Default::default() });
+                }
+                let breite = (ui.available_width() - ui.spacing().indent - 8.0).max(1.0);
+                let titel = egui::WidgetText::from(job).into_galley(ui, Some(egui::TextWrapMode::Truncate), breite, egui::TextStyle::Button);
+                egui::CollapsingHeader::new(titel)
+                    .id_salt(&n.id)
+                    .show(ui, |ui| {
+                        egui::ScrollArea::vertical().max_height(240.0).id_salt(("werkzeug", &n.id)).show(ui, |ui| {
+                            ui.add(egui::Label::new(RichText::new(&n.text).monospace().small().color(pal.text_weak)).selectable(true).wrap());
+                        });
+                    })
+                    .header_response
+                    .on_hover_text(&n.titel);
+            },
         );
-        egui::CollapsingHeader::new(titel)
-            .id_salt(&n.id)
-            .show(ui, |ui| {
-                ui.add(egui::Label::new(RichText::new(&n.text).monospace().small()).selectable(true).wrap());
-            })
-            .header_response
-            .on_hover_text(&n.titel);
+        ui.add_space(2.0);
         return;
     }
-    egui::Frame::new().fill(if nutzer { pal.face_light } else { egui::Color32::TRANSPARENT }).inner_margin(8.0).corner_radius(crate::style::RADIUS).show(ui, |ui| {
-        ui.set_width(ui.available_width());
-        ui.horizontal(|ui| {
-            ui.label(RichText::new(if nutzer { tr("Sie", "You") } else { ziel.label() }).strong().size(12.0));
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if icons::button(ui, Icon::Copy, tr("Nachricht kopieren", "Copy message")).clicked() {
-                    ui.ctx().copy_text(n.text.clone());
-                }
-            });
+    if nutzer {
+        // Eigene Nachricht: hinterlegt mit Markenstrich links, wie die Eingabezeile im Terminal
+        let antwort = egui::Frame::new().fill(pal.face_light).inner_margin(egui::Margin { left: 10, right: 8, top: 6, bottom: 6 }).corner_radius(6.0).show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.add(egui::Label::new(RichText::new(&n.text).color(pal.text)).selectable(true).wrap());
         });
-        nachricht(ui, &n.text, cx);
-    });
+        let r = antwort.response.rect;
+        ui.painter().rect_filled(egui::Rect::from_min_size(r.min, egui::vec2(2.0, r.height())), 1.0, akzent);
+        ui.add_space(8.0);
+        return;
+    }
+    let oben = ui.cursor().min;
+    mit_rand(ui, |p, pos| { p.circle_filled(pos, 3.5, akzent); }, |ui| nachricht(ui, &n.text, cx));
+    // Kopieren nur bei Bedarf einblenden, damit der Verlauf ruhig bleibt
+    let flaeche = egui::Rect::from_min_max(oben, egui::pos2(ui.max_rect().right(), ui.cursor().min.y));
+    if n.fertig && ui.rect_contains_pointer(flaeche) {
+        let knopf = egui::Rect::from_min_size(egui::pos2(flaeche.right() - 22.0, flaeche.top()), egui::vec2(22.0, 22.0));
+        if ui.scope_builder(egui::UiBuilder::new().max_rect(knopf), |ui| icons::button(ui, Icon::Copy, tr("Nachricht kopieren", "Copy message"))).inner.clicked() {
+            ui.ctx().copy_text(n.text.clone());
+        }
+    }
     ui.add_space(8.0);
 }
 
@@ -303,7 +775,7 @@ impl TabView for AiTab {
         Some(self.icon())
     }
     fn busy(&self) -> bool {
-        self.auftrag.is_some()
+        self.laeuft() || self.auftrag.is_some()
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, cx: &mut Ctx) {
@@ -313,189 +785,86 @@ impl TabView for AiTab {
         }
         let pal = crate::style::pal();
         let installiert = self.ziel.program().is_some();
-        if installiert && self.ziel == Target::Codex && !self.modelle_geladen && self.auftrag.is_none() && self.ordner.is_some() {
-            self.modelle_geladen = true;
-            self.starten(ui, Anfrage::Modelle);
+        self.verbinden(ui, false);
+        if self.laeuft()
+            && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
+            && let Some(v) = &self.verbindung
+        {
+            v.unterbrechen();
         }
-        ui.horizontal(|ui| {
-            let (r, _) = ui.allocate_exact_size(egui::vec2(20.0, 20.0), egui::Sense::hover());
-            icons::paint(ui.painter(), r, self.icon(), pal.text);
-            ui.label(RichText::new(self.ziel.label()).strong());
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.add_enabled_ui(self.auftrag.is_none(), |ui| {
-                    ui.menu_button("…", |ui| {
-                        if ui.button(if installiert { tr("Aktualisieren", "Update") } else { tr("Installieren", "Install") }).clicked() {
-                            self.verwaltung = true;
-                            self.antwort = Stand::default();
-                            self.auftrag = Some(Auftrag::installieren(ui.ctx(), self.ziel));
-                            self.modelle_geladen = false;
-                            ui.close();
-                        }
-                        if ui.add_enabled(installiert && self.ordner.is_some(), egui::Button::new(tr("Anmelden", "Sign in"))).clicked() {
-                            self.starten(ui, Anfrage::Anmelden);
-                            ui.close();
-                        }
-                        if ui.button(tr("Datenbankzugriff …", "Database access …")).clicked() {
-                            cx.actions.push(Action::OpenSettings(Some("ki".into())));
-                            ui.close();
-                        }
-                    });
-                    if icons::button(ui, Icon::Plus, tr("Neuer Chat", "New chat")).clicked() {
-                        self.neuer_chat();
-                    }
-                    let verlauf = icons::button(ui, Icon::History, tr("Gespeicherte Chats", "Saved chats"));
-                    egui::Popup::menu(&verlauf).show(|ui| {
-                        self.verlauf_menue(ui);
-                    });
-                    if ui.add_enabled_ui(self.sitzung.is_some(), |ui| icons::button(ui, Icon::Layers, tr("Kontext komprimieren", "Compact context"))).inner.clicked() {
-                        self.starten(ui, Anfrage::Kompakt);
-                    }
-                });
-            });
+        self.kopf(ui, cx, installiert);
+        egui::Panel::bottom(ui.id().with("chat-eingabe")).frame(egui::Frame::new().inner_margin(egui::Margin { left: 6, right: 6, top: 4, bottom: 6 })).show(ui, |ui| {
+            self.eingabefeld(ui, installiert);
         });
-        ui.horizontal(|ui| {
-            if ui.add_enabled_ui(self.auftrag.is_none(), |ui| icons::button(ui, Icon::Folder, tr("Projektordner wählen", "Choose project folder"))).inner.clicked()
-                && let Some(p) = rfd::FileDialog::new().pick_folder()
-            {
-                self.ordner = Some(p);
-                self.neuer_chat();
-                self.modelle_geladen = false;
-            }
-            let name = self
-                .ordner
-                .as_ref()
-                .and_then(|p| p.file_name())
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| tr("Projektordner wählen", "Choose project folder").into());
-            ui.add(egui::Label::new(RichText::new(name).small().color(pal.text_weak)).truncate())
-                .on_hover_text(self.ordner.as_ref().map(|p| p.display().to_string()).unwrap_or_default());
-        });
-        ui.separator();
-        let mut senden = false;
-        egui::Panel::bottom(ui.id().with("chat-eingabe")).frame(egui::Frame::new().inner_margin(6.0)).show(ui, |ui| {
-            ui.add_enabled_ui(self.auftrag.is_none(), |ui| {
-                let feld = ui.add(egui::TextEdit::multiline(&mut self.eingabe).desired_rows(3).desired_width(f32::INFINITY).hint_text(tr("Nachricht …", "Message …")));
-                if feld.has_focus() && ui.input_mut(|i| i.consume_key(egui::Modifiers::CTRL, egui::Key::Enter)) {
-                    senden = true;
-                }
-                let schmal = ui.available_width() < 300.0;
-                ui.horizontal_wrapped(|ui| {
-                    let name = self.modelle.iter().find(|m| m.id == self.auswahl.modell).map(|m| m.name.as_str()).unwrap_or_else(|| {
-                        if self.auswahl.modell.is_empty() { self.antwort.modell.as_deref().unwrap_or(tr("Standardmodell", "Default model")) } else { &self.auswahl.modell }
-                    });
-                    egui::ComboBox::from_id_salt("modell").width((ui.available_width() - 8.0).clamp(100.0, 170.0)).selected_text(name).truncate().show_ui(ui, |ui| {
-                        if ui.selectable_value(&mut self.auswahl.modell, String::new(), tr("Standardmodell", "Default model")).changed() {
-                            self.auswahl.aufwand.clear();
-                        }
-                        for m in &self.modelle {
-                            if ui.selectable_value(&mut self.auswahl.modell, m.id.clone(), &m.name).changed() {
-                                self.auswahl.aufwand.clear();
-                            }
-                        }
-                    });
-                    if let Some(m) = self.modelle.iter().find(|m| m.id == self.auswahl.modell).filter(|m| !m.aufwand.is_empty()) {
-                        if schmal {
-                            ui.end_row();
-                        }
-                        egui::ComboBox::from_id_salt("aufwand")
-                            .width(90.0)
-                            .selected_text(if self.auswahl.aufwand.is_empty() { tr("Aufwand", "Effort") } else { &self.auswahl.aufwand })
-                            .show_ui(ui, |ui| {
-                                ui.selectable_value(&mut self.auswahl.aufwand, String::new(), tr("Standard", "Default"));
-                                for e in &m.aufwand {
-                                    ui.selectable_value(&mut self.auswahl.aufwand, e.clone(), e);
-                                }
-                            });
-                    }
-                });
-                crate::widgets::check(ui, &mut self.schreiben, tr("Dateiänderungen erlauben", "Allow file edits"));
-            });
-            ui.horizontal(|ui| {
-                if let Some(a) = &self.auftrag {
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if icons::button(ui, Icon::Stop, tr("Abbrechen", "Cancel")).clicked() {
-                            a.abbruch.store(true, Ordering::Relaxed);
-                        }
-                        ui.spinner();
-                        ui.add(
-                            egui::Label::new(
-                                RichText::new(if self.verwaltung {
-                                    tr("Verbinden …", "Connecting …")
-                                } else if self.kompakt {
-                                    tr("Komprimieren …", "Compacting …")
-                                } else {
-                                    tr("Antwortet …", "Responding …")
-                                })
-                                .small(),
-                            )
-                            .truncate(),
-                        );
-                    });
-                    ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
-                } else {
-                    senden |= ui
-                        .add_enabled_ui(installiert && self.ordner.is_some() && !self.eingabe.trim().is_empty(), |ui| {
-                            icons::primary_button(ui, Icon::ArrowUp, tr("Senden", "Send"))
-                        })
-                        .inner
-                        .on_hover_text("Ctrl+Enter")
-                        .clicked();
-                    if let Some(tokens) = self.tokens {
-                        let text = self.kontext.map(|k| format!("{:.0}%", (tokens as f64 / k.max(1) as f64 * 100.0).min(100.0))).unwrap_or_else(|| format!("{tokens}"));
-                        ui.label(RichText::new(text).small().color(pal.text_weak)).on_hover_text(crate::tr_format!("Kontext: {tokens} Tokens", "Context: {tokens} tokens"));
-                    }
-                }
-            });
-        });
-        if senden && self.auftrag.is_none() && installiert && self.ordner.is_some() && !self.eingabe.trim().is_empty() {
-            if self.eingabe.len() > 128 * 1024 {
-                self.antwort.fehler = Some(tr("Die Nachricht ist zu lang (maximal 128 KiB).", "The message is too long (maximum 128 KiB).").into());
-            } else {
-                let frage = std::mem::take(&mut self.eingabe);
-                self.starten(ui, if frage.trim() == "/compact" { Anfrage::Kompakt } else { Anfrage::Text(frage.clone()) });
-                if self.auftrag.is_some() {
-                    self.verlauf.push((true, Nachricht { id: String::new(), rolle: Rolle::Assistent, titel: String::new(), text: frage, fertig: true }));
-                } else {
-                    self.eingabe = frage;
-                }
-            }
+        let laeuft = self.laeuft();
+        let verbindet = self.verbindung.as_ref().is_some_and(|_| !self.live.bereit && !self.live.beendet);
+        if laeuft || verbindet || self.auftrag.is_some() {
+            // Fluessige Animation nur solange gearbeitet wird
+            ui.ctx().request_repaint();
         }
         egui::ScrollArea::vertical().id_salt("chat-verlauf").stick_to_bottom(true).auto_shrink([false, false]).show(ui, |ui| {
             ui.set_width(ui.available_width());
-            if self.verlauf.is_empty() {
-                ui.add_space(12.0);
-                ui.label(RichText::new(if installiert { tr("Am Projekt arbeiten", "Work on your project") } else { tr("Assistent einrichten", "Set up assistant") }).strong());
-                ui.label(tr(
-                    "Code besprechen, Änderungen umsetzen und SQL prüfen – direkt im Projekt.",
-                    "Discuss code, implement changes and review SQL directly in your project.",
-                ));
-                if !installiert && ui.button(tr("Installieren", "Install")).clicked() {
-                    self.verwaltung = true;
-                    self.auftrag = Some(Auftrag::installieren(ui.ctx(), self.ziel));
-                }
-                ui.add_space(8.0);
-                ui.label(
-                    RichText::new(tr(
-                        "Nachrichten und gelesene Dateien werden an den Anbieter gesendet. Dessen Kontolimits und Kosten gelten. Datenbankrechte werden separat eingestellt.",
-                        "Messages and files read are sent to the provider. Account limits and costs apply. Database permissions are configured separately.",
-                    ))
-                    .small()
-                    .color(pal.text_weak),
-                );
+            ui.add_space(6.0);
+            if self.verlauf.is_empty() && !laeuft {
+                ui.add_space(24.0);
+                ui.vertical_centered(|ui| {
+                    let (r, _) = ui.allocate_exact_size(egui::vec2(36.0, 36.0), egui::Sense::hover());
+                    icons::paint(ui.painter(), r, self.icon(), pal.text);
+                    ui.add_space(6.0);
+                    ui.label(RichText::new(self.ziel.label()).strong().size(16.0));
+                    ui.label(RichText::new(tr("Code besprechen, Änderungen umsetzen und SQL prüfen – direkt im Projekt.", "Discuss code, make changes and review SQL – right in your project.")).color(pal.text_weak));
+                    ui.add_space(10.0);
+                    if !installiert {
+                        if ui.add_enabled(self.auftrag.is_none(), egui::Button::new(tr("Installieren", "Install"))).clicked() {
+                            self.auftrag = Some(Auftrag::installieren(ui.ctx(), self.ziel));
+                        }
+                    } else if self.ordner.is_none() {
+                        if ui.button(tr("Projektordner wählen", "Choose project folder")).clicked()
+                            && let Some(p) = rfd::FileDialog::new().pick_folder()
+                        {
+                            self.ordner = Some(p);
+                        }
+                    } else {
+                        let status = if self.live.bereit {
+                            crate::tr_format!("Bereit · {} Modelle · {} Befehle", "Ready · {} models · {} commands", self.modelle.len(), self.befehle.len())
+                        } else if verbindet {
+                            tr("Verbindet …", "Connecting …").into()
+                        } else {
+                            String::new()
+                        };
+                        ui.label(RichText::new(status).small().color(pal.text_weak));
+                        ui.label(RichText::new(tr("Enter senden · Umschalt+Enter neue Zeile · Tab vervollständigt", "Enter send · Shift+Enter new line · Tab completes")).small().color(pal.text_weak));
+                    }
+                    ui.add_space(14.0);
+                    ui.label(
+                        RichText::new(tr(
+                            "Nachrichten und gelesene Dateien gehen an den Anbieter; dessen Limits und Kosten gelten.",
+                            "Messages and files read are sent to the provider; its limits and costs apply.",
+                        ))
+                        .small()
+                        .color(pal.text_weak.gamma_multiply(0.8)),
+                    );
+                });
                 ui.add_space(12.0);
             }
             for (i, (nutzer, n)) in self.verlauf.iter().enumerate() {
                 ui.push_id(i, |ui| eintrag(ui, *nutzer, n, self.ziel, cx));
             }
-            for (i, n) in self.antwort.nachrichten.iter().enumerate() {
+            for (i, n) in self.live.nachrichten.iter().enumerate() {
                 ui.push_id(("antwort", i), |ui| eintrag(ui, false, n, self.ziel, cx));
             }
-            if self.verwaltung && !self.antwort.text.is_empty() {
-                absatz(ui, &self.antwort.text);
+            if laeuft {
+                self.statuszeile(ui);
             }
-            if let Some(e) = &self.antwort.fehler {
+            if let Some((fehler, text)) = &self.meldung
+                && !text.is_empty()
+            {
+                ui.add(egui::Label::new(RichText::new(text).monospace().small().color(if *fehler { pal.error_text } else { pal.text_weak })).wrap().selectable(true));
+            }
+            if let Some(e) = &self.live.fehler {
                 ui.add(egui::Label::new(RichText::new(e).color(pal.error_text)).wrap().selectable(true));
             }
+            ui.add_space(6.0);
         });
     }
 }
@@ -521,6 +890,20 @@ mod tests {
         }
         std::fs::remove_file(tab.speicher).unwrap();
     }
+
+    #[test]
+    fn befehle_werden_am_wortanfang_vervollstaendigt() {
+        let befehle = ["/compact", "/clear", "/context", "$review", "/model"].map(|n| Befehl { name: n.into(), ..Default::default() });
+        let namen = |e: &str| vorschlaege(e, &befehle).1.iter().map(|b| b.name.as_str()).collect::<Vec<_>>();
+        assert_eq!(namen("/c"), ["/compact", "/clear", "/context"]);
+        assert_eq!(namen("/CON"), ["/context"]);
+        assert_eq!(namen("/ode"), ["/model"], "auch Treffer in der Mitte");
+        assert_eq!(namen("bitte $re"), ["$review"]);
+        assert_eq!(vorschlaege("bitte $re", &befehle).0, 6);
+        assert!(namen("text /c").is_empty(), "Befehle nur am Anfang");
+        assert!(namen("/compact").is_empty() && namen("/compact ").is_empty() && namen("").is_empty());
+    }
+
     #[test]
     fn native_chats_zeichnen_auch_in_schmaler_seitenleiste() {
         let ctx = egui::Context::default();
@@ -531,22 +914,30 @@ mod tests {
         let mut actions = Vec::new();
         for ziel in [Target::Claude, Target::Codex] {
             let mut tab = AiTab::new(ziel, None);
-            tab.modelle = vec![Modell { id: "test".into(), name: "Ein Modell mit einem langen Namen".into(), aufwand: vec!["medium".into()] }];
+            // Im Test nie die echten Programme starten
+            tab.start_versucht = true;
+            tab.modelle = vec![Modell { id: "test".into(), name: "Ein Modell mit einem langen Namen".into(), aufwand: vec!["medium".into()], ..Default::default() }];
+            tab.befehle = vec![Befehl { name: "/compact".into(), beschreibung: "Eine lange Beschreibung des Befehls, die gekürzt werden muss".into(), ..Default::default() }];
             tab.auswahl = Auswahl { modell: "test".into(), aufwand: "medium".into() };
+            tab.tokens = Some(1200);
             for breite in [250.0, 320.0, 600.0] {
-                for text in ["", "## SQL\n**Hinweis** und `Code`.\n```sql\nSELECT 1;\n```\nErklärung", "```sql\nnoch unvollständig"] {
+                for text in ["", "## SQL\n**Hinweis** und `Code`.\n- Punkt\n```sql\nSELECT 1;\n```\nErklärung", "```sql\nnoch unvollständig"] {
+                    tab.eingabe = if text.is_empty() { "/co".into() } else { "Frage".into() };
+                    tab.live.laeuft = text.is_empty();
                     tab.verlauf = vec![
+                        (true, Nachricht { id: "u".into(), rolle: Rolle::Assistent, titel: String::new(), text: "Eine Frage mit sehr langem Text, der umbrechen muss".into(), fertig: true }),
                         (
                             false,
                             Nachricht {
                                 id: "tool".into(),
                                 rolle: Rolle::Werkzeug,
-                                titel: "Ein langer Werkzeugaufruf mit vielen Argumenten und einem sehr langen Dateipfad".into(),
+                                titel: "Read(ein/sehr/langer/Pfad/zu/einer/Datei/mit/vielen/Ordnern/Main.java)".into(),
                                 text: "Ausgabe".into(),
-                                fertig: true,
+                                fertig: !text.is_empty(),
                             },
                         ),
                         (false, Nachricht { id: "a".into(), rolle: Rolle::Assistent, titel: String::new(), text: text.into(), fertig: true }),
+                        (false, Nachricht { id: String::new(), rolle: Rolle::Status, titel: String::new(), text: "Kontext komprimiert".into(), fertig: true }),
                     ];
                     let _ = ctx.run_ui(egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(breite, 700.0))), ..Default::default() }, |ui| {
                         egui::CentralPanel::default().show(ui, |ui| {
@@ -565,12 +956,12 @@ mod tests {
                                     actions: &mut actions,
                                 },
                             );
-                            assert!(ui.min_rect().right() <= rechts + 1.0, "Chat ragt ueber die Seitenleiste: {:?}", ui.min_rect());
+                            assert!(ui.min_rect().right() <= rechts + 1.0, "Chat ragt ueber die Seitenleiste ({breite}, {text:?}): {:?}", ui.min_rect());
                         });
                     });
                 }
             }
-            assert!(tab.auftrag.is_none());
+            assert!(tab.verbindung.is_none() && tab.auftrag.is_none());
         }
         assert!(actions.is_empty());
     }
