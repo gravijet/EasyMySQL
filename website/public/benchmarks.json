@@ -9,7 +9,7 @@
   "settle_seconds": 8,
   "idle_measurement_seconds": 10,
   "versions": {
-    "easy": "7.1.0",
+    "easy": "1.1.15",
     "workbench": "26.10.0",
     "xampp": "8.2.12 Portable",
     "phpmyadmin": "5.2.1",

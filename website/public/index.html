@@ -1,838 +1,272 @@
 <!doctype html>
-
 <html lang="de">
   <head>
     <meta charset="utf-8" />
-    <meta
-      content="width=device-width,initial-scale=1,viewport-fit=cover"
-      name="viewport"
-    />
-    <title>EasyMySQL – Datenbank, SQL &amp; KI</title>
-    <meta
-      content="MariaDB-Server, SQL-Editor, ER-Diagramme und KI-Anbindung in einer nativen App. Kostenlos. Direkte Downloads für Windows, macOS und Linux."
-      name="description"
-    />
-    <meta content="dark" name="color-scheme" />
-    <meta content="#07080c" name="theme-color" />
+    <meta content="width=device-width,initial-scale=1,viewport-fit=cover" name="viewport" />
+    <title>EasyMySQL – Datenbank, SQL &amp; Java</title>
+    <meta content="MariaDB-Server, SQL-Editor, ER-Diagramme und Java-Entwicklung in einer nativen App. Kostenlos. Direkte Downloads für Windows, macOS und Linux." name="description" />
+    <meta content="light" name="color-scheme" />
+    <meta content="#f3f5fa" name="theme-color" />
     <link href="https://mysql.benjaminberger.at/" rel="canonical" />
     <link href="/favicon.svg" rel="icon" type="image/svg+xml" />
-    <link
-      as="font"
-      crossorigin=""
-      href="/fonts/InterTight.woff2"
-      rel="preload"
-      type="font/woff2"
-    />
+    <link as="font" crossorigin="" href="/fonts/InterTight.woff2" rel="preload" type="font/woff2" />
     <meta content="website" property="og:type" />
-    <meta content="EasyMySQL – Datenbank, SQL &amp; KI" property="og:title" />
-    <meta
-      content="MariaDB, SQL-Editor und KI in einer nativen App. Kostenlos und quelloffen."
-      property="og:description"
-    />
+    <meta content="EasyMySQL – Datenbank, SQL &amp; Java" property="og:title" />
+    <meta content="MariaDB, SQL-Editor und Java in einer nativen App. Kostenlos und quelloffen." property="og:description" />
     <meta content="https://mysql.benjaminberger.at/" property="og:url" />
-    <meta
-      content="https://mysql.benjaminberger.at/og.jpg"
-      property="og:image"
-    />
+    <meta content="https://mysql.benjaminberger.at/og.jpg" property="og:image" />
     <meta content="1200" property="og:image:width" />
     <meta content="630" property="og:image:height" />
     <meta content="summary_large_image" name="twitter:card" />
     <script src="/boot.js"></script>
     <link href="/style.css" rel="stylesheet" />
     <script defer="" src="/app.js"></script>
-    <script defer="" src="/scene.js"></script>
   </head>
   <body>
-    <div aria-hidden="true" class="sky"><i></i><i></i><i></i></div>
     <a class="skip" data-en="Skip to content" href="#main">Zum Inhalt</a>
+    <svg aria-hidden="true" class="defs" height="0" width="0">
+      <pattern height="6" id="hatch" patternTransform="rotate(45)" patternUnits="userSpaceOnUse" width="6">
+        <rect class="hatch-bg" height="6" width="6"></rect>
+        <rect class="hatch-fg" height="6" width="2.5"></rect>
+      </pattern>
+    </svg>
     <header class="nav">
-      <a
-        aria-label="Zum Seitenanfang"
-        class="brand"
-        data-en-label="Back to top"
-        href="#top"
-        ><svg aria-hidden="true" viewbox="0 0 32 32">
-          <ellipse cx="16" cy="7" rx="11" ry="4"></ellipse>
-          <path
-            d="M5 7v18c0 2.2 4.9 4 11 4s11-1.8 11-4V7M5 13c0 2.2 4.9 4 11 4s11-1.8 11-4M5 19c0 2.2 4.9 4 11 4s11-1.8 11-4"
-          ></path>
-        </svg>
-        <p class="release-note">
-          <span data-en="Free &amp; open source · MIT"
-            >Kostenlos &amp; quelloffen · MIT</span
-          ><span data-release-version=""></span></p
-      ></a>
-      <nav aria-label="Seite" class="links" data-en-label="Page">
-        <a data-en="Features" href="#features">Funktionen</a
-        ><a data-en="Compare" href="#compare">Vergleich</a>
-      </nav>
-      <div class="act">
-        <button
-          aria-label="English"
-          class="lang"
-          id="lang"
-          lang="en"
-          type="button"
-        >
-          EN
-        </button>
+      <div class="wrap">
+        <a aria-label="Zum Seitenanfang" class="brand" data-en-label="Back to top" href="#top"><img alt="" height="26" src="/favicon.svg" width="26" />EasyMySQL</a>
+        <nav aria-label="Seite" class="links" data-en-label="Page">
+          <a data-en="Features" href="#features">Funktionen</a>
+          <a data-en="Compare" href="#compare">Vergleich</a>
+          <a data-en="AI" href="#ai">KI</a>
+          <a href="https://github.com/gravijet/EasyMySQL">GitHub</a>
+        </nav>
+        <span class="version" data-release-version=""></span>
+        <button aria-label="English" class="lang" id="lang" lang="en" type="button">EN</button>
       </div>
     </header>
     <main id="main">
-      <section aria-labelledby="product-name" class="morph" id="top">
-        <span aria-hidden="true" class="gallery-jump" id="features"></span>
-        <div class="morph-pin">
-          <section
-            aria-labelledby="product-name"
-            class="hero-overlay"
-            id="hero"
-          >
-            <div class="hero-title">
-              <h1 id="product-name">EasyMySQL</h1>
-              <p
-                class="lead"
-                data-en="MariaDB server, SQL editor and development environment."
-              >
-                MariaDB-Server, SQL-Editor und Entwicklungsumgebung.
-              </p>
+      <section aria-labelledby="product-name" class="hero wrap" id="top">
+        <div class="pitch">
+          <h1 id="product-name" data-en="MariaDB, SQL and Java in one app.">MariaDB, SQL und Java in einer App.</h1>
+          <p class="lead" data-en="Start the server, write queries, edit tables and run Java programs. No browser, no extra tools. Free and open source.">Server starten, Abfragen schreiben, Tabellen bearbeiten und Java-Programme ausführen. Ohne Browser, ohne Zusatzprogramme. Kostenlos und quelloffen.</p>
+          <a class="facts" href="#compare">
+            <span><b data-en="0.47 s">0,47 s</b><span data-en="to start">bis zum Start</span></span>
+            <span><b>133 MiB</b><span data-en="memory">Arbeitsspeicher</span></span>
+            <span><b>77 MB</b><span data-en="download with MariaDB">Download mit MariaDB</span></span>
+          </a>
+        </div>
+        <div class="install" id="install">
+          <div class="install-head">
+            <h2 data-en="Install">Installieren</h2>
+            <div aria-label="Betriebssystem für Terminal-Installation" class="install-os" data-en-label="Operating system for terminal installation" role="radiogroup">
+              <button aria-checked="true" data-install-os="win" role="radio" type="button">Windows</button><button aria-checked="false" data-install-os="mac" role="radio" type="button">macOS</button><button aria-checked="false" data-install-os="linux" role="radio" type="button">Linux</button>
             </div>
-            <div class="installation">
-              <div class="hero-terminal" id="install">
-                <div class="install-heading">
-                  <p class="install-label" data-en="Installation">
-                    Installation
-                  </p>
-                  <div
-                    aria-label="Betriebssystem für Terminal-Installation"
-                    class="install-os"
-                    data-en-label="Operating system for terminal installation"
-                    role="radiogroup"
-                  >
-                    <button
-                      aria-checked="true"
-                      data-install-os="win"
-                      role="radio"
-                      type="button"
-                    >
-                      Windows</button
-                    ><button
-                      aria-checked="false"
-                      data-install-os="mac"
-                      role="radio"
-                      type="button"
-                    >
-                      macOS</button
-                    ><button
-                      aria-checked="false"
-                      data-install-os="linux"
-                      role="radio"
-                      type="button"
-                    >
-                      Linux
-                    </button>
-                  </div>
-                </div>
-                <div class="cmd">
-                  <code id="hero-cmd"
-                    >irm https://mysql.benjaminberger.at/install | iex</code
-                  ><button
-                    class="copy"
-                    data-copy-from="#hero-cmd"
-                    data-en="Copy"
-                    type="button"
-                  >
-                    Kopieren
-                  </button>
-                </div>
-                <p class="terminal-shell" id="terminal-shell">PowerShell</p>
-              </div>
-              <div class="file-install">
-                <p class="file-label" data-en="Direct download">
-                  Direkter Download
-                </p>
-                <div
-                  aria-label="Direkt herunterladen"
-                  class="downloads"
-                  data-en-label="Direct downloads"
-                >
-                  <a
-                    class="download primary"
-                    data-dl="setup"
-                    href="/download/setup"
-                    ><svg aria-hidden="true" viewbox="0 0 24 24">
-                      <path d="M12 4v12m-5-5 5 5 5-5M5 17v3h14v-3"></path></svg
-                    ><span>Windows <small>.exe</small></span></a
-                  ><a class="download" data-dl="macos" href="/download/macos"
-                    ><span>macOS <small>.tar.gz</small></span></a
-                  ><a class="download" data-dl="linux" href="/download/linux"
-                    ><span>Linux <small>.tar.gz</small></span></a
-                  >
-                </div>
-                <p
-                  class="download-notice"
-                  hidden=""
-                  id="download-notice"
-                  role="status"
-                ></p>
-                <p
-                  class="release-error"
-                  hidden=""
-                  id="release-error"
-                  role="status"
-                ></p>
-              </div>
-            </div>
-          </section>
-          <h2 class="sr-only" data-en="Features" id="f-h">Funktionen</h2>
-          <div
-            aria-label="Funktionen"
-            class="feature-tabs"
-            data-en-label="Features"
-            role="tablist"
-          >
-            <button
-              aria-controls="panel-sql"
-              aria-selected="true"
-              data-en="SQL editor"
-              id="tab-sql"
-              role="tab"
-              type="button"
-            >
-              SQL-Editor</button
-            ><button
-              aria-controls="panel-data"
-              aria-selected="false"
-              data-en="Tables"
-              id="tab-data"
-              role="tab"
-              type="button"
-            >
-              Tabellen</button
-            ><button
-              aria-controls="panel-er"
-              aria-selected="false"
-              data-en="ER diagrams"
-              id="tab-er"
-              role="tab"
-              type="button"
-            >
-              ER-Diagramme</button
-            ><button
-              aria-controls="panel-builder"
-              aria-selected="false"
-              data-en="Query Builder"
-              id="tab-builder"
-              role="tab"
-              type="button"
-            >
-              Query Builder</button
-            ><button
-              aria-controls="panel-code"
-              aria-selected="false"
-              data-en="Java / Python / JS"
-              id="tab-code"
-              role="tab"
-              type="button"
-            >
-              Java / Python / JS</button
-            ><button
-              aria-controls="panel-git"
-              aria-selected="false"
-              data-en="Git"
-              id="tab-git"
-              role="tab"
-              type="button"
-            >
-              Git
+          </div>
+          <div class="cmd">
+            <code id="hero-cmd">irm https://mysql.benjaminberger.at/install | iex</code>
+            <button class="copy" data-copy-from="#hero-cmd" data-en="Copy" type="button">Kopieren</button>
+          </div>
+          <p class="terminal-shell" id="terminal-shell">PowerShell</p>
+          <p class="or" data-en="or download the file">oder Datei herunterladen</p>
+          <div aria-label="Direkt herunterladen" class="downloads" data-en-label="Direct downloads">
+            <a class="download primary" data-dl="setup" href="/download/setup"><svg aria-hidden="true" viewbox="0 0 24 24"><path d="M12 4v12m-5-5 5 5 5-5M5 17v3h14v-3"></path></svg><span>Windows <small>.exe</small></span></a>
+            <a class="download" data-dl="macos" href="/download/macos"><span>macOS <small>.tar.gz</small></span></a>
+            <a class="download" data-dl="linux" href="/download/linux"><span>Linux <small>.tar.gz</small></span></a>
+          </div>
+          <p class="download-notice" hidden="" id="download-notice" role="status"></p>
+          <p class="release-error" hidden="" id="release-error" role="status"></p>
+        </div>
+      </section>
+
+      <section aria-labelledby="f-h" class="features wrap" id="features">
+        <h2 data-en="Everything in one window" id="f-h">Alles in einem Fenster</h2>
+        <div class="feature-grid">
+          <div aria-label="Funktionen" class="feature-tabs" data-en-label="Features" role="tablist">
+            <button aria-controls="panel-sql" aria-selected="true" id="tab-sql" role="tab" type="button">
+              <b data-en="SQL editor">SQL-Editor</b><small data-en="Schema-aware completion, error checks, quick fixes and execution plans.">Vervollständigung mit deinem Schema, Fehlerprüfung, Quick Fixes und Ausführungspläne.</small>
+            </button>
+            <button aria-controls="panel-data" aria-selected="false" id="tab-data" role="tab" type="button">
+              <b data-en="Tables">Tabellen</b><small data-en="Edit values and columns in the grid. Ctrl + Z undoes it.">Werte und Spalten direkt im Raster ändern. Strg + Z macht es rückgängig.</small>
+            </button>
+            <button aria-controls="panel-er" aria-selected="false" id="tab-er" role="tab" type="button">
+              <b data-en="ER diagrams">ER-Diagramme</b><small data-en="Your schema as a diagram, exportable as SVG or SQL.">Dein Schema als Diagramm, exportierbar als SVG oder SQL.</small>
+            </button>
+            <button aria-controls="panel-builder" aria-selected="false" id="tab-builder" role="tab" type="button">
+              <b data-en="Query builder">Query Builder</b><small data-en="Click together SELECT, INSERT, UPDATE and DELETE. The SQL appears alongside.">SELECT, INSERT, UPDATE und DELETE zusammenklicken. Das SQL entsteht daneben.</small>
+            </button>
+            <button aria-controls="panel-code" aria-selected="false" id="tab-code" role="tab" type="button">
+              <b data-en="Java">Java</b><small data-en="Projects with a ready database connection, completion, refactoring and a terminal.">Projekte mit fertiger Datenbankverbindung, Vervollständigung, Refactoring und Terminal.</small>
+            </button>
+            <button aria-controls="panel-git" aria-selected="false" id="tab-git" role="tab" type="button">
+              <b data-en="Git">Git</b><small data-en="Diffs, commits, branches and pull requests inside the app.">Diffs, Commits, Branches und Pull Requests direkt in der App.</small>
             </button>
           </div>
           <div class="feature-panels">
-            <figure
-              aria-labelledby="tab-sql"
-              class="feature-panel"
-              id="panel-sql"
-              role="tabpanel"
-              tabindex="0"
-            >
-              <a
-                aria-label="SQL-Editor mit Autovervollständigung und Abfrageergebnis – in voller Größe öffnen"
-                class="screenshot-link"
-                data-en-label="SQL editor with completion and query results – open full size"
-                href="/shots/sql-2000.webp"
-                rel="noopener"
-                target="_blank"
-                ><picture
-                  ><source
-                    sizes="max(100vw, 160svh)"
-                    srcset="
-                      /shots/sql-1000.avif 1000w,
-                      /shots/sql-2000.avif 2000w
-                    "
-                    type="image/avif" />
-                  <img
-                    alt="SQL-Editor mit Autovervollständigung und Abfrageergebnis"
-                    data-en-alt="SQL editor with completion and query results"
-                    decoding="async"
-                    fetchpriority="high"
-                    height="1250"
-                    loading="eager"
-                    sizes="max(100vw, 160svh)"
-                    src="/shots/sql-2000.webp"
-                    srcset="
-                      /shots/sql-1000.webp 1000w,
-                      /shots/sql-2000.webp 2000w
-                    "
-                    width="2000" /></picture
-              ></a>
-              <figcaption>
-                <p
-                  data-en="Schema-aware completion, error checks, quick fixes and execution plans."
-                >
-                  Autovervollständigung mit deinem Schema, Fehlerprüfung, Quick
-                  Fixes und Ausführungspläne.
-                </p>
-              </figcaption>
-            </figure>
-            <figure
-              aria-labelledby="tab-data"
-              class="feature-panel"
-              hidden=""
-              id="panel-data"
-              role="tabpanel"
-              tabindex="0"
-            >
-              <a
-                aria-label="Produkttabelle zum direkten Bearbeiten – in voller Größe öffnen"
-                class="screenshot-link"
-                data-en-label="Product table with inline editing – open full size"
-                href="/shots/data-2000.webp"
-                rel="noopener"
-                target="_blank"
-                ><picture
-                  ><source
-                    sizes="max(100vw, 160svh)"
-                    srcset="
-                      /shots/data-1000.avif 1000w,
-                      /shots/data-2000.avif 2000w
-                    "
-                    type="image/avif" />
-                  <img
-                    alt="Produkttabelle zum direkten Bearbeiten"
-                    data-en-alt="Product table with inline editing"
-                    decoding="async"
-                    height="1250"
-                    loading="lazy"
-                    sizes="max(100vw, 160svh)"
-                    src="/shots/data-2000.webp"
-                    srcset="
-                      /shots/data-1000.webp 1000w,
-                      /shots/data-2000.webp 2000w
-                    "
-                    width="2000" /></picture
-              ></a>
-              <figcaption>
-                <p
-                  data-en="Edit values and columns in the grid. Undo with Ctrl + Z."
-                >
-                  Werte und Spalten im Raster ändern. Mit Strg + Z rückgängig
-                  machen.
-                </p>
-              </figcaption>
-            </figure>
-            <figure
-              aria-labelledby="tab-er"
-              class="feature-panel"
-              hidden=""
-              id="panel-er"
-              role="tabpanel"
-              tabindex="0"
-            >
-              <a
-                aria-label="ER-Diagramm mit Tabellen und Fremdschlüsseln – in voller Größe öffnen"
-                class="screenshot-link"
-                data-en-label="ER diagram with tables and foreign keys – open full size"
-                href="/shots/er-2000.webp"
-                rel="noopener"
-                target="_blank"
-                ><picture
-                  ><source
-                    sizes="max(100vw, 160svh)"
-                    srcset="
-                      /shots/er-1000.avif 1000w,
-                      /shots/er-2000.avif 2000w
-                    "
-                    type="image/avif" />
-                  <img
-                    alt="ER-Diagramm mit Tabellen und Fremdschlüsseln"
-                    data-en-alt="ER diagram with tables and foreign keys"
-                    decoding="async"
-                    height="1250"
-                    loading="lazy"
-                    sizes="max(100vw, 160svh)"
-                    src="/shots/er-2000.webp"
-                    srcset="
-                      /shots/er-1000.webp 1000w,
-                      /shots/er-2000.webp 2000w
-                    "
-                    width="2000" /></picture
-              ></a>
-              <figcaption>
-                <p
-                  data-en="Explore your schema visually. Export diagrams as SVG or SQL."
-                >
-                  Dein Schema als Diagramm. Export als SVG oder SQL.
-                </p>
-              </figcaption>
-            </figure>
-            <figure
-              aria-labelledby="tab-builder"
-              class="feature-panel"
-              hidden=""
-              id="panel-builder"
-              role="tabpanel"
-              tabindex="0"
-            >
-              <a
-                aria-label="Visueller Query Builder mit erzeugtem SQL – in voller Größe öffnen"
-                class="screenshot-link"
-                data-en-label="Visual query builder with generated SQL – open full size"
-                href="/shots/builder-2000.webp"
-                rel="noopener"
-                target="_blank"
-                ><picture
-                  ><source
-                    sizes="max(100vw, 160svh)"
-                    srcset="
-                      /shots/builder-1000.avif 1000w,
-                      /shots/builder-2000.avif 2000w
-                    "
-                    type="image/avif" />
-                  <img
-                    alt="Visueller Query Builder mit erzeugtem SQL"
-                    data-en-alt="Visual query builder with generated SQL"
-                    decoding="async"
-                    height="1250"
-                    loading="lazy"
-                    sizes="max(100vw, 160svh)"
-                    src="/shots/builder-2000.webp"
-                    srcset="
-                      /shots/builder-1000.webp 1000w,
-                      /shots/builder-2000.webp 2000w
-                    "
-                    width="2000" /></picture
-              ></a>
-              <figcaption>
-                <p
-                  data-en="SELECT, INSERT, UPDATE and DELETE. See the SQL as you build."
-                >
-                  SELECT, INSERT, UPDATE und DELETE. Das passende SQL entsteht
-                  daneben.
-                </p>
-              </figcaption>
-            </figure>
-            <figure
-              aria-labelledby="tab-code"
-              class="feature-panel"
-              hidden=""
-              id="panel-code"
-              role="tabpanel"
-              tabindex="0"
-            >
-              <a
-                aria-label="Java-Projekt mit Editor und integriertem Terminal – in voller Größe öffnen"
-                class="screenshot-link"
-                data-en-label="Java project with editor and integrated terminal – open full size"
-                href="/shots/code-2000.webp"
-                rel="noopener"
-                target="_blank"
-                ><picture
-                  ><source
-                    sizes="max(100vw, 160svh)"
-                    srcset="
-                      /shots/code-1000.avif 1000w,
-                      /shots/code-2000.avif 2000w
-                    "
-                    type="image/avif" />
-                  <img
-                    alt="Java-Projekt mit Editor und integriertem Terminal"
-                    data-en-alt="Java project with editor and integrated terminal"
-                    decoding="async"
-                    height="1250"
-                    loading="lazy"
-                    sizes="max(100vw, 160svh)"
-                    src="/shots/code-2000.webp"
-                    srcset="
-                      /shots/code-1000.webp 1000w,
-                      /shots/code-2000.webp 2000w
-                    "
-                    width="2000" /></picture
-              ></a>
-              <figcaption>
-                <p
-                  data-en="Projects with a ready database connection. Runtimes and drivers on demand."
-                >
-                  Projekte mit fertiger Datenbankverbindung. Laufzeiten und
-                  Treiber nach Bedarf.
-                </p>
-              </figcaption>
-            </figure>
-            <figure
-              aria-labelledby="tab-git"
-              class="feature-panel"
-              hidden=""
-              id="panel-git"
-              role="tabpanel"
-              tabindex="0"
-            >
-              <a
-                aria-label="Git-Ansicht mit Änderungen und Diff – in voller Größe öffnen"
-                class="screenshot-link"
-                data-en-label="Git view with changes and diff – open full size"
-                href="/shots/git-2000.webp"
-                rel="noopener"
-                target="_blank"
-                ><picture
-                  ><source
-                    sizes="max(100vw, 160svh)"
-                    srcset="
-                      /shots/git-1000.avif 1000w,
-                      /shots/git-2000.avif 2000w
-                    "
-                    type="image/avif" />
-                  <img
-                    alt="Git-Ansicht mit Änderungen und Diff"
-                    data-en-alt="Git view with changes and diff"
-                    decoding="async"
-                    height="1250"
-                    loading="lazy"
-                    sizes="max(100vw, 160svh)"
-                    src="/shots/git-2000.webp"
-                    srcset="
-                      /shots/git-1000.webp 1000w,
-                      /shots/git-2000.webp 2000w
-                    "
-                    width="2000" /></picture
-              ></a>
-              <figcaption>
-                <p
-                  data-en="Diffs, commits, branches and pull requests inside the app."
-                >
-                  Diffs, Commits, Branches und Pull Requests direkt in der App.
-                </p>
-              </figcaption>
-            </figure>
+            <div aria-labelledby="tab-sql" class="feature-panel" id="panel-sql" role="tabpanel">
+              <a aria-label="SQL-Editor mit Autovervollständigung und Abfrageergebnis – in voller Größe öffnen" data-en-label="SQL editor with completion and query results – open full size" href="/shots/sql-2000.webp" rel="noopener" target="_blank"><picture>
+                <source sizes="(max-width: 900px) 100vw, 860px" srcset="/shots/sql-1000.avif 1000w, /shots/sql-2000.avif 2000w" type="image/avif" />
+                <img alt="SQL-Editor mit Autovervollständigung und Abfrageergebnis" data-en-alt="SQL editor with completion and query results" decoding="async" height="1250" loading="eager" fetchpriority="high" sizes="(max-width: 900px) 100vw, 860px" src="/shots/sql-2000.webp" srcset="/shots/sql-1000.webp 1000w, /shots/sql-2000.webp 2000w" width="2000" />
+              </picture></a>
+            </div>
+            <div aria-labelledby="tab-data" class="feature-panel" hidden="" id="panel-data" role="tabpanel">
+              <a aria-label="Produkttabelle zum direkten Bearbeiten – in voller Größe öffnen" data-en-label="Product table with inline editing – open full size" href="/shots/data-2000.webp" rel="noopener" target="_blank"><picture>
+                <source sizes="(max-width: 900px) 100vw, 860px" srcset="/shots/data-1000.avif 1000w, /shots/data-2000.avif 2000w" type="image/avif" />
+                <img alt="Produkttabelle zum direkten Bearbeiten" data-en-alt="Product table with inline editing" decoding="async" height="1250" loading="lazy" sizes="(max-width: 900px) 100vw, 860px" src="/shots/data-2000.webp" srcset="/shots/data-1000.webp 1000w, /shots/data-2000.webp 2000w" width="2000" />
+              </picture></a>
+            </div>
+            <div aria-labelledby="tab-er" class="feature-panel" hidden="" id="panel-er" role="tabpanel">
+              <a aria-label="ER-Diagramm mit Tabellen und Fremdschlüsseln – in voller Größe öffnen" data-en-label="ER diagram with tables and foreign keys – open full size" href="/shots/er-2000.webp" rel="noopener" target="_blank"><picture>
+                <source sizes="(max-width: 900px) 100vw, 860px" srcset="/shots/er-1000.avif 1000w, /shots/er-2000.avif 2000w" type="image/avif" />
+                <img alt="ER-Diagramm mit Tabellen und Fremdschlüsseln" data-en-alt="ER diagram with tables and foreign keys" decoding="async" height="1250" loading="lazy" sizes="(max-width: 900px) 100vw, 860px" src="/shots/er-2000.webp" srcset="/shots/er-1000.webp 1000w, /shots/er-2000.webp 2000w" width="2000" />
+              </picture></a>
+            </div>
+            <div aria-labelledby="tab-builder" class="feature-panel" hidden="" id="panel-builder" role="tabpanel">
+              <a aria-label="Visueller Query Builder mit erzeugtem SQL – in voller Größe öffnen" data-en-label="Visual query builder with generated SQL – open full size" href="/shots/builder-2000.webp" rel="noopener" target="_blank"><picture>
+                <source sizes="(max-width: 900px) 100vw, 860px" srcset="/shots/builder-1000.avif 1000w, /shots/builder-2000.avif 2000w" type="image/avif" />
+                <img alt="Visueller Query Builder mit erzeugtem SQL" data-en-alt="Visual query builder with generated SQL" decoding="async" height="1250" loading="lazy" sizes="(max-width: 900px) 100vw, 860px" src="/shots/builder-2000.webp" srcset="/shots/builder-1000.webp 1000w, /shots/builder-2000.webp 2000w" width="2000" />
+              </picture></a>
+            </div>
+            <div aria-labelledby="tab-code" class="feature-panel" hidden="" id="panel-code" role="tabpanel">
+              <a aria-label="Java-Projekt mit Editor und integriertem Terminal – in voller Größe öffnen" data-en-label="Java project with editor and integrated terminal – open full size" href="/shots/code-2000.webp" rel="noopener" target="_blank"><picture>
+                <source sizes="(max-width: 900px) 100vw, 860px" srcset="/shots/code-1000.avif 1000w, /shots/code-2000.avif 2000w" type="image/avif" />
+                <img alt="Java-Projekt mit Editor und integriertem Terminal" data-en-alt="Java project with editor and integrated terminal" decoding="async" height="1250" loading="lazy" sizes="(max-width: 900px) 100vw, 860px" src="/shots/code-2000.webp" srcset="/shots/code-1000.webp 1000w, /shots/code-2000.webp 2000w" width="2000" />
+              </picture></a>
+            </div>
+            <div aria-labelledby="tab-git" class="feature-panel" hidden="" id="panel-git" role="tabpanel">
+              <a aria-label="Git-Ansicht mit Änderungen und Diff – in voller Größe öffnen" data-en-label="Git view with changes and diff – open full size" href="/shots/git-2000.webp" rel="noopener" target="_blank"><picture>
+                <source sizes="(max-width: 900px) 100vw, 860px" srcset="/shots/git-1000.avif 1000w, /shots/git-2000.avif 2000w" type="image/avif" />
+                <img alt="Git-Ansicht mit Änderungen und Diff" data-en-alt="Git view with changes and diff" decoding="async" height="1250" loading="lazy" sizes="(max-width: 900px) 100vw, 860px" src="/shots/git-2000.webp" srcset="/shots/git-1000.webp 1000w, /shots/git-2000.webp 2000w" width="2000" />
+              </picture></a>
+            </div>
+            <p class="gallery-note" data-en="Screenshots with sample data">Ansichten mit Beispieldaten</p>
           </div>
-          <p class="gallery-note" data-en="Screens with sample data">
-            Ansichten mit Beispieldaten
-          </p>
         </div>
       </section>
-      <p
-        class="formats wrap"
-        data-en="Import: MariaDB, MySQL, PostgreSQL, SQLite, MongoDB, Redis and CSV. Export: SQL, CSV, JSON, XML, SQLite, Redis and server transfers."
-      >
-        Import: MariaDB, MySQL, PostgreSQL, SQLite, MongoDB, Redis und CSV.
-        Export: SQL, CSV, JSON, XML, SQLite, Redis und Servertransfer.
-      </p>
-      <div class="requirements-wrap wrap">
-        <details class="requirements">
-          <summary data-en="System requirements &amp; portable ZIP">
-            Systemvoraussetzungen &amp; Portable ZIP
-          </summary>
-          <ul>
-            <li data-en="Windows 10/11 x64: MariaDB included.">
-              Windows 10/11 x64: MariaDB enthalten.
-            </li>
-            <li
-              data-en="macOS 11+, Apple Silicon / Intel: requires MariaDB via Homebrew."
-            >
-              macOS 11+, Apple Silicon / Intel: benötigt MariaDB über Homebrew.
-            </li>
-            <li
-              data-en="Linux x64, glibc 2.35+: requires MariaDB from your package manager."
-            >
-              Linux x64, glibc 2.35+: benötigt MariaDB aus dem Paketmanager.
-            </li>
-          </ul>
-          <a
-            data-dl="portable"
-            data-en="Windows portable ZIP"
-            href="/download/portable"
-            >Windows Portable ZIP</a
-          >
-        </details>
-      </div>
-      <section aria-labelledby="c-h" class="sec compare" id="compare">
-        <div class="section-heading">
-          <h2 data-en="Measurements &amp; comparison" id="c-h">
-            Messwerte &amp; Vergleich
-          </h2>
+
+      <section aria-labelledby="c-h" class="compare" id="compare">
+        <div class="wrap">
+          <h2 data-en="Measured against XAMPP and MySQL Workbench" id="c-h">Gemessen gegen XAMPP und MySQL Workbench</h2>
+          <p class="sub" data-en="Windows 11, Ryzen 7 8700G, median of five warm starts. Shorter bars are better.">Windows 11, Ryzen 7 8700G, Median aus fünf Warmstarts. Kürzere Balken sind besser.</p>
+          <div class="charts">
+          <article class="chart">
+            <h3 data-en="Start time">Startzeit</h3>
+            <p class="win"><b>13×</b> <span data-en="faster to start than MySQL Workbench">schneller bereit als MySQL Workbench</span></p>
+            <dl class="bars">
+              <div class="us">
+                <dt>EasyMySQL</dt>
+                <dd><svg aria-hidden="true" class="bar"><rect height="100%" width="7.8%"></rect></svg><span data-en="0.47 s">0,47 s</span></dd>
+              </div>
+              <div>
+                <dt>XAMPP</dt>
+                <dd><svg aria-hidden="true" class="bar"><rect height="100%" width="11.0%" fill="url(#hatch)"></rect></svg><span data-en="0.66 s">0,66 s</span></dd>
+              </div>
+              <div>
+                <dt>Workbench</dt>
+                <dd><svg aria-hidden="true" class="bar"><rect height="100%" width="100.0%" fill="url(#hatch)"></rect></svg><span data-en="6.01 s">6,01 s</span></dd>
+              </div>
+            </dl>
+            <p class="chart-note" data-en="Warm start until the start view is usable.">Warmstart bis zur bedienbaren Startansicht.</p>
+          </article>
+          <article class="chart">
+            <h3 data-en="Memory">Arbeitsspeicher</h3>
+            <p class="win"><b data-en="2.5×">2,5×</b> <span data-en="less RAM than XAMPP with phpMyAdmin">weniger RAM als XAMPP mit phpMyAdmin</span></p>
+            <dl class="bars">
+              <div class="us">
+                <dt>EasyMySQL</dt>
+                <dd><svg aria-hidden="true" class="bar"><rect height="100%" width="39.9%"></rect></svg><span data-en="133 MiB">133 MiB</span></dd>
+              </div>
+              <div>
+                <dt>XAMPP</dt>
+                <dd><svg aria-hidden="true" class="bar"><rect height="100%" width="100.0%" fill="url(#hatch)"></rect></svg><span data-en="334 MiB">334 MiB</span></dd>
+              </div>
+              <div>
+                <dt>Workbench</dt>
+                <dd><svg aria-hidden="true" class="bar"><rect height="100%" width="80.7%" fill="url(#hatch)"></rect></svg><span data-en="269 MiB">269 MiB</span></dd>
+              </div>
+            </dl>
+            <p class="chart-note" data-en="Private working set at idle, without the database server.">Privater Arbeitssatz im Leerlauf, ohne Datenbankserver.</p>
+          </article>
+          <article class="chart">
+            <h3 data-en="Download">Download</h3>
+            <p class="win"><b data-en="3.4×">3,4×</b> <span data-en="smaller than MySQL Workbench">kleiner als MySQL Workbench</span></p>
+            <dl class="bars">
+              <div class="us">
+                <dt>EasyMySQL</dt>
+                <dd><svg aria-hidden="true" class="bar"><rect height="100%" width="29.5%"></rect></svg><span data-en="77 MB">77 MB</span></dd>
+              </div>
+              <div>
+                <dt>XAMPP</dt>
+                <dd><svg aria-hidden="true" class="bar"><rect height="100%" width="73.2%" fill="url(#hatch)"></rect></svg><span data-en="191 MB">191 MB</span></dd>
+              </div>
+              <div>
+                <dt>Workbench</dt>
+                <dd><svg aria-hidden="true" class="bar"><rect height="100%" width="100.0%" fill="url(#hatch)"></rect></svg><span data-en="261 MB">261 MB</span></dd>
+              </div>
+            </dl>
+            <p class="chart-note" data-en="Windows installers. EasyMySQL includes MariaDB, Workbench has no server.">Windows-Installer. EasyMySQL bringt MariaDB mit, Workbench keinen Server.</p>
+          </article>
+          </div>
+          <div aria-label="Funktionsvergleich, horizontal scrollbar" class="table-scroll" data-en-label="Feature comparison, scroll horizontally" role="region" tabindex="0">
+            <table>
+              <caption class="sr-only" data-en="Features of EasyMySQL, XAMPP and MySQL Workbench">Funktionen von EasyMySQL, XAMPP und MySQL Workbench</caption>
+              <thead>
+                <tr><td></td><th scope="col">EasyMySQL</th><th scope="col">XAMPP</th><th scope="col">Workbench</th></tr>
+              </thead>
+              <tbody>
+              <tr><th scope="row" data-en="Database server included">Datenbankserver enthalten</th><td class="yes" data-en="Yes, on Windows">Ja, unter Windows</td><td class="yes" data-en="Yes">Ja</td><td class="no" data-en="No">Nein</td></tr>
+              <tr><th scope="row" data-en="Works without a browser">Läuft ohne Browser</th><td class="yes" data-en="Yes">Ja</td><td class="no" data-en="No">Nein</td><td class="yes" data-en="Yes">Ja</td></tr>
+              <tr><th scope="row" data-en="Chat with Claude Code and Codex">Chat mit Claude Code und Codex</th><td class="yes" data-en="Yes">Ja</td><td class="no" data-en="No">Nein</td><td class="no" data-en="No">Nein</td></tr>
+              <tr><th scope="row" data-en="Java projects, terminal and Git">Java-Projekte, Terminal und Git</th><td class="yes" data-en="Yes">Ja</td><td class="no" data-en="No">Nein</td><td class="no" data-en="No">Nein</td></tr>
+              <tr><th scope="row" data-en="MCP server for AI tools">MCP-Server für KI-Werkzeuge</th><td class="yes" data-en="Yes">Ja</td><td class="no" data-en="No">Nein</td><td class="no" data-en="No">Nein</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <details class="method">
+            <summary data-en="How it was measured">So wurde gemessen</summary>
+            <p data-en="EasyMySQL 1.1.15, XAMPP Portable 8.2.12 with phpMyAdmin 5.2.1 in its own Chrome, MySQL Workbench 26.10.0. Five warm starts per app with fresh profiles; values are medians after 8 s of settling and 10 s idle. Memory is the private working set of all client processes without the shared MariaDB server. The start signals differ per app: input loop ready for EasyMySQL, visible welcome page for Workbench, loaded phpMyAdmin page with Apache already running. Download sizes: EasyMySQL setup, XAMPP 8.5.12 installer and Workbench 26.10.0 MSI.">EasyMySQL 1.1.15, XAMPP Portable 8.2.12 mit phpMyAdmin 5.2.1 im eigenen Chrome, MySQL Workbench 26.10.0. Fünf Warmstarts pro App mit frischen Profilen; die Werte sind Mediane nach 8 s Einschwingen und 10 s Leerlauf. Der Arbeitsspeicher ist der private Arbeitssatz aller Client-Prozesse ohne den gemeinsamen MariaDB-Server. Die Startsignale unterscheiden sich je App: Eingabeschleife bereit bei EasyMySQL, sichtbare Startseite bei Workbench, geladene phpMyAdmin-Seite bei laufendem Apache. Downloadgrößen: EasyMySQL-Setup, XAMPP-8.5.12-Installer und Workbench-26.10.0-MSI.</p>
+            <p><a data-en="Raw measurements (JSON)" href="/benchmarks.json">Rohdaten (JSON)</a> <a data-en="Measurement script" href="https://github.com/gravijet/EasyMySQL/blob/main/website/measure-runtime.py">Messskript</a></p>
+          </details>
         </div>
-        <div
-          aria-label="Vergleichstabelle, horizontal scrollbar"
-          class="table-scroll"
-          data-en-label="Comparison table, scroll horizontally"
-          role="region"
-          tabindex="0"
-        >
-          <table>
-            <caption
-              class="sr-only"
-              data-en="EasyMySQL compared with XAMPP and MySQL Workbench"
-            >
-              EasyMySQL im Vergleich mit XAMPP und MySQL Workbench
-            </caption>
-            <colgroup>
-              <col />
-              <col class="our-column" />
-              <col />
-              <col />
-            </colgroup>
-            <thead>
-              <tr>
-                <th data-en="Measurements and features" scope="col">
-                  Messwerte und Funktionen
-                </th>
-                <th scope="col">EasyMySQL 7.1.0</th>
-                <th scope="col">XAMPP 8.2.12¹</th>
-                <th scope="col">Workbench 26.10.0</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr class="group-row">
-                <th
-                  colspan="4"
-                  data-en="Client start screen · measured on this PC"
-                  scope="colgroup"
-                >
-                  Client-Startansicht · auf diesem PC gemessen
-                </th>
-              </tr>
-              <tr>
-                <th data-en="RAM · private working set" scope="row">
-                  RAM · privater Arbeitssatz
-                </th>
-                <td data-en="133.2 MiB" data-runtime="easy-ram">133,2 MiB</td>
-                <td data-en="333.7 MiB" data-runtime="xampp-ram">333,7 MiB</td>
-                <td data-en="269.3 MiB" data-runtime="workbench-ram">
-                  269,3 MiB
-                </td>
-              </tr>
-              <tr>
-                <th data-en="Private committed memory³" scope="row">
-                  Privat zugesichert³
-                </th>
-                <td data-en="475.3 MiB" data-runtime="easy-commit">
-                  475,3 MiB
-                </td>
-                <td data-en="478.1 MiB" data-runtime="xampp-commit">
-                  478,1 MiB
-                </td>
-                <td data-en="487.6 MiB" data-runtime="workbench-commit">
-                  487,6 MiB
-                </td>
-              </tr>
-              <tr>
-                <th data-en="Warm start · readiness signal²" scope="row">
-                  Warmstart · Startsignal²
-                </th>
-                <td data-en="0.47 s" data-runtime="easy-start">0,47 s</td>
-                <td data-en="0.66 s" data-runtime="xampp-start">0,66 s</td>
-                <td data-en="6.01 s" data-runtime="workbench-start">6,01 s</td>
-              </tr>
-              <tr>
-                <th data-en="Idle CPU · share of total CPU" scope="row">
-                  CPU im Leerlauf · Anteil der Gesamt-CPU
-                </th>
-                <td data-en="&lt; 0.01 %" data-runtime="easy-cpu">
-                  &lt; 0,01 %
-                </td>
-                <td data-en="0.02 %" data-runtime="xampp-cpu">0,02 %</td>
-                <td data-en="0.02 %" data-runtime="workbench-cpu">0,02 %</td>
-              </tr>
-              <tr class="group-row">
-                <th colspan="4" data-en="Features" scope="colgroup">
-                  Funktionen
-                </th>
-              </tr>
-              <tr>
-                <th data-en="Main purpose" scope="row">Schwerpunkt</th>
-                <td data-en="Database + development">
-                  Datenbank + Entwicklung
-                </td>
-                <td data-en="Local PHP web stack">Lokaler PHP-Webstack</td>
-                <td data-en="MySQL + SQL notebooks">MySQL + SQL-Notebooks</td>
-              </tr>
-              <tr>
-                <th data-en="Local database server" scope="row">
-                  Lokaler Datenbankserver
-                </th>
-                <td data-en="MariaDB on Windows">MariaDB unter Windows</td>
-                <td data-en="MariaDB">MariaDB</td>
-                <td data-en="Install separately">Separat installieren</td>
-              </tr>
-              <tr>
-                <th data-en="SQL editor &amp; table editing" scope="row">
-                  SQL-Editor &amp; Tabellenbearbeitung
-                </th>
-                <td data-en="Integrated">Integriert</td>
-                <td data-en="Via phpMyAdmin">Über phpMyAdmin</td>
-                <td data-en="Integrated">Integriert</td>
-              </tr>
-              <tr>
-                <th data-en="ER diagrams" scope="row">ER-Diagramme</th>
-                <td data-en="Integrated">Integriert</td>
-                <td data-en="Via phpMyAdmin Designer">
-                  Über phpMyAdmin Designer
-                </td>
-                <td data-en="26.x: not verified">26.x: nicht bestätigt</td>
-              </tr>
-              <tr>
-                <th data-en="AI connection via MCP" scope="row">
-                  KI-Anbindung über MCP
-                </th>
-                <td data-en="Built-in MCP server">Eingebauter MCP-Server</td>
-                <td data-en="External integration">Externe Anbindung</td>
-                <td data-en="External integration">Externe Anbindung</td>
-              </tr>
-              <tr>
-                <th data-en="Java / Python / JS projects + Git" scope="row">
-                  Java- / Python- / JS-Projekte + Git
-                </th>
-                <td data-en="Integrated">Integriert</td>
-                <td data-en="Separate tools">Separate Werkzeuge</td>
-                <td data-en="JS/TS scripts, external Git">
-                  JS/TS-Skripte, Git extern
-                </td>
-              </tr>
-              <tr>
-                <th data-en="SQL performance analysis" scope="row">
-                  SQL-Performance-Analyse
-                </th>
-                <td data-en="EXPLAIN">EXPLAIN</td>
-                <td data-en="EXPLAIN (phpMyAdmin)">EXPLAIN (phpMyAdmin)</td>
-                <td data-en="Visual Explain + Performance Reports">
-                  Visual Explain + Performance Reports
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <p
-          class="comparison-note"
-          data-en="¹ XAMPP Portable with Apache, PHP, phpMyAdmin and a dedicated Chrome process. Database server separate; values and conditions in the raw measurements."
-        >
-          ¹ XAMPP Portable mit Apache, PHP, phpMyAdmin und eigenem
-          Chrome-Prozess. Datenbankserver separat; Werte und Messbedingungen
-          siehe Rohdaten.
-        </p>
-        <details class="benchmark-method">
-          <summary data-en="Method &amp; raw measurements">
-            Messaufbau &amp; Rohdaten
-          </summary>
-          <p
-            data-en="Windows 11, Ryzen 7 8700G, 16 logical cores, 31.1 GiB usable RAM. Five warm starts per app with isolated profiles; median after 8 s warm-up and 10 s idle. RAM: private resident working set of all client processes, excluding the shared MariaDB server and GPU memory. CPU: share of total CPU capacity. XAMPP includes Apache/PHP, phpMyAdmin and a dedicated headless Chrome 156. ² Start markers: EasyMySQL message loop (WaitForInputIdle), visible Workbench welcome page, loaded phpMyAdmin page with Apache already running. Different readiness signals, not identical first-paint tests. Test file hashes and all samples are in the raw measurements. ³ Private commit can use RAM or paging space and is not equivalent to resident RAM."
-            id="runtime-method"
-          >
-            Windows 11, Ryzen 7 8700G, 16 logische Kerne, 31,1 GiB nutzbarer
-            RAM. Fünf Warmstarts pro App mit isolierten Profilen; Median nach 8
-            s Aufwärmen und 10 s Leerlauf. RAM: privater physischer Arbeitssatz
-            aller Client-Prozesse, ohne gemeinsamen MariaDB-Server und
-            GPU-Speicher. CPU: Anteil der gesamten CPU. XAMPP umfasst
-            Apache/PHP, phpMyAdmin und einen eigenen Chrome 156 ohne sichtbares
-            Fenster. ² Startsignale: EasyMySQL-Eingabeschleife
-            (WaitForInputIdle), sichtbare Workbench-Startseite, geladene
-            phpMyAdmin-Seite bei laufendem Apache. Unterschiedliche Messsignale,
-            kein identischer First-Paint-Test. Testdateien und alle Einzelwerte
-            stehen in den Rohdaten. ³ Privater Commit kann RAM oder Auslagerung
-            belegen und ist nicht mit physischem RAM gleichzusetzen.
-          </p>
-          <a data-en="Raw measurements (JSON)" href="/benchmarks.json"
-            >Rohdaten (JSON)</a
-          >
-          <a
-            data-en="Reproduce measurements"
-            href="https://github.com/gravijet/EasyMySQL/blob/main/website/measure-runtime.py"
-            >Messung wiederholen</a
-          >
-        </details>
-        <p class="sources">
-          <span data-en="Sources:">Quellen:</span
-          ><a
-            href="https://sourceforge.net/projects/xampp/files/XAMPP%20Windows/8.2.12/"
-            >XAMPP</a
-          ><a href="https://docs.phpmyadmin.net/en/latest/">phpMyAdmin</a
-          ><a href="https://www.mysql.com/products/workbench/"
-            >MySQL Workbench</a
-          ><a
-            data-en="Workbench performance"
-            href="https://www.mysql.com/products/workbench/performance/"
-            >Workbench-Performance</a
-          ><a
-            data-en="Workbench download"
-            href="https://dev.mysql.com/downloads/workbench/"
-            >Workbench-Download</a
-          ><span data-en="Checked November 7, 2026"
-            >Stand: 7. November 2026</span
-          >
-        </p>
       </section>
-      <section aria-labelledby="ai-h" class="sec wrap ai" id="ai">
+
+      <section aria-labelledby="ai-h" class="ai wrap" id="ai">
         <div>
-          <h2 data-en="AI via MCP" id="ai-h">KI über MCP</h2>
-          <p
-            class="body"
-            data-en="Claude Code, Codex and Cursor access your schema and query your database through the built-in MCP server."
-          >
-            Claude Code, Codex und Cursor lesen dein Schema und fragen über den
-            eingebauten MCP-Server deine Datenbank ab.
-          </p>
+          <h2 data-en="Claude Code and Codex built in" id="ai-h">Claude Code und Codex eingebaut</h2>
+          <p class="body" data-en="Chat with Claude Code or Codex right inside the app. Both read your schema and query your database through the built-in MCP server.">Chatte direkt in der App mit Claude Code oder Codex. Beide lesen dein Schema und fragen deine Datenbank über den eingebauten MCP-Server ab.</p>
           <div class="cmd">
-            <code id="c-setup">easymysql setup-ai</code
-            ><button
-              class="copy"
-              data-copy-from="#c-setup"
-              data-en="Copy"
-              type="button"
-            >
-              Kopieren
-            </button>
+            <code id="c-setup">easymysql install-ai</code>
+            <button class="copy" data-copy-from="#c-setup" data-en="Copy" type="button">Kopieren</button>
           </div>
+          <p class="terminal-shell" data-en="Downloads both assistants and connects them. The installer offers this too.">Lädt beide Assistenten herunter und verbindet sie. Der Installer bietet das auch an.</p>
         </div>
         <dl class="ai-facts">
           <div>
             <dt data-en="Read-only by default">Standardmäßig nur lesend</dt>
-            <dd
-              data-en="Queries run in READ ONLY transactions until you allow changes."
-            >
-              Abfragen laufen in READ-ONLY-Transaktionen, bis du Änderungen
-              erlaubst.
-            </dd>
+            <dd data-en="Queries run in READ ONLY transactions until you allow changes.">Abfragen laufen in READ-ONLY-Transaktionen, bis du Änderungen erlaubst.</dd>
           </div>
           <div>
-            <dt data-en="Backup before destructive SQL">
-              Backup vor destruktivem SQL
-            </dt>
-            <dd
-              data-en="Automatic database backup before DROP, TRUNCATE or DELETE without WHERE."
-            >
-              Automatische Datenbanksicherung vor DROP, TRUNCATE oder DELETE
-              ohne WHERE.
-            </dd>
+            <dt data-en="Backup before destructive SQL">Backup vor destruktivem SQL</dt>
+            <dd data-en="Automatic database backup before DROP, TRUNCATE or DELETE without WHERE.">Automatische Datenbanksicherung vor DROP, TRUNCATE oder DELETE ohne WHERE.</dd>
           </div>
+        </dl>
+      </section>
+
+      <section aria-labelledby="s-h" class="systems wrap">
+        <h2 data-en="Systems and formats" id="s-h">Systeme und Formate</h2>
+        <dl>
+          <div><dt>Windows 10/11 x64</dt><dd><span data-en="MariaDB is included.">MariaDB ist enthalten.</span> <a data-dl="portable" data-en="Portable ZIP" href="/download/portable">Portable ZIP</a></dd></div>
+          <div><dt>macOS 11+</dt><dd data-en="Apple Silicon and Intel. Needs MariaDB from Homebrew.">Apple Silicon und Intel. Benötigt MariaDB über Homebrew.</dd></div>
+          <div><dt>Linux x64</dt><dd data-en="glibc 2.35 or newer. Needs MariaDB from your package manager.">glibc 2.35 oder neuer. Benötigt MariaDB aus dem Paketmanager.</dd></div>
+          <div><dt>Import</dt><dd data-en="MariaDB, MySQL, PostgreSQL, SQLite, MongoDB, Redis and CSV">MariaDB, MySQL, PostgreSQL, SQLite, MongoDB, Redis und CSV</dd></div>
+          <div><dt>Export</dt><dd data-en="SQL, CSV, JSON, XML, SQLite, Redis and server transfer">SQL, CSV, JSON, XML, SQLite, Redis und Servertransfer</dd></div>
         </dl>
       </section>
     </main>
     <footer class="foot wrap">
-      <div class="foot-links">
-        <a href="https://github.com/gravijet/EasyMySQL">GitHub</a>
-        <a href="https://benjaminberger.at">Benjamin Berger</a
-        ><a data-en="Imprint" href="https://benjaminberger.at/impressum"
-          >Impressum</a
-        ><a data-en="Privacy" href="https://benjaminberger.at/datenschutz"
-          >Datenschutz</a
-        >
-      </div>
+      <span data-en="Free and open source under the MIT license">Kostenlos und quelloffen unter der MIT-Lizenz</span>
+      <a href="https://github.com/gravijet/EasyMySQL">GitHub</a>
+      <a href="https://benjaminberger.at">Benjamin Berger</a>
+      <a data-en="Imprint" href="https://benjaminberger.at/impressum">Impressum</a>
+      <a data-en="Privacy" href="https://benjaminberger.at/datenschutz">Datenschutz</a>
     </footer>
   </body>
 </html>

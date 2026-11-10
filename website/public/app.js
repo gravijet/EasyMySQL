@@ -180,12 +180,12 @@
       andere === "en" ? "English" : "Deutsch",
     );
     document.title = text(
-      "EasyMySQL – Datenbank, SQL & KI",
-      "EasyMySQL – Database, SQL & AI",
+      "EasyMySQL – Datenbank, SQL & Java",
+      "EasyMySQL – Database, SQL & Java",
     );
     $('meta[name="description"]').content = text(
-      "MariaDB-Server, SQL-Editor, ER-Diagramme und KI-Anbindung in einer nativen App. Kostenlos. Direkte Downloads für Windows, macOS und Linux.",
-      "MariaDB server, SQL editor, ER diagrams and AI in one native app. Free. Direct downloads for Windows, macOS and Linux.",
+      "MariaDB-Server, SQL-Editor, ER-Diagramme und Java-Entwicklung in einer nativen App. Kostenlos. Direkte Downloads für Windows, macOS und Linux.",
+      "MariaDB server, SQL editor, ER diagrams and Java development in one native app. Free. Direct downloads for Windows, macOS and Linux.",
     );
     zeigeRelease();
     zeigeFehler();
@@ -234,14 +234,14 @@
   var tabs = $$("[role=tab]");
   var bewegungReduziert = window.matchMedia("(prefers-reduced-motion: reduce)");
   var bildAnfrage = 0;
-  function waehleTab(tab, fokus, ausSzene) {
+  function waehleTab(tab, fokus) {
     var anfrage = ++bildAnfrage;
     var bild = document
       .getElementById(tab.getAttribute("aria-controls"))
       .querySelector("img");
     bild.loading = "eager";
     if (bild.complete && bild.naturalWidth) {
-      zeigeTab(tab, fokus, ausSzene);
+      zeigeTab(tab, fokus);
       return;
     }
     $(".feature-panels").setAttribute("aria-busy", "true");
@@ -250,7 +250,7 @@
       .then(function () {
         if (anfrage !== bildAnfrage) return;
         $(".feature-panels").removeAttribute("aria-busy");
-        zeigeTab(tab, fokus, ausSzene);
+        zeigeTab(tab, fokus);
       })
       .catch(function () {
         if (anfrage !== bildAnfrage) return;
@@ -263,7 +263,7 @@
         );
       });
   }
-  function zeigeTab(tab, fokus, ausSzene) {
+  function zeigeTab(tab, fokus) {
     var vorher = $("[role=tab][aria-selected=true]");
     tabs.forEach(function (el) {
       var aktiv = el === tab;
@@ -295,14 +295,7 @@
         left: Math.max(0, tab.offsetLeft - 20),
         behavior: "instant",
       });
-    if (!ausSzene)
-      document.dispatchEvent(
-        new CustomEvent("easymysql-feature", { detail: tabs.indexOf(tab) }),
-      );
   }
-  document.addEventListener("easymysql-scene-feature", function (ereignis) {
-    waehleTab(tabs[ereignis.detail], false, true);
-  });
   tabs.forEach(function (tab, index) {
     tab.tabIndex = index === 0 ? 0 : -1;
     tab.addEventListener("click", function () {
@@ -310,9 +303,9 @@
     });
     tab.addEventListener("keydown", function (e) {
       var ziel =
-        e.key === "ArrowRight"
+        e.key === "ArrowRight" || e.key === "ArrowDown"
           ? (index + 1) % tabs.length
-          : e.key === "ArrowLeft"
+          : e.key === "ArrowLeft" || e.key === "ArrowUp"
             ? (index + tabs.length - 1) % tabs.length
             : e.key === "Home"
               ? 0
@@ -325,6 +318,19 @@
       }
     });
   });
+
+  // Balken wachsen einmal, sobald die Diagramme sichtbar sind.
+  var diagramme = $(".charts");
+  if ("IntersectionObserver" in window)
+    new IntersectionObserver(
+      function (e, beobachter) {
+        if (!e[0].isIntersecting) return;
+        diagramme.classList.add("seen");
+        beobachter.disconnect();
+      },
+      { threshold: 0.15 },
+    ).observe(diagramme);
+  else diagramme.classList.add("seen");
 
   var meldung;
   function zeigeMeldung(inhalt) {
