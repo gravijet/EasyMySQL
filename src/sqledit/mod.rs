@@ -1455,7 +1455,7 @@ impl SqlEditor {
                                     ui.painter().rect_filled(r, 4.0, pal.hover);
                                 }
                                 // Farbiges Kennzeichen je Art (Methode, Feld, Klasse …)
-                                let (mark, color) = kind_mark(it.kind, &pal);
+                                let (mark, color) = kind_mark(it.kind, pal);
                                 let mr = egui::Rect::from_center_size(egui::pos2(r.left() + 13.0, r.center().y), egui::vec2(16.0, 16.0));
                                 ui.painter().rect_filled(mr, 4.0, color.gamma_multiply(0.22));
                                 ui.painter().text(mr.center(), egui::Align2::CENTER_CENTER, mark, FontId::proportional(11.0), color);

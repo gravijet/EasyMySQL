@@ -216,12 +216,8 @@ fn indent(text: &str, step: &str) -> String {
             level += 1;
         }
         let mut cont = 0;
-        if !in_comment {
-            if parens > 0 {
-                cont = 2;
-            } else if trimmed.starts_with('.') || open_expression(&prev_code_end) && !trimmed.starts_with('{') {
-                cont = 2;
-            }
+        if !in_comment && (parens > 0 || trimmed.starts_with('.') || open_expression(&prev_code_end) && !trimmed.starts_with('{')) {
+            cont = 2;
         }
         let mut lineout = String::new();
         for _ in 0..(level.max(0) + cont) {

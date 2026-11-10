@@ -756,7 +756,7 @@ pub fn parse_completion(v: &Value, text: &str, cursor: usize) -> (usize, Vec<Com
             word_start = from_pos(text, read_pos(&r["start"])).min(cursor);
         }
         let mut back = 0;
-        if matches!(kind, 2 | 3 | 4) && !insert.contains('(') {
+        if matches!(kind, 2..=4) && !insert.contains('(') {
             let has_params = label.split_once('(').is_some_and(|(_, rest)| !rest.starts_with(')'));
             insert.push_str("()");
             back = usize::from(has_params);

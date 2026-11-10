@@ -1034,9 +1034,8 @@ impl CodeTab {
                                 let b = ui.button(&t.name);
                                 let b = if lang == Lang::Java { b.on_hover_text(crate::tr_format!("{0}.java und {0}Dao.java in diesem Ordner", "{0}.java and {0}Dao.java in this folder", crate::javagen::class_name(&t.name))) } else { b };
                                 if b.clicked() {
-                                    match lang {
-                                        Lang::Java => classes = Some(t.clone()),
-                                        _ => {}
+                                    if lang == Lang::Java {
+                                        classes = Some(t.clone());
                                     }
                                     ui.close();
                                 }

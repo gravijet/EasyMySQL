@@ -1447,7 +1447,8 @@ fn lsp_settings(ui: &mut egui::Ui, ctx: &egui::Context, s: &mut crate::settings:
     crate::widgets::row(ui, "", |ui| {
         note(ui, crate::i18n::tr("Sprachserver zeigen Fehler schon beim Tippen, springen zur Definition (F12, Strg+Klick), benennen über das ganze Projekt um (F2) und zeigen Hinweise beim Zeigen mit der Maus.", "Language servers show errors while typing, go to definitions (F12, Ctrl+click), rename across the project (F2) and show hints on hover."));
     });
-    for (tool, on, name) in [(Tool::JavaLsp, &mut d.lsp_java, "Java (Eclipse JDT LS)")] {
+    {
+        let (tool, on, name) = (Tool::JavaLsp, &mut d.lsp_java, "Java (Eclipse JDT LS)");
         crate::widgets::row(ui, name, |ui| {
             ui.horizontal(|ui| {
                 crate::widgets::switch(ui, on, crate::i18n::tr("an", "on"));

@@ -332,10 +332,8 @@ impl SqlEditor {
                     command = Some(Cmd::GotoDefinition);
                 }
             }
-            if java || sql {
-                if item(ui, Icon::Edit, pal.syn_variable, crate::i18n::tr("Umbenennen …", "Rename …"), Some(Cmd::RenameSymbol)) {
-                    command = Some(Cmd::RenameSymbol);
-                }
+            if (java || sql) && item(ui, Icon::Edit, pal.syn_variable, crate::i18n::tr("Umbenennen …", "Rename …"), Some(Cmd::RenameSymbol)) {
+                command = Some(Cmd::RenameSymbol);
             }
             if java && item(ui, Icon::Plus, pal.syn_number, Cmd::IntroduceVariable.label(), Some(Cmd::IntroduceVariable)) {
                 action = Some(EditAction::IntroduceVariable);
