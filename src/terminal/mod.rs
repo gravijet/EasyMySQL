@@ -93,14 +93,7 @@ pub fn profiles(bin: Option<&Path>, conn: &crate::db::ConnInfo) -> Vec<Profile> 
         args.push("-p".into());
     }
     out.push(Profile { name: crate::i18n::text("MariaDB-Konsole").into(), program: client, args, env: Vec::new() });
-    // Python- und Node-Konsole, wenn vorhanden
     let tools = crate::dev::tools();
-    if let Some(py) = &tools.python {
-        out.push(Profile { name: format!("Python {}", py.version), program: py.exe.display().to_string(), args: vec!["-q".into()], env: Vec::new() });
-    }
-    if let Some(n) = &tools.node {
-        out.push(Profile { name: format!("Node.js {}", n.version), program: n.exe.display().to_string(), args: Vec::new(), env: Vec::new() });
-    }
     if let Some(j) = &tools.jdk
         && j.bin().join(format!("jshell{}", crate::dev::EXE)).is_file()
     {

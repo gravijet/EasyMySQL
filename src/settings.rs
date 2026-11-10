@@ -421,8 +421,8 @@ mod tests {
         s.server.data_dir = Some(PathBuf::from("D:\\db\\daten"));
         s.server.extra = "sql_mode=ANSI\nlong_query_time=2\\x".into();
         s.server_autostart = false;
-        s.dev.python_venv = false;
-        s.dev.node_args = "--max-old-space-size=4096".into();
+        s.dev.use_wrapper = false;
+        s.dev.maven_args = "-q".into();
         s.editor.indent = 3;
         s.terminal.custom_shell = "C:\\Git\\bin\\bash.exe --login".into();
         s.git.user_name = "Ada".into();

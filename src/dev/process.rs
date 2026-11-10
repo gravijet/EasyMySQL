@@ -94,23 +94,6 @@ pub fn tool_path(tools: &super::Tools) -> Option<std::ffi::OsString> {
     std::env::join_paths(paths).ok()
 }
 
-/// Ordner nach oben absuchen, bis eine der Dateien da ist (hoechstens bis `limit`)
-pub fn find_up(file: &Path, names: &[&str], limit: Option<&Path>) -> Option<PathBuf> {
-    let mut dir = file.parent();
-    let mut depth = 0;
-    while let Some(d) = dir {
-        if names.iter().any(|n| d.join(n).exists()) {
-            return Some(d.to_path_buf());
-        }
-        if limit.is_some_and(|l| d == l) || depth > 12 {
-            break;
-        }
-        dir = d.parent();
-        depth += 1;
-    }
-    None
-}
-
 /// Alle Dateien mit einer der Endungen unter `root` (ohne Ausgabe-, Abhaengigkeits- und versteckte Ordner)
 pub fn source_files(root: &Path, exts: &[&str]) -> Vec<PathBuf> {
     fn walk(dir: &Path, exts: &[&str], out: &mut Vec<PathBuf>, depth: usize) {

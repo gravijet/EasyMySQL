@@ -185,8 +185,6 @@ impl EasyApp {
                     });
                     ui.separator();
                     item(ui, crate::i18n::tr("Neues Java-Projekt …", "New Java project …"), Cmd::NewJavaProject, &mut cmd);
-                    item(ui, crate::i18n::tr("Neues Python-Projekt …", "New Python project …"), Cmd::NewPythonProject, &mut cmd);
-                    item(ui, crate::i18n::tr("Neues JavaScript-Projekt …", "New JavaScript project …"), Cmd::NewNodeProject, &mut cmd);
                     ui.separator();
                     item(ui, crate::i18n::text("Speichern"), Cmd::Save, &mut cmd);
                     item(ui, Cmd::SaveAll.label(), Cmd::SaveAll, &mut cmd);
@@ -284,7 +282,7 @@ impl EasyApp {
                 }
                 icons::submenu(ui, Some(Icon::FileCode), crate::i18n::tr("Neues Programmierprojekt", "New coding project"), |ui| {
                     ui.set_min_width(220.0);
-                    for (c, sample, label) in [(Cmd::NewJavaProject, "x.java", "Java"), (Cmd::NewPythonProject, "x.py", "Python"), (Cmd::NewNodeProject, "x.js", "JavaScript")] {
+                    for (c, sample, label) in [(Cmd::NewJavaProject, "x.java", "Java")] {
                         let r = icons::menu_item(ui, None, label, &keymap::text(c));
                         icons::paint_file(ui.painter(), Rect::from_center_size(pos2(r.rect.left() + 17.0, r.rect.center().y), vec2(15.0, 15.0)), sample);
                         if r.clicked() {
@@ -811,7 +809,6 @@ pub(super) fn cmd_icon(c: Cmd) -> Option<Icon> {
         Cmd::NewQuery => Icon::Plus,
         Cmd::NewFile => Icon::NewFile,
         Cmd::NewJavaProject => Icon::Coffee,
-        Cmd::NewPythonProject | Cmd::NewNodeProject => Icon::Script,
         Cmd::OpenFile => Icon::File,
         Cmd::OpenFolder => Icon::Folder,
         Cmd::Save => Icon::Save,

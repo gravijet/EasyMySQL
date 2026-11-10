@@ -14,8 +14,6 @@ pub enum Cmd {
     NewQuery,
     NewFile,
     NewJavaProject,
-    NewPythonProject,
-    NewNodeProject,
     OpenFile,
     OpenFolder,
     Save,
@@ -91,7 +89,7 @@ use Cmd::*;
 
 pub const GROUPS: &[(&str, &[Cmd])] = &[
     ("Ausführen", &[RunAll, RunStatement, Explain]),
-    ("Dateien und Registerkarten", &[NewQuery, NewFile, NewJavaProject, NewPythonProject, NewNodeProject, OpenFile, OpenFolder, Save, SaveAll, CloseTab, CloseAllTabs, ReopenTab, NextTab, PrevTab]),
+    ("Dateien und Registerkarten", &[NewQuery, NewFile, NewJavaProject, OpenFile, OpenFolder, Save, SaveAll, CloseTab, CloseAllTabs, ReopenTab, NextTab, PrevTab]),
     (
         "Ansicht",
         &[CommandPalette, QuickOpen, ToggleSidebar, ToggleTerminal, NewTerminal, FontLarger, FontSmaller, FontReset, ShowExplorer, ShowSearch, ShowDatabases, ShowHistory, Settings, Help, CheckUpdates, ServerLog, ErDiagram, QueryBuilder, Backups, Import, Export, Users],
@@ -121,8 +119,6 @@ impl Cmd {
             NewQuery => "neue_abfrage",
             NewFile => "neue_datei",
             NewJavaProject => "neues_java_projekt",
-            NewPythonProject => "neues_python_projekt",
-            NewNodeProject => "neues_node_projekt",
             OpenFile => "datei_oeffnen",
             OpenFolder => "ordner_oeffnen",
             Save => "speichern",
@@ -199,8 +195,6 @@ impl Cmd {
             NewQuery => crate::i18n::text("Neue Abfrage"),
             NewFile => crate::i18n::text("Neue Datei im Projekt"),
             NewJavaProject => crate::i18n::tr("Neues Java-Projekt", "New Java project"),
-            NewPythonProject => crate::i18n::tr("Neues Python-Projekt", "New Python project"),
-            NewNodeProject => crate::i18n::tr("Neues JavaScript-Projekt (Node.js)", "New JavaScript project (Node.js)"),
             OpenFile => crate::i18n::text("Datei öffnen"),
             OpenFolder => crate::i18n::text("Ordner öffnen"),
             Save => crate::i18n::text("Speichern"),
@@ -282,7 +276,7 @@ impl Cmd {
             Explain => vec![c(Key::E)],
             NewQuery => vec![c(Key::N)],
             NewFile => vec![ca(Key::N)],
-            NewJavaProject | NewPythonProject | NewNodeProject => vec![],
+            NewJavaProject => vec![],
             OpenFile => vec![c(Key::O)],
             OpenFolder => vec![cs(Key::O)],
             Save => vec![c(Key::S)],
@@ -568,16 +562,25 @@ pub fn pressed(input: &mut egui::InputState, cmd: Cmd) -> bool {
     if bindings.is_empty() {
         return false;
     }
-    let mut hit = false;
+    let mut hit: Option<Key> = None;
     let mods = input.modifiers;
     input.events.retain(|e| {
-        if !hit && bindings.iter().any(|b| b.matches(e, &mods)) {
-            hit = true;
+        if hit.is_none()
+            && let Some(b) = bindings.iter().find(|b| b.matches(e, &mods))
+        {
+            hit = Some(b.key);
             return false;
         }
         true
     });
-    hit
+    // Alt+Umschalt+F u. ae. liefern unter Windows zusaetzlich den Buchstaben als Text: der darf nicht im Editor landen
+    if let Some(key) = hit
+        && (mods.alt || mods.ctrl || mods.command)
+    {
+        let name = key.name();
+        input.events.retain(|e| !matches!(e, Event::Text(t) if t.to_uppercase() == name));
+    }
+    hit.is_some()
 }
 
 /// Wie `pressed`, fuer `ui.input_mut`
@@ -642,6 +645,15 @@ mod tests {
             modifiers: Modifiers { ctrl: true, command: true, ..Default::default() },
         };
         assert!(Binding::new(true, false, false, Key::Backslash).matches(&hash, &none));
+    }
+
+    #[test]
+    fn shortcut_with_alt_swallows_its_letter() {
+        let mut input = egui::InputState::default();
+        input.modifiers = Modifiers { shift: true, alt: true, ..Default::default() };
+        input.events = vec![key_event(Key::F, false, true, true), Event::Text("F".into())];
+        assert!(pressed(&mut input, Cmd::Format));
+        assert!(input.events.is_empty(), "{:?}", input.events);
     }
 
     #[test]

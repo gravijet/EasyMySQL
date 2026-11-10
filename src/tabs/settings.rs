@@ -23,8 +23,6 @@ pub const SECTIONS: &[(&str, &str)] = &[
     ("abfragen", "Abfragen und Daten"),
     ("ausfuehren", "Ausführen"),
     ("java", "Java"),
-    ("python", "Python"),
-    ("javascript", "JavaScript"),
     ("sprachserver", "Sprachserver"),
     ("git", "Git & GitHub"),
     ("terminal", "Terminal"),
@@ -42,7 +40,7 @@ pub const SECTIONS: &[(&str, &str)] = &[
 const GROUPS: &[(&str, &[&str])] = &[
     ("Allgemein", &["darstellung", "start", "updates", "maus", "dateien", "speicherorte"]),
     ("Editor", &["editor", "abfragen", "tastenkuerzel"]),
-    ("Programmieren", &["ausfuehren", "java", "python", "javascript", "sprachserver", "git", "terminal"]),
+    ("Programmieren", &["ausfuehren", "java", "sprachserver", "git", "terminal"]),
     ("Datenbank", &["verbindung", "server", "sicherungen", "ki"]),
 ];
 
@@ -56,7 +54,6 @@ fn section_icon(id: &str) -> crate::icons::Icon {
         "abfragen" => Icon::Table,
         "ausfuehren" => Icon::Terminal,
         "java" => Icon::Coffee,
-        "python" | "javascript" => Icon::Script,
         "sprachserver" => Icon::Braces,
         "git" => Icon::GitBranch,
         "terminal" => Icon::Terminal,
@@ -84,8 +81,6 @@ fn nav_row(ui: &mut egui::Ui, icon: crate::icons::Icon, title: &str, active: boo
     // Sprachen mit ihrem Dateisymbol (wie im Explorer)
     match title {
         "Java" => crate::icons::paint_file(ui.painter(), ir, "x.java"),
-        "Python" => crate::icons::paint_file(ui.painter(), ir, "x.py"),
-        "JavaScript" => crate::icons::paint_file(ui.painter(), ir, "x.js"),
         _ => crate::icons::paint(ui.painter(), ir, icon, if active { fg } else { pal.text_weak }),
     }
     ui.painter().text(egui::pos2(r.left() + 34.0, r.center().y), egui::Align2::LEFT_CENTER, title, egui::FontId::proportional(13.0), fg);
@@ -472,14 +467,6 @@ impl TabView for SettingsTab {
                 if page == "java" {
                     self.heading(ui, "java", "Java");
                     grid(ui, "g-java", &mut |ui| java_settings(ui, &ctx, s));
-                }
-                if page == "python" {
-                    self.heading(ui, "python", "Python");
-                    grid(ui, "g-python", &mut |ui| python_settings(ui, &ctx, s));
-                }
-                if page == "javascript" {
-                    self.heading(ui, "javascript", "JavaScript & TypeScript");
-                    grid(ui, "g-js", &mut |ui| node_settings(ui, &ctx, s));
                 }
                 if page == "sprachserver" {
                     self.heading(ui, "sprachserver", crate::i18n::tr("Sprachserver", "Language servers"));
@@ -1211,7 +1198,7 @@ fn editor_settings(ui: &mut egui::Ui, s: &mut crate::settings::Settings) {
         });
     });
     crate::widgets::row(ui, crate::i18n::tr("Automatisch einrücken", "Auto-indent"), |ui| {
-        crate::widgets::switch(ui, &mut e.auto_indent, crate::i18n::tr("nach Enter, { und : (Python)", "after Enter, { and : (Python)"));
+        crate::widgets::switch(ui, &mut e.auto_indent, crate::i18n::tr("nach Enter und {", "after Enter and {"));
     });
     crate::widgets::row(ui, crate::i18n::tr("Anzeige", "Display"), |ui| {
         ui.vertical(|ui| {
@@ -1222,7 +1209,7 @@ fn editor_settings(ui: &mut egui::Ui, s: &mut crate::settings::Settings) {
         });
     });
     crate::widgets::row(ui, crate::i18n::tr("SQL in Programmcode", "SQL in program code"), |ui| {
-        crate::widgets::switch(ui, &mut e.sql_in_strings, crate::i18n::tr("SQL in Zeichenketten von Java, Python und JavaScript prüfen", "Check SQL in strings of Java, Python and JavaScript"));
+        crate::widgets::switch(ui, &mut e.sql_in_strings, crate::i18n::tr("SQL in Java-Zeichenketten prüfen", "Check SQL in Java strings"));
     });
     crate::widgets::row(ui, crate::i18n::tr("Prüfen nach", "Check after"), |ui| {
         ui.horizontal(|ui| {
@@ -1296,7 +1283,7 @@ fn mariadb_version_ui(ui: &mut egui::Ui, s: &mut crate::settings::Settings, serv
     });
 }
 
-/// Abschnitt Ausfuehren: gilt fuer Java, Python und JavaScript
+/// Abschnitt Ausfuehren
 fn run_settings(ui: &mut egui::Ui, ctx: &egui::Context, s: &mut crate::settings::Settings) {
     use crate::dev::{UpdatePolicy, install};
     let d = &mut s.dev;
@@ -1318,7 +1305,6 @@ fn run_settings(ui: &mut egui::Ui, ctx: &egui::Context, s: &mut crate::settings:
     crate::widgets::row(ui, crate::i18n::tr("Vor dem Start", "Before starting"), |ui| {
         ui.vertical(|ui| {
             crate::widgets::switch(ui, &mut d.save_before_run, crate::i18n::tr("Alle Dateien speichern", "Save all files"));
-            crate::widgets::switch(ui, &mut d.check_before_run, crate::i18n::tr("Syntax prüfen (Python, JavaScript)", "Check syntax (Python, JavaScript)"));
         });
     });
     crate::widgets::row(ui, crate::i18n::tr("Arbeitsordner", "Working folder"), |ui| {
@@ -1329,7 +1315,7 @@ fn run_settings(ui: &mut egui::Ui, ctx: &egui::Context, s: &mut crate::settings:
     });
     crate::widgets::row(ui, crate::i18n::tr("Werkzeuge laden", "Download tools"), |ui| {
         ui.vertical(|ui| {
-            crate::widgets::switch(ui, &mut d.auto_download, crate::i18n::tr("Fehlendes ohne Nachfrage herunterladen (JDK, Python, Node.js, Treiber …)", "Download missing tools without asking (JDK, Python, Node.js, drivers …)"));
+            crate::widgets::switch(ui, &mut d.auto_download, crate::i18n::tr("Fehlendes ohne Nachfrage herunterladen (JDK, Treiber, Sprachserver …)", "Download missing tools without asking (JDK, drivers, language server …)"));
         });
     });
     crate::widgets::row(ui, crate::i18n::tr("Nach Updates suchen", "Check for updates"), |ui| {
@@ -1452,114 +1438,6 @@ fn java_settings(ui: &mut egui::Ui, ctx: &egui::Context, s: &mut crate::settings
     });
 }
 
-/// Abschnitt Python: Interpreter, Treiber, .venv, pip
-fn python_settings(ui: &mut egui::Ui, ctx: &egui::Context, s: &mut crate::settings::Settings) {
-    use crate::dev::python::{self, Driver};
-    use crate::dev::{self, Tool};
-    let pal = style::pal();
-    let tools = dev::tools();
-    let d = &mut s.dev;
-    crate::widgets::row(ui, "Python", |ui| {
-        ui.vertical(|ui| {
-            ui.horizontal(|ui| {
-                match (&tools.python, &tools.bad_python) {
-                    (Some(p), _) => {
-                        ui.label(RichText::new(format!("Python {}", p.version)).monospace());
-                        ui.label(RichText::new(if p.own { "python-build-standalone" } else { crate::i18n::tr("vom System", "from the system") }).color(pal.text_weak));
-                        open_button(ui, &p.home);
-                    }
-                    (None, Some((_, why))) => {
-                        ui.label(RichText::new(why).color(pal.warn_text));
-                    }
-                    (None, None) => {
-                        ui.label(RichText::new(crate::i18n::tr("Nicht installiert – wird beim ersten Start geladen", "Not installed – downloaded on the first run")).color(pal.text_weak));
-                    }
-                }
-                tool_button(ui, ctx, Tool::Python, tools.python.as_ref().is_some_and(|p| p.own));
-            });
-            tool_choice(ui, "py-choice", &mut d.python, false);
-        });
-    });
-    crate::widgets::row(ui, crate::i18n::tr("Treiber", "Driver"), |ui| {
-        ui.vertical(|ui| {
-            let items: Vec<(Driver, &str)> = Driver::ALL.iter().map(|x| (*x, x.label())).collect();
-            crate::widgets::segmented(ui, &mut d.python_driver, &items);
-            ui.horizontal(|ui| {
-                match tools.python_drivers.iter().find(|x| x.0 == d.python_driver) {
-                    Some((_, v)) => ui.label(RichText::new(crate::tr_format!("installiert: {v}", "installed: {v}")).small().monospace()),
-                    None => ui.label(RichText::new(crate::i18n::tr("wird beim ersten Start installiert", "installed on the first run")).small().color(pal.text_weak)),
-                };
-                tool_button(ui, ctx, Tool::PythonDrivers, tools.has(Tool::PythonDrivers));
-                open_button(ui, &python::site_dir());
-            });
-            note(ui, crate::tr_format!("Skripte ohne Projektdatei finden den Treiber über PYTHONPATH (import {}).", "Scripts without a project file find the driver through PYTHONPATH (import {}).", d.python_driver.module()).as_str());
-        });
-    });
-    crate::widgets::row(ui, crate::i18n::tr("Virtuelle Umgebung", "Virtual environment"), |ui| {
-        ui.vertical(|ui| {
-            crate::widgets::switch(ui, &mut d.python_venv, crate::i18n::tr("Projekte mit requirements.txt/pyproject.toml in .venv ausführen", "Run projects with requirements.txt/pyproject.toml in .venv"));
-            note(ui, crate::i18n::tr("EasyMySQL legt die .venv selbst an und installiert die Pakete neu, wenn sich die Datei ändert.", "EasyMySQL creates the .venv itself and reinstalls the packages when the file changes."));
-        });
-    });
-    crate::widgets::row(ui, crate::i18n::tr("Python-Optionen", "Python options"), |ui| args_field(ui, &mut d.python_args, "-X dev -W error"));
-    crate::widgets::row(ui, crate::i18n::tr("pip-Optionen", "pip options"), |ui| args_field(ui, &mut d.pip_args, "--index-url https://…"));
-}
-
-/// Abschnitt JavaScript: Node.js, Treiber, Paketverwaltung
-fn node_settings(ui: &mut egui::Ui, ctx: &egui::Context, s: &mut crate::settings::Settings) {
-    use crate::dev::node::{self, Driver};
-    use crate::dev::{self, Tool};
-    let pal = style::pal();
-    let tools = dev::tools();
-    let d = &mut s.dev;
-    crate::widgets::row(ui, "Node.js", |ui| {
-        ui.vertical(|ui| {
-            ui.horizontal(|ui| {
-                match (&tools.node, &tools.bad_node) {
-                    (Some(n), _) => {
-                        ui.label(RichText::new(format!("Node.js {}", n.version)).monospace());
-                        ui.label(RichText::new(if n.own { "LTS" } else { crate::i18n::tr("vom System", "from the system") }).color(pal.text_weak));
-                        open_button(ui, &n.home);
-                    }
-                    (None, Some((_, why))) => {
-                        ui.label(RichText::new(why).color(pal.warn_text));
-                    }
-                    (None, None) => {
-                        ui.label(RichText::new(crate::i18n::tr("Nicht installiert – wird beim ersten Start geladen", "Not installed – downloaded on the first run")).color(pal.text_weak));
-                    }
-                }
-                tool_button(ui, ctx, Tool::Node, tools.node.as_ref().is_some_and(|n| n.own));
-            });
-            tool_choice(ui, "node-choice", &mut d.node, false);
-        });
-    });
-    crate::widgets::row(ui, crate::i18n::tr("Treiber", "Driver"), |ui| {
-        ui.vertical(|ui| {
-            let items: Vec<(Driver, &str)> = Driver::ALL.iter().map(|x| (*x, x.label())).collect();
-            crate::widgets::segmented(ui, &mut d.node_driver, &items);
-            ui.horizontal(|ui| {
-                match tools.node_drivers.iter().find(|x| x.0 == d.node_driver) {
-                    Some((_, v)) => ui.label(RichText::new(crate::tr_format!("installiert: {v}", "installed: {v}")).small().monospace()),
-                    None => ui.label(RichText::new(crate::i18n::tr("wird beim ersten Start installiert", "installed on the first run")).small().color(pal.text_weak)),
-                };
-                tool_button(ui, ctx, Tool::NodeDrivers, tools.has(Tool::NodeDrivers));
-                open_button(ui, &node::modules_dir());
-            });
-        });
-    });
-    crate::widgets::row(ui, crate::i18n::tr("Paketverwaltung", "Package manager"), |ui| {
-        ui.vertical(|ui| {
-            let mut pm = d.package_manager.clone();
-            if crate::widgets::segmented(ui, &mut pm, &[("npm".to_string(), "npm"), ("pnpm".to_string(), "pnpm"), ("yarn".to_string(), "yarn")]) {
-                d.package_manager = pm;
-            }
-            crate::widgets::switch(ui, &mut d.npm_auto_install, crate::i18n::tr("Pakete vor dem Start installieren, wenn package.json sich ändert", "Install packages before running when package.json changes"));
-            note(ui, crate::i18n::tr("pnpm und yarn werden aus dem PATH verwendet; ohne sie gilt npm. Eine pnpm-lock.yaml bzw. yarn.lock im Projekt hat Vorrang.", "pnpm and yarn are used from the PATH; without them npm is used. A pnpm-lock.yaml or yarn.lock in the project takes precedence."));
-        });
-    });
-    crate::widgets::row(ui, crate::i18n::tr("Node-Optionen", "Node options"), |ui| args_field(ui, &mut d.node_args, "--enable-source-maps --max-old-space-size=4096"));
-}
-
 /// Abschnitt Sprachserver: an/aus je Sprache, Speicher, Verzoegerung
 fn lsp_settings(ui: &mut egui::Ui, ctx: &egui::Context, s: &mut crate::settings::Settings) {
     use crate::dev::{self, Tool, lsp};
@@ -1569,7 +1447,7 @@ fn lsp_settings(ui: &mut egui::Ui, ctx: &egui::Context, s: &mut crate::settings:
     crate::widgets::row(ui, "", |ui| {
         note(ui, crate::i18n::tr("Sprachserver zeigen Fehler schon beim Tippen, springen zur Definition (F12, Strg+Klick), benennen über das ganze Projekt um (F2) und zeigen Hinweise beim Zeigen mit der Maus.", "Language servers show errors while typing, go to definitions (F12, Ctrl+click), rename across the project (F2) and show hints on hover."));
     });
-    for (tool, on, name) in [(Tool::JavaLsp, &mut d.lsp_java, "Java (Eclipse JDT LS)"), (Tool::PythonLsp, &mut d.lsp_python, "Python (Pyright)"), (Tool::JsLsp, &mut d.lsp_js, "JavaScript/TypeScript")] {
+    for (tool, on, name) in [(Tool::JavaLsp, &mut d.lsp_java, "Java (Eclipse JDT LS)")] {
         crate::widgets::row(ui, name, |ui| {
             ui.horizontal(|ui| {
                 crate::widgets::switch(ui, on, crate::i18n::tr("an", "on"));

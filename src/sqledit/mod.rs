@@ -12,7 +12,6 @@ mod complete;
 mod highlight;
 mod lang;
 mod lint;
-mod scan;
 mod schema_fix;
 mod schema_decl;
 mod schema_jpa;
@@ -39,7 +38,7 @@ pub static LINT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::
 /// Einstellungen des Editors (fuer alle Editoren gleich)
 #[derive(Clone, Debug, PartialEq)]
 pub struct Prefs {
-    /// Einrueckung in Leerzeichen (0 = je nach Sprache: Java/Python 4, sonst 2)
+    /// Einrueckung in Leerzeichen (0 = je nach Sprache: Java 4, sonst 2)
     pub indent: usize,
     pub line_numbers: bool,
     /// Zeile mit dem Cursor hinterlegen
@@ -48,7 +47,7 @@ pub struct Prefs {
     pub match_brackets: bool,
     /// Nach Enter einruecken (und nach `}` ausruecken)
     pub auto_indent: bool,
-    /// SQL in Zeichenketten von Java, Python und JavaScript pruefen
+    /// SQL in Zeichenketten von Java pruefen
     pub sql_in_strings: bool,
     /// So lange muss das Tippen pausieren, bevor geprueft wird
     pub lint_delay_ms: u64,
@@ -283,7 +282,6 @@ impl SqlEditor {
         match self.lang {
             Lang::Sql => complete::suggest(text, cursor, &self.lint_env(), force),
             Lang::Java => lang::suggest_java(text, cursor, &self.lint_env(), force, self.has_database_class),
-            Lang::Python | Lang::JavaScript | Lang::TypeScript => lang::suggest_script(self.lang, text, cursor, &self.lint_env(), force, self.has_database_class),
             _ => None,
         }
     }
@@ -292,11 +290,7 @@ impl SqlEditor {
     fn problems(&self, text: &str) -> Vec<Problem> {
         let mut v = match self.lang {
             Lang::Sql => lint(text, &self.lint_env()),
-            Lang::Java | Lang::Python | Lang::JavaScript | Lang::TypeScript
-                if prefs().sql_in_strings =>
-            {
-                lang::code_sql_problems(text, &self.lint_env(), self.lang)
-            }
+            Lang::Java if prefs().sql_in_strings => lang::code_sql_problems(text, &self.lint_env(), self.lang),
             _ => Vec::new(),
         };
         if self.lang == Lang::Java {
@@ -628,7 +622,7 @@ impl SqlEditor {
             let indent: String = chars[line_start..nl].iter().take_while(|c| **c == ' ' || **c == '\t').collect();
             let before = chars[line_start..nl].iter().rev().find(|c| !c.is_whitespace()).copied();
             let after = chars.get(at).copied();
-            let opens = self.lang.braces() && matches!(before, Some('{' | '[' | '(')) || self.lang == Lang::Python && before == Some(':');
+            let opens = self.lang.braces() && matches!(before, Some('{' | '[' | '('));
             let mut insert = indent.clone();
             if opens {
                 insert.push_str(step);

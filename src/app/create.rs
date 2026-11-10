@@ -1,8 +1,8 @@
-// Neue Datei (Name links, Dateiendung fest rechts daneben) und neues Projekt (Java, Python, JavaScript).
+// Neue Datei (Name links, Dateiendung fest rechts daneben) und neues Projekt (Java).
 
 use super::*;
 use crate::dev::java::{self, Driver, project};
-use crate::dev::{self, node, python};
+use crate::dev;
 use crate::icons::{self, Icon};
 use crate::workspace;
 use eframe::egui::{Color32, Margin, Sense, Stroke, vec2};
@@ -15,9 +15,6 @@ use eframe::egui::{Color32, Margin, Sense, Stroke, vec2};
 pub enum FileKind {
     Sql,
     Java,
-    Python,
-    JavaScript,
-    TypeScript,
     Markdown,
     Text,
     Json,
@@ -29,12 +26,9 @@ pub enum FileKind {
 }
 
 impl FileKind {
-    const ALL: [FileKind; 11] = [
+    const ALL: [FileKind; 8] = [
         FileKind::Sql,
         FileKind::Java,
-        FileKind::Python,
-        FileKind::JavaScript,
-        FileKind::TypeScript,
         FileKind::Markdown,
         FileKind::Text,
         FileKind::Json,
@@ -47,9 +41,6 @@ impl FileKind {
         match self {
             FileKind::Sql => "sql",
             FileKind::Java => "java",
-            FileKind::Python => "py",
-            FileKind::JavaScript => "js",
-            FileKind::TypeScript => "ts",
             FileKind::Markdown => "md",
             FileKind::Text => "txt",
             FileKind::Json => "json",
@@ -64,9 +55,6 @@ impl FileKind {
         match self {
             FileKind::Sql => crate::i18n::tr("SQL-Datei", "SQL file"),
             FileKind::Java => crate::i18n::tr("Java-Klasse", "Java class"),
-            FileKind::Python => crate::i18n::tr("Python-Datei", "Python file"),
-            FileKind::JavaScript => crate::i18n::tr("JavaScript-Datei", "JavaScript file"),
-            FileKind::TypeScript => crate::i18n::tr("TypeScript-Datei", "TypeScript file"),
             FileKind::Markdown => crate::i18n::tr("Markdown-Datei", "Markdown file"),
             FileKind::Text => crate::i18n::tr("Textdatei", "Text file"),
             FileKind::Json => "JSON",
@@ -78,7 +66,7 @@ impl FileKind {
     }
 
     /// Arten im Menue "Neu"
-    pub const MENU: [FileKind; 6] = [FileKind::Java, FileKind::Sql, FileKind::Python, FileKind::JavaScript, FileKind::TypeScript, FileKind::Markdown];
+    pub const MENU: [FileKind; 3] = [FileKind::Java, FileKind::Sql, FileKind::Markdown];
 
 
     pub fn from_ext(ext: &str) -> Option<FileKind> {
@@ -96,49 +84,6 @@ pub enum JavaKind {
     Record,
     Interface,
     Enum,
-}
-
-/// Art einer neuen Python- bzw. JavaScript-Datei
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum ScriptKind {
-    Empty,
-    Main,
-    Database,
-    Class,
-    Module,
-    Test,
-}
-
-impl ScriptKind {
-    fn all(kind: FileKind) -> &'static [ScriptKind] {
-        if kind == FileKind::Python {
-            &[ScriptKind::Empty, ScriptKind::Main, ScriptKind::Database, ScriptKind::Class, ScriptKind::Test]
-        } else {
-            &[ScriptKind::Empty, ScriptKind::Main, ScriptKind::Database, ScriptKind::Module, ScriptKind::Class, ScriptKind::Test]
-        }
-    }
-
-    fn label(self) -> &'static str {
-        match self {
-            ScriptKind::Empty => crate::i18n::tr("Leer", "Empty"),
-            ScriptKind::Main => crate::i18n::tr("Mit main", "With main"),
-            ScriptKind::Database => crate::i18n::tr("Mit Datenbank", "With database"),
-            ScriptKind::Class => crate::i18n::tr("Klasse", "Class"),
-            ScriptKind::Module => crate::i18n::tr("Modul", "Module"),
-            ScriptKind::Test => "Test",
-        }
-    }
-
-    fn id(self) -> &'static str {
-        match self {
-            ScriptKind::Empty => "",
-            ScriptKind::Main => "main",
-            ScriptKind::Database => "database",
-            ScriptKind::Class => "class",
-            ScriptKind::Module => "module",
-            ScriptKind::Test => "test",
-        }
-    }
 }
 
 impl JavaKind {
@@ -163,14 +108,13 @@ pub struct NewFile {
     /// Art, wenn keine Endung getippt wurde (passend zum Ordner oder zuletzt benutzt)
     pub fallback: FileKind,
     pub java: JavaKind,
-    pub script: ScriptKind,
     /// Erstes Bild: Art vorschlagen
     ready: bool,
 }
 
 impl NewFile {
     pub fn new(dir: PathBuf) -> Self {
-        Self { dir, name: String::new(), fallback: FileKind::Sql, java: JavaKind::Database, script: ScriptKind::Database, ready: false }
+        Self { dir, name: String::new(), fallback: FileKind::Sql, java: JavaKind::Database, ready: false }
     }
 
     /// Mit fester Art (aus dem Menue "Neu"): ohne Endung wird diese ergaenzt
@@ -245,14 +189,6 @@ impl NewFile {
         let name = self.stem();
         match self.kind() {
             FileKind::Java => java_template(name, self.java, package_for(&self.dir).as_deref(), self.dir.join("Database.java").is_file(), conn, database),
-            FileKind::Python => {
-                let (t, l) = python::project::template(self.script.id(), dev::config().python_driver, self.dir.join("db.py").is_file());
-                (t.replace("class Name", &format!("class {}", dev::names::pascal(name))), l)
-            }
-            FileKind::JavaScript | FileKind::TypeScript => {
-                let (t, l) = node::project::template(self.script.id(), dev::config().node_driver, self.dir.join("db.js").is_file());
-                (t.replace("class Name", &format!("class {}", dev::names::pascal(name))).replace("{ Name }", &format!("{{ {} }}", dev::names::pascal(name))), l)
-            }
             // Wie in einem Skript fuer die Schule: die Datenbank wird gleich zu Beginn gewaehlt
             FileKind::Sql if !database.is_empty() => (format!("USE {};\n\n", crate::db::q(database)), 2),
             FileKind::Markdown => (format!("# {name}\n\n"), 2),
@@ -277,19 +213,13 @@ pub fn package_for(dir: &Path) -> Option<String> {
     Some(parts.join("."))
 }
 
-/// Naheliegende Art fuer einen Ordner: Java in Java-Projekten, Python neben .py-Dateien, JavaScript neben package.json
+/// Naheliegende Art fuer einen Ordner: Java in Java-Projekten und neben .java-Dateien
 fn context_kind(dir: &Path) -> Option<FileKind> {
     if dir.components().any(|c| c.as_os_str() == "java") || dir.join("pom.xml").is_file() {
         return Some(FileKind::Java);
     }
-    if dir.join("package.json").is_file() {
-        return Some(if dir.join("tsconfig.json").is_file() { FileKind::TypeScript } else { FileKind::JavaScript });
-    }
-    if dir.join("requirements.txt").is_file() || dir.join("pyproject.toml").is_file() {
-        return Some(FileKind::Python);
-    }
     let names: Vec<String> = std::fs::read_dir(dir).map(|rd| rd.flatten().map(|e| e.file_name().to_string_lossy().to_lowercase()).collect()).unwrap_or_default();
-    [("java", FileKind::Java), ("py", FileKind::Python), ("ts", FileKind::TypeScript), ("js", FileKind::JavaScript)].into_iter().find(|(e, _)| names.iter().any(|n| n.ends_with(&format!(".{e}")))).map(|(_, k)| k)
+    names.iter().any(|n| n.ends_with(".java")).then_some(FileKind::Java)
 }
 
 fn java_template(name: &str, kind: JavaKind, package: Option<&str>, has_database: bool, conn: &crate::db::ConnInfo, database: &str) -> (String, usize) {
@@ -373,14 +303,6 @@ impl EasyApp {
                 let items: Vec<(JavaKind, &str)> = JavaKind::ALL.iter().map(|k| (*k, k.label())).collect();
                 crate::widgets::segmented(ui, &mut dlg.java, &items);
             }
-            if matches!(kind, FileKind::Python | FileKind::JavaScript | FileKind::TypeScript) {
-                ui.add_space(8.0);
-                let items: Vec<(ScriptKind, &str)> = ScriptKind::all(kind).iter().map(|k| (*k, k.label())).collect();
-                if !ScriptKind::all(kind).contains(&dlg.script) {
-                    dlg.script = ScriptKind::Database;
-                }
-                crate::widgets::segmented(ui, &mut dlg.script, &items);
-            }
             ui.add_space(8.0);
             // Hinweis: was entsteht und wo, bzw. was nicht stimmt
             let problem = dlg.problem();
@@ -454,7 +376,7 @@ impl EasyApp {
     }
 
     // ------------------------------------------------------------------
-    // Neues Projekt (Java, Python, JavaScript)
+    // Neues Projekt (Java)
 
     pub(super) fn open_project_dialog(&mut self, lang: ProjectLang) {
         // Datenbanken und Tabellen frisch lesen (sie koennen auch von aussen angelegt worden sein)
@@ -467,13 +389,10 @@ impl EasyApp {
             name: String::new(),
             location: workspace::storage_root(),
             kind: project::Kind::from_id(&self.settings.java_project_kind),
-            py_kind: python::project::Kind::from_id(&self.settings.python_project_kind),
             package: "app".into(),
             database,
             tables,
             driver: cfg.java_driver,
-            py_driver: cfg.python_driver,
-            js_driver: cfg.node_driver,
             tests: cfg.junit,
             git: self.settings.git_init_projects,
             job: None,
@@ -510,8 +429,6 @@ impl EasyApp {
                             }
                             t
                         }
-                        ProjectLang::Python => vec![dev::Tool::Python],
-                        ProjectLang::Node => vec![dev::Tool::Node],
                     };
                     if dev::config().auto_download {
                         dev::install::ensure(&tools, ctx);
@@ -548,13 +465,6 @@ impl EasyApp {
             });
             ui.add_space(10.0);
             ui.add_enabled_ui(!busy, |ui| {
-                crate::widgets::row(ui, crate::i18n::tr("Sprache", "Language"), |ui| {
-                    let before = dlg.lang;
-                    let items: Vec<(ProjectLang, &str)> = ProjectLang::ALL.iter().map(|l| (*l, l.label())).collect();
-                    if crate::widgets::segmented(ui, &mut dlg.lang, &items) && dlg.name == ProjectDlg::free_name_for(before, &dlg.location) {
-                        dlg.name = dlg.free_name();
-                    }
-                });
                 crate::widgets::row(ui, crate::i18n::text("Name"), |ui| {
                     crate::widgets::text_field(ui, &mut dlg.name, "", Some(300.0));
                 });
@@ -579,30 +489,10 @@ impl EasyApp {
                             crate::widgets::segmented(ui, &mut dlg.driver, &items);
                         });
                     }
-                    ProjectLang::Python => {
-                        crate::widgets::row(ui, crate::i18n::tr("Pakete in", "Packages in"), |ui| {
-                            let items: Vec<(python::project::Kind, &str)> = python::project::Kind::ALL.iter().map(|k| (*k, k.label())).collect();
-                            crate::widgets::segmented(ui, &mut dlg.py_kind, &items);
-                        });
-                        crate::widgets::row(ui, crate::i18n::tr("Treiber", "Driver"), |ui| {
-                            let items: Vec<(python::Driver, &str)> = python::Driver::ALL.iter().map(|d| (*d, d.label())).collect();
-                            crate::widgets::segmented(ui, &mut dlg.py_driver, &items);
-                        });
-                    }
-                    ProjectLang::Node => {
-                        crate::widgets::row(ui, crate::i18n::tr("Treiber", "Driver"), |ui| {
-                            let items: Vec<(node::Driver, &str)> = node::Driver::ALL.iter().map(|d| (*d, d.label())).collect();
-                            crate::widgets::segmented(ui, &mut dlg.js_driver, &items);
-                        });
-                    }
                 }
                 crate::widgets::row(ui, crate::i18n::tr("Dazu", "Also"), |ui| {
                     ui.vertical(|ui| {
-                        let test = match dlg.lang {
-                            ProjectLang::Java => crate::i18n::tr("Tests mit JUnit", "Tests with JUnit"),
-                            ProjectLang::Python => crate::i18n::tr("Tests mit unittest", "Tests with unittest"),
-                            ProjectLang::Node => crate::i18n::tr("Tests mit node --test", "Tests with node --test"),
-                        };
+                        let test = crate::i18n::tr("Tests mit JUnit", "Tests with JUnit");
                         crate::widgets::check(ui, &mut dlg.tests, test);
                         crate::widgets::check(ui, &mut dlg.git, crate::i18n::tr("Git-Repository anlegen", "Create a Git repository"));
                     });
@@ -617,10 +507,7 @@ impl EasyApp {
                     }
                 });
                 if !dlg.tables.is_empty() {
-                    let label = match dlg.lang {
-                        ProjectLang::Java => crate::i18n::tr("Klassen für", "Classes for"),
-                        _ => crate::i18n::tr("Code für", "Code for"),
-                    };
+                    let label = crate::i18n::tr("Klassen für", "Classes for");
                     crate::widgets::row(ui, label, |ui| {
                         ui.vertical(|ui| {
                             let all = dlg.tables.iter().all(|t| t.1);
@@ -683,8 +570,6 @@ impl EasyApp {
         if create {
             match dlg.lang {
                 ProjectLang::Java => self.settings.java_project_kind = dlg.kind.id().to_string(),
-                ProjectLang::Python => self.settings.python_project_kind = dlg.py_kind.id().to_string(),
-                ProjectLang::Node => {}
             }
             self.settings.git_init_projects = dlg.git;
             self.settings.save();
@@ -697,7 +582,7 @@ impl EasyApp {
             let dir = dlg.location.join(&name);
             let (tx, rx) = std::sync::mpsc::channel();
             let repaint = ctx.clone();
-            let (lang, kind, py_kind, package, database, driver, py_driver, js_driver, tests, git) = (dlg.lang, dlg.kind, dlg.py_kind, dlg.package.trim().to_string(), dlg.database.clone(), dlg.driver, dlg.py_driver, dlg.js_driver, dlg.tests, dlg.git);
+            let (lang, kind, package, database, driver, tests, git) = (dlg.lang, dlg.kind, dlg.package.trim().to_string(), dlg.database.clone(), dlg.driver, dlg.tests, dlg.git);
             // Treiber laden bzw. neueste Version erfragen kann dauern: im Hintergrund
             std::thread::spawn(move || {
                 let r = match lang {
@@ -720,16 +605,6 @@ impl EasyApp {
                             junit_version: tests.then(dev::install::junit_version),
                         };
                         project::write(&dir, &spec)
-                    }
-                    ProjectLang::Python => {
-                        let version = python::latest_on_pypi(py_driver.package()).unwrap_or_else(|_| if py_driver == python::Driver::PyMySql { "1.2.3".into() } else { "26.10.0".into() });
-                        let spec = python::project::Spec { name, kind: py_kind, database, tables, host: conn.host.clone(), port: conn.port, user: conn.user.clone(), password, driver: py_driver, driver_version: version, tests };
-                        python::project::write(&dir, &spec)
-                    }
-                    ProjectLang::Node => {
-                        let version = node::latest_on_npm(js_driver.package()).unwrap_or_else(|_| if js_driver == node::Driver::Mysql2 { "3.24.6".into() } else { "3.5.4".into() });
-                        let spec = node::project::Spec { name, database, tables, host: conn.host.clone(), port: conn.port, user: conn.user.clone(), password, driver: js_driver, driver_version: version, tests };
-                        node::project::write(&dir, &spec)
                     }
                 };
                 let r = r.map(|main| {
@@ -754,9 +629,6 @@ impl EasyApp {
 fn hint_example(kind: FileKind) -> &'static str {
     match kind {
         FileKind::Java => "Main.java",
-        FileKind::Python => "main.py",
-        FileKind::JavaScript => "index.js",
-        FileKind::TypeScript => "index.ts",
         _ => "abfrage.sql",
     }
 }
@@ -771,18 +643,6 @@ fn default_name(dir: &Path, kind: FileKind) -> String {
             crate::i18n::tr("NeueKlasse", "NewClass")
         }
         FileKind::Markdown => crate::i18n::tr("Notizen", "Notes"),
-        FileKind::Python => {
-            if !dir.join("main.py").exists() {
-                return "main".into();
-            }
-            crate::i18n::tr("skript", "script")
-        }
-        FileKind::JavaScript | FileKind::TypeScript => {
-            if !dir.join(format!("index.{}", kind.ext())).exists() {
-                return "index".into();
-            }
-            crate::i18n::tr("modul", "module")
-        }
         _ => crate::i18n::tr("Neue Datei", "New file"),
     };
     let ext = if kind == FileKind::Other { "txt" } else { kind.ext() };
@@ -793,26 +653,12 @@ fn default_name(dir: &Path, kind: FileKind) -> String {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ProjectLang {
     Java,
-    Python,
-    Node,
 }
 
 impl ProjectLang {
-    const ALL: [ProjectLang; 3] = [ProjectLang::Java, ProjectLang::Python, ProjectLang::Node];
-
-    fn label(self) -> &'static str {
-        match self {
-            ProjectLang::Java => "Java",
-            ProjectLang::Python => "Python",
-            ProjectLang::Node => "JavaScript (Node.js)",
-        }
-    }
-
     fn icon(self) -> Icon {
         match self {
             ProjectLang::Java => Icon::Coffee,
-            ProjectLang::Python => Icon::Script,
-            ProjectLang::Node => Icon::Braces,
         }
     }
 }
@@ -822,14 +668,11 @@ pub struct ProjectDlg {
     pub name: String,
     pub location: PathBuf,
     pub kind: project::Kind,
-    pub py_kind: python::project::Kind,
     pub package: String,
     pub database: String,
     /// Tabellen und ob fuer sie Code entsteht
     pub tables: Vec<(String, bool)>,
     pub driver: Driver,
-    pub py_driver: python::Driver,
-    pub js_driver: node::Driver,
     pub tests: bool,
     pub git: bool,
     job: Option<std::sync::mpsc::Receiver<Result<(PathBuf, PathBuf), String>>>,
@@ -840,8 +683,6 @@ impl ProjectDlg {
     fn free_name_for(lang: ProjectLang, root: &Path) -> String {
         let base = match lang {
             ProjectLang::Java => crate::i18n::tr("Java-Projekt", "Java project"),
-            ProjectLang::Python => crate::i18n::tr("Python-Projekt", "Python project"),
-            ProjectLang::Node => crate::i18n::tr("JavaScript-Projekt", "JavaScript project"),
         };
         let mut name = base.to_string();
         let mut i = 2;

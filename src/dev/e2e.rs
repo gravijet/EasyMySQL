@@ -4,7 +4,7 @@
 // (Benutzer root ohne Passwort, Datenbank e2e mit der Tabelle kunde).
 
 use super::process::Launch;
-use super::{Config, Tool, install, lsp, node, python, tools};
+use super::{Config, Tool, install, lsp, tools};
 use crate::db::{ColumnInfo, TableInfo};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -81,77 +81,6 @@ fn fresh(name: &str) -> PathBuf {
     d
 }
 
-#[test]
-#[ignore = "laedt Python, Node.js und Treiber"]
-fn e2e_python_and_node_projects() {
-    let cfg = Config { python: "own".into(), node: "own".into(), ..Default::default() };
-    super::set_config(cfg.clone());
-    ensure(&[Tool::Python, Tool::PythonDrivers, Tool::Node, Tool::NodeDrivers]);
-    let t = tools();
-    println!("Python {:?}, Node {:?}, Treiber {:?} {:?}", t.python.as_ref().map(|p| &p.version), t.node.as_ref().map(|n| &n.version), t.python_drivers, t.node_drivers);
-
-    // Python: Projekt mit requirements.txt -> .venv, pip install, Syntaxpruefung, Start
-    for driver in python::Driver::ALL {
-        let dir = fresh(&format!("py-{}", driver.id()));
-        let version = python::latest_on_pypi(driver.package()).unwrap();
-        let spec = python::project::Spec { name: "E2E".into(), kind: python::project::Kind::Requirements, database: "e2e".into(), tables: vec![kunde()], host: "127.0.0.1".into(), port: port().unwrap_or(3306), user: "root".into(), password: None, driver, driver_version: version, tests: true };
-        let main = python::project::write(&dir, &spec).unwrap();
-        let req = python::Request { file: main.clone(), text: std::fs::read_to_string(&main).unwrap(), project: Some(dir.clone()), tools: Arc::clone(&t), cfg: cfg.clone(), live: Arc::default() };
-        let l = python::prepare(&req, python::Mode::Run).unwrap_or_else(|f| panic!("{driver:?}: {} {}", f.message, f.output));
-        assert!(dir.join(".venv").is_dir());
-        if port().is_some() {
-            let (ok, out) = run(&l, &db_env());
-            assert!(ok && out.contains("Ada"), "Python {driver:?}: {out}");
-            let lt = python::prepare(&req, python::Mode::Test).unwrap();
-            let (ok, out) = run(&lt, &db_env());
-            assert!(ok, "Python-Tests {driver:?}: {out}");
-        }
-        // Syntaxfehler kommen mit Zeile zurueck
-        std::fs::write(dir.join("repos.py"), "def x(:\n").unwrap();
-        let f = python::prepare(&req, python::Mode::Run).unwrap_err();
-        assert!(f.diags.iter().any(|d| d.file.ends_with("repos.py") && d.line == 0), "{f:?}");
-        println!("Python {driver:?}: ok");
-    }
-    // Lose Datei ohne Projekt: Treiber ueber PYTHONPATH
-    let dir = fresh("py-lose");
-    std::fs::create_dir_all(&dir).unwrap();
-    let f = dir.join("skript.py");
-    std::fs::write(&f, "import pymysql\nprint('treiber', pymysql.__name__)\n").unwrap();
-    let req = python::Request { file: f.clone(), text: std::fs::read_to_string(&f).unwrap(), project: None, tools: Arc::clone(&t), cfg: cfg.clone(), live: Arc::default() };
-    let (ok, out) = run(&python::prepare(&req, python::Mode::Run).unwrap(), &[]);
-    assert!(ok && out.contains("treiber pymysql"), "{out}");
-
-    // Node: npm install, node --check, Start
-    for driver in node::Driver::ALL {
-        let dir = fresh(&format!("js-{}", driver.id()));
-        let version = node::latest_on_npm(driver.package()).unwrap();
-        let spec = node::project::Spec { name: "E2E".into(), database: "e2e".into(), tables: vec![kunde()], host: "127.0.0.1".into(), port: port().unwrap_or(3306), user: "root".into(), password: None, driver, driver_version: version, tests: true };
-        let main = node::project::write(&dir, &spec).unwrap();
-        let req = node::Request { file: main.clone(), project: Some(dir.clone()), tools: Arc::clone(&t), cfg: cfg.clone(), live: Arc::default() };
-        let l = node::prepare(&req, node::Mode::Run).unwrap_or_else(|f| panic!("{driver:?}: {} {}", f.message, f.output));
-        assert!(dir.join("node_modules").join(driver.package()).is_dir());
-        if port().is_some() {
-            let (ok, out) = run(&l, &db_env());
-            assert!(ok && out.contains("Ada"), "Node {driver:?}: {out}");
-            let (ok, out) = run(&node::prepare(&req, node::Mode::Test).unwrap(), &db_env());
-            assert!(ok, "Node-Tests {driver:?}: {out}");
-        }
-        std::fs::write(&main, "const x = ;\n").unwrap();
-        let f = node::prepare(&req, node::Mode::Run).unwrap_err();
-        assert_eq!(f.diags.first().map(|d| d.line), Some(0), "{f:?}");
-        println!("Node {driver:?}: ok");
-    }
-    // TypeScript direkt mit Node
-    let dir = fresh("ts");
-    std::fs::create_dir_all(&dir).unwrap();
-    let f = dir.join("app.ts");
-    std::fs::write(&f, "const n: number = 41;\nconsole.log('ts', n + 1);\n").unwrap();
-    let req = node::Request { file: f.clone(), project: None, tools: Arc::clone(&t), cfg: cfg.clone(), live: Arc::default() };
-    let (ok, out) = run(&node::prepare(&req, node::Mode::Run).unwrap(), &[]);
-    assert!(ok && out.contains("ts 42"), "{out}");
-}
-
-/// Sprachserver starten und Fehler, Definition und Umbenennen abfragen
 fn lsp_roundtrip(lang: crate::sqledit::Lang, root: &Path, file: &Path, broken: &str, defn_at: usize) {
     let ctx = eframe::egui::Context::default();
     let start = Instant::now();
@@ -206,22 +135,8 @@ fn lsp_roundtrip(lang: crate::sqledit::Lang, root: &Path, file: &Path, broken: &
 #[ignore = "laedt die Sprachserver (einige hundert MB)"]
 fn e2e_language_servers() {
     super::set_config(Config::default());
-    ensure(&[Tool::Jdk, Tool::Node, Tool::JavaLsp, Tool::PythonLsp, Tool::JsLsp]);
+    ensure(&[Tool::Jdk, Tool::JavaLsp]);
     use crate::sqledit::Lang;
-    // Python
-    let dir = fresh("lsp-py");
-    std::fs::create_dir_all(&dir).unwrap();
-    let f = dir.join("app.py");
-    let py = "def rechne(x):\n    return x * 2\n\nprint(rechne(2))\nprint(unbekannt)\n";
-    std::fs::write(&f, py).unwrap();
-    lsp_roundtrip(Lang::Python, &dir, &f, py, py.find("rechne(2)").unwrap());
-    // JavaScript
-    let dir = fresh("lsp-js");
-    std::fs::create_dir_all(&dir).unwrap();
-    let f = dir.join("app.ts");
-    let js = "function rechne(x: number) {\n  return x * 2;\n}\nconst s: string = rechne(2);\n";
-    std::fs::write(&f, js).unwrap();
-    lsp_roundtrip(Lang::TypeScript, &dir, &f, js, js.rfind("rechne").unwrap());
     // Java (einfaches Projekt)
     let dir = fresh("lsp-java");
     let src = dir.join("src/app");

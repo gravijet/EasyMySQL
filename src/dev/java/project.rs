@@ -451,6 +451,10 @@ mod tests {
         assert!(maven.contains(&"pom.xml".to_string()) && maven.contains(&"src/main/java/de/schule/SchuelerDao.java".to_string()) && maven.contains(&"src/main/resources/db.properties".to_string()));
         assert!(names(Kind::GradleKotlin).contains(&"settings.gradle.kts".to_string()));
         assert!(names(Kind::GradleGroovy).contains(&"build.gradle".to_string()));
+        // Neue Projekte bekommen keine README
+        for k in [Kind::Plain, Kind::Maven, Kind::GradleKotlin, Kind::GradleGroovy] {
+            assert!(!names(k).iter().any(|n| n.to_lowercase().contains("readme")), "{k:?}");
+        }
         let pom = files(&spec(Kind::Maven)).into_iter().find(|(p, _)| p.ends_with("pom.xml")).unwrap().1;
         assert!(pom.contains("<artifactId>mariadb-java-client</artifactId>") && pom.contains("<version>4.0.0</version>") && pom.contains("<artifactId>mein-schulprojekt</artifactId>"));
         let props = files(&spec(Kind::Plain)).into_iter().find(|(p, _)| p.ends_with("db.properties")).unwrap().1;

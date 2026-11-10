@@ -1,7 +1,6 @@
 // Werkzeuge herunterladen: immer die neueste stabile Version, mit Pruefsumme, im Hintergrund.
 // Quellen: Adoptium (Temurin-JDK), Maven Central (Treiber, Maven, JUnit), services.gradle.org (Gradle),
-// python-build-standalone (Python), nodejs.org (Node.js), download.eclipse.org (JDT LS), GitHub-Releases
-// (MinGit, GitHub CLI); Python- und Node-Pakete ueber pip bzw. npm.
+// download.eclipse.org (JDT LS), GitHub-Releases (MinGit, GitHub CLI, Codex), Claude Code.
 
 use super::java::{Driver, java_dir, lib_dir};
 use super::{Tool, is_stable, newest_stable, tool_root, tools};
@@ -185,60 +184,6 @@ fn github_latest(repo: &str) -> Result<(String, Vec<serde_json::Value>), String>
     Ok((tag, v["assets"].as_array().cloned().unwrap_or_default()))
 }
 
-fn python_target() -> &'static str {
-    match (cfg!(windows), cfg!(target_os = "macos"), cfg!(target_arch = "aarch64")) {
-        (true, _, true) => "aarch64-pc-windows-msvc",
-        (true, _, false) => "x86_64-pc-windows-msvc",
-        (_, true, true) => "aarch64-apple-darwin",
-        (_, true, false) => "x86_64-apple-darwin",
-        (_, _, true) => "aarch64-unknown-linux-gnu",
-        _ => "x86_64-unknown-linux-gnu",
-    }
-}
-
-/// Neuestes stabiles CPython aus python-build-standalone (fertig entpackbar, mit pip und venv)
-pub fn latest_python() -> Result<Package, String> {
-    let (_, assets) = github_latest("astral-sh/python-build-standalone")?;
-    let target = python_target();
-    let mut best: Option<(String, &serde_json::Value)> = None;
-    for a in &assets {
-        let name = a["name"].as_str().unwrap_or("");
-        let Some(rest) = name.strip_prefix("cpython-") else { continue };
-        if !name.ends_with(&format!("{target}-install_only_stripped.tar.gz")) {
-            continue;
-        }
-        let version = rest.split('+').next().unwrap_or("");
-        if !is_stable(version) {
-            continue;
-        }
-        if best.as_ref().is_none_or(|(v, _)| super::is_newer(version, v)) {
-            best = Some((version.to_string(), a));
-        }
-    }
-    let (version, asset) = best.ok_or_else(|| crate::i18n::tr("Kein Python für dieses System gefunden.", "No Python found for this system.").to_string())?;
-    let url = asset["browser_download_url"].as_str().ok_or("python: url")?.to_string();
-    let checksum = github_digest(asset).ok_or("python: digest")?;
-    Ok(Package { file: asset["name"].as_str().unwrap_or("python.tar.gz").to_string(), version, url, checksum })
-}
-
-/// Neueste LTS-Version von Node.js
-pub fn latest_node() -> Result<Package, String> {
-    let list = get_json("https://nodejs.org/dist/index.json")?;
-    let rel = list.as_array().and_then(|a| a.iter().find(|r| !r["lts"].is_boolean() || r["lts"].as_bool() == Some(true))).ok_or("Node.js: lts")?;
-    let tag = rel["version"].as_str().ok_or("Node.js: version")?.to_string();
-    let arch = if cfg!(target_arch = "aarch64") { "arm64" } else { "x64" };
-    let file = if cfg!(windows) {
-        format!("node-{tag}-win-{arch}.zip")
-    } else if cfg!(target_os = "macos") {
-        format!("node-{tag}-darwin-{arch}.tar.gz")
-    } else {
-        format!("node-{tag}-linux-{arch}.tar.gz")
-    };
-    let sums = get_text(&format!("https://nodejs.org/dist/{tag}/SHASUMS256.txt"))?;
-    let sha = sums.lines().find_map(|l| l.split_once("  ").filter(|(_, n)| n.trim() == file).map(|(h, _)| h.trim().to_ascii_lowercase())).ok_or("Node.js: SHASUMS256")?;
-    Ok(Package { version: tag.trim_start_matches('v').to_string(), url: format!("https://nodejs.org/dist/{tag}/{file}"), checksum: Checksum::Sha256(sha), file })
-}
-
 /// Neuester Meilenstein des Eclipse JDT Language Server
 pub fn latest_jdtls() -> Result<Package, String> {
     let base = "https://download.eclipse.org/jdtls/milestones";
@@ -346,20 +291,13 @@ pub fn install_ai(ziel: crate::mcp::setup::Target, cancel: &AtomicBool) -> Resul
 
 /// Neueste stabile Version eines Werkzeugs (fuer Updates und die Anzeige)
 pub fn latest_version(tool: Tool) -> Result<String, String> {
-    let cfg = super::config();
     match tool {
         Tool::Jdk => latest_jdk().map(|p| p.version),
         Tool::JavaDrivers => latest_maven(Driver::MariaDb.group(), Driver::MariaDb.artifact()),
         Tool::Maven => latest_maven_dist().map(|p| p.version),
         Tool::Gradle => latest_gradle().map(|p| p.version),
         Tool::JUnit => latest_junit().map(|p| p.version),
-        Tool::Python => latest_python().map(|p| p.version),
-        Tool::PythonDrivers => super::python::latest_on_pypi(cfg.python_driver.package()),
-        Tool::Node => latest_node().map(|p| p.version),
-        Tool::NodeDrivers => super::node::latest_on_npm(cfg.node_driver.package()),
         Tool::JavaLsp => latest_jdtls().map(|p| p.version),
-        Tool::PythonLsp => super::node::latest_on_npm("pyright"),
-        Tool::JsLsp => super::node::latest_on_npm("typescript"),
         Tool::Git => latest_mingit().map(|p| p.version),
         Tool::GhCli => latest_gh().map(|p| p.version),
     }
@@ -542,8 +480,6 @@ fn install_archive(tool: Tool, pkg: &Package, dir: &Path, prefix: &str, progress
 
 /// Ein Werkzeug in der neuesten Version installieren. Liefert die installierte Version.
 fn install_tool(tool: Tool, progress: &Progress, cancel: &AtomicBool, stage: &dyn Fn(String)) -> Result<String, String> {
-    let cfg = super::config();
-    let live = Mutex::new(String::new());
     match tool {
         Tool::JavaDrivers => {
             std::fs::create_dir_all(lib_dir()).map_err(|e| e.to_string())?;
@@ -564,24 +500,6 @@ fn install_tool(tool: Tool, progress: &Progress, cancel: &AtomicBool, stage: &dy
             install_jar(&pkg, "junit-platform-console-standalone-", progress, cancel)?;
             return Ok(pkg.version);
         }
-        Tool::PythonDrivers => {
-            let d = cfg.python_driver;
-            stage(crate::tr_format!("{} wird mit pip installiert …", "Installing {} with pip …", d.label()));
-            return super::python::install_driver(&tools(), d, &live);
-        }
-        Tool::NodeDrivers => {
-            let d = cfg.node_driver;
-            stage(crate::tr_format!("{} wird mit npm installiert …", "Installing {} with npm …", d.label()));
-            super::node::npm_install(&tools(), &super::node::node_dir().join("lib"), &[d.package()], &live)?;
-            return super::node::package_version(&super::node::modules_dir().join(d.package())).ok_or_else(|| "npm".to_string());
-        }
-        Tool::PythonLsp | Tool::JsLsp => {
-            let pkgs: &[&str] = if tool == Tool::PythonLsp { &["pyright"] } else { &["typescript", "typescript-language-server"] };
-            stage(crate::tr_format!("{} wird mit npm installiert …", "Installing {} with npm …", tool.label()));
-            let prefix = tool_root().join("sprachserver").join("npm");
-            super::node::npm_install(&tools(), &prefix, pkgs, &live)?;
-            return super::node::package_version(&prefix.join("node_modules").join(pkgs[0])).ok_or_else(|| "npm".to_string());
-        }
         Tool::Git if !cfg!(windows) => {
             return Err(crate::i18n::tr("Git bitte über die Paketverwaltung des Systems installieren (z. B. sudo apt install git).", "Please install Git with the system package manager (e.g. sudo apt install git).").into());
         }
@@ -592,8 +510,6 @@ fn install_tool(tool: Tool, progress: &Progress, cancel: &AtomicBool, stage: &dy
         Tool::Jdk => (latest_jdk()?, java_dir(), "jdk-"),
         Tool::Maven => (latest_maven_dist()?, java_dir(), "apache-maven-"),
         Tool::Gradle => (latest_gradle()?, java_dir(), "gradle-"),
-        Tool::Python => (latest_python()?, super::python::python_dir(), "python-"),
-        Tool::Node => (latest_node()?, super::node::node_dir(), "node-v"),
         Tool::JavaLsp => (latest_jdtls()?, tool_root().join("sprachserver"), "jdtls-"),
         Tool::Git => (latest_mingit()?, tool_root().join("git"), "git-"),
         Tool::GhCli => (latest_gh()?, tool_root().join("git"), "gh_"),
@@ -679,7 +595,7 @@ pub fn status_line(st: &Status) -> String {
 /// Werkzeuge installieren bzw. aktualisieren (im Hintergrund; bereits wartende werden nicht doppelt
 /// eingereiht).
 pub fn install(list: &[Tool], ctx: &egui::Context) {
-    // Voraussetzungen (Node fuer npm-Pakete, Python fuer pip) zuerst
+    // Voraussetzungen (JDK fuer den Sprachserver) zuerst
     let have = tools();
     let mut wanted: Vec<Tool> = Vec::new();
     for t in list {
@@ -824,7 +740,7 @@ pub fn find_updates() -> Vec<(Tool, String)> {
 pub fn weekly_update(ctx: &egui::Context) {
     let Some(interval) = super::config().updates.interval() else { return };
     let due = std::fs::metadata(check_file()).and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok()).is_none_or(|age| age > interval);
-    if !due || !["java", "python", "node", "sprachserver", "git"].iter().any(|d| tool_root().join(d).is_dir()) || CHECKING.swap(true, Ordering::Relaxed) {
+    if !due || !["java", "sprachserver", "git"].iter().any(|d| tool_root().join(d).is_dir()) || CHECKING.swap(true, Ordering::Relaxed) {
         return;
     }
     let ctx = ctx.clone();

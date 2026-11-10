@@ -1,4 +1,4 @@
-// Sprachen ausser SQL im Editor: Java, Python, JavaScript/TypeScript (jeweils mit SQL in Zeichenketten),
+// Sprachen ausser SQL im Editor: Java (mit SQL in Zeichenketten),
 // Gradle-Skripte, XML, JSON, .properties. Hervorhebung, Kommentarzeichen, Vorschlaege und die SQL-Pruefung
 // in Zeichenketten.
 
@@ -13,9 +13,6 @@ pub enum Lang {
     #[default]
     Sql,
     Java,
-    Python,
-    JavaScript,
-    TypeScript,
     /// build.gradle(.kts) und andere Kotlin/Groovy-Dateien
     Gradle,
     Xml,
@@ -31,9 +28,6 @@ impl Lang {
         match ext {
             "sql" => Lang::Sql,
             "java" => Lang::Java,
-            "py" | "pyw" | "pyi" => Lang::Python,
-            "js" | "mjs" | "cjs" | "jsx" => Lang::JavaScript,
-            "ts" | "mts" | "cts" | "tsx" => Lang::TypeScript,
             "gradle" | "kts" | "kt" | "groovy" => Lang::Gradle,
             "xml" | "pom" | "html" | "htm" | "xsd" | "svg" => Lang::Xml,
             "json" => Lang::Json,
@@ -47,8 +41,8 @@ impl Lang {
     pub fn comment(self) -> Option<&'static str> {
         match self {
             Lang::Sql => Some("--"),
-            Lang::Java | Lang::Gradle | Lang::JavaScript | Lang::TypeScript => Some("//"),
-            Lang::Properties | Lang::Python => Some("#"),
+            Lang::Java | Lang::Gradle => Some("//"),
+            Lang::Properties => Some("#"),
             _ => None,
         }
     }
@@ -56,33 +50,25 @@ impl Lang {
     /// Einrueckung je Ebene
     pub fn indent(self) -> &'static str {
         match self {
-            Lang::Java | Lang::Gradle | Lang::Python => "    ",
+            Lang::Java | Lang::Gradle => "    ",
             _ => "  ",
         }
     }
 
     /// Code mit geschweiften Klammern (Einruecken nach `{`)
     pub fn braces(self) -> bool {
-        matches!(self, Lang::Java | Lang::Gradle | Lang::Json | Lang::JavaScript | Lang::TypeScript | Lang::Python)
+        matches!(self, Lang::Java | Lang::Gradle | Lang::Json)
     }
 
     /// Sprache mit Ausfuehren, Vorlagen und SQL in Zeichenketten
     pub fn runnable(self) -> bool {
-        matches!(self, Lang::Java | Lang::Python | Lang::JavaScript | Lang::TypeScript)
-    }
-
-    /// JavaScript oder TypeScript
-    pub fn is_js(self) -> bool {
-        matches!(self, Lang::JavaScript | Lang::TypeScript)
+        self == Lang::Java
     }
 
     /// Name fuer Sprachserver (LSP languageId)
     pub fn lsp_id(self) -> &'static str {
         match self {
             Lang::Java => "java",
-            Lang::Python => "python",
-            Lang::JavaScript => "javascript",
-            Lang::TypeScript => "typescript",
             _ => "plaintext",
         }
     }
@@ -91,9 +77,6 @@ impl Lang {
         match self {
             Lang::Sql => "SQL",
             Lang::Java => "Java",
-            Lang::Python => "Python",
-            Lang::JavaScript => "JavaScript",
-            Lang::TypeScript => "TypeScript",
             Lang::Gradle => "Gradle",
             Lang::Xml => "XML",
             Lang::Json => "JSON",
@@ -117,55 +100,27 @@ const GRADLE_WORDS: &[&str] = &[
     "val", "var", "fun", "def", "it", "id", "version", "apply", "mavenCentral", "google", "register", "named", "withType", "configureEach",
 ];
 
-const PY_KEYWORDS: &[&str] = &[
-    "and", "as", "assert", "async", "await", "break", "case", "class", "continue", "def", "del", "elif", "else", "except", "finally", "for", "from", "global", "if", "import", "in",
-    "is", "lambda", "match", "nonlocal", "not", "or", "pass", "raise", "return", "try", "while", "with", "yield",
-];
-const PY_CONSTS: &[&str] = &["True", "False", "None"];
-const PY_BUILTINS: &[&str] = &[
-    "print", "len", "range", "open", "str", "int", "float", "list", "dict", "set", "tuple", "bool", "bytes", "type", "isinstance", "enumerate", "zip", "map", "filter", "sorted", "sum",
-    "min", "max", "abs", "input", "super", "round", "any", "all", "repr", "iter", "next", "getattr", "setattr", "hasattr",
-];
-const JS_KEYWORDS: &[&str] = &[
-    "async", "await", "break", "case", "catch", "class", "const", "continue", "debugger", "default", "delete", "do", "else", "export", "extends", "finally", "for", "from", "function",
-    "get", "if", "import", "in", "instanceof", "let", "new", "of", "return", "set", "static", "super", "switch", "this", "throw", "try", "typeof", "var", "void", "while", "with",
-    "yield",
-];
-const TS_KEYWORDS: &[&str] = &["interface", "type", "enum", "implements", "private", "public", "protected", "readonly", "abstract", "as", "declare", "namespace", "keyof", "infer", "is", "satisfies", "unknown", "never", "any"];
-const JS_CONSTS: &[&str] = &["true", "false", "null", "undefined", "NaN", "Infinity"];
 
 /// Bereiche (Code, Kommentar, Zeichenkette) und Zeichenketten einer Sprache
 pub fn spans_and_literals(chars: &[char], lang: Lang) -> (Vec<(Span, usize, usize)>, Vec<Literal>) {
-    match lang {
-        Lang::Python => (super::scan::python_spans(chars), super::scan::python_literals(chars)),
-        Lang::JavaScript | Lang::TypeScript => (super::scan::js_spans(chars), super::scan::js_literals(chars)),
-        _ => (source::spans(chars), source::literals(chars)),
-    }
+    let _ = lang;
+    (source::spans(chars), source::literals(chars))
 }
 
 /// Farbe eines Wortes im Code
 fn word_color(word: &str, lang: Lang, call: bool, pal: &crate::style::Pal) -> Color32 {
     let keyword = match lang {
-        Lang::Python => PY_KEYWORDS.contains(&word),
-        Lang::JavaScript => JS_KEYWORDS.contains(&word),
-        Lang::TypeScript => JS_KEYWORDS.contains(&word) || TS_KEYWORDS.contains(&word),
         Lang::Gradle => GRADLE_WORDS.contains(&word) || source::KEYWORDS.binary_search(&word).is_ok(),
         _ => source::KEYWORDS.binary_search(&word).is_ok() || matches!(word, "var" | "record" | "yield" | "sealed" | "permits"),
     };
-    let constant = match lang {
-        Lang::Python => PY_CONSTS.contains(&word),
-        Lang::JavaScript | Lang::TypeScript => JS_CONSTS.contains(&word),
-        _ => matches!(word, "true" | "false" | "null"),
-    };
+    let constant = matches!(word, "true" | "false" | "null");
     if constant {
         pal.syn_const
     } else if keyword {
         pal.syn_keyword
-    } else if lang == Lang::Python && matches!(word, "self" | "cls") {
-        pal.syn_variable
     } else if word.len() > 1 && word.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_') {
         pal.syn_const
-    } else if call || (lang == Lang::Python && PY_BUILTINS.contains(&word)) {
+    } else if call {
         pal.syn_function
     } else if word.starts_with(|c: char| c.is_uppercase()) {
         pal.syn_type
@@ -174,7 +129,7 @@ fn word_color(word: &str, lang: Lang, call: bool, pal: &crate::style::Pal) -> Co
     }
 }
 
-/// Java, Python, JavaScript und Gradle farbig. Zeichenketten, die nach SQL aussehen, werden als SQL hervorgehoben.
+/// Java und Gradle farbig. Zeichenketten, die nach SQL aussehen, werden als SQL hervorgehoben.
 pub fn highlight_code(text: &str, font: FontId, lang: Lang) -> LayoutJob {
     let pal = crate::style::pal();
     let mut job = LayoutJob::default();
@@ -217,8 +172,8 @@ pub fn highlight_code(text: &str, font: FontId, lang: Lang) -> LayoutJob {
                             i += 1;
                         }
                         push(&mut job, slice(start, i), &font, pal.syn_number);
-                    } else if is_word_char(c) || (c == '$' && lang.is_js()) {
-                        while i < b && (is_word_char(chars[i]) || (chars[i] == '$' && lang.is_js())) {
+                    } else if is_word_char(c) {
+                        while i < b && is_word_char(chars[i]) {
                             i += 1;
                         }
                         let word = slice(start, i);
@@ -229,7 +184,7 @@ pub fn highlight_code(text: &str, font: FontId, lang: Lang) -> LayoutJob {
                         let call = j < b && chars[j] == '(';
                         push(&mut job, word, &font, word_color(word, lang, call, pal));
                     } else {
-                        while i < b && !is_word_char(chars[i]) && !chars[i].is_ascii_digit() && chars[i] != '@' && !(chars[i] == '$' && lang.is_js()) {
+                        while i < b && !is_word_char(chars[i]) && !chars[i].is_ascii_digit() && chars[i] != '@' {
                             i += 1;
                         }
                         if i == start {
@@ -365,7 +320,7 @@ pub fn highlight_json(text: &str, font: FontId) -> LayoutJob {
 pub fn highlight_lang(text: &str, font: FontId, lang: Lang) -> LayoutJob {
     match lang {
         Lang::Sql => super::highlight(text, font),
-        Lang::Java | Lang::Gradle | Lang::Python | Lang::JavaScript | Lang::TypeScript => highlight_code(text, font, lang),
+        Lang::Java | Lang::Gradle => highlight_code(text, font, lang),
         Lang::Xml => highlight_xml(text, font),
         Lang::Json => highlight_json(text, font),
         Lang::Properties => highlight_properties(text, font),
@@ -378,11 +333,11 @@ pub fn highlight_lang(text: &str, font: FontId, lang: Lang) -> LayoutJob {
 }
 
 // ---------------------------------------------------------------------------
-// SQL in Zeichenketten (Java, Python, JavaScript)
+// SQL in Zeichenketten (Java)
 
 /// Inhalt einer Zeichenkette fuer die SQL-Pruefung: Escapes (\n, \", …) werden zu gleich langen, harmlosen
-/// Zeichen, damit die Positionen stimmen. Platzhalter von Python (%s, %(name)s) werden zu `?`.
-fn sql_view(content: &[char], lang: Lang) -> String {
+/// Zeichen, damit die Positionen stimmen.
+fn sql_view(content: &[char]) -> String {
     let mut out = String::with_capacity(content.len());
     let mut i = 0;
     while i < content.len() {
@@ -395,23 +350,6 @@ fn sql_view(content: &[char], lang: Lang) -> String {
                 _ => ' ',
             });
             i += 2;
-        } else if lang == Lang::Python && content[i] == '%' && content.get(i + 1) == Some(&'s') {
-            out.push_str("? ");
-            i += 2;
-        } else if lang == Lang::Python && content[i] == '%' && content.get(i + 1) == Some(&'(') {
-            // %(name)s
-            let end = content[i..].iter().position(|c| *c == ')').map(|p| i + p + 1);
-            match end {
-                Some(e) if content.get(e) == Some(&'s') => {
-                    out.push('?');
-                    out.extend(std::iter::repeat_n(' ', e - i));
-                    i = e + 1;
-                }
-                _ => {
-                    out.push('%');
-                    i += 1;
-                }
-            }
         } else {
             out.push(content[i]);
             i += 1;
@@ -435,7 +373,7 @@ pub fn code_sql_problems(text: &str, env: &Env, lang: Lang) -> Vec<Problem> {
     let chars: Vec<char> = text.chars().collect();
     let mut out = Vec::new();
     for l in checkable(&chars, lang) {
-        let sql = sql_view(&chars[l.content.0..l.content.1], lang);
+        let sql = sql_view(&chars[l.content.0..l.content.1]);
         let off = l.content.0;
         for mut p in lint(&sql, env) {
             // Ein fehlendes Semikolon am Ende ist in Programmcode normal
@@ -582,7 +520,7 @@ pub fn suggest_java(text: &str, cursor: usize, env: &Env, force: bool, has_datab
                 if !(source::looks_like_sql(&content) || force && content.trim().is_empty()) || cursor < lit.content.0 {
                     return None;
                 }
-                let sql = sql_view(&chars[lit.content.0..lit.content.1], Lang::Java);
+                let sql = sql_view(&chars[lit.content.0..lit.content.1]);
                 let mut s = complete::suggest(&sql, cursor - lit.content.0, env, force)?;
                 s.word_start += lit.content.0;
                 if !lit.block {
@@ -674,276 +612,6 @@ pub fn suggest_java(text: &str, cursor: usize, env: &Env, force: bool, has_datab
     (!items.is_empty()).then_some(Suggestion { items, word_start: s })
 }
 
-// ---------------------------------------------------------------------------
-// Vorschlaege in Python und JavaScript
-
-/// Methoden und Felder nach `x.` je nach Art von x: (Anzeige, Einfuegen mit \u{1} als Cursor, Rueckgabe)
-fn script_members(lang: Lang, kind: &str) -> &'static [(&'static str, &'static str, &'static str)] {
-    match (lang == Lang::Python, kind) {
-        (true, "cursor") => &[
-            ("execute(sql, params)", "execute(\"\u{1}\")", "int"),
-            ("executemany(sql, rows)", "executemany(\"\u{1}\", )", "int"),
-            ("fetchone()", "fetchone()\u{1}", "dict | None"),
-            ("fetchall()", "fetchall()\u{1}", "list[dict]"),
-            ("fetchmany(size)", "fetchmany(\u{1})", "list[dict]"),
-            ("rowcount", "rowcount\u{1}", "int"),
-            ("lastrowid", "lastrowid\u{1}", "int"),
-            ("description", "description\u{1}", "tuple"),
-            ("close()", "close()\u{1}", "None"),
-        ],
-        (true, "connection") => &[
-            ("cursor()", "cursor()\u{1}", "Cursor"),
-            ("commit()", "commit()\u{1}", "None"),
-            ("rollback()", "rollback()\u{1}", "None"),
-            ("ping()", "ping()\u{1}", "None"),
-            ("autocommit(on)", "autocommit(\u{1})", "None"),
-            ("close()", "close()\u{1}", "None"),
-        ],
-        (true, "db") => &[("connect()", "connect()\u{1}", "Connection"), ("cursor(con)", "cursor(con)\u{1}", "Cursor"), ("settings()", "settings()\u{1}", "dict")],
-        (true, "str") => &[
-            ("upper()", "upper()\u{1}", "str"),
-            ("lower()", "lower()\u{1}", "str"),
-            ("strip()", "strip()\u{1}", "str"),
-            ("split(sep)", "split(\u{1})", "list[str]"),
-            ("join(items)", "join(\u{1})", "str"),
-            ("replace(old, new)", "replace(\u{1})", "str"),
-            ("format(…)", "format(\u{1})", "str"),
-            ("startswith(text)", "startswith(\u{1})", "bool"),
-            ("endswith(text)", "endswith(\u{1})", "bool"),
-        ],
-        (true, "list") => &[
-            ("append(x)", "append(\u{1})", "None"),
-            ("extend(items)", "extend(\u{1})", "None"),
-            ("insert(i, x)", "insert(\u{1})", "None"),
-            ("pop()", "pop()\u{1}", "item"),
-            ("sort()", "sort()\u{1}", "None"),
-            ("index(x)", "index(\u{1})", "int"),
-            ("count(x)", "count(\u{1})", "int"),
-        ],
-        (true, "dict") => &[("get(key, default)", "get(\u{1})", "value"), ("keys()", "keys()\u{1}", "keys"), ("values()", "values()\u{1}", "values"), ("items()", "items()\u{1}", "items")],
-        (false, "pool") => &[
-            ("query(sql, params)", "query('\u{1}')", "Promise"),
-            ("execute(sql, params)", "execute('\u{1}')", "Promise"),
-            ("getConnection()", "getConnection()\u{1}", "Promise<Connection>"),
-            ("end()", "end()\u{1}", "Promise"),
-        ],
-        (false, "connection") => &[
-            ("query(sql, params)", "query('\u{1}')", "Promise"),
-            ("execute(sql, params)", "execute('\u{1}')", "Promise"),
-            ("beginTransaction()", "beginTransaction()\u{1}", "Promise"),
-            ("commit()", "commit()\u{1}", "Promise"),
-            ("rollback()", "rollback()\u{1}", "Promise"),
-            ("release()", "release()\u{1}", "void"),
-            ("end()", "end()\u{1}", "Promise"),
-        ],
-        (false, "db") => &[("query(sql, params)", "query('\u{1}')", "Promise<rows>"), ("close()", "close()\u{1}", "Promise"), ("pool()", "pool()\u{1}", "Pool"), ("settings()", "settings()\u{1}", "object")],
-        (false, "console") => &[("log(…)", "log(\u{1})", "void"), ("error(…)", "error(\u{1})", "void"), ("warn(…)", "warn(\u{1})", "void"), ("table(rows)", "table(\u{1})", "void")],
-        (false, "result") => &[("affectedRows", "affectedRows\u{1}", "number"), ("insertId", "insertId\u{1}", "number")],
-        (false, "array") => &[
-            ("length", "length\u{1}", "number"),
-            ("map(fn)", "map((\u{1}) => )", "Array"),
-            ("filter(fn)", "filter((\u{1}) => )", "Array"),
-            ("forEach(fn)", "forEach((\u{1}) => )", "void"),
-            ("find(fn)", "find((\u{1}) => )", "item"),
-            ("push(x)", "push(\u{1})", "number"),
-            ("join(sep)", "join(\u{1})", "string"),
-        ],
-        (false, "JSON") => &[("stringify(value)", "stringify(\u{1})", "string"), ("parse(text)", "parse(\u{1})", "any")],
-        (false, "Object") => &[("keys(o)", "keys(\u{1})", "string[]"), ("values(o)", "values(\u{1})", "any[]"), ("entries(o)", "entries(\u{1})", "[k, v][]")],
-        (false, "process") => &[("env", "env\u{1}", "object"), ("argv", "argv\u{1}", "string[]"), ("exit(code)", "exit(\u{1})", "never"), ("exitCode", "exitCode\u{1}", "number")],
-        _ => &[],
-    }
-}
-
-/// Art einer Variablen in Python/JavaScript: aus dem Namen und der Zuweisung davor
-fn script_kind(lang: Lang, before: &str, var: &str) -> Option<&'static str> {
-    let py = lang == Lang::Python;
-    // Zuweisung bzw. `with … as var`
-    let assigned = before
-        .lines()
-        .rev()
-        .find_map(|l| {
-            let t = l.trim();
-            if let Some((lhs, rhs)) = t.split_once('=').filter(|(l, r)| !r.starts_with('=') && !l.ends_with(['!', '<', '>', '='])) {
-                let names = lhs.trim().trim_start_matches("const ").trim_start_matches("let ").trim_start_matches("var ").trim();
-                let names = names.trim_matches(['[', ']', '(', ')', ' ']);
-                if names.split(',').any(|n| n.trim() == var) {
-                    return Some(rhs.to_string());
-                }
-            }
-            if py && let Some(i) = t.find(&format!(" as {var}")) {
-                let rest = &t[i + 4 + var.len()..];
-                if rest.trim_start().starts_with([':', ',', ')']) || rest.trim().is_empty() {
-                    return Some(t[..i].to_string());
-                }
-            }
-            None
-        })
-        .unwrap_or_default();
-    let a = assigned.as_str();
-    let by_value = if a.contains(".cursor(") || a.contains("db.cursor(") {
-        Some("cursor")
-    } else if a.contains("getConnection(") || a.contains("createConnection(") || (py && a.contains("connect(")) {
-        Some("connection")
-    } else if a.contains("createPool(") {
-        Some("pool")
-    } else if a.contains("fetchall(") || a.contains(".query(") && a.trim_start().starts_with("await") && !py {
-        Some(if py { "list" } else { "array" })
-    } else if py && (a.trim_start().starts_with('"') || a.trim_start().starts_with('\'') || a.contains("str(")) {
-        Some("str")
-    } else if py && a.trim_start().starts_with('[') {
-        Some("list")
-    } else if py && a.trim_start().starts_with('{') {
-        Some("dict")
-    } else {
-        None
-    };
-    if by_value.is_some() {
-        return by_value;
-    }
-    match var {
-        "cur" | "cursor" | "c" if py => Some("cursor"),
-        "con" | "conn" | "connection" | "cnx" => Some("connection"),
-        "db" => Some("db"),
-        "pool" if !py => Some("pool"),
-        "console" | "JSON" | "Object" | "process" if !py => Some(match var {
-            "console" => "console",
-            "JSON" => "JSON",
-            "Object" => "Object",
-            _ => "process",
-        }),
-        "result" | "res" if !py => Some("result"),
-        "rows" | "list" | "items" => Some(if py { "list" } else { "array" }),
-        _ => None,
-    }
-}
-
-fn script_snippets(lang: Lang, has_db_module: bool) -> Vec<Item> {
-    let tr = crate::i18n::tr;
-    if lang == Lang::Python {
-        let (connect, cursor) = if has_db_module { ("db.connect()", "db.cursor(con)") } else { ("pymysql.connect(host=\"127.0.0.1\", user=\"root\", password=\"\", database=\"\")", "con.cursor()") };
-        return vec![
-            snippet("main", "def main / __main__", "def main():\n    \u{1}\n\n\nif __name__ == \"__main__\":\n    main()"),
-            snippet("ifmain", "if __name__ == \"__main__\"", "if __name__ == \"__main__\":\n    \u{1}"),
-            snippet("def", tr("Funktion", "Function"), "def \u{1}():\n    pass"),
-            snippet("class", tr("Klasse", "Class"), "class \u{1}:\n    def __init__(self):\n        pass"),
-            snippet("dataclass", "@dataclass", "@dataclass\nclass \u{1}:\n    id: int = 0"),
-            snippet("for", "for … in …", "for \u{1} in :\n    pass"),
-            snippet("with", "with … as …", "with \u{1} as :\n    pass"),
-            snippet("try", "try … except", "try:\n    \u{1}\nexcept Exception as e:\n    print(e)"),
-            snippet("print", "print(…)", "print(\u{1})"),
-            snippet("connection", tr("Verbindung öffnen", "Open a connection"), &format!("with {connect} as con:\n    \u{1}")),
-            snippet("query", tr("SELECT und Zeilen lesen", "SELECT and read rows"), &format!("with {cursor} as cur:\n    cur.execute(\"SELECT \u{1}\")\n    for row in cur.fetchall():\n        print(row)")),
-            snippet("update", tr("INSERT/UPDATE/DELETE mit Werten", "INSERT/UPDATE/DELETE with values"), &format!("with {cursor} as cur:\n    cur.execute(\"UPDATE \u{1}\", ())\n    con.commit()\n    print(cur.rowcount)")),
-            snippet("transaction", tr("Mehrere Änderungen gemeinsam", "Several changes together"), "try:\n    \u{1}\n    con.commit()\nexcept Exception:\n    con.rollback()\n    raise"),
-            snippet("test", "unittest", "class \u{1}Test(unittest.TestCase):\n    def test_something(self):\n        self.assertTrue(True)"),
-        ];
-    }
-    let (query, conn) = if has_db_module { ("const rows = await db.query('SELECT \u{1}');", "const db = require('./db');") } else { ("const [rows] = await pool.query('SELECT \u{1}');", "const mysql = require('mysql2/promise');\nconst pool = mysql.createPool({ host: '127.0.0.1', user: 'root', password: '', database: '' });") };
-    vec![
-        snippet("main", "async function main", "async function main() {\n  \u{1}\n}\n\nmain().catch((err) => {\n  console.error(err);\n  process.exitCode = 1;\n});"),
-        snippet("function", tr("Funktion", "Function"), "function \u{1}() {\n  \n}"),
-        snippet("arrow", "() => {}", "const \u{1} = () => {\n  \n};"),
-        snippet("class", tr("Klasse", "Class"), "class \u{1} {\n  constructor() {\n    \n  }\n}"),
-        snippet("for", "for (… of …)", "for (const \u{1} of ) {\n  \n}"),
-        snippet("try", "try … catch", "try {\n  \u{1}\n} catch (err) {\n  console.error(err);\n}"),
-        snippet("log", "console.log", "console.log(\u{1});"),
-        snippet("require", "require(…)", "const \u{1} = require('');"),
-        snippet("connection", tr("Verbindung öffnen", "Open a connection"), &format!("{conn}\u{1}")),
-        snippet("query", tr("SELECT und Zeilen lesen", "SELECT and read rows"), &format!("{query}\nfor (const row of rows) {{\n  console.log(row);\n}}")),
-        snippet("update", tr("INSERT/UPDATE/DELETE mit Werten", "INSERT/UPDATE/DELETE with values"), &(if has_db_module { "const result = await db.query('UPDATE \u{1}', []);" } else { "const [result] = await pool.query('UPDATE \u{1}', []);" }.to_string() + "\nconsole.log(result.affectedRows);")),
-        snippet(
-            "transaction",
-            tr("Mehrere Änderungen gemeinsam", "Several changes together"),
-            &format!("const conn = await {}.getConnection();\ntry {{\n  await conn.beginTransaction();\n  \u{1}\n  await conn.commit();\n}} catch (err) {{\n  await conn.rollback();\n  throw err;\n}} finally {{\n  conn.release();\n}}", if has_db_module { "db.pool()" } else { "pool" }),
-        ),
-        snippet("test", "node:test", "test('\u{1}', async () => {\n  \n});"),
-    ]
-}
-
-/// Vorschlaege in Python/JavaScript/TypeScript. In SQL-Zeichenketten: SQL mit Tabellen und Spalten.
-pub fn suggest_script(lang: Lang, text: &str, cursor: usize, env: &Env, force: bool, has_db_module: bool) -> Option<Suggestion> {
-    let chars: Vec<char> = text.chars().collect();
-    if cursor > chars.len() {
-        return None;
-    }
-    let (spans, lits) = spans_and_literals(&chars, lang);
-    if let Some(&(kind, a, b)) = spans.iter().find(|(_, a, b)| cursor > *a && cursor <= *b) {
-        match kind {
-            Span::Comment | Span::Char => return None,
-            Span::Str => {
-                let lit = lits.iter().find(|l| l.content.0 > a && l.content.1 <= b && cursor >= l.content.0 && cursor <= l.content.1)?;
-                let content: String = chars[lit.content.0..lit.content.1].iter().collect();
-                if !(source::looks_like_sql(&content) || force && content.trim().is_empty()) {
-                    return None;
-                }
-                let sql = sql_view(&chars[lit.content.0..lit.content.1], lang);
-                let mut s = complete::suggest(&sql, cursor - lit.content.0, env, force)?;
-                s.word_start += lit.content.0;
-                if !lit.block {
-                    s.items.retain(|i| !i.insert.contains('\n'));
-                }
-                return (!s.items.is_empty()).then_some(s);
-            }
-            Span::Code => {}
-        }
-    }
-    let ident = |c: char| is_word_char(c) || (c == '$' && lang.is_js());
-    let mut s = cursor;
-    while s > 0 && ident(chars[s - 1]) {
-        s -= 1;
-    }
-    let word: String = chars[s..cursor].iter().collect();
-    let lower = word.to_lowercase();
-    let matches = |label: &str| lower.is_empty() || label.to_lowercase().starts_with(&lower);
-    let mut items: Vec<Item> = Vec::new();
-    if s > 0 && chars[s - 1] == '.' {
-        let mut q = s - 1;
-        while q > 0 && ident(chars[q - 1]) {
-            q -= 1;
-        }
-        let var: String = chars[q..s - 1].iter().collect();
-        let before: String = chars[..q].iter().collect();
-        let kind = script_kind(lang, &before, &var)?;
-        for (label, insert, ret) in script_members(lang, kind) {
-            if matches(label) {
-                let back = insert.chars().skip_while(|c| *c != '\u{1}').count().saturating_sub(1);
-                items.push(Item { label: (*label).into(), insert: insert.replace('\u{1}', ""), kind: crate::i18n::tr("Methode", "Method"), detail: (*ret).into(), back });
-            }
-        }
-        return (!items.is_empty()).then_some(Suggestion { items, word_start: s });
-    }
-    if word.is_empty() && !force || !force && word.chars().count() < 2 {
-        return None;
-    }
-    items.extend(script_snippets(lang, has_db_module).into_iter().filter(|i| matches(&i.label)));
-    let words: Vec<&str> = match lang {
-        Lang::Python => PY_KEYWORDS.iter().chain(PY_CONSTS).chain(PY_BUILTINS).copied().collect(),
-        Lang::TypeScript => JS_KEYWORDS.iter().chain(TS_KEYWORDS).chain(JS_CONSTS).chain(["console", "require", "module", "process", "Promise", "JSON", "Object", "Array", "Map", "Set", "Date"].iter()).copied().collect(),
-        _ => JS_KEYWORDS.iter().chain(JS_CONSTS).chain(["console", "require", "module", "process", "Promise", "JSON", "Object", "Array", "Map", "Set", "Date"].iter()).copied().collect(),
-    };
-    for k in words {
-        if matches(k) && k != word && !items.iter().any(|i| i.label == k) {
-            items.push(Item { label: k.into(), insert: k.into(), kind: crate::i18n::tr("Schlüsselwort", "Keyword"), detail: String::new(), back: 0 });
-        }
-    }
-    let mut seen: Vec<String> = items.iter().map(|i| i.label.clone()).collect();
-    for (kind, a, b) in &spans {
-        if *kind != Span::Code {
-            continue;
-        }
-        let code: String = chars[*a..*b].iter().collect();
-        for w in code.split(|c: char| !ident(c)) {
-            if w.chars().count() >= 3 && w != word && !w.starts_with(|c: char| c.is_ascii_digit()) && matches(w) && !seen.iter().any(|x| x == w) {
-                seen.push(w.to_string());
-                items.push(Item { label: w.into(), insert: w.into(), kind: crate::i18n::tr("Name", "Name"), detail: String::new(), back: 0 });
-            }
-        }
-    }
-    items.truncate(60);
-    (!items.is_empty()).then_some(Suggestion { items, word_start: s })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -970,9 +638,7 @@ mod tests {
         assert_eq!(Lang::from_path(Path::new("db.properties")), Lang::Properties);
         assert_eq!(Lang::from_path(Path::new("x.sql")), Lang::Sql);
         assert_eq!(Lang::from_path(Path::new("notiz.md")), Lang::Plain);
-        assert_eq!(Lang::from_path(Path::new("app.py")), Lang::Python);
-        assert_eq!(Lang::from_path(Path::new("index.mjs")), Lang::JavaScript);
-        assert_eq!(Lang::from_path(Path::new("x.ts")), Lang::TypeScript);
+        assert_eq!(Lang::from_path(Path::new("app.py")), Lang::Plain);
     }
 
     #[test]
@@ -984,9 +650,6 @@ mod tests {
             ("# k\nurl=jdbc:x\n", Lang::Properties),
             ("{\"a\": [1, true, \"x\"]}", Lang::Json),
             ("q = \"SELECT * FR", Lang::Java),
-            ("def f(x):\n    return f\"{x}\" # k\n@deco\nclass A: pass\n'''SELECT 1", Lang::Python),
-            ("const r = /a\\/b/g; const t = `x ${y}`; // k\n'SELECT * FROM t'", Lang::JavaScript),
-            ("interface A { x: number }", Lang::TypeScript),
         ] {
             assert_eq!(highlight_lang(t, f.clone(), l).text, t, "{l:?}");
         }
@@ -1022,31 +685,5 @@ mod tests {
         assert_eq!(sg.items[0].insert, "System.out.println();");
         assert_eq!(sg.items[0].back, 2);
         assert!(suggest_java("// sou", 6, &env, true, false).is_none());
-    }
-
-    #[test]
-    fn python_and_javascript_sql_strings_are_checked_and_completed() {
-        let s = schema();
-        let env = Env { schema: Some(&s), databases: &[] };
-        let py = "cur.execute(\"SELECT nmae FROM kunde WHERE id = %s\", (1,))\nx = f\"SELECT {a} FROM kunde\"\n";
-        let probs = code_sql_problems(py, &env, Lang::Python);
-        assert_eq!(probs.len(), 1, "{probs:?}");
-        assert_eq!(probs[0].fix.as_ref().map(|f| f.text.as_str()), Some("name"));
-        assert!(code_sql_problems("q = 'SELECT id FROM kunde WHERE name = %(n)s'", &env, Lang::Python).is_empty());
-        let js = "const [rows] = await pool.query('SELECT nmae FROM kunde WHERE id = ?', [1]);\nconst t = `SELECT ${c} FROM kunde`;";
-        assert_eq!(code_sql_problems(js, &env, Lang::JavaScript).len(), 1);
-        let src = "rows = cur.execute(\"SELECT * FROM ku";
-        let sg = suggest_script(Lang::Python, src, src.chars().count(), &env, false, false).unwrap();
-        assert!(sg.items.iter().any(|i| i.insert == "kunde"));
-        let src = "with db.cursor(con) as cur:\n    cur.";
-        let sg = suggest_script(Lang::Python, src, src.chars().count(), &env, false, true).unwrap();
-        assert!(sg.items.iter().any(|i| i.label == "fetchall()"));
-        let src = "const conn = await pool.getConnection();\nconn.";
-        let sg = suggest_script(Lang::JavaScript, src, src.chars().count(), &env, false, false).unwrap();
-        assert!(sg.items.iter().any(|i| i.label == "beginTransaction()"));
-        let src = "func";
-        let sg = suggest_script(Lang::JavaScript, src, 4, &env, false, false).unwrap();
-        assert!(sg.items.iter().any(|i| i.label == "function"));
-        assert!(suggest_script(Lang::Python, "# pri", 5, &env, true, false).is_none());
     }
 }

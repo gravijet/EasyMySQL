@@ -78,7 +78,6 @@ pub enum Icon {
     Bug,
     Flask,
     Braces,
-    Script,
     StepOver,
     StepInto,
     StepOut,
@@ -169,7 +168,6 @@ impl Icon {
             Icon::Bug => "bug",
             Icon::Flask => "flask-conical",
             Icon::Braces => "braces",
-            Icon::Script => "file-code-2",
             Icon::StepOver => "redo-dot",
             Icon::StepInto => "arrow-down-to-dot",
             Icon::StepOut => "arrow-up-from-dot",
@@ -469,7 +467,7 @@ mod tests {
             More, Trash, Up, Down, Collapse, ZoomIn, ZoomOut, Fit, External, Folder, FolderOpen, File, FileText, FileCode, FileImage, FileSheet,
             FileJson, Table, Columns, Key, Link, Settings, Book, Terminal, Shield, Save, Download, Alert, Check, Info,
             Sparkles, Layers, ArrowLeft, ArrowRight, Undo, Redo, Explain, Upload, Users, ArrowUp, ArrowDown, Lock, Edit, Copy, Coffee, Package, Minus,
-            Bug, Flask, Braces, Script, StepOver, StepInto, StepOut, Stop, GitBranch, GitCommit, GitPullRequest, Github, CloudUpload, CloudDownload, GitMerge, CircleDot, RotateCcw,
+            Bug, Flask, Braces, StepOver, StepInto, StepOut, Stop, GitBranch, GitCommit, GitPullRequest, Github, CloudUpload, CloudDownload, GitMerge, CircleDot, RotateCcw,
             Code, Scissors, Clipboard, FolderInput, Power,
         ] {
             let polys = shapes(icon);
@@ -495,7 +493,7 @@ mod tests {
             More, Trash, Up, Down, Collapse, ZoomIn, ZoomOut, Fit, External, Folder, FolderOpen, File, FileText, FileCode, FileImage, FileSheet,
             FileJson, Table, Columns, Key, Link, Settings, Book, Terminal, Shield, Save, Download, Alert, Check, Info,
             Sparkles, Layers, ArrowLeft, ArrowRight, Undo, Redo, Explain, Upload, Users, ArrowUp, ArrowDown, Lock, Edit, Copy, Coffee, Package, Minus,
-            Bug, Flask, Braces, Script, StepOver, StepInto, StepOut, Stop, GitBranch, GitCommit, GitPullRequest, Github, CloudUpload, CloudDownload, GitMerge, CircleDot, RotateCcw,
+            Bug, Flask, Braces, StepOver, StepInto, StepOut, Stop, GitBranch, GitCommit, GitPullRequest, Github, CloudUpload, CloudDownload, GitMerge, CircleDot, RotateCcw,
         ];
         const CELL: usize = 96;
         const COLS: usize = 10;

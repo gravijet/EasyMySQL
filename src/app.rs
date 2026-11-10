@@ -862,8 +862,6 @@ impl EasyApp {
             }
             Cmd::NewQuery => self.handle_actions(vec![Action::OpenSql { db: Some(self.current_db.clone()), sql: String::new(), run: false }]),
             Cmd::NewJavaProject => self.open_project_dialog(create::ProjectLang::Java),
-            Cmd::NewPythonProject => self.open_project_dialog(create::ProjectLang::Python),
-            Cmd::NewNodeProject => self.open_project_dialog(create::ProjectLang::Node),
             Cmd::ShowGit => self.show_side(SideView::Git),
             Cmd::GitCommit => self.git_commit(),
             Cmd::GitPush => self.git_push(),
@@ -986,8 +984,6 @@ impl EasyApp {
             Cmd::NewQuery,
             Cmd::NewFile,
             Cmd::NewJavaProject,
-            Cmd::NewPythonProject,
-            Cmd::NewNodeProject,
             Cmd::OpenFile,
             Cmd::OpenFolder,
             Cmd::Save,
@@ -1258,10 +1254,8 @@ fn apply_editor_prefs(s: &Settings) {
     let old = crate::dev::config();
     crate::dev::set_config(s.dev.clone());
     // Ausgeschaltete Sprachserver beenden
-    for (on, was, lang) in [(s.dev.lsp_java, old.lsp_java, crate::sqledit::Lang::Java), (s.dev.lsp_python, old.lsp_python, crate::sqledit::Lang::Python), (s.dev.lsp_js, old.lsp_js, crate::sqledit::Lang::JavaScript)] {
-        if was && !on {
-            crate::dev::lsp::shutdown_lang(lang);
-        }
+    if old.lsp_java && !s.dev.lsp_java {
+        crate::dev::lsp::shutdown_lang(crate::sqledit::Lang::Java);
     }
     if old.lsp_java_memory_mb != s.dev.lsp_java_memory_mb {
         crate::dev::lsp::shutdown_lang(crate::sqledit::Lang::Java);

@@ -171,10 +171,10 @@ pub const CHAPTERS: &[Chapter] = &[
                         "Klick auf eine Datei öffnet sie, Klick auf einen Ordner klappt ihn auf oder zu.",
                         "Mehrere wählen: Strg+Klick für einzelne Einträge, Umschalt+Klick oder Umschalt+Pfeil für einen Bereich, Strg+A für alle.",
                         "Tasten im Explorer: Strg+C kopieren, Strg+X ausschneiden, Strg+V einfügen, Entf löschen, F2 umbenennen, Enter öffnen, Pfeiltasten bewegen, ← und → klappen Ordner zu und auf.",
-                        "Das Plus oben öffnet „Neu“: Datei, Ordner, Java-Klasse, SQL-, Python-, JavaScript-, TypeScript- oder Markdown-Datei und eine neue Datenbank – in jedem Projekt, egal welche Sprache. Neues entsteht im gewählten Ordner (bzw. im Ordner der gewählten Datei).",
+                        "Das Plus oben öffnet „Neu“: Datei, Ordner, Java-Klasse, SQL- oder Markdown-Datei und eine neue Datenbank – in jedem Projekt, egal welche Sprache. Neues entsteht im gewählten Ordner (bzw. im Ordner der gewählten Datei).",
                         "Rechtsklick auf Datei oder Ordner: Neu, ausschneiden, kopieren, einfügen, umbenennen, löschen, Pfad kopieren, Terminal hier öffnen. Mit mehreren gewählten Einträgen gilt der Befehl für alle.",
                         "Rechtsklick oder Doppelklick auf die freie Fläche: neue Datei oder neuer Ordner im Projekt.",
-                        "Neue Datei: den ganzen Dateinamen mit Endung tippen, wie in IntelliJ IDEA – etwa „Main.java“, „liste.md“ oder „seite.html“. Die Endung bestimmt die Art; bei Java, Python und JavaScript erscheint darunter die Vorlage. Ohne Endung wird die zum Ordner passende ergänzt. SQL-Dateien beginnen mit USE der aktuellen Datenbank.",
+                        "Neue Datei: den ganzen Dateinamen mit Endung tippen, wie in IntelliJ IDEA – etwa „Main.java“, „liste.md“ oder „seite.html“. Die Endung bestimmt die Art; bei Java erscheint darunter die Vorlage. Ohne Endung wird die zum Ordner passende ergänzt. SQL-Dateien beginnen mit USE der aktuellen Datenbank.",
                         "Löschen verschiebt in den Ordner „.papierkorb“ im Projekt. Von dort lässt sich jede Datei zurückholen.",
                         "Die Datei der aktiven Registerkarte ist im Explorer gewählt.",
                     ]),
@@ -797,99 +797,19 @@ pub const CHAPTERS: &[Chapter] = &[
         ],
     },
     Chapter {
-        title: "Python",
-        sections: &[
-            Section {
-                id: "python-verbinden",
-                title: "Python mit der Datenbank verbinden",
-                blocks: &[
-                    P("Python spricht über einen Treiber mit MariaDB. EasyMySQL nimmt PyMySQL (reines Python, läuft überall) oder MySQL Connector/Python – einstellbar unter Einstellungen → Python."),
-                    Tip("Nichts einzurichten: ▶ Ausführen lädt beim ersten Mal Python (neueste stabile Version) und den Treiber selbst. Ein Python des Systems ab 3.9 mit venv und pip wird ebenfalls erkannt."),
-                    Source("import pymysql\n\nwith pymysql.connect(host=\"127.0.0.1\", user=\"root\", password=\"\", database=\"schule\",\n                     cursorclass=pymysql.cursors.DictCursor) as con:\n    with con.cursor() as cur:\n        cur.execute(\"SELECT id, vorname FROM schueler WHERE klasse_id = %s\", (3,))\n        for row in cur.fetchall():\n            print(row[\"id\"], row[\"vorname\"])"),
-                    List(&[
-                        "Werte immer mit %s-Platzhaltern und einem Tupel übergeben, nie in den SQL-Text einsetzen (SQL-Injection).",
-                        "Änderungen (INSERT, UPDATE, DELETE) gelten erst nach con.commit().",
-                        "Beim Start aus EasyMySQL stehen Server, Datenbank und Passwort in EASYMYSQL_DB_HOST, EASYMYSQL_DB_NAME, EASYMYSQL_DB_PASSWORD usw.",
-                    ]),
-                ],
-            },
-            Section {
-                id: "python-projekt",
-                title: "Python-Projekt anlegen und ausführen",
-                blocks: &[
-                    Steps(&[
-                        "Datei → Neues Python-Projekt.",
-                        "Pakete in requirements.txt oder pyproject.toml, Treiber und Datenbank wählen. Für die angehakten Tabellen entstehen dataclasses (models.py) und Repository-Klassen (repos.py).",
-                        "main.py öffnet sich. ▶ Ausführen legt beim ersten Mal eine .venv an, installiert die Pakete und startet das Programm im Terminal (mit Eingaben über input()).",
-                        "Ändert sich requirements.txt, installiert EasyMySQL die Pakete vor dem nächsten Start neu.",
-                    ]),
-                    P("Vor dem Start prüft EasyMySQL alle .py-Dateien des Projekts auf Syntaxfehler. Fehler sind im Code rot unterstrichen; die Liste darunter springt zur Stelle."),
-                    Keys(&[Cmd::NewPythonProject, Cmd::RunAll, Cmd::RunTests]),
-                    Open("Neues Python-Projekt …", Cmd(Cmd::NewPythonProject)),
-                ],
-            },
-            Section {
-                id: "python-editor",
-                title: "Python im Editor",
-                blocks: &[
-                    List(&[
-                        "SQL in Zeichenketten wird eingefärbt und gegen die oben gewählte Datenbank geprüft – auch mit %s- und %(name)s-Platzhaltern. Strg+. korrigiert Tippfehler.",
-                        "Nach cur. und con. erscheinen die Methoden von Cursor und Verbindung (execute, fetchall, commit …).",
-                        "Vorlagen: main, ifmain, def, class, dataclass, for, with, try, connection, query, update, transaction, test.",
-                        "Enter nach einem Doppelpunkt rückt eine Ebene ein. Strg+# kommentiert mit #.",
-                        "Einfügen → dataclass und Repository fügt Code für eine Tabelle an der Cursorstelle ein.",
-                    ]),
-                ],
-            },
-        ],
-    },
-    Chapter {
-        title: "JavaScript und TypeScript",
-        sections: &[
-            Section {
-                id: "node-projekt",
-                title: "Node.js-Projekt anlegen und ausführen",
-                blocks: &[
-                    P("JavaScript und TypeScript laufen mit Node.js. Als Treiber dient mysql2 oder der MariaDB Connector/Node.js. EasyMySQL lädt Node.js (neueste LTS-Version) und den Treiber beim ersten Start selbst."),
-                    Steps(&[
-                        "Datei → Neues JavaScript-Projekt: package.json mit dem Treiber, index.js, db.js (Verbindungspool) und je Tabelle eine Repository-Klasse in repos.js.",
-                        "▶ Ausführen führt bei Bedarf npm install aus, prüft die Syntax (node --check) und startet die Datei im Terminal.",
-                        "TypeScript-Dateien (.ts) laufen direkt mit Node.js, ohne Übersetzen.",
-                    ]),
-                    Source("const db = require('./db');\n\nasync function main() {\n  const rows = await db.query('SELECT id, vorname FROM schueler WHERE klasse_id = ?', [3]);\n  for (const row of rows) console.log(row.id, row.vorname);\n}\n\nmain().finally(() => db.close());"),
-                    Keys(&[Cmd::NewNodeProject, Cmd::RunAll, Cmd::RunTests]),
-                    Open("Neues JavaScript-Projekt …", Cmd(Cmd::NewNodeProject)),
-                ],
-            },
-            Section {
-                id: "node-editor",
-                title: "JavaScript im Editor",
-                blocks: &[
-                    List(&[
-                        "SQL in Zeichenketten und Template-Strings ohne ${…} wird eingefärbt und geprüft.",
-                        "Nach pool., conn. und db. erscheinen die passenden Methoden (query, execute, getConnection, beginTransaction …).",
-                        "Vorlagen: main, function, arrow, class, for, try, log, require, connection, query, update, transaction, test.",
-                        "Paketverwaltung: npm, pnpm oder yarn (Einstellungen → JavaScript). Eine pnpm-lock.yaml oder yarn.lock im Projekt hat Vorrang.",
-                    ]),
-                    Open("JavaScript-Einstellungen", Settings("javascript")),
-                ],
-            },
-        ],
-    },
-    Chapter {
         title: "Programmieren in EasyMySQL",
         sections: &[
             Section {
                 id: "programme-ausfuehren",
                 title: "Ausführen und Einstellungen",
                 blocks: &[
-                    P("▶ Ausführen startet Java, Python und JavaScript im Terminal unten. Was dabei geschieht, ist unter Einstellungen → Ausführen einstellbar:"),
+                    P("▶ Ausführen startet Java-Programme im Terminal unten. Was dabei geschieht, ist unter Einstellungen → Ausführen einstellbar:"),
                     List(&[
                         "Programmargumente und eigene Umgebungsvariablen für jedes Programm.",
                         "Ob die Verbindung zur gewählten Datenbank als EASYMYSQL_DB_* mitgegeben wird.",
                         "Vorher speichern, Syntax prüfen, Arbeitsordner (Projekt oder Ordner der Datei), Terminal wiederverwenden.",
                         "Werkzeuge ohne Nachfrage laden und wie oft nach neueren Versionen gesucht wird (nie, täglich, wöchentlich, monatlich).",
-                        "Je Sprache: welches JDK, Python bzw. Node.js (automatisch, eigenes, vom System oder ein Pfad), Compiler- und Laufzeitoptionen.",
+                        "Welches JDK (automatisch, eigenes, vom System oder ein Pfad), Compiler- und Laufzeitoptionen.",
                     ]),
                     Open("Einstellungen zum Ausführen", Settings("ausfuehren")),
                 ],
@@ -898,7 +818,7 @@ pub const CHAPTERS: &[Chapter] = &[
                 id: "tests",
                 title: "Tests",
                 blocks: &[
-                    P("Tests ausführen startet die Tests des Projekts im Terminal: JUnit bei Java (Maven, Gradle oder einfache Projekte), pytest oder unittest bei Python, npm test bzw. node --test bei JavaScript."),
+                    P("Tests ausführen startet die Tests des Projekts im Terminal: JUnit bei Java (Maven, Gradle oder einfache Projekte)."),
                     List(&[
                         "Neue Projekte bekommen gleich einen Test, der die Verbindung und das Lesen der Tabellen prüft.",
                         "Weitere → Test anlegen erstellt einen Test für die geöffnete Datei am richtigen Ort und trägt JUnit bei Bedarf in pom.xml bzw. build.gradle ein.",
@@ -932,12 +852,10 @@ pub const CHAPTERS: &[Chapter] = &[
                 id: "bibliotheken",
                 title: "Bibliotheken einbinden",
                 blocks: &[
-                    P("Weitere → Bibliothek einbinden sucht auf Maven Central, PyPI bzw. npm und trägt die neueste stabile Version ein – ohne pom.xml, build.gradle, requirements.txt oder package.json von Hand zu bearbeiten."),
+                    P("Weitere → Bibliothek einbinden sucht auf Maven Central und trägt die neueste stabile Version ein – ohne pom.xml oder build.gradle von Hand zu bearbeiten."),
                     Table(&[
                         ("Maven, Gradle", "Eintrag in pom.xml bzw. build.gradle(.kts); geladen wird beim nächsten Start."),
                         ("Einfaches Java-Projekt", "Die .jar samt ihren Abhängigkeiten kommt nach lib/."),
-                        ("Python", "Eintrag in requirements.txt bzw. pyproject.toml; ohne Projektdatei für alle Skripte."),
-                        ("JavaScript", "npm install trägt das Paket in package.json ein."),
                     ]),
                     Keys(&[Cmd::AddLibrary]),
                 ],
@@ -946,7 +864,7 @@ pub const CHAPTERS: &[Chapter] = &[
                 id: "sprachserver",
                 title: "Fehler beim Tippen, Gehe zu Definition, Umbenennen",
                 blocks: &[
-                    P("Sprachserver verstehen den ganzen Code des Projekts: Eclipse JDT LS für Java, Pyright für Python, der TypeScript-Server für JavaScript und TypeScript. EasyMySQL lädt sie bei Bedarf selbst."),
+                    P("Sprachserver verstehen den ganzen Code des Projekts: Eclipse JDT LS für Java. EasyMySQL lädt sie bei Bedarf selbst."),
                     List(&[
                         "Fehler und Warnungen erscheinen schon beim Tippen, nicht erst beim Ausführen.",
                         "Strg+Klick oder F12 springt zur Definition, auch in andere Dateien.",
@@ -1231,8 +1149,6 @@ pub const CHAPTERS: &[Chapter] = &[
                         Cmd::NewQuery,
                         Cmd::NewFile,
                         Cmd::NewJavaProject,
-                        Cmd::NewPythonProject,
-                        Cmd::NewNodeProject,
                         Cmd::OpenFile,
                         Cmd::OpenFolder,
                         Cmd::Save,
@@ -1335,11 +1251,9 @@ pub const CHAPTERS: &[Chapter] = &[
                         ("cannot find symbol", "fehlenden Import ergänzen (Scanner, List, Connection, LocalDate …)"),
                         ("unreported exception", "throws … an der Methode ergänzen"),
                         ("class … should be declared in a file named", "Klasse wie die Datei benennen"),
-                        ("No module named", "Python-Paket in requirements.txt bzw. pyproject.toml eintragen"),
-                        ("Cannot find module", "npm-Paket in package.json eintragen"),
                     ]),
                     P("Der Java-SQL-Autofix liest SQL-Migrationen, JPA-Modelle und konstante JDBC-DDL. Neue, eindeutig deklarierte Tabellen werden einschließlich Spalten, Primär- und Fremdschlüsseln, Indizes, Standardwerten und benötigten Tabellen mit einem Klick erstellt. Existierende Tabellen und nur abgeleitete JDBC-Typen benötigen weiterhin eine SQL-Vorschau. Widersprüchliche oder dynamische Definitionen werden nicht geraten."),
-                    Tip("Dateiverweise in der Ausgabe (z. B. Main.java:13 oder File \"main.py\", line 5) sind anklickbar und öffnen die Datei an der Zeile."),
+                    Tip("Dateiverweise in der Ausgabe (z. B. Main.java:13) sind anklickbar und öffnen die Datei an der Zeile."),
                 ],
             },
             Section {

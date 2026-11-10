@@ -1,6 +1,6 @@
 // Sprachserver (Language Server Protocol): Fehler schon beim Tippen, Gehe zu Definition, Umbenennen ueber
-// das ganze Projekt und Hinweise beim Zeigen. Java: Eclipse JDT LS, Python: Pyright,
-// JavaScript/TypeScript: typescript-language-server. Je Sprache und Projektordner laeuft ein Server.
+// das ganze Projekt und Hinweise beim Zeigen. Java: Eclipse JDT LS.
+// Je Sprache und Projektordner laeuft ein Server.
 
 use super::Tools;
 use crate::sqledit::Lang;
@@ -176,8 +176,6 @@ pub fn root_for(lang: Lang, file: &Path, project: Option<&Path>) -> PathBuf {
             let text = std::fs::read_to_string(file).unwrap_or_default();
             Some(super::java::run::detect_build(file, super::java::source::package(&text).as_deref(), project).root())
         }
-        Lang::Python => super::python::project_root(file, project),
-        Lang::JavaScript | Lang::TypeScript => super::node::project_root(file, project),
         _ => None,
     };
     found.or_else(|| project.filter(|p| file.starts_with(p)).map(Path::to_path_buf)).unwrap_or(dir)
@@ -187,8 +185,6 @@ pub fn root_for(lang: Lang, file: &Path, project: Option<&Path>) -> PathBuf {
 pub fn tool_for(lang: Lang) -> Option<super::Tool> {
     match lang {
         Lang::Java => Some(super::Tool::JavaLsp),
-        Lang::Python => Some(super::Tool::PythonLsp),
-        Lang::JavaScript | Lang::TypeScript => Some(super::Tool::JsLsp),
         _ => None,
     }
 }
@@ -199,8 +195,6 @@ pub fn enabled(lang: Lang) -> bool {
     let c = super::config();
     match lang {
         Lang::Java => c.lsp_java,
-        Lang::Python => c.lsp_python,
-        Lang::JavaScript | Lang::TypeScript => c.lsp_js,
         _ => false,
     }
 }
@@ -276,53 +270,13 @@ fn command(lang: Lang, root: &Path, tools: &Tools) -> Result<(Command, Value), S
             }
             Ok((cmd, json!({ "settings": { "java": java }, "extendedClientCapabilities": { "classFileContentsSupport": false } })))
         }
-        Lang::Python => {
-            let (_, script) = tools.pyright.clone().ok_or_else(|| crate::i18n::tr("Python-Sprachserver fehlt.", "Python language server is missing.").to_string())?;
-            let node = tools.node.as_ref().ok_or("Node.js")?;
-            let mut cmd = Command::new(&node.exe);
-            cmd.arg(script).arg("--stdio");
-            Ok((cmd, Value::Null))
-        }
-        _ => {
-            let (_, script) = tools.tsls.clone().ok_or_else(|| crate::i18n::tr("JavaScript-Sprachserver fehlt.", "JavaScript language server is missing.").to_string())?;
-            // Nativer Server von TypeScript 7
-            if script.file_stem().is_some_and(|n| n == "tsc") {
-                let mut cmd = Command::new(&script);
-                cmd.args(["--lsp", "--stdio"]);
-                return Ok((cmd, Value::Null));
-            }
-            let node = tools.node.as_ref().ok_or("Node.js")?;
-            let tsserver = script.parent().and_then(|p| p.parent()).and_then(|p| p.parent()).map(|nm| nm.join("typescript").join("lib").join("tsserver.js"));
-            let mut cmd = Command::new(&node.exe);
-            cmd.arg(script).arg("--stdio");
-            let opts = match tsserver.filter(|p| p.is_file()) {
-                Some(p) => json!({ "tsserver": { "path": p.display().to_string() }, "preferences": { "includeCompletionsForModuleExports": true } }),
-                None => Value::Null,
-            };
-            Ok((cmd, opts))
-        }
-    }
-}
-
-/// Einstellungen fuer workspace/configuration (Pyright fragt nach dem Python und den Suchpfaden)
-fn configuration(lang: Lang, root: &Path, tools: &Tools, section: &str) -> Value {
-    if lang != Lang::Python {
-        return Value::Null;
-    }
-    let venv = super::python::exe_in(&root.join(".venv"));
-    let python = venv.or_else(|| tools.python.as_ref().map(|p| p.exe.clone()));
-    let extra: Vec<String> = if root.join(".venv").is_dir() { vec![] } else { vec![super::python::site_dir().display().to_string()] };
-    match section {
-        "python" => json!({ "pythonPath": python.map(|p| p.display().to_string()), "analysis": { "extraPaths": extra, "typeCheckingMode": "basic" } }),
-        "python.analysis" => json!({ "extraPaths": extra, "typeCheckingMode": "basic", "diagnosticMode": "openFilesOnly" }),
-        _ => Value::Null,
+        _ => Err("LSP".into()),
     }
 }
 
 /// Server fuer diese Sprache und diesen Ordner (startet ihn bei Bedarf). None, wenn ausgeschaltet oder das
 /// Werkzeug fehlt.
 pub fn get(lang: Lang, root: &Path, ctx: &eframe::egui::Context) -> Option<Arc<Server>> {
-    let lang = if lang == Lang::TypeScript { Lang::JavaScript } else { lang };
     if !enabled(lang) {
         return None;
     }
@@ -366,8 +320,7 @@ pub fn get(lang: Lang, root: &Path, ctx: &eframe::egui::Context) -> Option<Arc<S
     });
     {
         let s = Arc::clone(&server);
-        let tools = Arc::clone(&tools);
-        std::thread::spawn(move || s.read_loop(stdout, &tools));
+        std::thread::spawn(move || s.read_loop(stdout));
     }
     if let Some(err) = stderr {
         std::thread::spawn(move || {
@@ -576,7 +529,7 @@ impl Server {
         self.resolve_fixes.load(Ordering::Relaxed).then(|| self.request("codeAction/resolve", action))
     }
 
-    fn read_loop(&self, stdout: impl Read, tools: &Tools) {
+    fn read_loop(&self, stdout: impl Read) {
         let mut r = BufReader::new(stdout);
         loop {
             // Kopfzeilen bis zur Leerzeile
@@ -604,7 +557,7 @@ impl Server {
                 return;
             }
             let Ok(msg) = serde_json::from_slice::<Value>(&body) else { continue };
-            self.handle(msg, tools);
+            self.handle(msg);
         }
     }
 
@@ -619,7 +572,7 @@ impl Server {
         self.ctx.request_repaint();
     }
 
-    fn handle(&self, msg: Value, tools: &Tools) {
+    fn handle(&self, msg: Value) {
         let method = msg["method"].as_str().map(str::to_string);
         match (msg.get("id").cloned(), method) {
             // Antwort auf eine Anfrage
@@ -645,10 +598,7 @@ impl Server {
                                 .iter()
                                 .map(|i| {
                                     let section = i["section"].as_str().unwrap_or("");
-                                    match configuration(self.lang, &self.root, tools, section) {
-                                        Value::Null => self.settings.pointer(&format!("/{}", section.replace('.', "/"))).cloned().unwrap_or(Value::Null),
-                                        v => v,
-                                    }
+                                    self.settings.pointer(&format!("/{}", section.replace('.', "/"))).cloned().unwrap_or(Value::Null)
                                 })
                                 .collect(),
                         )

@@ -1,4 +1,4 @@
-// Registerkarte fuer Dateien ausser SQL. Java, Python und JavaScript/TypeScript: Ausfuehren, Tests,
+// Registerkarte fuer Dateien ausser SQL. Java: Ausfuehren, Tests,
 // Debuggen (Java), .jar bauen (Java), Bibliotheken einbinden, Sprachserver (Fehler beim Tippen, Gehe zu
 // Definition, Umbenennen), SQL-Pruefung in Zeichenketten und Vorlagen fuer Tabellen.
 // Dazu Gradle-Skripte, XML, JSON, .properties und Text.
@@ -6,7 +6,7 @@
 use super::{Action, Ctx, TabView};
 use crate::dev::java::{self, run as jrun, source};
 use crate::dev::process::{Failure, Launch};
-use crate::dev::{self, Tool, debug, install, libs, lsp, node, python};
+use crate::dev::{self, Tool, debug, install, libs, lsp};
 use crate::icons::{self, Icon};
 use crate::keymap::Cmd;
 use crate::sqledit::{self, Lang, SqlEditor};
@@ -166,19 +166,6 @@ fn ensure_imports(text: &str, imports: &[String]) -> (String, usize, usize) {
     (out, insert.chars().count(), text[..at].chars().count())
 }
 
-/// Fehlende Zeilen (Python-Imports, require) oben einfuegen. Liefert (Text, eingefuegte Zeichen).
-fn ensure_header_lines(text: &str, lines: &[String]) -> (String, usize) {
-    let missing: Vec<&String> = lines.iter().filter(|l| !text.lines().any(|t| t.trim() == l.trim())).collect();
-    if missing.is_empty() {
-        return (text.to_string(), 0);
-    }
-    let block: String = missing.iter().map(|l| format!("{l}\n")).collect();
-    // Nach einer Shebang- bzw. Kodierungszeile und Docstrings nicht suchen: einfach ganz oben
-    let skip = if text.starts_with("#!") { text.find('\n').map_or(text.len(), |i| i + 1) } else { 0 };
-    let mut out = text.to_string();
-    out.insert_str(skip, &block);
-    (out, block.chars().count())
-}
 
 fn same_file(a: &Path, b: &Path) -> bool {
     let norm = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
@@ -261,12 +248,10 @@ impl CodeTab {
         }
     }
 
-    /// Gibt es neben der Datei ein Verbindungsmodul aus einem EasyMySQL-Projekt (Database.java, db.py, db.js)?
+    /// Gibt es neben der Datei ein Verbindungsmodul aus einem EasyMySQL-Projekt (Database.java)?
     fn update_database_module(&mut self) {
         let name = match self.lang {
             Lang::Java => "Database.java",
-            Lang::Python => "db.py",
-            Lang::JavaScript | Lang::TypeScript => "db.js",
             _ => "",
         };
         self.editor.has_database_class = !name.is_empty() && self.file.parent().is_some_and(|d| d.join(name).is_file() && d.join(name) != self.file);
@@ -297,11 +282,7 @@ impl CodeTab {
 
     fn needed(&self, goal: Goal) -> Vec<Tool> {
         let project = self.project.as_deref();
-        match self.lang {
-            Lang::Java => jrun::needed_tools(&self.file, &self.text, project, if goal == Goal::Test { jrun::Mode::Test } else { jrun::Mode::Run }),
-            Lang::Python => python::needed_tools(&self.file, project),
-            _ => node::needed_tools(&self.file, project),
-        }
+        jrun::needed_tools(&self.file, &self.text, project, if goal == Goal::Test { jrun::Mode::Test } else { jrun::Mode::Run })
     }
 
     fn start(&mut self, goal: Goal, ctx: &egui::Context) {
@@ -345,14 +326,7 @@ impl CodeTab {
                         }
                     }
                 }
-                Lang::Python => {
-                    let req = python::Request { file, text, project, tools, cfg, live: live2 };
-                    python::prepare(&req, if goal == Goal::Test { python::Mode::Test } else { python::Mode::Run }).map(Prepared::Launch)
-                }
-                _ => {
-                    let req = node::Request { file, project, tools, cfg, live: live2 };
-                    node::prepare(&req, if goal == Goal::Test { node::Mode::Test } else { node::Mode::Run }).map(Prepared::Launch)
-                }
+                _ => unreachable!("nur Java ist ausfuehrbar"),
             };
             let _ = tx.send(r);
             repaint.request_repaint();
@@ -682,10 +656,6 @@ impl CodeTab {
                 cursor += added;
             }
             self.text = text;
-        } else if !imports.is_empty() {
-            let (text, added) = ensure_header_lines(&self.text, imports);
-            cursor += added;
-            self.text = text;
         }
         let b = self.text.char_indices().nth(cursor).map(|(b, _)| b).unwrap_or(self.text.len());
         let line_start = self.text[..b].rfind('\n').map_or(0, |i| i + 1);
@@ -739,24 +709,7 @@ impl CodeTab {
                 }
                 (dir.join(format!("{class}.java")), body)
             }
-            Lang::Python => {
-                let root = python::project_root(&self.file, self.project.as_deref()).unwrap_or_else(|| self.file.parent().map(Path::to_path_buf).unwrap_or_default());
-                let module = stem.clone();
-                (
-                    root.join("tests").join(format!("test_{module}.py")),
-                    format!("import os\nimport sys\nimport unittest\n\nsys.path.insert(0, os.path.join(os.path.dirname(__file__), \"..\"))\n\nimport {module}  # noqa: E402\n\n\nclass {}Test(unittest.TestCase):\n    def test_works(self):\n        self.assertTrue(True)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n", dev::names::pascal(&module)),
-                )
-            }
-            _ => {
-                let root = node::project_root(&self.file, self.project.as_deref()).unwrap_or_else(|| self.file.parent().map(Path::to_path_buf).unwrap_or_default());
-                let ext = self.file.extension().map(|e| e.to_string_lossy().into_owned()).unwrap_or_else(|| "js".into());
-                let rel = self.file.strip_prefix(&root).map(|r| r.with_extension("")).unwrap_or_else(|_| PathBuf::from(&stem));
-                let import = format!("../{}", rel.to_string_lossy().replace('\\', "/"));
-                (
-                    root.join("test").join(format!("{stem}.test.{ext}")),
-                    format!("const test = require('node:test');\nconst assert = require('node:assert/strict');\nconst mod = require('{import}');\n\ntest('{stem}', () => {{\n  assert.ok(mod);\n}});\n"),
-                )
-            }
+            _ => return,
         };
         if path.exists() {
             cx.actions.push(Action::OpenFileAt { path, line: 0 });
@@ -842,11 +795,7 @@ impl CodeTab {
                     }
                     ui.separator();
                     if ui.button(crate::i18n::tr("Einstellungen zum Ausführen …", "Run settings …")).clicked() {
-                        cx.actions.push(Action::OpenSettings(Some(match self.lang {
-                            Lang::Java => "java".into(),
-                            Lang::Python => "python".into(),
-                            _ => "javascript".into(),
-                        })));
+                        cx.actions.push(Action::OpenSettings(Some("java".into())));
                         ui.close();
                     }
                 }
@@ -973,7 +922,6 @@ impl CodeTab {
         let resp = ui.button(crate::i18n::tr("Einfügen", "Insert")).on_hover_text(crate::i18n::tr("Code für die Datenbank einfügen", "Insert code for the database"));
         let mut insert: Option<(String, Vec<String>)> = None;
         let mut classes: Option<crate::db::TableInfo> = None;
-        let cfg = dev::config();
         let has_db = self.has_db_module();
         let lang = self.lang;
         egui::Popup::menu(&resp).show(|ui| {
@@ -985,13 +933,7 @@ impl CodeTab {
                         .replace("\"URL\"", &format!("\"{}\"", java::jdbc_url(java::driver(), &cx.settings.conn.host, cx.settings.conn.port, &self.database))),
                     vec!["java.sql.*".into()],
                 ),
-                Lang::Python => python::project::snippet_connect(cfg.python_driver, has_db),
-                _ if has_db => ("const db = require('./db');".into(), vec![]),
-                _ => {
-                    let (t, _) = node::project::template("database", cfg.node_driver, false);
-                    let pool: String = t.lines().take_while(|l| !l.starts_with("async function")).collect::<Vec<_>>().join("\n");
-                    (pool.trim().to_string(), vec![])
-                }
+                _ => (String::new(), vec![]),
             };
             if ui.button(crate::i18n::tr("Verbindung öffnen", "Open connection")).clicked() {
                 insert = Some(connect);
@@ -1005,19 +947,14 @@ impl CodeTab {
                                 if ui.button(&t.name).clicked() {
                                     insert = Some(match lang {
                                         Lang::Java => (crate::javagen::select_snippet(t), crate::javagen::select_imports(t)),
-                                        Lang::Python => (python::project::snippet_select(t, has_db, cfg.python_driver), vec![]),
-                                        _ => (node::project::snippet_select(t, has_db, cfg.node_driver), vec![]),
+                                        _ => (String::new(), vec![]),
                                     });
                                     ui.close();
                                 }
                             }
                         });
                     });
-                    let label = match lang {
-                        Lang::Java => crate::i18n::tr("Record und DAO-Klasse anlegen", "Create record and DAO class"),
-                        Lang::Python => crate::i18n::tr("dataclass und Repository einfügen", "Insert dataclass and repository"),
-                        _ => crate::i18n::tr("Repository-Klasse einfügen", "Insert repository class"),
-                    };
+                    let label = crate::i18n::tr("Record und DAO-Klasse anlegen", "Create record and DAO class");
                     ui.menu_button(label, |ui| {
                         egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
                             for t in &s.tables {
@@ -1026,15 +963,7 @@ impl CodeTab {
                                 if b.clicked() {
                                     match lang {
                                         Lang::Java => classes = Some(t.clone()),
-                                        Lang::Python => {
-                                            let code = format!("{}\n\n\n{}", python::project::model(t), python::project::repo(t).replace("db.cursor(self.con)", if has_db { "db.cursor(self.con)" } else { "self.con.cursor()" }));
-                                            let mut imports = vec!["import datetime".to_string(), "from dataclasses import dataclass".into(), "from decimal import Decimal".into(), "from typing import Optional".into()];
-                                            if has_db {
-                                                imports.push("import db".into());
-                                            }
-                                            insert = Some((code, imports));
-                                        }
-                                        _ => insert = Some((node::project::repo(t), if has_db { vec!["const db = require('./db');".into()] } else { vec![] })),
+                                        _ => {}
                                     }
                                     ui.close();
                                 }
@@ -1186,11 +1115,7 @@ impl CodeTab {
             });
             ui.label(RichText::new(d.target.describe()).small().color(pal.text_weak));
             ui.add_space(8.0);
-            let hint = match d.eco {
-                libs::Ecosystem::Maven => crate::i18n::tr("z. B. gson oder com.google.code.gson:gson", "e.g. gson or com.google.code.gson:gson"),
-                libs::Ecosystem::Pypi => crate::i18n::tr("genauer Paketname, z. B. requests", "exact package name, e.g. requests"),
-                libs::Ecosystem::Npm => crate::i18n::tr("z. B. dayjs", "e.g. dayjs"),
-            };
+            let hint = crate::i18n::tr("z. B. gson oder com.google.code.gson:gson", "e.g. gson or com.google.code.gson:gson");
             ui.horizontal(|ui| {
                 let r = ui.add(crate::widgets::edit(&mut d.query).hint_text(hint).desired_width(420.0));
                 if d.focus {
@@ -1265,20 +1190,7 @@ impl CodeTab {
             let (tx, rx) = channel();
             let live = Arc::new(Mutex::new(String::new()));
             let (target, live2, repaint) = (d.target.clone(), Arc::clone(&live), ctx.clone());
-            // pip/npm brauchen ihre Laufzeit
-            let needs = match &d.target {
-                libs::Target::PythonShared => Some(Tool::Python),
-                libs::Target::Package(_) | libs::Target::NodeShared => Some(Tool::Node),
-                _ => None,
-            };
             std::thread::spawn(move || {
-                if let Some(t) = needs
-                    && !dev::tools().has(t)
-                    && let Err(e) = install::install_now(t)
-                {
-                    let _ = tx.send(Err(e));
-                    return;
-                }
                 let _ = tx.send(libs::add(&target, &hit, &live2));
                 repaint.request_repaint();
             });
@@ -1663,8 +1575,6 @@ impl TabView for CodeTab {
     fn icon(&self) -> Option<Icon> {
         Some(match self.lang {
             Lang::Java | Lang::Gradle => Icon::Coffee,
-            Lang::Python => Icon::Script,
-            Lang::JavaScript | Lang::TypeScript => Icon::Braces,
             Lang::Json | Lang::Xml | Lang::Properties => Icon::FileJson,
             _ => Icon::FileText,
         })
@@ -1870,9 +1780,6 @@ mod tests {
         assert_eq!(t, "package app;\n\nimport java.sql.*;\n\nclass A {}\n");
         let (t, _, _) = ensure_imports("class A {}\n", &["java.sql.*".into()]);
         assert_eq!(t, "import java.sql.*;\nclass A {}\n");
-        let (t, n) = ensure_header_lines("#!/usr/bin/env python3\nimport db\nx = 1\n", &["import db".into(), "import os".into()]);
-        assert_eq!(t, "#!/usr/bin/env python3\nimport os\nimport db\nx = 1\n");
-        assert_eq!(n, "import os\n".len());
     }
 
     #[test]

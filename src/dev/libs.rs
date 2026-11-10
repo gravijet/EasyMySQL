@@ -1,8 +1,7 @@
-// Bibliotheken einbinden, ohne pom.xml, build.gradle, requirements.txt oder package.json von Hand zu
-// bearbeiten: suchen (Maven Central, PyPI, npm), die neueste stabile Version eintragen bzw. laden.
+// Bibliotheken einbinden, ohne pom.xml oder build.gradle von Hand zu
+// bearbeiten: suchen (Maven Central), die neueste stabile Version eintragen bzw. laden.
 
 use super::install::{central_checksum, download, get_json, latest_maven, Progress};
-use super::process::capture;
 use crate::sqledit::Lang;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -11,16 +10,12 @@ use std::sync::atomic::AtomicBool;
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Ecosystem {
     Maven,
-    Pypi,
-    Npm,
 }
 
 impl Ecosystem {
     pub fn for_lang(lang: Lang) -> Option<Ecosystem> {
         match lang {
             Lang::Java | Lang::Gradle => Some(Ecosystem::Maven),
-            Lang::Python => Some(Ecosystem::Pypi),
-            Lang::JavaScript | Lang::TypeScript => Some(Ecosystem::Npm),
             _ => None,
         }
     }
@@ -28,8 +23,6 @@ impl Ecosystem {
     pub fn label(self) -> &'static str {
         match self {
             Ecosystem::Maven => "Maven Central",
-            Ecosystem::Pypi => "PyPI",
-            Ecosystem::Npm => "npm",
         }
     }
 }
@@ -82,38 +75,6 @@ pub fn search(eco: Ecosystem, query: &str) -> Result<Vec<Hit>, String> {
                 })
                 .unwrap_or_default())
         }
-        Ecosystem::Npm => {
-            let v = get_json(&format!("https://registry.npmjs.org/-/v1/search?text={}&size=25", encode(q)))?;
-            Ok(v["objects"]
-                .as_array()
-                .map(|a| {
-                    a.iter()
-                        .filter_map(|o| {
-                            let p = &o["package"];
-                            Some(Hit { id: p["name"].as_str()?.to_string(), version: p["version"].as_str().unwrap_or("").into(), description: p["description"].as_str().unwrap_or("").chars().take(140).collect() })
-                        })
-                        .collect()
-                })
-                .unwrap_or_default())
-        }
-        Ecosystem::Pypi => {
-            // PyPI hat keine Such-API: den Namen direkt nachschlagen (auch mit - statt _ und umgekehrt)
-            let mut out = Vec::new();
-            for name in [q.to_string(), q.replace('_', "-"), q.replace('-', "_")] {
-                if out.iter().any(|h: &Hit| h.id.eq_ignore_ascii_case(&name)) {
-                    continue;
-                }
-                if let Ok(v) = get_json(&format!("https://pypi.org/pypi/{}/json", encode(&name))) {
-                    let info = &v["info"];
-                    out.push(Hit { id: info["name"].as_str().unwrap_or(&name).to_string(), version: info["version"].as_str().unwrap_or("").into(), description: info["summary"].as_str().unwrap_or("").chars().take(140).collect() });
-                    break;
-                }
-            }
-            if out.is_empty() {
-                return Err(crate::tr_format!("Kein Paket „{q}“ auf PyPI. Bitte den genauen Namen eingeben (z. B. requests).", "No package “{q}” on PyPI. Please enter the exact name (e.g. requests)."));
-            }
-            Ok(out)
-        }
     }
 }
 
@@ -124,22 +85,14 @@ pub enum Target {
     Gradle(PathBuf),
     /// Einfaches Java-Projekt: .jar nach lib/
     JavaLib(PathBuf),
-    Requirements(PathBuf),
-    Pyproject(PathBuf),
-    /// Ohne Projektdatei: in den eigenen Ordner von EasyMySQL (fuer alle Skripte)
-    PythonShared,
-    Package(PathBuf),
-    NodeShared,
 }
 
 impl Target {
     pub fn describe(&self) -> String {
         let name = |p: &Path| p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
         match self {
-            Target::Pom(p) | Target::Gradle(p) | Target::Requirements(p) | Target::Pyproject(p) => crate::tr_format!("wird in {} eingetragen", "is added to {}", name(p)),
+            Target::Pom(p) | Target::Gradle(p) => crate::tr_format!("wird in {} eingetragen", "is added to {}", name(p)),
             Target::JavaLib(d) => crate::tr_format!("wird nach {}/ geladen", "is downloaded to {}/", name(d)),
-            Target::Package(_) => crate::i18n::tr("wird mit npm install in package.json eingetragen", "is added to package.json with npm install").into(),
-            Target::PythonShared | Target::NodeShared => crate::i18n::tr("wird für alle Skripte ohne Projektdatei installiert", "is installed for all scripts without a project file").into(),
         }
     }
 }
@@ -154,15 +107,6 @@ pub fn target_for(lang: Lang, file: &Path, project: Option<&Path>) -> Option<Tar
                 b @ super::java::run::Build::Plain(_) => Target::JavaLib(b.root().join("lib")),
             })
         }
-        Lang::Python => Some(match super::python::project_root(file, project) {
-            Some(r) if r.join("requirements.txt").is_file() => Target::Requirements(r.join("requirements.txt")),
-            Some(r) if r.join("pyproject.toml").is_file() => Target::Pyproject(r.join("pyproject.toml")),
-            _ => Target::PythonShared,
-        }),
-        Lang::JavaScript | Lang::TypeScript => Some(match super::node::project_root(file, project) {
-            Some(r) => Target::Package(r),
-            None => Target::NodeShared,
-        }),
         _ => None,
     }
 }
@@ -249,56 +193,6 @@ pub fn add_to_gradle(script: &str, kts: bool, coord: &str) -> Result<String, Str
     Ok(out)
 }
 
-/// Paket in requirements.txt eintragen
-pub fn add_to_requirements(text: &str, name: &str, version: &str) -> Result<String, String> {
-    let norm = |s: &str| s.to_lowercase().replace('_', "-");
-    if text.lines().any(|l| norm(l.split(['=', '>', '<', '~', '!', ' ', '[', ';']).next().unwrap_or("").trim()) == norm(name)) {
-        return Err(crate::i18n::tr("Das Paket ist schon eingetragen.", "The package is already listed.").into());
-    }
-    let mut out = text.to_string();
-    if !out.is_empty() && !out.ends_with('\n') {
-        out.push('\n');
-    }
-    out.push_str(&format!("{name}>={version}\n"));
-    Ok(out)
-}
-
-/// Paket in pyproject.toml ([project] dependencies = [...]) eintragen
-pub fn add_to_pyproject(text: &str, name: &str, version: &str) -> Result<String, String> {
-    let entry = format!("\"{name}>={version}\"");
-    if text.to_lowercase().contains(&format!("\"{}", name.to_lowercase())) {
-        return Err(crate::i18n::tr("Das Paket ist schon eingetragen.", "The package is already listed.").into());
-    }
-    if let Some(i) = text.find("dependencies = [") {
-        let start = i + "dependencies = [".len();
-        let end = text[start..].find(']').map(|e| e + start).ok_or("pyproject.toml: ]")?;
-        let inner = text[start..end].trim_end();
-        let mut out = text[..start].to_string();
-        if inner.trim().is_empty() {
-            out.push_str(&format!("\n    {entry},\n"));
-        } else {
-            out.push_str(inner);
-            if !inner.ends_with(',') {
-                out.push(',');
-            }
-            out.push_str(&format!("\n    {entry},\n"));
-        }
-        out.push_str(&text[end..]);
-        return Ok(out);
-    }
-    match text.find("[project]") {
-        Some(i) => {
-            let line_end = text[i..].find('\n').map_or(text.len(), |e| i + e + 1);
-            let mut out = text[..line_end].to_string();
-            out.push_str(&format!("dependencies = [\n    {entry},\n]\n"));
-            out.push_str(&text[line_end..]);
-            Ok(out)
-        }
-        None => Err(crate::i18n::tr("pyproject.toml ohne [project].", "pyproject.toml without [project].").into()),
-    }
-}
-
-/// Abhaengigkeiten aus einer POM (nur compile/runtime mit fester Version)
 fn pom_deps(pom: &str, own_version: &str) -> Vec<(String, String, String)> {
     let body = pom.split("<dependencyManagement>").next().unwrap_or(pom);
     let Some(start) = body.find("<dependencies>") else { return Vec::new() };
@@ -355,7 +249,6 @@ fn download_jars(lib: &Path, group: &str, artifact: &str, version: &str, live: &
 
 /// Bibliothek eintragen bzw. laden. Liefert eine Meldung fuer die Statuszeile.
 pub fn add(target: &Target, hit: &Hit, live: &Mutex<String>) -> Result<String, String> {
-    let tools = super::tools();
     match target {
         Target::Pom(p) | Target::Gradle(p) | Target::JavaLib(p) => {
             let (g, a) = hit.id.split_once(':').ok_or("group:artifact")?;
@@ -376,45 +269,6 @@ pub fn add(target: &Target, hit: &Hit, live: &Mutex<String>) -> Result<String, S
                 }
             }
             Ok(crate::tr_format!("{a} {version} eingetragen. Maven/Gradle lädt es beim nächsten Start.", "Added {a} {version}. Maven/Gradle downloads it on the next run."))
-        }
-        Target::Requirements(p) => {
-            let text = std::fs::read_to_string(p).unwrap_or_default();
-            crate::workspace::atomic_write(p, &add_to_requirements(&text, &hit.id, &hit.version)?).map_err(|e| e.to_string())?;
-            Ok(crate::tr_format!("{} {} eingetragen; die .venv bekommt es beim nächsten Start.", "Added {} {}; the .venv gets it on the next run.", hit.id, hit.version))
-        }
-        Target::Pyproject(p) => {
-            let text = std::fs::read_to_string(p).map_err(|e| e.to_string())?;
-            crate::workspace::atomic_write(p, &add_to_pyproject(&text, &hit.id, &hit.version)?).map_err(|e| e.to_string())?;
-            Ok(crate::tr_format!("{} {} eingetragen; die .venv bekommt es beim nächsten Start.", "Added {} {}; the .venv gets it on the next run.", hit.id, hit.version))
-        }
-        Target::PythonShared => {
-            let py = tools.python.as_ref().ok_or_else(|| crate::i18n::tr("Kein Python gefunden.", "No Python found.").to_string())?;
-            let site = super::python::site_dir();
-            let mut cmd = std::process::Command::new(&py.exe);
-            cmd.args(["-m", "pip", "install", "--upgrade", "--no-warn-script-location", "--target"]).arg(&site).arg(&hit.id);
-            let (ok, out) = capture(cmd, live)?;
-            if !ok {
-                return Err(super::process::tail(&out, 8));
-            }
-            super::refresh();
-            Ok(crate::tr_format!("{} installiert.", "Installed {}.", hit.id))
-        }
-        Target::Package(root) => {
-            let npm = tools.npm.clone().ok_or_else(|| crate::i18n::tr("npm fehlt.", "npm is missing.").to_string())?;
-            let mut cmd = std::process::Command::new(npm);
-            if let Some(p) = super::process::tool_path(&tools) {
-                cmd.env("PATH", p);
-            }
-            cmd.current_dir(root).args(["install", "--no-audit", "--no-fund"]).arg(format!("{}@latest", hit.id));
-            let (ok, out) = capture(cmd, live)?;
-            if !ok {
-                return Err(super::process::tail(&out, 8));
-            }
-            Ok(crate::tr_format!("{} installiert und in package.json eingetragen.", "Installed {} and added it to package.json.", hit.id))
-        }
-        Target::NodeShared => {
-            super::node::npm_install(&tools, &super::node::node_dir().join("lib"), &[&hit.id], live)?;
-            Ok(crate::tr_format!("{} installiert.", "Installed {}.", hit.id))
         }
     }
 }
@@ -441,15 +295,6 @@ mod tests {
         assert!(out.contains("    implementation(\"a:b:1\")\n    implementation(\"com.google.code.gson:gson:2.14.0\")\n}\n"), "{out}");
         let groovy = add_to_gradle("plugins { id 'java' }\n", false, "x:y:1").unwrap();
         assert!(groovy.ends_with("dependencies {\n    implementation 'x:y:1'\n}\n"));
-    }
-
-    #[test]
-    fn python_files_get_the_package() {
-        assert_eq!(add_to_requirements("PyMySQL>=1.1\n", "requests", "2.32.0").unwrap(), "PyMySQL>=1.1\nrequests>=2.32.0\n");
-        assert!(add_to_requirements("Requests==2\n", "requests", "3").is_err());
-        let py = "[project]\nname = \"x\"\ndependencies = [\n    \"PyMySQL>=1.1\",\n]\n";
-        assert_eq!(add_to_pyproject(py, "requests", "2").unwrap(), "[project]\nname = \"x\"\ndependencies = [\n    \"PyMySQL>=1.1\",\n    \"requests>=2\",\n]\n");
-        assert!(add_to_pyproject("[project]\nname = \"x\"\n", "a", "1").unwrap().contains("dependencies = [\n    \"a>=1\",\n]"));
     }
 
     #[test]

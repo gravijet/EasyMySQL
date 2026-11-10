@@ -1,11 +1,9 @@
-// Entwicklungswerkzeuge fuer Java, Python und JavaScript: finden oder selbst herunterladen (immer die
+// Entwicklungswerkzeuge fuer Java: finden oder selbst herunterladen (immer die
 // neueste stabile Version) und Programme mit allem Noetigen starten.
 //
 // Eigene Werkzeuge liegen im Programmdatenordner:
 //   java/          jdk-25.0.5+8/, apache-maven-3.10.0/, gradle-9.8.2/, lib/ (JDBC-Treiber, JUnit)
-//   python/        python-3.14.0/ (python-build-standalone), site/ (PyMySQL, mysql-connector-python)
-//   node/          node-v24.11.0-linux-x64/, lib/node_modules/ (mysql2, mariadb)
-//   sprachserver/  jdtls-1.52.0/ (Eclipse JDT LS), npm/node_modules/ (pyright, typescript-language-server)
+//   sprachserver/  jdtls-1.52.0/ (Eclipse JDT LS)
 //   git/           git-2.51.0/ (MinGit, nur Windows), gh_2.83.0_…/ (GitHub CLI)
 
 pub mod autofix;
@@ -16,10 +14,7 @@ pub mod install;
 pub mod java;
 pub mod libs;
 pub mod lsp;
-pub mod names;
-pub mod node;
 pub mod process;
-pub mod python;
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
@@ -39,18 +34,8 @@ pub enum Tool {
     Gradle,
     /// JUnit (Konsolenstarter) fuer Tests in einfachen Projekten
     JUnit,
-    Python,
-    /// Gewaehlter Python-Treiber (PyMySQL bzw. mysql-connector-python)
-    PythonDrivers,
-    Node,
-    /// Gewaehlter Node-Treiber (mysql2 bzw. mariadb)
-    NodeDrivers,
     /// Eclipse JDT Language Server
     JavaLsp,
-    /// Pyright
-    PythonLsp,
-    /// typescript-language-server mit TypeScript
-    JsLsp,
     /// Git (nur unter Windows ladbar: MinGit)
     Git,
     /// GitHub CLI (Anmeldung im Browser)
@@ -58,19 +43,13 @@ pub enum Tool {
 }
 
 impl Tool {
-    pub const ALL: [Tool; 14] = [
+    pub const ALL: [Tool; 8] = [
         Tool::Jdk,
         Tool::JavaDrivers,
         Tool::Maven,
         Tool::Gradle,
         Tool::JUnit,
-        Tool::Python,
-        Tool::PythonDrivers,
-        Tool::Node,
-        Tool::NodeDrivers,
         Tool::JavaLsp,
-        Tool::PythonLsp,
-        Tool::JsLsp,
         Tool::Git,
         Tool::GhCli,
     ];
@@ -82,23 +61,15 @@ impl Tool {
             Tool::Maven => "Maven",
             Tool::Gradle => "Gradle",
             Tool::JUnit => "JUnit",
-            Tool::Python => "Python",
-            Tool::PythonDrivers => crate::i18n::tr("Python-Treiber", "Python driver"),
-            Tool::Node => "Node.js",
-            Tool::NodeDrivers => crate::i18n::tr("Node-Treiber", "Node driver"),
             Tool::JavaLsp => crate::i18n::tr("Java-Sprachserver", "Java language server"),
-            Tool::PythonLsp => crate::i18n::tr("Python-Sprachserver", "Python language server"),
-            Tool::JsLsp => crate::i18n::tr("JavaScript-Sprachserver", "JavaScript language server"),
             Tool::Git => "Git",
             Tool::GhCli => "GitHub CLI",
         }
     }
 
-    /// Werkzeuge, die vorher da sein muessen (Treiber fuer Python brauchen pip, npm-Pakete brauchen Node)
+    /// Werkzeuge, die vorher da sein muessen
     pub fn requires(self) -> &'static [Tool] {
         match self {
-            Tool::PythonDrivers => &[Tool::Python],
-            Tool::NodeDrivers | Tool::PythonLsp | Tool::JsLsp => &[Tool::Node],
             Tool::JavaLsp => &[Tool::Jdk],
             _ => &[],
         }
@@ -153,7 +124,7 @@ impl UpdatePolicy {
     }
 }
 
-/// Alles, was sich an Java, Python, JavaScript und dem Ausfuehren einstellen laesst.
+/// Alles, was sich an Java und dem Ausfuehren einstellen laesst.
 /// Werkzeugwahl: "" = automatisch (eigenes, sonst vom System), "own", "system" oder ein Pfad.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Config {
@@ -174,20 +145,6 @@ pub struct Config {
     /// Projekte von EasyMySQL bekommen JUnit-Tests
     pub junit: bool,
 
-    pub python_driver: python::Driver,
-    pub python: String,
-    pub python_args: String,
-    /// Projekte mit requirements.txt/pyproject.toml in einer eigenen .venv ausfuehren
-    pub python_venv: bool,
-    pub pip_args: String,
-
-    pub node_driver: node::Driver,
-    pub node: String,
-    pub node_args: String,
-    /// Fehlende Pakete eines Projekts vor dem Start mit npm installieren
-    pub npm_auto_install: bool,
-    /// npm, pnpm oder yarn
-    pub package_manager: String,
 
     /// Argumente fuer jedes gestartete Programm
     pub program_args: String,
@@ -195,8 +152,6 @@ pub struct Config {
     pub program_env: String,
     /// Vor dem Starten alle Dateien speichern
     pub save_before_run: bool,
-    /// Vor dem Starten auf Syntaxfehler pruefen (Python, JavaScript)
-    pub check_before_run: bool,
     /// Ein neuer Lauf ersetzt die Registerkarte des vorigen
     pub reuse_terminal: bool,
     /// Arbeitsordner: Projekt (true) oder Ordner der Datei
@@ -209,8 +164,6 @@ pub struct Config {
     pub auto_download: bool,
 
     pub lsp_java: bool,
-    pub lsp_python: bool,
-    pub lsp_js: bool,
     /// Arbeitsspeicher fuer den Java-Sprachserver
     pub lsp_java_memory_mb: u32,
     /// Wartezeit nach dem Tippen, bis der Sprachserver den Text bekommt
@@ -230,28 +183,15 @@ impl Default for Config {
             build_offline: false,
             use_wrapper: true,
             junit: true,
-            python_driver: python::Driver::PyMySql,
-            python: String::new(),
-            python_args: String::new(),
-            python_venv: true,
-            pip_args: String::new(),
-            node_driver: node::Driver::Mysql2,
-            node: String::new(),
-            node_args: String::new(),
-            npm_auto_install: true,
-            package_manager: "npm".into(),
             program_args: String::new(),
             program_env: String::new(),
             save_before_run: true,
-            check_before_run: true,
             reuse_terminal: true,
             cwd_project: true,
             pass_connection: true,
             updates: UpdatePolicy::Weekly,
             auto_download: true,
             lsp_java: true,
-            lsp_python: true,
-            lsp_js: true,
             lsp_java_memory_mb: 1024,
             lsp_delay_ms: 400,
         }
@@ -275,28 +215,15 @@ impl Config {
         kv("build_offline", b(self.build_offline).into());
         kv("use_wrapper", b(self.use_wrapper).into());
         kv("junit", b(self.junit).into());
-        kv("python_driver", self.python_driver.id().into());
-        kv("python", e(&self.python));
-        kv("python_args", e(&self.python_args));
-        kv("python_venv", b(self.python_venv).into());
-        kv("pip_args", e(&self.pip_args));
-        kv("node_driver", self.node_driver.id().into());
-        kv("node", e(&self.node));
-        kv("node_args", e(&self.node_args));
-        kv("npm_auto_install", b(self.npm_auto_install).into());
-        kv("package_manager", e(&self.package_manager));
         kv("program_args", e(&self.program_args));
         kv("program_env", e(&self.program_env));
         kv("save_before_run", b(self.save_before_run).into());
-        kv("check_before_run", b(self.check_before_run).into());
         kv("reuse_terminal", b(self.reuse_terminal).into());
         kv("cwd_project", b(self.cwd_project).into());
         kv("pass_connection", b(self.pass_connection).into());
         kv("updates", self.updates.id().into());
         kv("auto_download", b(self.auto_download).into());
         kv("lsp_java", b(self.lsp_java).into());
-        kv("lsp_python", b(self.lsp_python).into());
-        kv("lsp_js", b(self.lsp_js).into());
         kv("lsp_java_memory_mb", self.lsp_java_memory_mb.to_string());
         kv("lsp_delay_ms", self.lsp_delay_ms.to_string());
         s
@@ -317,28 +244,15 @@ impl Config {
             "build_offline" => self.build_offline = on,
             "use_wrapper" => self.use_wrapper = on,
             "junit" => self.junit = on,
-            "python_driver" => self.python_driver = python::Driver::from_id(v),
-            "python" => self.python = text,
-            "python_args" => self.python_args = text,
-            "python_venv" => self.python_venv = on,
-            "pip_args" => self.pip_args = text,
-            "node_driver" => self.node_driver = node::Driver::from_id(v),
-            "node" => self.node = text,
-            "node_args" => self.node_args = text,
-            "npm_auto_install" => self.npm_auto_install = on,
-            "package_manager" if !v.is_empty() => self.package_manager = text,
             "program_args" => self.program_args = text,
             "program_env" => self.program_env = text,
             "save_before_run" => self.save_before_run = on,
-            "check_before_run" => self.check_before_run = on,
             "reuse_terminal" => self.reuse_terminal = on,
             "cwd_project" => self.cwd_project = on,
             "pass_connection" => self.pass_connection = on,
             "updates" => self.updates = UpdatePolicy::from_id(v),
             "auto_download" => self.auto_download = on,
             "lsp_java" => self.lsp_java = on,
-            "lsp_python" => self.lsp_python = on,
-            "lsp_js" => self.lsp_js = on,
             "lsp_java_memory_mb" => self.lsp_java_memory_mb = v.parse().unwrap_or(1024).clamp(256, 16384),
             "lsp_delay_ms" => self.lsp_delay_ms = v.parse().unwrap_or(400).clamp(50, 5000),
             _ => return false,
@@ -372,7 +286,7 @@ pub fn config() -> Config {
 /// Neue Einstellungen; bei anderer Werkzeugwahl wird neu gesucht
 pub fn set_config(c: Config) {
     let old = config();
-    let changed_tools = old.jdk != c.jdk || old.python != c.python || old.node != c.node || old.python_driver != c.python_driver || old.node_driver != c.node_driver;
+    let changed_tools = old.jdk != c.jdk;
     *CONFIG.write().unwrap() = Some(c);
     if changed_tools {
         refresh();
@@ -422,15 +336,6 @@ pub struct Dist {
     pub launcher: PathBuf,
 }
 
-/// Python oder Node.js
-#[derive(Clone, Debug, PartialEq)]
-pub struct Runtime {
-    pub home: PathBuf,
-    pub exe: PathBuf,
-    pub version: String,
-    pub own: bool,
-}
-
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Tools {
     /// Brauchbares JDK (mindestens `java::MIN_JDK`)
@@ -443,40 +348,21 @@ pub struct Tools {
     pub gradle: Option<Dist>,
     /// junit-platform-console-standalone: (Version, Datei)
     pub junit: Option<(String, PathBuf)>,
-    pub python: Option<Runtime>,
-    /// Gefunden, aber zu alt oder ohne venv/pip
-    pub bad_python: Option<(Runtime, String)>,
-    /// Installierte Python-Treiber: (Treiber, Version)
-    pub python_drivers: Vec<(python::Driver, String)>,
-    pub node: Option<Runtime>,
-    pub bad_node: Option<(Runtime, String)>,
-    /// npm (bzw. npm.cmd) passend zu `node`
-    pub npm: Option<PathBuf>,
-    pub node_drivers: Vec<(node::Driver, String)>,
     /// Sprachserver: (Version, Ordner bzw. Startdatei)
     pub jdtls: Option<(String, PathBuf)>,
-    pub pyright: Option<(String, PathBuf)>,
-    pub tsls: Option<(String, PathBuf)>,
     pub git: Option<Dist>,
     pub gh: Option<Dist>,
 }
 
 impl Tools {
     pub fn has(&self, t: Tool) -> bool {
-        let cfg = config();
         match t {
             Tool::Jdk => self.jdk.is_some(),
             Tool::JavaDrivers => java::Driver::ALL.iter().all(|d| self.driver(*d).is_some()),
             Tool::Maven => self.maven.is_some(),
             Tool::Gradle => self.gradle.is_some(),
             Tool::JUnit => self.junit.is_some(),
-            Tool::Python => self.python.is_some(),
-            Tool::PythonDrivers => self.python_drivers.iter().any(|d| d.0 == cfg.python_driver),
-            Tool::Node => self.node.is_some() && self.npm.is_some(),
-            Tool::NodeDrivers => self.node_drivers.iter().any(|d| d.0 == cfg.node_driver),
             Tool::JavaLsp => self.jdtls.is_some(),
-            Tool::PythonLsp => self.pyright.is_some(),
-            Tool::JsLsp => self.tsls.is_some(),
             Tool::Git => self.git.is_some(),
             Tool::GhCli => self.gh.is_some(),
         }
@@ -494,20 +380,13 @@ impl Tools {
     /// Installierte Version eines eigenen Werkzeugs (fuer die Suche nach Updates)
     pub fn own_version(&self, t: Tool) -> Option<String> {
         let own = |d: &Option<Dist>| d.as_ref().filter(|m| m.own).map(|m| m.version.clone());
-        let own_rt = |r: &Option<Runtime>| r.as_ref().filter(|m| m.own).map(|m| m.version.clone());
         match t {
             Tool::Jdk => self.jdk.as_ref().filter(|j| j.own).map(|j| j.version.clone()),
             Tool::JavaDrivers => self.driver(java::Driver::MariaDb).map(|d| d.1.clone()),
             Tool::Maven => own(&self.maven),
             Tool::Gradle => own(&self.gradle),
             Tool::JUnit => self.junit.as_ref().map(|j| j.0.clone()),
-            Tool::Python => own_rt(&self.python),
-            Tool::PythonDrivers => self.python_drivers.first().map(|d| d.1.clone()),
-            Tool::Node => own_rt(&self.node),
-            Tool::NodeDrivers => self.node_drivers.first().map(|d| d.1.clone()),
             Tool::JavaLsp => self.jdtls.as_ref().map(|j| j.0.clone()),
-            Tool::PythonLsp => self.pyright.as_ref().map(|j| j.0.clone()),
-            Tool::JsLsp => self.tsls.as_ref().map(|j| j.0.clone()),
             Tool::Git => own(&self.git),
             Tool::GhCli => own(&self.gh),
         }
@@ -524,24 +403,12 @@ impl Tools {
                 out.push(bin.to_path_buf());
             }
         }
-        for r in [&self.python, &self.node].into_iter().flatten() {
-            if let Some(bin) = r.exe.parent() {
-                out.push(bin.to_path_buf());
-            }
-        }
-        // Python unter Windows: Scripts\ (pip.exe)
-        if let Some(p) = self.python.as_ref().filter(|p| p.own)
-            && p.home.join("Scripts").is_dir()
-        {
-            out.push(p.home.join("Scripts"));
-        }
         out.dedup();
         out
     }
 
-    /// Umgebung fuer Terminals und Programme: JAVA_HOME, Klassenpfad mit den Treibern, PYTHONPATH und
-    /// NODE_PATH mit den Treibern – so funktionieren `java Main.java`, `python app.py` und `node app.js`
-    /// ohne weitere Angaben.
+    /// Umgebung fuer Terminals und Programme: JAVA_HOME und Klassenpfad mit den Treibern – so funktioniert
+    /// `java Main.java` ohne weitere Angaben.
     pub fn shell_env(&self) -> Vec<(String, String)> {
         let mut out = Vec::new();
         if let Some(j) = &self.jdk {
@@ -552,13 +419,6 @@ impl Tools {
             let mut cp = vec![".".to_string()];
             cp.extend(jars.iter().map(|p| p.display().to_string()));
             out.push(("CLASSPATH".into(), cp.join(java::CP_SEP)));
-        }
-        if !self.python_drivers.is_empty() {
-            out.push(("PYTHONPATH".into(), python::site_dir().display().to_string()));
-        }
-        out.push(("PYTHONIOENCODING".into(), "utf-8".into()));
-        if !self.node_drivers.is_empty() {
-            out.push(("NODE_PATH".into(), node::modules_dir().display().to_string()));
         }
         out
     }
@@ -678,26 +538,10 @@ fn choice(s: &str) -> (bool, bool, Option<PathBuf>) {
 pub fn detect(root: &Path, cfg: &Config) -> Tools {
     let mut t = Tools::default();
     java::detect(&root.join("java"), cfg, &mut t);
-    python::detect(&root.join("python"), cfg, &mut t);
-    node::detect(&root.join("node"), cfg, &mut t);
     let lsp = root.join("sprachserver");
     if let Some((v, home)) = versioned_dirs(&lsp, "jdtls-").into_iter().next() {
         t.jdtls = Some((v, home));
     }
-    let npm_pkg = |name: &str, bin: &str| -> Option<(String, PathBuf)> {
-        let dir = lsp.join("npm").join("node_modules").join(name);
-        let v = node::package_version(&dir)?;
-        Some((v, dir.join(bin)))
-    };
-    t.pyright = npm_pkg("pyright", "langserver.index.js");
-    // TypeScript ab 7 hat einen eigenen, nativen Sprachserver (tsc --lsp); sonst typescript-language-server
-    let native = std::fs::read_dir(lsp.join("npm/node_modules/@typescript")).ok().and_then(|rd| {
-        rd.flatten().map(|e| e.path().join("lib").join(format!("tsc{EXE}"))).find(|p| p.is_file())
-    });
-    t.tsls = match (native, node::package_version(&lsp.join("npm/node_modules/typescript"))) {
-        (Some(exe), Some(v)) => Some((v, exe)),
-        _ => npm_pkg("typescript-language-server", "lib/cli.mjs"),
-    };
 
     // Git: eigenes MinGit (Windows), sonst aus dem System
     let git_dir = root.join("git");
@@ -766,8 +610,7 @@ mod tests {
 
     #[test]
     fn config_roundtrip_and_env_lines() {
-        let mut c = Config { jvm_args: "-Xmx1g\n-ea".into(), python_venv: false, updates: UpdatePolicy::Monthly, program_env: "# x\nA=1\nexport B = zwei\n=leer\n".into(), ..Default::default() };
-        c.node_driver = node::Driver::Mariadb;
+        let c = Config { jvm_args: "-Xmx1g\n-ea".into(), use_wrapper: false, updates: UpdatePolicy::Monthly, program_env: "# x\nA=1\nexport B = zwei\n=leer\n".into(), ..Default::default() };
         let mut back = Config::default();
         for line in c.to_lines().lines() {
             let (k, v) = line.split_once('=').unwrap();
@@ -795,13 +638,8 @@ mod tests {
         let mvn = dir.join("apache-maven-3.10.0").join("bin");
         std::fs::create_dir_all(&mvn).unwrap();
         std::fs::write(mvn.join(if cfg!(windows) { "mvn.cmd" } else { "mvn" }), "").unwrap();
-        // Python- und Node-Treiber
-        std::fs::create_dir_all(root.join("python/site/PyMySQL-1.1.2.dist-info")).unwrap();
-        let m2 = root.join("node/lib/node_modules/mysql2");
-        std::fs::create_dir_all(&m2).unwrap();
-        std::fs::write(m2.join("package.json"), r#"{"name":"mysql2","version":"3.15.3"}"#).unwrap();
 
-        let cfg = Config { jdk: "own".into(), python: "own".into(), node: "own".into(), ..Default::default() };
+        let cfg = Config { jdk: "own".into(), ..Default::default() };
         let t = detect(&root, &cfg);
         let jdk = t.jdk.clone().unwrap();
         assert!(jdk.own && jdk.major == 25 && jdk.version == "25.0.5", "{jdk:?}");
@@ -810,9 +648,6 @@ mod tests {
         assert_eq!(t.junit.as_ref().unwrap().0, "6.0.1");
         let m = t.maven.clone().unwrap();
         assert!(m.own && m.version == "3.10.0");
-        assert_eq!(t.python_drivers, vec![(python::Driver::PyMySql, "1.1.2".to_string())]);
-        assert_eq!(t.node_drivers, vec![(node::Driver::Mysql2, "3.15.3".to_string())]);
-        assert!(t.python.is_none() && t.node.is_none(), "nur eigene erlaubt, keine vorhanden");
         let _ = std::fs::remove_dir_all(&root);
     }
 }

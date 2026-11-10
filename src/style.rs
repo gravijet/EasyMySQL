@@ -176,12 +176,12 @@ fn load_font(candidates: &[&str]) -> Option<Vec<u8>> {
 }
 
 pub fn apply(ctx: &egui::Context, dark: bool) {
-    // Eingebettete Schriften (Inter und JetBrains Mono, SIL OFL, Lizenzen in assets/fonts): auf jedem System gleich.
+    // Eingebettete Schriften (Inter und JetBrains Mono NL ohne Ligaturen, damit != nicht als Zeichen erscheint, SIL OFL, Lizenzen in assets/fonts): auf jedem System gleich.
     // Die Systemschriften folgen danach als Reserve fuer Zeichen, die sie nicht enthalten.
     let mut fonts = FontDefinitions::default();
     let embedded: [(&str, &'static [u8], FontFamily); 2] = [
         ("inter", include_bytes!("../assets/fonts/Inter-Regular.otf"), FontFamily::Proportional),
-        ("jetbrains-mono", include_bytes!("../assets/fonts/JetBrainsMono-Regular.ttf"), FontFamily::Monospace),
+        ("jetbrains-mono", include_bytes!("../assets/fonts/JetBrainsMonoNL-Regular.ttf"), FontFamily::Monospace),
     ];
     for (name, bytes, family) in embedded {
         fonts.font_data.insert(name.into(), Arc::new(FontData::from_static(bytes)));
