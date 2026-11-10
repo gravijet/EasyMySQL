@@ -263,6 +263,22 @@ pub const CHAPTERS: &[Chapter] = &[
                 ],
             },
             Section {
+                id: "code-hilfen",
+                title: "Code-Hilfen wie in IntelliJ IDEA",
+                blocks: &[
+                    List(&[
+                        "Rechtsklick in den Editor öffnet alle Aktionen: Generieren, Umgeben mit, Umbenennen, Formatieren, Fehler korrigieren, Zeilen und Auswahl.",
+                        "Alt+Einfg erzeugt Getter und Setter, einen Konstruktor, toString() sowie equals() und hashCode() für die Felder der Klasse.",
+                        "Strg+Alt+T umgibt die markierten Zeilen mit try/catch, if, for oder while; Strg+Alt+V legt den markierten Ausdruck in eine Variable.",
+                        "Nach einem Punkt erscheinen Methoden und Felder: Math., eigene Klassen, Enum-Werte und Variablen. Der Java-Sprachserver ergänzt alle Klassen und fügt den nötigen Import ein.",
+                        "Beim Zeigen mit der Maus erklärt eine Karte Methoden, Felder, Variablen und ihr Javadoc, in SQL Tabellen mit ihren Spalten, Spalten mit Typ und Schlüsseln sowie Funktionen.",
+                        "F2 oder Umschalt+F6 benennt um: mit Sprachserver im ganzen Projekt, sonst in der Datei (ohne Texte und Kommentare).",
+                        "Alt+Umschalt+↑/↓ verschiebt Zeilen, Alt+Umschalt+→ erweitert die Auswahl Schritt für Schritt (Wort, Klammer, Zeile, Block), Umschalt+Enter beginnt eine neue Zeile darunter.",
+                        "Alt+Umschalt+F formatiert Java sofort, auch solange der Sprachserver noch lädt. Gleiche Namen wie unter dem Cursor werden hinterlegt; die Rücktaste löscht in der Einrückung eine ganze Ebene.",
+                    ]),
+                ],
+            },
+            Section {
                 id: "bearbeiten",
                 title: "Zeilen bearbeiten",
                 blocks: &[
@@ -271,7 +287,7 @@ pub const CHAPTERS: &[Chapter] = &[
                         ("Zeile duplizieren", "Kopie darunter, der Cursor bleibt, wo er ist"),
                         ("Zeile löschen", "ohne Zwischenablage"),
                         ("Zeile markieren", "markiert die ganze aktuelle Zeile bzw. alle Zeilen der Markierung"),
-                        ("Zeile verschieben", "aktuelle bzw. markierte Zeilen nach oben/unten"),
+                        ("Zeile verschieben", "aktuelle bzw. markierte Zeilen nach oben/unten (Alt+Umschalt+Pfeil wie in IntelliJ)"),
                         ("Zeile kopieren", "Kopie oberhalb bzw. unterhalb, Cursor wandert mit"),
                         ("Einrücken", "bei mehrzeiliger Markierung zwei Leerzeichen je Zeile"),
                         ("Kommentar ein/aus", "setzt oder entfernt „-- “ vor den Zeilen"),

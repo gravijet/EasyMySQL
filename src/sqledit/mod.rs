@@ -1137,6 +1137,33 @@ impl SqlEditor {
                                     }
                                 }
                         }
+                        // Gleiche Namen wie unter dem Cursor dezent hinterlegen (wie in IntelliJ), nur ohne Auswahl und Suche
+                        if find_q.is_none()
+                            && let Some(r) = o.cursor_range.filter(|r| r.primary.index == r.secondary.index)
+                            && text.len() < 400_000
+                            && let Some((wa, wb, word)) = hover::word_at(text, r.primary.index.0)
+                            && word.chars().count() >= 2
+                            && !(self.lang == Lang::Java && crate::dev::java::source::KEYWORDS.contains(&word.as_str()))
+                            && !(self.lang == Lang::Sql && is_keyword(&word.to_uppercase()))
+                        {
+                            let chars: Vec<char> = text.chars().collect();
+                            let hits: Vec<(usize, usize)> = find_all(text, &word, true)
+                                .into_iter()
+                                .filter(|&(a, b)| (a == 0 || !is_word_char(chars[a - 1])) && chars.get(b).is_none_or(|c| !is_word_char(*c)))
+                                .collect();
+                            if hits.len() > 1 {
+                                let clip = ui.clip_rect();
+                                for (a, b) in hits {
+                                    let ra = pos_of(a);
+                                    if ra.bottom() < clip.top() || ra.top() > clip.bottom() {
+                                        continue;
+                                    }
+                                    let rb = pos_of(b);
+                                    let mine = a == wa && b == wb;
+                                    bg.push(egui::Shape::rect_filled(egui::Rect::from_min_max(ra.left_top(), egui::pos2(rb.left(), ra.bottom())), 2.0, pal.find_match.gamma_multiply(if mine { 0.35 } else { 0.55 })));
+                                }
+                            }
+                        }
                         if let Some((q, case)) = &find_q {
                             for (a, b) in find_all(text, q, *case) {
                                 let ra = pos_of(a);
