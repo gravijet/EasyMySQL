@@ -1,5 +1,6 @@
 // Java: JDK, JDBC-Treiber, Maven, Gradle und JUnit; Quelltext lesen, uebersetzen, starten, testen, .jar bauen.
 
+pub mod format;
 pub mod jar;
 pub mod project;
 pub mod run;

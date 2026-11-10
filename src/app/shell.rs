@@ -10,8 +10,13 @@ impl EasyApp {
     // Sitzung
 
     pub(super) fn tab_from_session(&self, entry: &str) -> Option<Box<dyn TabView>> {
-        let parts: Vec<&str> = entry.split('\t').collect();
-        Some(match parts.as_slice() {
+        let mut parts: Vec<&str> = entry.split('\t').collect();
+        // Am Ende steht der Cursor ("@1234"), damit die Datei an derselben Stelle aufgeht
+        let cursor = parts.last().and_then(|p| p.strip_prefix('@')).and_then(|c| c.parse::<usize>().ok());
+        if cursor.is_some() {
+            parts.pop();
+        }
+        let mut tab: Box<dyn TabView> = match parts.as_slice() {
             ["preview", path] => {
                 let p = Path::new(path);
                 let mut head = [0u8; 8192];
@@ -35,7 +40,11 @@ impl EasyApp {
             ["settings"] => Box::new(SettingsTab::new()),
             ["help"] => Box::new(HelpTab::new()),
             _ => return None,
-        })
+        };
+        if let Some(c) = cursor {
+            tab.restore_cursor(c);
+        }
+        Some(tab)
     }
 
     pub(super) fn restore_session(&mut self, session: Option<Session>) {
@@ -80,7 +89,10 @@ impl EasyApp {
         self.session_saved = Instant::now();
         let s = Session {
             project: self.project.as_ref().map(|p| p.display().to_string()).unwrap_or_default(),
-            tabs: self.tabs.iter().filter_map(|t| t.session()).collect(),
+            tabs: self.tabs.iter().filter_map(|t| t.session().map(|s| match t.cursor() {
+                Some(c) if c > 0 => format!("{s}\t@{c}"),
+                _ => s,
+            })).collect(),
             active: self.active,
             side_view: self.side_view.name().into(),
         };

@@ -129,7 +129,7 @@ impl Default for Settings {
             autosave: true,
             lint: true,
             background: false,
-            restore_tabs: false,
+            restore_tabs: true,
             sidebar: true,
             new_file_ext: "sql".into(),
             java_project_kind: "einfach".into(),

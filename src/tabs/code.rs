@@ -815,14 +815,31 @@ impl CodeTab {
                 let (l, c) = self.editor.line_col;
                 ui.label(RichText::new(crate::tr_format!("Z. {l}, Sp. {c}", "Ln {l}, Col {c}")).small().color(pal.text_weak));
                 ui.label(RichText::new(self.lang.label()).small().color(pal.text_weak));
+                // Sprachserver: nur ein ruhiges Symbol (kein wechselnder Text); Einzelheiten beim Zeigen
                 if let Some(note) = &self.lsp_note {
-                    ui.add(egui::Label::new(RichText::new(note).small().color(pal.text_weak)).truncate());
+                    let failed = self.lsp.as_ref().is_some_and(|s| matches!(*s.phase.lock().unwrap(), lsp::Phase::Failed(_)));
+                    let (r, resp) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
+                    icons::paint(ui.painter(), r, if failed { Icon::Alert } else { Icon::Braces }, if failed { pal.warn_text } else { pal.text_weak.gamma_multiply(0.7) });
+                    resp.on_hover_text(note);
                 }
             });
         });
     }
 
     fn format(&mut self, cx: &mut Ctx) {
+        // Java sofort selbst formatieren, solange der Sprachserver noch laedt
+        if self.lang == Lang::Java && !self.lsp.as_ref().is_some_and(|s| s.ready()) {
+            let step = match sqledit::prefs().indent {
+                0 => self.lang.indent().to_string(),
+                n => " ".repeat(n),
+            };
+            let new = java::format::format(&self.text, &step);
+            if new != self.text {
+                self.text = new;
+                self.last_edit = Instant::now();
+            }
+            return;
+        }
         match self.lsp.clone().filter(|s| s.ready()) {
             Some(s) => {
                 self.flush_lsp();
@@ -1675,6 +1692,14 @@ impl TabView for CodeTab {
 
     fn goto_line(&mut self, line: usize) {
         self.pending_line = Some(line);
+    }
+
+    fn cursor(&self) -> Option<usize> {
+        Some(self.editor.cursor)
+    }
+
+    fn restore_cursor(&mut self, pos: usize) {
+        self.editor.restore = Some(pos);
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, cx: &mut Ctx) {

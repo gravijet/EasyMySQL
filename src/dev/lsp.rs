@@ -237,6 +237,15 @@ fn command(lang: Lang, root: &Path, tools: &Tools) -> Result<(Command, Value), S
                 "-Declipse.product=org.eclipse.jdt.ls.core.product",
                 "-Dlog.level=WARNING",
                 &format!("-Xmx{}m", cfg.lsp_java_memory_mb),
+                // Wie die Java-Erweiterung von VS Code: schnellerer Start, das Klassenarchiv wird beim ersten Mal angelegt
+                "-Xms100m",
+                "-XX:+UseParallelGC",
+                "-XX:GCTimeRatio=4",
+                "-XX:AdaptiveSizePolicyWeight=90",
+                "-Dsun.zip.disableMemoryMapping=true",
+                "-XX:+AutoCreateSharedArchive",
+                &format!("-XX:SharedArchiveFile={}", home.join("jdtls.jsa").display()),
+                "-Xlog:disable",
                 "--add-modules=ALL-SYSTEM",
                 "--add-opens",
                 "java.base/java.util=ALL-UNNAMED",
@@ -368,6 +377,28 @@ pub fn get(lang: Lang, root: &Path, ctx: &eframe::egui::Context) -> Option<Arc<S
     }
     SERVERS.lock().unwrap().push(Arc::clone(&server));
     Some(server)
+}
+
+/// Java-Sprachserver fuer ein Projekt schon beim Oeffnen starten (im Hintergrund), damit Fehler, Vorschlaege
+/// und Formatieren sofort bereit sind, wenn die erste Datei aufgeht. Billig genug fuer jedes Bild.
+pub fn prewarm(project: Option<&Path>, ctx: &eframe::egui::Context) {
+    static LAST: Mutex<Option<PathBuf>> = Mutex::new(None);
+    let mut last = LAST.lock().unwrap();
+    if last.as_deref() == project {
+        return;
+    }
+    *last = project.map(Path::to_path_buf);
+    let Some(project) = project.map(Path::to_path_buf) else { return };
+    if !enabled(Lang::Java) {
+        return;
+    }
+    let ctx = ctx.clone();
+    std::thread::spawn(move || {
+        let Some(file) = super::process::source_files(&project, &["java"]).into_iter().next() else { return };
+        if super::tools().has(super::Tool::JavaLsp) {
+            let _ = get(Lang::Java, &root_for(Lang::Java, &file, Some(&project)), &ctx);
+        }
+    });
 }
 
 /// Alle Server beenden (beim Schliessen oder nach neuen Einstellungen)

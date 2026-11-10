@@ -173,6 +173,8 @@ pub struct SqlEditor {
     pub breakpoints_enabled: bool,
     /// Zeile, an der der Debugger gerade steht
     pub exec_line: Option<usize>,
+    /// Cursor beim naechsten Zeichnen setzen und dorthin scrollen (Sitzung wiederherstellen)
+    pub restore: Option<usize>,
 }
 
 #[derive(Default)]
@@ -215,6 +217,7 @@ impl SqlEditor {
             breakpoints: Vec::new(),
             breakpoints_enabled: false,
             exec_line: None,
+            restore: None,
         }
     }
 
@@ -589,6 +592,21 @@ impl SqlEditor {
         // Tab / Umschalt+Tab bei mehrzeiliger Auswahl: Block einruecken
         let step = self.indent_step();
         let step = step.as_str();
+        // Ruecktaste in der Einrueckung: eine ganze Ebene loeschen statt eines Leerzeichens (wie in IntelliJ)
+        if a == b && self.popup.is_none() {
+            let ls = line_start(text, first);
+            let spaces = text.chars().skip(ls).take(a.saturating_sub(ls)).collect::<String>();
+            if !spaces.is_empty()
+                && spaces.chars().all(|c| c == ' ')
+                && ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Backspace))
+            {
+                let n = (spaces.chars().count() - 1) % step.len().max(1) + 1;
+                text.replace_range(byte_of(text, a - n)..byte_of(text, a), "");
+                self.set_cursor(&ctx, a - n);
+                changed(self, text, out);
+                return;
+            }
+        }
         if self.popup.is_none() && last > first && take(ui, Cmd::Indent) {
             *text = map_lines(text, first, last, |l| format!("{step}{l}"));
             self.set_selection(&ctx, line_start(text, first), line_start(text, last + 1).saturating_sub(1));
@@ -825,6 +843,12 @@ impl SqlEditor {
         if self.prev_text.is_empty() && !text.is_empty() {
             self.prev_text = text.clone();
         }
+        if let Some(pos) = self.restore.take() {
+            let pos = pos.min(text.chars().count());
+            let (line, _) = line_col(text, pos);
+            self.goto_line(&ctx, text, line, row_h);
+            self.set_cursor(&ctx, pos);
+        }
 
         // Tasten fuer das Vorschlagsfenster abfangen, bevor der Editor sie bekommt
         if focused && self.popup.is_some() {
@@ -931,7 +955,12 @@ impl SqlEditor {
         let digits = lines.to_string().len().max(2);
         let prefs = prefs();
         let marks = self.breakpoints_enabled || !self.breakpoints.is_empty();
-        let gutter_w = if prefs.line_numbers { digits as f32 * 8.0 + 18.0 } else { 12.0 } + if marks { 12.0 } else { 0.0 };
+        // Rand: [Haltepunkte] [Zeilennummern] [Fehlerpunkte], jede Spalte mittig zur Zeile
+        let digit_w = ctx.fonts_mut(|f| f.glyph_width(&font, '0'));
+        let bp_w = if marks { 18.0 } else { 0.0 };
+        let num_w = if prefs.line_numbers { digits as f32 * digit_w + 4.0 } else { 0.0 };
+        let mark_w = 16.0;
+        let gutter_w = 6.0 + bp_w + num_w + mark_w;
         // Wie in VS Code laesst sich ueber die letzte Zeile hinaus scrollen: unter dem Text bleibt Platz
         // fuer die Hoehe des Fensters abzueglich einer Zeile.
         let visible_rows = (((height - 8.0) / row_h).floor().max(3.0)) as usize;
@@ -1053,14 +1082,15 @@ impl SqlEditor {
                             let clip = ui.clip_rect();
                             for (k, prob) in self.lint.problems.iter().enumerate() {
                                 let (line, end) = self.lint.marks[k];
-                                let y0 = gp.y + line as f32 * row_h;
-                                if y0 + row_h < clip.top() || y0 > clip.bottom() {
+                                let Some(row) = o.galley.rows.get(line) else { continue };
+                                let (y0, rh) = (gp.y + row.min_y(), row.height());
+                                if y0 + rh < clip.top() || y0 > clip.bottom() {
                                     continue;
                                 }
                                 let (x0, x1) = (pos_of(prob.start).left(), pos_of(end).left().max(pos_of(prob.start).left() + 6.0));
                                 let color = if prob.severity == Severity::Error { pal.error_text } else { pal.warn_text };
-                                ui.painter().add(squiggle(x0, x1, y0 + row_h - 1.0, color));
-                                lint_hits.push((egui::Rect::from_min_max(egui::pos2(x0, y0), egui::pos2(x1, y0 + row_h)), k));
+                                ui.painter().add(squiggle(x0, x1, y0 + rh - 1.0, color));
+                                lint_hits.push((egui::Rect::from_min_max(egui::pos2(x0, y0), egui::pos2(x1, y0 + rh)), k));
                             }
                         }
                         // Zeilennummern
@@ -1070,13 +1100,13 @@ impl SqlEditor {
                         // Text never wraps: each galley row is one source line.
                         // Only emit line-number shapes inside the visible viewport.
                         let clip = ui.clip_rect().expand(row_h);
-                        let first = o.galley.rows.partition_point(|row| gp.y + row.pos.y + row_h < clip.top());
-                        let last = o.galley.rows.partition_point(|row| gp.y + row.pos.y <= clip.bottom());
-                        // Haltepunkt setzen: Klick links neben die Zeilennummer
+                        let first = o.galley.rows.partition_point(|row| gp.y + row.max_y() < clip.top());
+                        let last = o.galley.rows.partition_point(|row| gp.y + row.min_y() <= clip.bottom());
+                        // Haltepunkt setzen: Klick auf den Rand; die Zeile kommt aus der echten Lage der Zeilen
                         if gutter_resp.clicked()
                             && let Some(pos) = gutter_resp.interact_pointer_pos()
                         {
-                            let line = ((pos.y - gp.y) / row_h).floor().max(0.0) as usize;
+                            let line = o.galley.rows.partition_point(|row| gp.y + row.max_y() <= pos.y);
                             if line < lines {
                                 out.toggle_breakpoint = Some(line);
                             }
@@ -1084,16 +1114,20 @@ impl SqlEditor {
                         if gutter_resp.hovered() && self.breakpoints_enabled {
                             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
                         }
-                        let dot_x = gutter.left() + if marks { 7.0 } else { 6.0 };
-                        let lint_x = if marks { gutter.left() + 16.0 } else { gutter.left() + 6.0 };
+                        let dot_x = gutter.left() + 4.0 + bp_w / 2.0;
+                        let num_right = gutter.left() + 4.0 + bp_w + num_w;
+                        let lint_x = num_right + mark_w / 2.0;
                         for (index, row) in o.galley.rows[first..last].iter().enumerate() {
                             let n = first + index + 1;
                             {
                                 let active = cur_line == Some(n - 1);
                                 let err = self.error_line == Some(n - 1);
-                                let cy = gp.y + row.pos.y + row_h / 2.0;
+                                let cy = gp.y + row.rect().center().y;
                                 if self.breakpoints.contains(&(n - 1)) {
-                                    p.circle_filled(egui::pos2(dot_x, cy), 4.5, pal.breakpoint_fg);
+                                    p.circle_filled(egui::pos2(dot_x, cy), 5.0, pal.breakpoint_fg);
+                                } else if self.breakpoints_enabled && gutter_resp.hover_pos().is_some_and(|h| h.x < num_right && (h.y - cy).abs() < row.height() / 2.0) {
+                                    // Vorschau beim Zeigen: hier entsteht der Haltepunkt
+                                    p.circle_filled(egui::pos2(dot_x, cy), 5.0, pal.breakpoint_fg.gamma_multiply(0.35));
                                 }
                                 if self.exec_line == Some(n - 1) {
                                     let x = dot_x - 4.0;
@@ -1103,12 +1137,12 @@ impl SqlEditor {
                                     && let Ok(k) = self.lint.lines.binary_search_by_key(&(n - 1), |(l, _)| *l)
                                 {
                                     let color = if self.lint.lines[k].1 == Severity::Error { pal.error_text } else { pal.warn_text };
-                                    p.circle_filled(egui::pos2(lint_x, cy), 2.5, color);
+                                    p.circle_filled(egui::pos2(lint_x, cy), 3.5, color);
                                 }
                                 if prefs.line_numbers {
                                     p.text(
-                                        egui::pos2(gutter.right() - 8.0, gp.y + row.pos.y),
-                                        egui::Align2::RIGHT_TOP,
+                                        egui::pos2(num_right, cy),
+                                        egui::Align2::RIGHT_CENTER,
                                         n.to_string(),
                                         font.clone(),
                                         if err { pal.error_text } else if active { pal.text } else { pal.syn_gutter },

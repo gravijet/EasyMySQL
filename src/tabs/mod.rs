@@ -357,6 +357,11 @@ pub trait TabView {
     }
     /// Zu einer Zeile springen (Suchergebnisse)
     fn goto_line(&mut self, _line: usize) {}
+    /// Cursor (Zeichenindex) fuer die Sitzung: beim Schliessen merken, beim Start wieder setzen
+    fn cursor(&self) -> Option<usize> {
+        None
+    }
+    fn restore_cursor(&mut self, _pos: usize) {}
     /// Textaenderungen (Zeile, Spalte in UTF-16) auf den Inhalt anwenden; false, wenn die Registerkarte keinen Text hat
     fn apply_edits(&mut self, _edits: &[crate::dev::lsp::TextEdit]) -> bool {
         false

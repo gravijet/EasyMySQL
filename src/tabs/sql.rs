@@ -880,6 +880,14 @@ impl TabView for SqlTab {
         self.pending_line = Some(line);
     }
 
+    fn cursor(&self) -> Option<usize> {
+        Some(self.editor.cursor)
+    }
+
+    fn restore_cursor(&mut self, pos: usize) {
+        self.editor.restore = Some(pos);
+    }
+
     fn save_now(&mut self) {
         if self.file.is_none() && !self.text.trim().is_empty() && self.save_as.is_none() {
             // Strg+S bei unbenannter Abfrage: Speichern unter

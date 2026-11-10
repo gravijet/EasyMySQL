@@ -562,25 +562,48 @@ pub fn pressed(input: &mut egui::InputState, cmd: Cmd) -> bool {
     if bindings.is_empty() {
         return false;
     }
-    let mut hit: Option<Key> = None;
+    let mut hit: Option<(Key, Modifiers)> = None;
     let mods = input.modifiers;
     input.events.retain(|e| {
         if hit.is_none()
             && let Some(b) = bindings.iter().find(|b| b.matches(e, &mods))
         {
-            hit = Some(b.key);
+            let m = if let Event::Key { modifiers, .. } = e { *modifiers } else { mods };
+            hit = Some((b.key, m));
             return false;
         }
         true
     });
-    // Alt+Umschalt+F u. ae. liefern unter Windows zusaetzlich den Buchstaben als Text: der darf nicht im Editor landen
-    if let Some(key) = hit
-        && (mods.alt || mods.ctrl || mods.command)
+    // Alt+Umschalt+F u. ae. liefern zusaetzlich den Buchstaben als Text: der darf nicht im Editor landen
+    if let Some((key, m)) = hit
+        && (m.alt || m.ctrl || m.command)
     {
         let name = key.name();
         input.events.retain(|e| !matches!(e, Event::Text(t) if t.to_uppercase() == name));
     }
     hit.is_some()
+}
+
+/// Aus dem raw_input_hook, bevor egui die Eingabe verteilt: zu einem Kuerzel mit Alt oder Strg (Alt+Umschalt+F)
+/// schickt das System oft auch den Buchstaben als Text. Der darf nicht im Editor landen, auch wenn das Kuerzel
+/// erst spaeter im Bild ausgewertet wird.
+pub fn filter_raw(raw: &mut egui::RawInput) {
+    let guard = KEYMAP.read().unwrap();
+    let mut letters: Vec<&'static str> = Vec::new();
+    for e in &raw.events {
+        if let Event::Key { key, pressed: true, modifiers, .. } = e
+            && (modifiers.alt || modifiers.ctrl || modifiers.command)
+            && Cmd::all().any(|c| {
+                let list = guard.as_ref().map(|k| k.get(c).to_vec()).unwrap_or_else(|| c.defaults());
+                list.iter().any(|b| b.matches(e, modifiers))
+            })
+        {
+            letters.push(key.name());
+        }
+    }
+    if !letters.is_empty() {
+        raw.events.retain(|e| !matches!(e, Event::Text(t) if letters.iter().any(|l| t.to_uppercase() == *l)));
+    }
 }
 
 /// Wie `pressed`, fuer `ui.input_mut`
@@ -654,6 +677,13 @@ mod tests {
         input.events = vec![key_event(Key::F, false, true, true), Event::Text("F".into())];
         assert!(pressed(&mut input, Cmd::Format));
         assert!(input.events.is_empty(), "{:?}", input.events);
+        // Vor dem Verteilen: der Buchstabe faellt weg, normales Tippen bleibt
+        let mut raw = egui::RawInput { events: vec![key_event(Key::F, false, true, true), Event::Text("F".into())], ..Default::default() };
+        filter_raw(&mut raw);
+        assert_eq!(raw.events.len(), 1);
+        let mut raw = egui::RawInput { events: vec![key_event(Key::F, false, true, false), Event::Text("F".into())], ..Default::default() };
+        filter_raw(&mut raw);
+        assert_eq!(raw.events.len(), 2);
     }
 
     #[test]

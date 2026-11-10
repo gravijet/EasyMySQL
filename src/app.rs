@@ -1324,6 +1324,7 @@ impl eframe::App for EasyApp {
             ctx.send_viewport_cmd(ViewportCommand::Focus);
         }
         self.check_server(ctx);
+        crate::dev::lsp::prewarm(self.project.as_deref(), ctx);
         self.updater.poll(ctx, self.settings.auto_install);
         self.background_tasks(ctx);
 
@@ -1450,6 +1451,7 @@ impl eframe::App for EasyApp {
     }
 
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        crate::keymap::filter_raw(raw_input);
         crate::sqledit::filter_input(ctx, raw_input);
         let f = self.settings.scroll_speed;
         if (f - 1.0).abs() > 0.01 {
