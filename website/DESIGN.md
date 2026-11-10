@@ -14,6 +14,7 @@ Light, squared, left-aligned. The measured comparison is the one loud element; e
 | blue | `#2450e0` | EasyMySQL bars and figures, links, primary download |
 | rival | `#8f99ad` | hatched bars of the other products |
 | ok | `#107a44` | check marks, safety facts |
+| no | `#c2362b` | crosses in the feature table |
 
 Blue always means EasyMySQL or an action. Other products are hatched grey, so the charts do not rely on color alone.
 
@@ -23,7 +24,7 @@ Inter Tight for headings and figures, Instrument Sans for reading text, Martian 
 
 ## Layout
 
-1240px wrap, sticky 60px header. Hero: headline and three key figures left, install panel right. Then the feature list (vertical tabs with their description) beside one real screenshot, the comparison band (three bar charts, feature table, collapsed method), the AI section and systems/formats. Below 900px everything stacks; the feature tabs become a horizontal scroller.
+1240px wrap, sticky 60px header. Hero: headline and three key figures left, install panel right. Then the feature list (vertical tabs with their description) beside one real screenshot, the comparison band (four bar charts, grouped feature table with green checks, red crosses and a count per product (it includes rows the other products win), collapsed method), the AI section and systems/formats. Below 900px everything stacks; the feature tabs become a horizontal scroller.
 
 ## Rules
 

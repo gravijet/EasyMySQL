@@ -27,6 +27,7 @@
   --blue-deep: #17379f;
   --rival: #8f99ad;
   --ok: #107a44;
+  --no: #c2362b;
   --pad: clamp(20px, 4vw, 56px);
   --gap: clamp(64px, 9vw, 120px);
   --display: "Inter Tight", system-ui, sans-serif;
@@ -409,7 +410,7 @@ h1 {
 }
 .charts {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   margin-top: 2.5rem;
   border-top: 1px solid var(--ink);
 }
@@ -441,7 +442,7 @@ h1 {
 }
 .win b {
   display: block;
-  font: 760 clamp(3rem, 5.4vw, 4.6rem) / 1 var(--display);
+  font: 760 clamp(3rem, 4.6vw, 4rem) / 1 var(--display);
   letter-spacing: -0.04em;
   color: var(--blue);
   margin-bottom: 0.35rem;
@@ -461,7 +462,7 @@ h1 {
 }
 .bars dd {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 5.2rem;
+  grid-template-columns: minmax(0, 1fr) 4.6rem;
   align-items: center;
   gap: 0.75rem;
   margin-top: 0.2rem;
@@ -516,23 +517,47 @@ thead td {
 }
 tbody th {
   font-weight: 400;
-  width: 40%;
+  width: 46%;
 }
-td.yes {
-  font-weight: 600;
+tr.group th {
+  padding-top: 1.6rem;
+  font: 700 0.95rem var(--display);
+  color: var(--mute);
+  border-bottom-color: var(--ink);
+}
+td.yes::before,
+td.no::before {
+  display: inline-grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  margin-right: 0.5rem;
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.9rem;
+  line-height: 1;
+  vertical-align: middle;
 }
 td.yes::before {
   content: "✓";
-  margin-right: 0.45rem;
-  color: var(--ok);
-  font-weight: 700;
-}
-td.no {
-  color: var(--mute);
+  background: var(--ok);
 }
 td.no::before {
-  content: "–";
-  margin-right: 0.45rem;
+  content: "✕";
+  background: var(--no);
+}
+tbody td span:not(.sr-only) {
+  font-size: 0.88rem;
+  color: var(--mute);
+}
+tfoot th,
+tfoot td {
+  border-bottom: 0;
+  border-top: 1px solid var(--ink);
+  font: 700 1.25rem var(--display);
+}
+tfoot td:first-of-type {
+  color: var(--blue);
 }
 .method {
   margin-top: 1.5rem;
@@ -686,6 +711,19 @@ td.no::before {
   }
 }
 
+@media (max-width: 1100px) and (min-width: 901px) {
+  .charts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .chart:nth-child(odd) {
+    padding-left: 0;
+    border-left: 0;
+  }
+  .chart:nth-child(n + 3) {
+    margin-top: 2rem;
+    border-top: 1px solid var(--line);
+  }
+}
 @media (max-width: 900px) {
   .hero,
   .ai {

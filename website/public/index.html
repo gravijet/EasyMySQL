@@ -186,6 +186,25 @@
             <p class="chart-note" data-en="Private working set at idle, without the database server.">Privater Arbeitssatz im Leerlauf, ohne Datenbankserver.</p>
           </article>
           <article class="chart">
+            <h3 data-en="Processes">Prozesse</h3>
+            <p class="win"><b>1</b> <span data-en="process instead of 11 with XAMPP">Prozess statt 11 bei XAMPP</span></p>
+            <dl class="bars">
+              <div class="us">
+                <dt>EasyMySQL</dt>
+                <dd><svg aria-hidden="true" class="bar"><rect height="100%" width="9.1%"></rect></svg><span data-en="1">1</span></dd>
+              </div>
+              <div>
+                <dt>XAMPP</dt>
+                <dd><svg aria-hidden="true" class="bar"><rect height="100%" width="100.0%" fill="url(#hatch)"></rect></svg><span data-en="11">11</span></dd>
+              </div>
+              <div>
+                <dt>Workbench</dt>
+                <dd><svg aria-hidden="true" class="bar"><rect height="100%" width="54.5%" fill="url(#hatch)"></rect></svg><span data-en="6">6</span></dd>
+              </div>
+            </dl>
+            <p class="chart-note" data-en="All processes of the start view. For XAMPP including Apache and the browser for phpMyAdmin.">Alle Prozesse der Startansicht. Bei XAMPP samt Apache und Browser für phpMyAdmin.</p>
+          </article>
+          <article class="chart">
             <h3 data-en="Download">Download</h3>
             <p class="win"><b data-en="3.4×">3,4×</b> <span data-en="smaller than MySQL Workbench">kleiner als MySQL Workbench</span></p>
             <dl class="bars">
@@ -212,11 +231,22 @@
                 <tr><td></td><th scope="col">EasyMySQL</th><th scope="col">XAMPP</th><th scope="col">Workbench</th></tr>
               </thead>
               <tbody>
-              <tr><th scope="row" data-en="Database server included">Datenbankserver enthalten</th><td class="yes" data-en="Yes, on Windows">Ja, unter Windows</td><td class="yes" data-en="Yes">Ja</td><td class="no" data-en="No">Nein</td></tr>
-              <tr><th scope="row" data-en="Works without a browser">Läuft ohne Browser</th><td class="yes" data-en="Yes">Ja</td><td class="no" data-en="No">Nein</td><td class="yes" data-en="Yes">Ja</td></tr>
-              <tr><th scope="row" data-en="Chat with Claude Code and Codex">Chat mit Claude Code und Codex</th><td class="yes" data-en="Yes">Ja</td><td class="no" data-en="No">Nein</td><td class="no" data-en="No">Nein</td></tr>
-              <tr><th scope="row" data-en="Java projects, terminal and Git">Java-Projekte, Terminal und Git</th><td class="yes" data-en="Yes">Ja</td><td class="no" data-en="No">Nein</td><td class="no" data-en="No">Nein</td></tr>
-              <tr><th scope="row" data-en="MCP server for AI tools">MCP-Server für KI-Werkzeuge</th><td class="yes" data-en="Yes">Ja</td><td class="no" data-en="No">Nein</td><td class="no" data-en="No">Nein</td></tr>
+              <tr class="group"><th colspan="4" scope="colgroup" data-en="Database">Datenbank</th></tr>
+              <tr><th scope="row" data-en="Database server included">Datenbankserver enthalten</th><td class="yes"><span data-en="on Windows">unter Windows</span></td><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td></tr>
+              <tr><th scope="row" data-en="Works without a browser">Läuft ohne Browser</th><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td></tr>
+              <tr><th scope="row" data-en="SQL editor with completion">SQL-Editor mit Vervollständigung</th><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td></tr>
+              <tr><th scope="row" data-en="Edit tables in place">Tabellen direkt bearbeiten</th><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td></tr>
+              <tr><th scope="row" data-en="Fix errors with one click">Fehler per Klick beheben</th><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td></tr>
+              <tr class="group"><th colspan="4" scope="colgroup" data-en="Development">Entwicklung</th></tr>
+              <tr><th scope="row" data-en="Write and run Java projects">Java-Projekte schreiben und ausführen</th><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td></tr>
+              <tr><th scope="row" data-en="Git, branches and pull requests">Git, Branches und Pull Requests</th><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td></tr>
+              <tr class="group"><th colspan="4" scope="colgroup" data-en="AI">KI</th></tr>
+              <tr><th scope="row" data-en="Chat with Claude Code and Codex">Chat mit Claude Code und Codex</th><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td></tr>
+              <tr><th scope="row" data-en="MCP server for AI tools">MCP-Server für KI-Werkzeuge</th><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td></tr>
+              <tr class="group"><th colspan="4" scope="colgroup" data-en="What the others do better">Was die anderen besser können</th></tr>
+              <tr><th scope="row" data-en="Apache and PHP for websites">Apache und PHP für Webseiten</th><td class="no"><span class="sr-only" data-en="No">Nein</span></td><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td></tr>
+              <tr><th scope="row" data-en="Visual Explain and performance reports">Visual Explain und Performance-Berichte</th><td class="no"><span class="sr-only" data-en="No">Nein</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td></tr>
+              </tbody><tfoot><tr><th scope="row" data-en="Available">Vorhanden</th><td><span data-en="9 of 11">9 von 11</span></td><td><span data-en="4 of 11">4 von 11</span></td><td><span data-en="4 of 11">4 von 11</span></td></tr></tfoot><tbody>
               </tbody>
             </table>
           </div>
