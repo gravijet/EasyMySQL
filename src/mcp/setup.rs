@@ -250,6 +250,54 @@ pub fn run(args: &[String]) -> i32 {
     if failed { 1 } else { 0 }
 }
 
+/// `easymysql install-ai [claude|codex|all]`: Programme laden (neueste Version mit Pruefsumme, ohne Node.js) und
+/// danach wie `setup-ai` eintragen. Fuer die Installer; bereits vorhandene Programme bleiben.
+pub fn install(args: &[String]) -> i32 {
+    let targets: Vec<Target> = match args.first().map(String::as_str) {
+        None | Some("all") => vec![Target::Claude, Target::Codex],
+        Some("claude") => vec![Target::Claude],
+        Some("codex") => vec![Target::Codex],
+        _ => {
+            eprintln!("Usage: easymysql install-ai [claude|codex|all]");
+            return 2;
+        }
+    };
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+    let mut failed = false;
+    let mut ready = Vec::new();
+    for t in targets {
+        if let Some(p) = t.program() {
+            println!("  ✓ {:<12} {}", t.label(), p.display());
+            ready.push(t);
+            continue;
+        }
+        println!("  … {:<12} downloading", t.label());
+        match crate::dev::install::install_ai(t, &cancel) {
+            Ok(p) => {
+                println!("  ✓ {:<12} {}", t.label(), p.display());
+                ready.push(t);
+            }
+            Err(e) => {
+                failed = true;
+                println!("  ✗ {:<12} {e}", t.label());
+            }
+        }
+    }
+    for (t, r) in apply(&ready, false) {
+        match r {
+            Ok(m) => println!("  ✓ {:<12} {m}", t.label()),
+            Err(e) => {
+                failed = true;
+                println!("  ✗ {:<12} {e}", t.label());
+            }
+        }
+    }
+    if !ready.is_empty() {
+        println!("\nSign in once in EasyMySQL (Claude/Codex panel on the left → Sign in) or with: claude auth login / codex login");
+    }
+    if failed { 1 } else { 0 }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -295,6 +295,27 @@ impl AiTab {
         }
     }
 
+    /// Anmeldung im eingebauten Terminal: Claude Code und Codex brauchen fuer den Login ein echtes Terminal
+    /// (Browser-Link, Code eingeben)
+    fn anmelden(&mut self, cx: &mut Ctx) {
+        let Some(programm) = self.ziel.program() else {
+            self.meldung = Some((true, tr("Bitte zuerst installieren.", "Please install it first.").into()));
+            return;
+        };
+        let args: Vec<String> = match self.ziel {
+            Target::Claude => vec!["auth".into(), "login".into()],
+            Target::Codex => vec!["login".into()],
+        };
+        let ordner = self.ordner.clone().unwrap_or_else(crate::workspace::storage_root);
+        let launch = crate::dev::process::Launch::new(crate::tr_format!("{} anmelden", "Sign in to {}", self.ziel.label()), programm, args, ordner);
+        cx.actions.push(Action::RunProgram { launch, env: Vec::new() });
+        // Danach neu verbinden, damit der Chat die Anmeldung sieht
+        self.verbindung = None;
+        self.start_versucht = false;
+        self.live.fehler = None;
+        self.meldung = Some((false, tr("Die Anmeldung läuft unten im Terminal. Danach hier einfach weiterschreiben.", "Sign-in runs in the terminal below. Then just keep writing here.").into()));
+    }
+
     fn icon(&self) -> Icon {
         if self.ziel == Target::Claude { Icon::Claude } else { Icon::Codex }
     }
@@ -320,13 +341,8 @@ impl AiTab {
                             self.auftrag = Some(Auftrag::installieren(ui.ctx(), self.ziel));
                             ui.close();
                         }
-                        if ui.add_enabled(installiert && self.ordner.is_some(), egui::Button::new(tr("Anmelden", "Sign in"))).clicked() {
-                            if let Some(ordner) = &self.ordner {
-                                match Auftrag::anmelden(ui.ctx(), self.ziel, ordner) {
-                                    Ok(a) => self.auftrag = Some(a),
-                                    Err(e) => self.meldung = Some((true, e)),
-                                }
-                            }
+                        if ui.add_enabled(installiert, egui::Button::new(tr("Anmelden", "Sign in"))).clicked() {
+                            self.anmelden(cx);
                             ui.close();
                         }
                         if ui.add_enabled(self.sitzung.is_some() && !self.laeuft(), egui::Button::new(tr("Kontext komprimieren", "Compact context"))).clicked() {
@@ -861,8 +877,15 @@ impl TabView for AiTab {
             {
                 ui.add(egui::Label::new(RichText::new(text).monospace().small().color(if *fehler { pal.error_text } else { pal.text_weak })).wrap().selectable(true));
             }
-            if let Some(e) = &self.live.fehler {
-                ui.add(egui::Label::new(RichText::new(e).color(pal.error_text)).wrap().selectable(true));
+            if let Some(e) = self.live.fehler.clone() {
+                ui.add(egui::Label::new(RichText::new(&e).color(pal.error_text)).wrap().selectable(true));
+                // Nicht angemeldet: gleich anbieten
+                let l = e.to_lowercase();
+                if (l.contains("log in") || l.contains("login") || l.contains("logged") || l.contains("authent") || l.contains("api key"))
+                    && icons::primary_button(ui, Icon::Key, tr("Jetzt anmelden", "Sign in now")).clicked()
+                {
+                    self.anmelden(cx);
+                }
             }
             ui.add_space(6.0);
         });

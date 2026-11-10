@@ -5,7 +5,7 @@
 #
 # Options as environment variables, e.g.  curl -fsSL … | EASYMYSQL_YES=1 sh
 #   EASYMYSQL_YES=1          answer every question with yes
-#   EASYMYSQL_AI=1 / 0       connect Claude Code and Codex without asking / never
+#   EASYMYSQL_AI=1 / 0       download and connect Claude Code and Codex without asking / never
 #   EASYMYSQL_NO_MARIADB=1   do not install MariaDB
 #   EASYMYSQL_BIN=dir        where the `easymysql` command goes (default ~/.local/bin)
 #
@@ -218,12 +218,22 @@ main() {
   has codex && found="${found:+$found, }Codex"
   want=0
   if [ "${EASYMYSQL_AI:-}" = "1" ]; then want=1
-  elif [ "${EASYMYSQL_AI:-}" != "0" ] && [ -n "$found" ]; then
+  elif [ "${EASYMYSQL_AI:-}" != "0" ]; then
     say ""
-    info "Found: $found"
-    if ask "Connect EasyMySQL to your AI assistants (read-only until you allow changes)?" y; then want=1; fi
+    if [ "$found" = "Claude Code, Codex" ]; then
+      info "Found: $found"
+      if ask "Connect EasyMySQL to your AI assistants (read-only until you allow changes)?" y; then want=1; fi
+    elif [ "${EASYMYSQL_YES:-}" != "1" ]; then
+      [ -n "$found" ] && info "Found: $found"
+      if ask "Download the AI assistants Claude Code and Codex (about 250 MB) and connect them?" "$([ -n "$found" ] && echo y || echo n)"; then want=1; fi
+    elif [ -n "$found" ]; then want=1
+    fi
   fi
-  if [ "$want" = "1" ]; then "$EXE" setup-ai || warn "Setting up the AI assistants did not fully work (see above)."; fi
+  # install-ai laedt nur, was fehlt (neueste Version mit Pruefsumme), und traegt beide ein
+  # Aeltere Versionen kennen install-ai noch nicht: dann nur eintragen
+  ai_cmd=setup-ai
+  "$EXE" --help 2>/dev/null | grep -q install-ai && ai_cmd=install-ai
+  if [ "$want" = "1" ]; then "$EXE" "$ai_cmd" || warn "Setting up the AI assistants did not fully work (see above)."; fi
 
   # Done -------------------------------------------------------------------------------------------
   say ""
@@ -231,7 +241,7 @@ main() {
   say ""
   say "    ${ACC}easymysql${R}            open the app (the server starts with it)"
   say "    ${ACC}mariadb -u root${R}      MariaDB console, while EasyMySQL runs"
-  say "    ${ACC}easymysql setup-ai${R}   connect Claude Code and Codex"
+  say "    ${ACC}easymysql install-ai${R} download and connect Claude Code and Codex"
   say "    ${ACC}easymysql mcp${R}        MCP server for any other AI client"
   say ""
   if ask "Start EasyMySQL now?" y; then

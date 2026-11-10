@@ -7,7 +7,7 @@
 #
 # Options as environment variables (set them before the command):
 #   $env:EASYMYSQL_PORTABLE = "1"   portable version for this user only, no administrator rights
-#   $env:EASYMYSQL_AI = "1" / "0"   connect Claude Code and Codex without asking / never
+#   $env:EASYMYSQL_AI = "1" / "0"   download and connect Claude Code and Codex without asking / never
 #   $env:EASYMYSQL_YES = "1"        answer every question with yes
 #
 # The script downloads the newest release from mysql.benjaminberger.at, checks its SHA-256 checksum
@@ -201,13 +201,21 @@
         $assistants = @(@('claude', 'Claude Code'), @('codex', 'Codex') | Where-Object { Get-Command $_[0] -ErrorAction SilentlyContinue } | ForEach-Object { $_[1] })
         $wantAI = $false
         if ($env:EASYMYSQL_AI -eq '1') { $wantAI = $true }
-        elseif ($env:EASYMYSQL_AI -ne '0' -and $assistants.Count -gt 0) {
+        elseif ($env:EASYMYSQL_AI -ne '0') {
             Write-Host ''
-            Info ("Found: " + ($assistants -join ', '))
-            $wantAI = Ask 'Connect EasyMySQL to your AI assistants (read-only until you allow changes)?' $true
+            if ($assistants.Count -eq 2) {
+                Info ("Found: " + ($assistants -join ', '))
+                $wantAI = Ask 'Connect EasyMySQL to your AI assistants (read-only until you allow changes)?' $true
+            } elseif (-not $Yes) {
+                if ($assistants.Count -gt 0) { Info ("Found: " + ($assistants -join ', ')) }
+                $wantAI = Ask 'Download the AI assistants Claude Code and Codex (about 250 MB) and connect them?' ($assistants.Count -gt 0)
+            } elseif ($assistants.Count -gt 0) { $wantAI = $true }
         }
+        # install-ai laedt nur, was fehlt (neueste Version mit Pruefsumme), und traegt beide ein
         if ($wantAI) {
-            & $exe setup-ai | Out-Host
+            # Aeltere Versionen kennen install-ai noch nicht: dann nur eintragen
+            $aiCmd = if ((& $exe --help 2>$null | Out-String) -match 'install-ai') { 'install-ai' } else { 'setup-ai' }
+            & $exe $aiCmd | Out-Host
         }
 
         # Done ------------------------------------------------------------------------------------
@@ -217,7 +225,7 @@
         Write-Host ''
         Write-Host '    easymysql            ' -ForegroundColor DarkYellow -NoNewline; Write-Host 'open the app (the server starts with it)'
         Write-Host '    mysql -u root        ' -ForegroundColor DarkYellow -NoNewline; Write-Host 'MariaDB console, while EasyMySQL runs'
-        Write-Host '    easymysql setup-ai   ' -ForegroundColor DarkYellow -NoNewline; Write-Host 'connect Claude Code and Codex'
+        Write-Host '    easymysql install-ai ' -ForegroundColor DarkYellow -NoNewline; Write-Host 'download and connect Claude Code and Codex'
         Write-Host '    easymysql mcp        ' -ForegroundColor DarkYellow -NoNewline; Write-Host 'MCP server for any other AI client'
         Write-Host ''
         Write-Host '  Other terminals pick up the new PATH after they are reopened.' -ForegroundColor DarkGray

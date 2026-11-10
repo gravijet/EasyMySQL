@@ -24,6 +24,8 @@ Usage:
   easymysql mcp [options]        run the MCP server for AI assistants on stdin/stdout
   easymysql setup-ai [target]    register the MCP server and skill in Claude Code and/or Codex
                                  target: all (default), claude, codex; --remove undoes it
+  easymysql install-ai [target]  download Claude Code and/or Codex (newest version, checked) and register
+                                 them; then sign in with: claude auth login / codex login
   easymysql --version            print the version
 
 MCP options (defaults come from the EasyMySQL settings):
@@ -123,6 +125,10 @@ pub fn run_cli(args: &[std::ffi::OsString]) -> Option<i32> {
         "setup-ai" => {
             attach_console();
             Some(setup::run(&args[1..]))
+        }
+        "install-ai" => {
+            attach_console();
+            Some(setup::install(&args[1..]))
         }
         "--version" | "-V" | "version" => {
             attach_console();

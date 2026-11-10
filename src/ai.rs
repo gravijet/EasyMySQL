@@ -531,66 +531,6 @@ impl Auftrag {
         });
         auftrag
     }
-
-    pub fn anmelden(ctx: &egui::Context, ziel: Target, ordner: &Path) -> Result<Self, String> {
-        let programm = ziel.program().ok_or_else(|| crate::i18n::tr("Bitte zuerst das Plugin installieren.", "Please install the plugin first.").to_string())?;
-        let args = match ziel {
-            Target::Claude => vec!["auth".into(), "login".into()],
-            Target::Codex => vec!["login".into()],
-        };
-        Self::ausfuehren(ctx, befehl(&programm, args, ordner))
-    }
-
-    /// Fuehrt `cmd` aus und sammelt die Ausgabe zeilenweise in `stand.text`.
-    fn ausfuehren(ctx: &egui::Context, mut cmd: Command) -> Result<Self, String> {
-        let mut prozess = cmd.spawn().map_err(|e| e.to_string())?;
-        drop(prozess.stdin.take());
-        let mut auftrag = Self { stand: Arc::default(), abbruch: Arc::default(), arbeiter: None };
-        let mut leser = Vec::new();
-        for stream in [prozess.stdout.take().map(|s| Box::new(s) as Box<dyn std::io::Read + Send>), prozess.stderr.take().map(|s| Box::new(s) as Box<dyn std::io::Read + Send>)]
-            .into_iter()
-            .flatten()
-        {
-            let (stand, ctx) = (auftrag.stand.clone(), ctx.clone());
-            leser.push(std::thread::spawn(move || {
-                for zeile in std::io::BufReader::new(stream).lines().map_while(Result::ok) {
-                    anfuegen(&mut stand.lock().unwrap().text, &format!("{zeile}\n"));
-                    ctx.request_repaint();
-                }
-            }));
-        }
-        let (stand, abbruch, ctx) = (auftrag.stand.clone(), auftrag.abbruch.clone(), ctx.clone());
-        auftrag.arbeiter = Some(std::thread::spawn(move || {
-            let status = loop {
-                if abbruch.load(Ordering::Relaxed) {
-                    beenden(&mut prozess);
-                    let mut s = stand.lock().unwrap();
-                    s.fehler = Some(crate::i18n::tr("Abgebrochen.", "Cancelled.").into());
-                    s.fertig = true;
-                    ctx.request_repaint();
-                    return;
-                }
-                match prozess.try_wait() {
-                    Ok(Some(status)) if leser.iter().all(|l| l.is_finished()) => break Ok(status),
-                    Err(e) => {
-                        beenden(&mut prozess);
-                        break Err(e);
-                    }
-                    Ok(_) => std::thread::sleep(Duration::from_millis(50)),
-                }
-            };
-            for leser in leser {
-                let _ = leser.join();
-            }
-            let mut s = stand.lock().unwrap();
-            if !status.is_ok_and(|s| s.success()) && s.fehler.is_none() {
-                s.fehler = Some(crate::i18n::tr("Der Vorgang ist fehlgeschlagen.", "The operation failed.").into());
-            }
-            s.fertig = true;
-            ctx.request_repaint();
-        }));
-        Ok(auftrag)
-    }
 }
 
 #[cfg(test)]
