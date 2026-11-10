@@ -8,6 +8,8 @@ pub enum Dialog {
     Message { title: String, text: String, error: bool },
     Confirm { text: String, db: Option<String>, sql: String },
     ConfirmStructure { text: String, db: Option<String>, sql: String },
+    /// Datenbank anlegen (falls noetig) und das SQL des Projekts darin ausfuehren
+    ConfirmProject { text: String, db: String, sql: String },
     NewDatabase { name: String, collation: String },
     /// `only`: ausgewaehlte Tabellen (None = alle)
     /// Tabelle umbenennen oder kopieren
@@ -41,6 +43,7 @@ impl EasyApp {
         let Some(dlg) = self.dialogs.last_mut() else { return };
         let mut close = false;
         let mut run_sql: Option<(Option<String>, String, bool)> = None;
+        let mut run_project: Option<(String, String)> = None;
         let structure = matches!(dlg, Dialog::ConfirmStructure { .. });
         // Mehrere Anweisungen nacheinander in einer Datenbank ausfuehren
         let mut batch: Option<(String, Vec<String>)> = None;
@@ -97,6 +100,27 @@ impl EasyApp {
                             close = true;
                         }
                         if ui.button(crate::i18n::text("Nein")).clicked() || ui.input(|i| i.key_pressed(Key::Escape)) {
+                            close = true;
+                        }
+                    });
+                }
+                Dialog::ConfirmProject { text, db, sql } => {
+                    ui.set_max_width(640.0);
+                    ui.label(RichText::new(text.as_str()).strong());
+                    ui.add_space(6.0);
+                    egui::Frame::new().fill(pal.bg).stroke(egui::Stroke::new(1.0, pal.border)).corner_radius(style::RADIUS).inner_margin(egui::Margin::same(8)).show(ui, |ui| {
+                        egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
+                            let job = crate::sqledit::highlight(sql, egui::FontId::monospace(12.0));
+                            ui.label(job);
+                        });
+                    });
+                    ui.add_space(8.0);
+                    ui.horizontal(|ui| {
+                        if crate::icons::primary_button(ui, crate::icons::Icon::Database, crate::i18n::tr("Erstellen", "Create")).clicked() {
+                            run_project = Some((db.clone(), sql.clone()));
+                            close = true;
+                        }
+                        if ui.button(crate::i18n::text("Abbrechen")).clicked() || ui.input(|i| i.key_pressed(Key::Escape)) {
                             close = true;
                         }
                     });
@@ -322,6 +346,25 @@ impl EasyApp {
         }
         if let Some((db, sql, structure)) = run_sql {
             self.run_confirmed(db, sql, structure);
+        }
+        if let Some((db, sql)) = run_project
+            && let Some(dbc) = &self.db
+        {
+            let res = dbc
+                .exec(&format!("CREATE DATABASE IF NOT EXISTS {} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci", q(&db)), ())
+                .and_then(|_| dbc.exec_in(&db, &sql));
+            match res {
+                Ok(_) => {
+                    self.toast(crate::tr_format!("Datenbank {db} mit Tabellen und Daten aus dem Projekt erstellt.", "Database {db} created with tables and data from the project."));
+                    self.refresh_all();
+                    self.current_db = db.clone();
+                    self.handle_actions(vec![Action::SchemaChanged(db)]);
+                }
+                Err(e) => {
+                    self.handle_actions(vec![Action::SchemaChanged(db)]);
+                    self.error(crate::tr_format!("Nicht alles ließ sich anlegen; was schon ausgeführt wurde, bleibt.\n\n{e}", "Not everything could be created; what already ran stays.\n\n{e}"));
+                }
+            }
         }
         if open_settings {
             self.handle_actions(vec![Action::OpenSettings(Some("verbindung".into()))]);

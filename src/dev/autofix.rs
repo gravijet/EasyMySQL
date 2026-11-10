@@ -1,4 +1,4 @@
-// Fehler erkennen und automatisch beheben: Ausgabe eines Programms (Java, Python, JavaScript) und
+// Fehler erkennen und automatisch beheben: Ausgabe eines Programms (Java) und
 // Compilerfehler werden auf bekannte Muster untersucht. Jeder Treffer erklaert den Fehler und bietet,
 // wo moeglich, eine Behebung an (Datenbank anlegen, Code aendern, Paket eintragen, Server starten …).
 
@@ -22,6 +22,8 @@ pub enum Fix {
         columns: Vec<(String, String)>,
     },
     DeklarierteStruktur { datenbank: Option<String>, plaene: Vec<crate::sqledit::TabellenPlan>, quelle: String },
+    /// Datenbank anlegen und das SQL des Projekts darin ausfuehren (Tabellen samt Zeilen), mit Vorschau
+    ProjektSql { datenbank: String, sql: String, tabellen: usize, zeilen: usize },
     StartServer,
     ConnectionSettings,
     Install(Tool),
@@ -428,68 +430,6 @@ fn method_header(text: &str, line: usize) -> Option<(usize, String)> {
     None
 }
 
-/// Python-Module, deren Paket anders heisst
-fn pip_name(module: &str) -> &str {
-    match module {
-        "mysql" => "mysql-connector-python",
-        "pymysql" => "PyMySQL",
-        "MySQLdb" => "mysqlclient",
-        "dotenv" => "python-dotenv",
-        "yaml" => "PyYAML",
-        "PIL" => "Pillow",
-        "cv2" => "opencv-python",
-        "sklearn" => "scikit-learn",
-        "bs4" => "beautifulsoup4",
-        "dateutil" => "python-dateutil",
-        m => m,
-    }
-}
-
-const PY_STDLIB: &[&str] = &["os", "sys", "json", "math", "random", "datetime", "time", "re", "csv", "pathlib", "decimal", "statistics", "itertools", "collections", "functools", "typing", "dataclasses", "unittest", "subprocess", "shutil", "uuid", "logging", "argparse", "getpass", "hashlib", "string", "textwrap"];
-
-/// Paket in requirements.txt bzw. pyproject.toml eintragen
-fn add_python_package(root: &Path, package: &str) -> WorkspaceEdit {
-    let req = root.join("requirements.txt");
-    let py = root.join("pyproject.toml");
-    if !req.is_file()
-        && let Ok(text) = std::fs::read_to_string(&py)
-        && let Some(n) = text.lines().position(|l| l.trim_start().starts_with("dependencies") && l.contains('['))
-    {
-        return insert_line(&py, n + 1, &format!("    \"{package}\","));
-    }
-    let text = std::fs::read_to_string(&req).unwrap_or_default();
-    let lines = text.lines().count();
-    let prefix = if text.is_empty() || text.ends_with('\n') { "" } else { "\n" };
-    single(&req, ((lines, 0), (lines, 0), format!("{prefix}{package}\n")))
-}
-
-/// Paket in package.json unter "dependencies" eintragen (Text bleibt sonst unveraendert)
-fn add_node_package(root: &Path, package: &str) -> Option<WorkspaceEdit> {
-    let pj = root.join("package.json");
-    let text = std::fs::read_to_string(&pj).ok()?;
-    let lines: Vec<&str> = text.lines().collect();
-    if let Some(n) = lines.iter().position(|l| l.contains("\"dependencies\"") && l.contains('{')) {
-        let empty = lines.get(n + 1).is_some_and(|l| l.trim_start().starts_with('}'));
-        let comma = if empty || lines[n].trim_end().ends_with('}') { "" } else { "," };
-        if lines[n].trim_end().ends_with('}') {
-            // "dependencies": {} in einer Zeile
-            let l = lines[n];
-            let i = l.rfind('}')?;
-            return Some(single(&pj, ((n, utf16(&l[..i])), (n, utf16(&l[..i])), format!("\"{package}\": \"latest\""))));
-        }
-        return Some(insert_line(&pj, n + 1, &format!("    \"{package}\": \"latest\"{comma}")));
-    }
-    // Ohne "dependencies": vor der letzten schliessenden Klammer
-    let last = lines.iter().rposition(|l| l.trim() == "}")?;
-    let prev = (0..last).rev().find(|&i| !lines[i].trim().is_empty())?;
-    let l = lines[prev];
-    let mut edit = insert_line(&pj, last, &format!("  \"dependencies\": {{\n    \"{package}\": \"latest\"\n  }}"));
-    if !l.trim_end().ends_with([',', '{']) {
-        edit.files[0].edits.push(((prev, utf16(l.trim_end())), (prev, utf16(l.trim_end())), ",".into()));
-    }
-    Some(edit)
-}
-
 // ---------------------------------------------------------------------------
 // Ausgabe eines Programms
 
@@ -499,14 +439,32 @@ pub fn analyze_output(raw: &str, project: Option<&Path>, file: Option<&Path>, lo
     let out = strip_ansi(raw);
     let text = out.as_str();
     let mut v: Vec<Suggestion> = Vec::new();
-    let root = project.or_else(|| file.and_then(Path::parent));
 
     // --- Datenbank ---------------------------------------------------------
+    let root = project.or_else(|| file.and_then(Path::parent));
     if let Some(db) = between(text, "Unknown database '", '\'').or_else(|| between(text, "Unknown database \\'", '\\')) {
-        v.push(Suggestion::new(crate::tr_format!("Die Datenbank „{db}“ gibt es nicht.", "The database “{db}” does not exist."), tr("Datenbank anlegen", "Create database"), Fix::CreateDatabase(db.to_string())));
+        let p = crate::tr_format!("Die Datenbank „{db}“ gibt es nicht.", "The database “{db}” does not exist.");
+        // Mit allen Tabellen und Daten, die das Projekt in SQL-Dateien und JDBC-Texten anlegt
+        if let Some((sql, tabellen, zeilen)) = root.and_then(|r| projekt_sql(r, db, None)) {
+            let label = crate::tr_format!("Datenbank mit {tabellen} Tabelle(n) und {zeilen} Datensatz-Anweisung(en) erstellen", "Create database with {tabellen} table(s) and {zeilen} data statement(s)");
+            v.push(Suggestion { problem: p.clone(), label, fix: Some(Fix::ProjektSql { datenbank: db.to_string(), sql, tabellen, zeilen }) });
+            v.push(Suggestion::new(tr("Oder nur eine leere Datenbank:", "Or just an empty database:").into(), tr("Leer anlegen", "Create empty"), Fix::CreateDatabase(db.to_string())));
+        } else {
+            v.push(Suggestion::new(p, tr("Datenbank anlegen", "Create database"), Fix::CreateDatabase(db.to_string())));
+        }
     }
     if let Some(t) = between(text, "Table '", '\'').filter(|_| text.contains("doesn't exist")) {
         let (db, table) = t.split_once('.').unwrap_or(("", t));
+        // Die Tabelle samt ihren Zeilen aus dem Projekt (z. B. schema.sql und data.sql)
+        if !db.is_empty()
+            && let Some((sql, tabellen, zeilen)) = root.and_then(|r| projekt_sql(r, db, Some(table))).filter(|(_, _, z)| *z > 0)
+        {
+            v.push(Suggestion {
+                problem: crate::tr_format!("Die Tabelle „{table}“ fehlt; das Projekt hat Struktur und Daten dafür.", "The table “{table}” is missing; the project has its structure and data."),
+                label: crate::tr_format!("{tabellen} Tabelle(n) samt {zeilen} Datensatz-Anweisung(en) erstellen", "Create {tabellen} table(s) with {zeilen} data statement(s)"),
+                fix: Some(Fix::ProjektSql { datenbank: db.to_string(), sql, tabellen, zeilen }),
+            });
+        }
         let p = crate::tr_format!(
             "Die Tabelle „{table}“ gibt es nicht.",
             "The table “{table}” does not exist."
@@ -643,82 +601,6 @@ pub fn analyze_output(raw: &str, project: Option<&Path>, file: Option<&Path>, lo
         v.push(Suggestion::new(tr("Das Programm braucht ein neueres Java.", "The program needs a newer Java.").into(), tr("JDK laden", "Download JDK"), Fix::Install(Tool::Jdk)));
     }
 
-    // --- Python --------------------------------------------------------------
-    if let Some(m) = between(text, "No module named '", '\'') {
-        let top = m.split('.').next().unwrap_or(m);
-        let pkg = pip_name(top);
-        let p = crate::tr_format!("Das Python-Paket „{pkg}“ fehlt.", "The Python package “{pkg}” is missing.");
-        v.push(match root {
-            Some(r) => Suggestion::new(p, tr("Paket eintragen und installieren", "Add and install package"), Fix::Edit(add_python_package(r, pkg))),
-            None => Suggestion::hint(p),
-        });
-    }
-    let py_frame = last_python_frame(text);
-    if let Some(name) = between(text, "NameError: name '", '\'') {
-        let p = crate::tr_format!("„{name}“ ist nicht definiert (Tippfehler oder fehlender Import?).", "“{name}” is not defined (typo or missing import?).");
-        match (&py_frame, PY_STDLIB.contains(&name)) {
-            (Some((f, _)), true) => {
-                let t = std::fs::read_to_string(f).unwrap_or_default();
-                let at = t.lines().position(|l| !l.starts_with('#') && !l.starts_with("\"\"\"") && !l.trim().is_empty()).unwrap_or(0);
-                v.push(Suggestion::new(p, tr("import ergänzen", "Add import"), Fix::Edit(insert_line(f, at, &format!("import {name}")))));
-            }
-            _ => v.push(Suggestion::hint(p)),
-        }
-    }
-    if text.contains("SyntaxError: expected ':'") && let Some((f, line)) = &py_frame {
-        let t = std::fs::read_to_string(f).unwrap_or_default();
-        if let Some(l) = t.lines().nth(*line) {
-            let c = utf16(l.trim_end());
-            v.push(Suggestion::new(tr("Am Zeilenende fehlt ein Doppelpunkt.", "A colon is missing at the end of the line.").into(), tr("„:“ ergänzen", "Add “:”"), Fix::Edit(single(f, ((*line, c), (*line, c), ":".into())))));
-        }
-    }
-    let py_hints: [(&str, &str, &str); 6] = [
-        ("IndentationError", "Die Einrückung stimmt nicht (Leerzeichen und Tabs nicht mischen).", "The indentation is wrong (do not mix spaces and tabs)."),
-        ("TypeError: can only concatenate str", "Text und Zahl lassen sich nicht mit + verbinden: str(…) oder f-String verwenden.", "Text and numbers cannot be joined with +: use str(…) or an f-string."),
-        ("KeyError:", "Schlüssel fehlt im Dictionary.", "The key is missing in the dictionary."),
-        ("ZeroDivisionError", "Division durch 0.", "Division by zero."),
-        ("ValueError: invalid literal for int()", "Text lässt sich nicht in eine Zahl umwandeln.", "Text cannot be converted to a number."),
-        ("AttributeError: 'NoneType'", "Ein Wert ist None (z. B. fetchone() hat nichts gefunden).", "A value is None (e.g. fetchone() found nothing)."),
-    ];
-    for (pat, de, en) in py_hints {
-        if text.contains(pat) {
-            v.push(Suggestion::hint(tr(de, en).into()));
-        }
-    }
-
-    // --- JavaScript ----------------------------------------------------------
-    if let Some(m) = between(text, "Cannot find module '", '\'').filter(|m| !m.starts_with(['.', '/']) && !m.contains(":\\")) {
-        let pkg = if m.starts_with('@') { m.splitn(3, '/').take(2).collect::<Vec<_>>().join("/") } else { m.split('/').next().unwrap_or(m).to_string() };
-        let p = crate::tr_format!("Das npm-Paket „{pkg}“ fehlt.", "The npm package “{pkg}” is missing.");
-        v.push(match root.and_then(|r| add_node_package(r, &pkg)) {
-            Some(e) => Suggestion::new(p, tr("In package.json eintragen", "Add to package.json"), Fix::Edit(e)),
-            None => Suggestion::hint(p),
-        });
-    }
-    if text.contains("Cannot use import statement outside a module")
-        && let Some(r) = root
-        && let Ok(t) = std::fs::read_to_string(r.join("package.json"))
-        && !t.contains("\"type\"")
-        && let Some(n) = t.lines().position(|l| l.trim() == "{")
-    {
-        v.push(Suggestion::new(
-            tr("import braucht ein ES-Modul.", "import needs an ES module.").into(),
-            tr("\"type\": \"module\" in package.json", "\"type\": \"module\" in package.json"),
-            Fix::Edit(insert_line(&r.join("package.json"), n + 1, "  \"type\": \"module\",")),
-        ));
-    }
-    if text.contains("require is not defined in ES module scope")
-        && let Some(r) = root
-        && let Some(e) = replace_in_project(None, Some(&r.join("package.json")), "\"type\": \"module\"", "\"type\": \"commonjs\"")
-    {
-        v.push(Suggestion::new(tr("require gibt es in ES-Modulen nicht.", "require does not exist in ES modules.").into(), tr("Auf CommonJS umstellen", "Switch to CommonJS"), Fix::Edit(e)));
-    }
-    if let Some(name) = between(text, "ReferenceError: ", ' ').filter(|_| text.contains("is not defined")) {
-        v.push(Suggestion::hint(crate::tr_format!("„{name}“ ist nicht definiert (Tippfehler oder fehlendes require/import?).", "“{name}” is not defined (typo or missing require/import?).")));
-    }
-    if text.contains("TypeError: Cannot read properties of undefined") || text.contains("TypeError: Cannot read properties of null") {
-        v.push(Suggestion::hint(tr("Ein Wert ist undefined/null (z. B. leeres Ergebnis einer Abfrage).", "A value is undefined/null (e.g. an empty query result).").into()));
-    }
     dedup(v)
 }
 
@@ -879,17 +761,6 @@ fn forname_removal(project: Option<&Path>, file: Option<&Path>) -> Option<Worksp
     (!edit.files.is_empty()).then_some(edit)
 }
 
-/// Letzter Eintrag `File "…", line N` eines Python-Tracebacks (eigene Datei, 0-basierte Zeile)
-fn last_python_frame(text: &str) -> Option<(PathBuf, usize)> {
-    text.lines()
-        .filter_map(|l| {
-            let f = between(l, "File \"", '"')?;
-            let n: usize = between(l, ", line ", ',').or_else(|| l.split(", line ").nth(1))?.trim().parse().ok()?;
-            Some((PathBuf::from(f), n.saturating_sub(1)))
-        })
-        .rfind(|(f, _)| !f.to_string_lossy().contains("site-packages") && !f.to_string_lossy().contains("<frozen"))
-}
-
 // ---------------------------------------------------------------------------
 // Compilerfehler (Java)
 
@@ -1024,25 +895,12 @@ pub struct Link {
     pub line: usize,
 }
 
-/// Verweise in einer Zeile: `(Main.java:13)`, `File "x.py", line 5`, `/pfad/index.js:10:5`, `x.py:12`
+/// Verweise in einer Zeile: `(Main.java:13)`, `/pfad/Main.java:10:5`
 pub fn links(line: &str) -> Vec<Link> {
     let chars: Vec<char> = line.chars().collect();
     let mut out = Vec::new();
-    // Python: File "…", line N
-    if let Some(i) = line.find("File \"") {
-        let a = line[..i].chars().count() + 6;
-        if let Some(len) = chars[a..].iter().position(|&c| c == '"') {
-            let file: String = chars[a..a + len].iter().collect();
-            let rest: String = chars[a + len..].iter().collect();
-            if let Some(n) = rest.strip_prefix("\", line ").and_then(|r| r.split(|c: char| !c.is_ascii_digit()).next()).and_then(|n| n.parse::<usize>().ok()) {
-                let end = a + len + 8 + n.to_string().len();
-                out.push(Link { start: a - 6, end, file, line: n.saturating_sub(1) });
-                return out;
-            }
-        }
-    }
     // Datei.endung:zeile
-    let exts = ["java", "py", "js", "mjs", "cjs", "ts", "sql", "kt"];
+    let exts = ["java", "sql", "kt", "xml", "properties", "gradle", "kts"];
     let mut i = 0;
     while i < chars.len() {
         if chars[i] == ':' && i + 1 < chars.len() && chars[i + 1].is_ascii_digit() {
@@ -1181,6 +1039,203 @@ pub fn classify(line: &str) -> LineKind {
     LineKind::Plain
 }
 
+// ---------------------------------------------------------------------------
+// Ganze Datenbank bzw. Tabelle samt Inhalt aus den SQL-Dateien des Projekts
+
+/// Natuerliche Reihenfolge der Dateien (V2 vor V10); Struktur vor Daten (schema/create vor data/insert/seed)
+fn natuerlich(p: &Path) -> (u8, String) {
+    let name = p.file_name().map(|n| n.to_string_lossy().to_lowercase()).unwrap_or_default();
+    let rang = if ["data", "daten", "insert", "seed", "beispiel", "testdaten", "dump"].iter().any(|w| name.contains(w)) { 1 } else { 0 };
+    let mut key = String::new();
+    let path = p.to_string_lossy();
+    let mut chars = path.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c.is_ascii_digit() {
+            let mut n = String::from(c);
+            while chars.peek().is_some_and(|c| c.is_ascii_digit()) {
+                n.push(chars.next().unwrap());
+            }
+            key.push_str(&format!("{n:0>20}"));
+        } else {
+            key.push(c);
+        }
+    }
+    (rang, key)
+}
+
+/// Name (ohne Datenbank) nach den Woertern `after` am Anfang der Anweisung: "CREATE TABLE IF NOT EXISTS `shop`.`kunde`"
+fn objekt_nach(sql: &str, after: &[&str]) -> Option<(Option<String>, String, usize)> {
+    let words: Vec<(usize, &str)> = sql.split_whitespace().scan(0usize, |pos, w| {
+        let at = sql[*pos..].find(w).map(|i| i + *pos).unwrap_or(*pos);
+        *pos = at + w.len();
+        Some((at, w))
+    }).collect();
+    let mut i = 0;
+    for a in after {
+        if !words.get(i)?.1.eq_ignore_ascii_case(a) {
+            return None;
+        }
+        i += 1;
+    }
+    for opt in [["IF", "NOT", "EXISTS"], ["IF", "EXISTS", ""]] {
+        if words.get(i).is_some_and(|w| w.1.eq_ignore_ascii_case(opt[0])) && words.get(i + 1).is_some_and(|w| w.1.eq_ignore_ascii_case(opt[1])) {
+            i += if opt[2].is_empty() { 2 } else { 3 };
+        }
+    }
+    let (at, raw) = *words.get(i)?;
+    // Name endet an ( oder Leerraum
+    let raw = raw.split('(').next().unwrap_or(raw);
+    let clean = |s: &str| s.trim_matches(|c| c == '`' || c == '"' || c == '[' || c == ']').to_string();
+    let (db, name) = match raw.split_once('.') {
+        Some((d, n)) => (Some(clean(d)), clean(n)),
+        None => (None, clean(raw)),
+    };
+    (!name.is_empty()).then_some((db, name, at + raw.len()))
+}
+
+/// Tabellen, auf die eine CREATE TABLE-Anweisung verweist (REFERENCES x)
+fn verweise(sql: &str) -> Vec<String> {
+    let upper = sql.to_uppercase();
+    let mut out = Vec::new();
+    let mut from = 0;
+    while let Some(i) = upper[from..].find("REFERENCES") {
+        let at = from + i + "REFERENCES".len();
+        let rest = sql[at..].trim_start();
+        let name: String = rest.chars().take_while(|c| c.is_alphanumeric() || matches!(c, '_' | '`' | '.' | '$')).collect();
+        let name = name.rsplit('.').next().unwrap_or(&name).trim_matches('`').to_string();
+        if !name.is_empty() && !out.contains(&name) {
+            out.push(name);
+        }
+        from = at;
+    }
+    out
+}
+
+/// SQL, das die Datenbank `db` (oder nur `table` mit seinen Fremdschluessel-Zielen) samt Zeilen anlegt: aus den
+/// .sql-Dateien und den festen SQL-Texten im Java-Code. Liefert (SQL, Tabellen, Zeilen-Anweisungen), None ohne
+/// passende CREATE TABLE. Loeschende Anweisungen werden nie uebernommen; INSERT wird zu INSERT IGNORE.
+pub fn projekt_sql(root: &Path, db: &str, table: Option<&str>) -> Option<(String, usize, usize)> {
+    let mut sql_files = Vec::new();
+    migrations_dateien(root, &mut sql_files, 0);
+    sql_files.sort_by_cached_key(|p| natuerlich(p));
+    let mut quellen: Vec<String> = Vec::new();
+    for f in &sql_files {
+        if let Ok(t) = std::fs::read_to_string(f)
+            && t.len() < 8_000_000
+        {
+            quellen.push(t);
+        }
+    }
+    let mut java = Vec::new();
+    source_files(root, &mut java, 0);
+    for f in java.iter().filter(|f| f.extension().is_some_and(|e| e == "java")) {
+        if let Ok(t) = std::fs::read_to_string(f) {
+            for (sql, _) in crate::sqledit::java_abfragen(&t) {
+                if !sql.contains('?') {
+                    quellen.push(sql);
+                }
+            }
+        }
+    }
+    // (Tabelle, CREATE), (Tabelle, Anweisung danach: Index/ALTER), (Tabelle, INSERT), Sichten
+    let mut tabellen: Vec<(String, String)> = Vec::new();
+    let mut extra: Vec<(String, String)> = Vec::new();
+    let mut zeilen: Vec<(String, String)> = Vec::new();
+    for text in &quellen {
+        // Gehoert der Teil zu dieser Datenbank? USE andere -> bis zum naechsten USE ueberspringen
+        let mut passt = true;
+        for st in crate::db::split_statements(text) {
+            let sql = st.sql.trim().trim_end_matches(';').trim().to_string();
+            let up = sql.to_uppercase();
+            let fremd = |d: &Option<String>| d.as_deref().is_some_and(|d| !d.eq_ignore_ascii_case(db));
+            if up.starts_with("USE ") {
+                passt = sql[4..].trim().trim_matches('`').eq_ignore_ascii_case(db);
+                continue;
+            }
+            if !passt {
+                continue;
+            }
+            if let Some((d, name, end)) = objekt_nach(&sql, &["CREATE", "TABLE"]) {
+                if fremd(&d) || tabellen.iter().any(|(t, _)| t.eq_ignore_ascii_case(&name)) {
+                    continue;
+                }
+                tabellen.push((name.clone(), format!("CREATE TABLE IF NOT EXISTS {}{}", crate::db::q(&name), &sql[end..])));
+            } else if let Some((d, name, end)) = objekt_nach(&sql, &["INSERT", "INTO"]).or_else(|| objekt_nach(&sql, &["INSERT", "IGNORE", "INTO"])) {
+                if !fremd(&d) {
+                    zeilen.push((name.clone(), format!("INSERT IGNORE INTO {}{}", crate::db::q(&name), &sql[end..])));
+                }
+            } else if let Some((d, name, _)) = objekt_nach(&sql, &["ALTER", "TABLE"]) {
+                if !fremd(&d) && !up.contains(" DROP ") {
+                    extra.push((name, sql.clone()));
+                }
+            } else if up.starts_with("CREATE INDEX") || up.starts_with("CREATE UNIQUE INDEX") {
+                if let Some(i) = up.find(" ON ") {
+                    let name = sql[i + 4..].trim_start().split(|c: char| c == '(' || c.is_whitespace()).next().unwrap_or("").rsplit('.').next().unwrap_or("").trim_matches('`').to_string();
+                    extra.push((name, sql.replacen("CREATE INDEX", "CREATE INDEX IF NOT EXISTS", 1).replacen("CREATE UNIQUE INDEX", "CREATE UNIQUE INDEX IF NOT EXISTS", 1)));
+                }
+            } else if up.starts_with("CREATE VIEW") || up.starts_with("CREATE OR REPLACE VIEW") {
+                extra.push((String::new(), sql.replacen("CREATE VIEW", "CREATE OR REPLACE VIEW", 1)));
+            }
+        }
+    }
+    if tabellen.is_empty() {
+        return None;
+    }
+    // Auswahl: alle bzw. die Tabelle mit allem, worauf sie verweist
+    let mut gewaehlt: Vec<String> = match table {
+        None => tabellen.iter().map(|(t, _)| t.clone()).collect(),
+        Some(t) => {
+            let start = tabellen.iter().find(|(n, _)| n.eq_ignore_ascii_case(t))?.0.clone();
+            let mut sel = vec![start];
+            let mut i = 0;
+            while i < sel.len() {
+                if let Some((_, c)) = tabellen.iter().find(|(n, _)| *n == sel[i]) {
+                    for r in verweise(c) {
+                        if let Some((n, _)) = tabellen.iter().find(|(n, _)| n.eq_ignore_ascii_case(&r))
+                            && !sel.contains(n)
+                        {
+                            sel.push(n.clone());
+                        }
+                    }
+                }
+                i += 1;
+            }
+            sel
+        }
+    };
+    // Reihenfolge: Ziele von Fremdschluesseln zuerst
+    let mut geordnet: Vec<String> = Vec::new();
+    let mut runden = 0;
+    while !gewaehlt.is_empty() && runden < 1000 {
+        runden += 1;
+        let pos = gewaehlt.iter().position(|t| {
+            let c = &tabellen.iter().find(|(n, _)| n == t).unwrap().1;
+            verweise(c).iter().all(|r| r.eq_ignore_ascii_case(t) || geordnet.iter().any(|g| g.eq_ignore_ascii_case(r)) || !gewaehlt.iter().any(|g| g.eq_ignore_ascii_case(r)))
+        });
+        // Zyklus: in der Reihenfolge der Dateien weiter
+        let i = pos.unwrap_or(0);
+        geordnet.push(gewaehlt.remove(i));
+    }
+    let mut out: Vec<String> = Vec::new();
+    for t in &geordnet {
+        out.push(tabellen.iter().find(|(n, _)| n == t).unwrap().1.clone());
+    }
+    for (t, s) in &extra {
+        if (t.is_empty() && table.is_none()) || geordnet.iter().any(|g| g.eq_ignore_ascii_case(t)) {
+            out.push(s.clone());
+        }
+    }
+    let mut n_zeilen = 0;
+    for t in &geordnet {
+        for (n, s) in zeilen.iter().filter(|(n, _)| n.eq_ignore_ascii_case(t)) {
+            let _ = n;
+            out.push(s.clone());
+            n_zeilen += 1;
+        }
+    }
+    Some((out.join(";\n") + ";", geordnet.len(), n_zeilen))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1196,6 +1251,37 @@ Caused by: java.sql.SQLSyntaxErrorException: Unknown database 'schule1'\n\
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         d
+    }
+
+    #[test]
+    fn whole_database_and_table_with_data_from_the_project() {
+        let d = tmp("projekt-sql");
+        std::fs::create_dir_all(d.join("sql")).unwrap();
+        std::fs::create_dir_all(d.join("src")).unwrap();
+        std::fs::write(d.join("sql/02_data.sql"), "USE shop;\nINSERT INTO bestellung (id, kunde_id) VALUES (1, 1);\nINSERT INTO kunde VALUES (1, 'Ada'), (2, 'Bob');\nDELETE FROM kunde WHERE id = 2;\n").unwrap();
+        std::fs::write(d.join("sql/01_schema.sql"), "CREATE DATABASE IF NOT EXISTS shop;\nUSE shop;\nCREATE TABLE bestellung (\n  id INT PRIMARY KEY,\n  kunde_id INT,\n  FOREIGN KEY (kunde_id) REFERENCES kunde(id)\n);\nCREATE TABLE `kunde` (id INT PRIMARY KEY, name VARCHAR(50));\nCREATE INDEX idx_name ON kunde(name);\nUSE andere;\nCREATE TABLE fremd (x INT);\n").unwrap();
+        std::fs::write(d.join("src/Main.java"), "class Main { static final String DDL = \"CREATE TABLE protokoll (id INT, text VARCHAR(200))\"; }").unwrap();
+        let (sql, tabellen, zeilen) = projekt_sql(&d, "shop", None).unwrap();
+        if let Ok(p) = std::env::var("EASYMYSQL_SQL_OUT") { std::fs::write(p, &sql).unwrap(); }
+        assert_eq!((tabellen, zeilen), (3, 2), "{sql}");
+        let pos = |s: &str| sql.find(s).unwrap_or_else(|| panic!("{s} fehlt in\n{sql}"));
+        assert!(pos("CREATE TABLE IF NOT EXISTS `kunde`") < pos("CREATE TABLE IF NOT EXISTS `bestellung`"), "Fremdschluessel-Ziel zuerst");
+        assert!(pos("CREATE TABLE IF NOT EXISTS `bestellung`") < pos("INSERT IGNORE INTO `kunde`"));
+        assert!(pos("INSERT IGNORE INTO `kunde`") < pos("INSERT IGNORE INTO `bestellung`"));
+        assert!(sql.contains("CREATE INDEX IF NOT EXISTS idx_name") && sql.contains("`protokoll`"));
+        assert!(!sql.contains("DELETE") && !sql.contains("fremd"), "{sql}");
+        // Nur eine Tabelle: mit ihrem Ziel, ohne den Rest
+        let (sql, tabellen, zeilen) = projekt_sql(&d, "shop", Some("bestellung")).unwrap();
+        assert_eq!((tabellen, zeilen), (2, 2));
+        assert!(!sql.contains("protokoll"));
+        assert!(projekt_sql(&d, "shop", Some("gibtsnicht")).is_none());
+        // Vorschlaege fuer die Fehlermeldungen
+        let s = analyze_output("java.sql.SQLSyntaxErrorException: Unknown database 'shop'", Some(&d), None, true);
+        assert!(matches!(&s[0].fix, Some(Fix::ProjektSql { tabellen: 3, .. })), "{s:?}");
+        assert_eq!(s[1].fix, Some(Fix::CreateDatabase("shop".into())));
+        let s = analyze_output("Table 'shop.kunde' doesn't exist", Some(&d), None, true);
+        assert!(s.iter().any(|x| matches!(&x.fix, Some(Fix::ProjektSql { tabellen: 1, zeilen: 1, .. }))), "{s:?}");
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]
@@ -1228,25 +1314,6 @@ Caused by: java.sql.SQLSyntaxErrorException: Unknown database 'schule1'\n\
         assert_eq!(s[0].fix, Some(Fix::StartServer));
         let s = analyze_output("Error: connect ECONNREFUSED 127.0.0.1:3306", None, None, false);
         assert_eq!(s[0].fix, Some(Fix::ConnectionSettings));
-    }
-
-    #[test]
-    fn missing_packages_go_into_the_project_files() {
-        let d = tmp("pkg");
-        std::fs::write(d.join("requirements.txt"), "PyMySQL>=1.1").unwrap();
-        let s = analyze_output("ModuleNotFoundError: No module named 'mysql'", Some(&d), None, false);
-        let Some(Fix::Edit(e)) = &s[0].fix else { panic!() };
-        assert_eq!(super::super::lsp::apply_edits("PyMySQL>=1.1", &e.files[0].edits), "PyMySQL>=1.1\nmysql-connector-python\n");
-        std::fs::write(d.join("package.json"), "{\n  \"name\": \"x\",\n  \"dependencies\": {\n    \"mysql2\": \"^3\"\n  }\n}\n").unwrap();
-        let s = analyze_output("Error: Cannot find module 'dotenv'\nRequire stack:", Some(&d), None, false);
-        let Some(Fix::Edit(e)) = &s[0].fix else { panic!() };
-        let t = super::super::lsp::apply_edits(&std::fs::read_to_string(d.join("package.json")).unwrap(), &e.files[0].edits);
-        assert!(serde_json::from_str::<serde_json::Value>(&t).unwrap()["dependencies"]["dotenv"] == "latest", "{t}");
-        std::fs::write(d.join("package.json"), "{\n  \"name\": \"x\"\n}\n").unwrap();
-        let e = add_node_package(&d, "mysql2").unwrap();
-        let t = super::super::lsp::apply_edits(&std::fs::read_to_string(d.join("package.json")).unwrap(), &e.files[0].edits);
-        assert!(serde_json::from_str::<serde_json::Value>(&t).unwrap()["dependencies"]["mysql2"] == "latest", "{t}");
-        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]
@@ -1408,10 +1475,8 @@ Caused by: java.sql.SQLSyntaxErrorException: Unknown database 'schule1'\n\
     fn links_and_line_kinds() {
         let l = links("        at model.Main.main(Main.java:13)");
         assert_eq!(l, vec![Link { start: 27, end: 39, file: "Main.java".into(), line: 12 }]);
-        let l = links("  File \"/p/main.py\", line 5, in <module>");
-        assert_eq!((l[0].file.as_str(), l[0].line), ("/p/main.py", 4));
-        let l = links("    at Object.<anonymous> (/p/index.js:10:5)");
-        assert_eq!((l[0].file.as_str(), l[0].line), ("/p/index.js", 9));
+        let l = links("/p/src/Main.java:10:5: error: ';' expected");
+        assert_eq!((l[0].file.as_str(), l[0].line), ("/p/src/Main.java", 9));
         assert!(links("Zeit 12:30 Uhr").is_empty());
         assert_eq!(classify("Exception in thread \"main\" java.lang.RuntimeException: x"), LineKind::Error);
         assert_eq!(classify("java.sql.SQLException: Access denied"), LineKind::Error);

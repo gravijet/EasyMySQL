@@ -291,6 +291,21 @@ impl EasyApp {
                 None => self.error(crate::i18n::text("Nicht verbunden").to_string()),
             },
             Fix::NewTable(db) => self.handle_actions(vec![Action::NewTable(db)]),
+            Fix::ProjektSql { datenbank, sql, tabellen, zeilen } => {
+                let Some(dbc) = &self.db else {
+                    self.error(crate::i18n::text("Nicht verbunden").to_string());
+                    return;
+                };
+                let (host, port) = (dbc.info.host.clone(), dbc.info.port);
+                self.dialogs.push(super::dialogs::Dialog::ConfirmProject {
+                    text: crate::tr_format!(
+                        "{tabellen} Tabelle(n) und {zeilen} Datensatz-Anweisung(en) aus dem Projekt in {datenbank} auf {host}:{port} anlegen? Fehlt die Datenbank, wird sie erstellt. Vorhandene Tabellen und Zeilen bleiben unverändert.",
+                        "Create {tabellen} table(s) and {zeilen} data statement(s) from the project in {datenbank} on {host}:{port}? A missing database is created. Existing tables and rows stay unchanged."
+                    ),
+                    db: datenbank,
+                    sql,
+                });
+            }
             Fix::DeklarierteStruktur { datenbank, plaene, quelle } => {
                 let db = datenbank.unwrap_or_else(|| self.current_db.clone());
                 if db.is_empty() { self.error(crate::i18n::tr("Bitte zuerst die Zieldatenbank wählen.", "Choose the target database first.")); return; }
