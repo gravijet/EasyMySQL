@@ -820,6 +820,7 @@ impl TabView for SqlTab {
             Cmd::FixAll => self.fix_all(cx),
             Cmd::CopyJava => self.copy_java(cx),
             Cmd::Find | Cmd::Replace | Cmd::GotoLine => self.editor.pending = Some(cmd),
+            Cmd::RenameSymbol => self.editor.start_local_rename(&self.text),
             _ => return false,
         }
         true
@@ -1053,6 +1054,16 @@ impl TabView for SqlTab {
         }
         if out.format {
             self.format();
+        }
+        if let Some(n) = &out.notice {
+            cx.status(n.clone());
+        }
+        match out.command {
+            Some(Cmd::RenameSymbol) => self.editor.start_local_rename(&self.text),
+            Some(cmd) => {
+                TabView::command(self, cmd, cx);
+            }
+            None => {}
         }
         let ctx = ui.ctx().clone();
         self.dialogs(&ctx, cx);

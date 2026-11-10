@@ -11,6 +11,8 @@ use std::time::{Duration, Instant};
 mod complete;
 mod highlight;
 pub mod hover;
+pub mod refactor;
+mod menu;
 mod lang;
 mod lint;
 mod schema_fix;
@@ -180,6 +182,14 @@ pub struct SqlEditor {
     pub restore: Option<usize>,
     /// Wort unter dem Mauszeiger (Anfang) und seit wann: Hinweis zu Tabellen, Spalten und Funktionen
     hover_at: Option<(usize, Instant)>,
+    /// Auswahlliste Generieren / Umgeben mit
+    picker: Option<menu::Picker>,
+    /// Fruehere Auswahlen (Auswahl verkleinern)
+    sel_stack: Vec<(usize, usize)>,
+    /// Umbenennen in dieser Datei
+    rename: Option<menu::LocalRename>,
+    /// Lage des Cursors auf dem Bildschirm (letztes Bild): dort erscheinen Auswahlliste und Umbenennen
+    caret_screen: egui::Pos2,
 }
 
 #[derive(Default)]
@@ -197,6 +207,10 @@ pub struct EditorOutput {
     pub complete_at: Option<usize>,
     /// Ein angenommener Vorschlag braucht diesen Import
     pub add_import: Option<String>,
+    /// Befehl aus dem Rechtsklickmenue fuer die Registerkarte (Ausfuehren, Formatieren, Umbenennen …)
+    pub command: Option<crate::keymap::Cmd>,
+    /// Kurze Meldung fuer die Statuszeile
+    pub notice: Option<String>,
 }
 
 impl SqlEditor {
@@ -228,6 +242,10 @@ impl SqlEditor {
             exec_line: None,
             restore: None,
             hover_at: None,
+            picker: None,
+            sel_stack: Vec::new(),
+            rename: None,
+            caret_screen: egui::Pos2::ZERO,
         }
     }
 
@@ -949,6 +967,15 @@ impl SqlEditor {
                 self.popup = None;
             }
         }
+        // Auswahlliste (Generieren, Umgeben mit) und Umbenennen bekommen die Tasten vor dem Editor
+        if self.picker.is_some() {
+            let pos = self.caret_screen;
+            self.picker_ui(&ctx, text, pos, &mut out);
+        }
+        if self.rename.is_some() {
+            let pos = self.caret_screen;
+            self.rename_ui(&ctx, text, pos, &mut out);
+        }
         // Escape (vom Eingabefilter abgefangen): Vorschlaege bzw. Leisten schliessen, Fokus behalten
         if focused && ESCAPE.swap(false, std::sync::atomic::Ordering::Relaxed) {
             if self.popup.is_some() {
@@ -965,8 +992,9 @@ impl SqlEditor {
             Some(crate::keymap::Cmd::GotoLine) => self.open_goto(),
             _ => {}
         }
-        if focused {
+        if focused && self.picker.is_none() && self.rename.is_none() {
             self.handle_keys(ui, text, &mut out);
+            self.handle_refactor_keys(ui, text, &mut out);
         }
 
         // Such-/Ersetzen-Leiste und "Gehe zu Zeile"
@@ -1232,6 +1260,25 @@ impl SqlEditor {
             } else if FOCUSED_EDITOR.load(Ordering::Relaxed) == self.id.value() {
                 FOCUSED_EDITOR.store(0, Ordering::Relaxed);
             }
+        }
+
+        // Rechtsklick: Cursor an die Stelle (ausser in die Auswahl), dann das Menue
+        if o.response.response.secondary_clicked()
+            && let Some(p) = o.response.response.interact_pointer_pos()
+        {
+            let c = o.galley.cursor_from_pos(p - o.galley_pos).index.0;
+            let inside = o.cursor_range.is_some_and(|r| {
+                let (x, y) = (r.primary.index.0.min(r.secondary.index.0), r.primary.index.0.max(r.secondary.index.0));
+                x != y && x <= c && c <= y
+            });
+            if !inside {
+                self.set_cursor(&ctx, c);
+                self.cursor = c;
+            }
+        }
+        self.context_menu(&o.response.response, text, &mut out);
+        if let Some(c) = o.cursor_range.map(|r| r.primary.index.0) {
+            self.caret_screen = o.galley_pos + o.galley.pos_from_cursor(CCursor::new(c)).left_bottom().to_vec2() + egui::vec2(0.0, 4.0);
         }
 
         // Hinweis zum Problem unter dem Mauszeiger

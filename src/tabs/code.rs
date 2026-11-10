@@ -589,8 +589,10 @@ impl CodeTab {
     }
 
     fn start_rename(&mut self, cx: &mut Ctx) {
+        // Ohne bereiten Sprachserver: in dieser Datei umbenennen (Code, nicht Texte und Kommentare)
         if self.lsp.as_ref().is_none_or(|s| !s.ready()) {
-            cx.status(self.lsp_missing());
+            self.editor.start_local_rename(&self.text);
+            let _ = cx;
             return;
         }
         let chars: Vec<char> = self.text.chars().collect();
@@ -1824,6 +1826,12 @@ impl TabView for CodeTab {
             self.last_edit = Instant::now();
         }
         self.poll_completion(&ctx, &out);
+        if let Some(n) = &out.notice {
+            cx.status(n.clone());
+        }
+        if let Some(cmd) = out.command {
+            TabView::command(self, cmd, cx);
+        }
         if let Some(line) = out.toggle_breakpoint {
             self.toggle_breakpoint(line);
         }
