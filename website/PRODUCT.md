@@ -8,7 +8,7 @@ The website helps visitors understand the application, inspect real screenshots 
 
 ## Durable constraints
 
-- Preserve real application screenshots and German/English behavior. On 2026-11-11 the user asked for a rounder page with very smooth, striking animations, good-looking icons from an icon set, far less text and no technical details (measurement script, raw data, GitHub and author links, odd comparisons), written for ordinary users, pupils and teachers, and a comparison covering all features. This replaces their earlier wish for square shapes. See DESIGN.md.
+- Preserve real application screenshots and German/English behavior. User direction of 2026-11-11: round and smooth, not angular; no typical AI look (color gradients, glows, hover lighting, blur fades, ticker); real 3D animation, especially for the statistics; terminal installation is the main action and file downloads are secondary; never advertise that the app is free; little text and no technical details for ordinary users, pupils and teachers. See DESIGN.md.
 - Keep copy concise and concrete. Terminal installation precedes the equally discoverable direct Windows EXE, macOS and Linux file options near the top. Avoid a large script demonstration or filler content.
 - Package availability comes from `/api/release` and the existing `/download/*` routes. Missing packages must have an explicit unavailable state. At this review the latest release lacks a macOS package; this does not mean the application lacks macOS support.
 - Windows includes MariaDB. macOS and Linux require separate MariaDB installation; installation guidance must preserve that distinction.

@@ -27,26 +27,54 @@
       });
     })
     .flat();
+  // deutscher Ausgangstext der rollenden Zahlen, bevor die Sprache gesetzt wird
+  $$("[data-roll]").forEach(function (el) {
+    el.dataset.de = el.textContent.trim();
+  });
   var release = null;
   var ladefehler = false;
 
-  // Betriebssystemauswahl gilt fuer den kompakten Installationsbefehl oben.
+  var ruhig = window.matchMedia("(prefers-reduced-motion: reduce)");
+
+  // Terminal: Befehl je Betriebssystem, wird beim Wechsel neu getippt.
   var systeme = $$("[data-install-os]");
-  function waehleSystem(knopf, fokus) {
-    var windows = knopf.dataset.installOs === "win";
+  var system = "win";
+  var tippen = 0;
+  function zeigeBefehl(getippt) {
+    var windows = system === "win";
+    var befehl = windows
+      ? "irm https://mysql.benjaminberger.at/install | iex"
+      : "curl -fsSL https://mysql.benjaminberger.at/install | sh";
+    var ziel = $("#hero-cmd");
+    ziel.dataset.full = befehl;
+    $("#prompt").textContent = windows ? "PS>" : "$";
+    $("#terminal-shell").textContent = windows
+      ? text("PowerShell öffnen, einfügen, Enter drücken.", "Open PowerShell, paste, press Enter.")
+      : text("Terminal öffnen, einfügen, Enter drücken.", "Open a terminal, paste, press Enter.");
+    clearInterval(tippen);
+    if (!getippt || ruhig.matches) {
+      ziel.textContent = befehl;
+      return;
+    }
+    var n = 0;
+    ziel.textContent = "";
+    tippen = setInterval(function () {
+      ziel.textContent = befehl.slice(0, ++n);
+      if (n >= befehl.length) clearInterval(tippen);
+    }, 22);
+  }
+  function waehleSystem(knopf, fokus, getippt) {
+    system = knopf.dataset.installOs;
     systeme.forEach(function (el) {
       el.setAttribute("aria-checked", String(el === knopf));
       el.tabIndex = el === knopf ? 0 : -1;
     });
-    $("#hero-cmd").textContent = windows
-      ? "irm https://mysql.benjaminberger.at/install | iex"
-      : "curl -fsSL https://mysql.benjaminberger.at/install | sh";
-    $("#terminal-shell").textContent = windows ? "PowerShell" : "Terminal · sh";
+    zeigeBefehl(getippt);
     if (fokus) knopf.focus();
   }
   systeme.forEach(function (knopf, index) {
     knopf.addEventListener("click", function () {
-      waehleSystem(knopf, false);
+      waehleSystem(knopf, false, true);
     });
     knopf.addEventListener("keydown", function (e) {
       var ziel =
@@ -61,18 +89,17 @@
                 : -1;
       if (ziel !== -1) {
         e.preventDefault();
-        waehleSystem(systeme[ziel], true);
+        waehleSystem(systeme[ziel], true, true);
       }
     });
   });
   var plattform =
-    (navigator.userAgentData && navigator.userAgentData.platform) ||
-    navigator.platform ||
-    "";
-  waehleSystem(
-    systeme[/mac/i.test(plattform) ? 1 : /linux/i.test(plattform) ? 2 : 0],
-    false,
-  );
+    (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || "";
+  system = /mac/i.test(plattform) ? "mac" : /linux/i.test(plattform) ? "linux" : "win";
+  systeme.forEach(function (el) {
+    el.setAttribute("aria-checked", String(el.dataset.installOs === system));
+    el.tabIndex = el.dataset.installOs === system ? 0 : -1;
+  });
 
   function groesse(n) {
     return (
@@ -184,12 +211,17 @@
       "EasyMySQL – Database, SQL & Java",
     );
     $('meta[name="description"]').content = text(
-      "Datenbank, SQL-Editor, ER-Diagramme und Java in einer App. Kostenlos für Windows, macOS und Linux.",
-      "Database, SQL editor, ER diagrams and Java in one app. Free for Windows, macOS and Linux.",
+      "Datenbank, SQL-Editor, ER-Diagramme und Java in einer App. Für Windows, macOS und Linux.",
+      "Database, SQL editor, ER diagrams and Java in one app. For Windows, macOS and Linux.",
     );
     teileWoerter();
+    baueAlleZiffern();
+    zeigeBefehl(false);
     zeigeRelease();
     zeigeFehler();
+  }
+  function baueAlleZiffern() {
+    $$("[data-roll]").forEach(baueZiffern);
   }
   // Ueberschrift in Woerter teilen, damit sie einzeln einblenden
   function teileWoerter() {
@@ -247,10 +279,12 @@
       clearTimeout(zeitlimit);
     });
 
-  var ruhig = window.matchMedia("(prefers-reduced-motion: reduce)");
-
-  // Tabs: Pfeiltasten, Home/End, eine Tabposition; die farbige Flaeche gleitet zum gewaehlten Tab.
+  // Tabs: Pfeiltasten, Home/End, eine Tabposition. Die gelbe Flaeche gleitet zum gewaehlten Tab,
+  // die Bilder liegen uebereinander und gleiten weich aneinander vorbei.
   var tabs = $$("[role=tab]");
+  var felder = tabs.map(function (tab) {
+    return document.getElementById(tab.getAttribute("aria-controls"));
+  });
   var gleiter = $(".glider");
   function setzeGleiter() {
     var tab = $("[role=tab][aria-selected=true]");
@@ -258,11 +292,17 @@
     gleiter.style.translate = tab.offsetLeft + "px 0";
   }
   function waehleTab(tab, fokus) {
-    tabs.forEach(function (el) {
+    var jetzt = tabs.indexOf(tab);
+    tabs.forEach(function (el, i) {
       var aktiv = el === tab;
       el.setAttribute("aria-selected", String(aktiv));
       el.tabIndex = aktiv ? 0 : -1;
-      document.getElementById(el.getAttribute("aria-controls")).hidden = !aktiv;
+      felder[i].hidden = false;
+      felder[i].inert = !aktiv;
+      felder[i].setAttribute("aria-hidden", String(!aktiv));
+      felder[i].classList.toggle("on", aktiv);
+      felder[i].classList.toggle("before", i < jetzt);
+      felder[i].classList.toggle("after", i > jetzt);
     });
     setzeGleiter();
     if (fokus) tab.focus({ preventScroll: true });
@@ -273,7 +313,6 @@
     });
   }
   tabs.forEach(function (tab, index) {
-    tab.tabIndex = index === 0 ? 0 : -1;
     tab.addEventListener("click", function () {
       waehleTab(tab, false);
     });
@@ -294,38 +333,56 @@
       }
     });
   });
-  setzeGleiter();
+  waehleTab(tabs[0], false);
   addEventListener("resize", setzeGleiter, { passive: true });
   if (document.fonts) document.fonts.ready.then(setzeGleiter);
 
-  // Zahlen zaehlen hoch, sobald sie sichtbar werden.
-  function zaehle(el) {
-    var ziel = parseFloat(el.dataset.count);
-    var stellen = +el.dataset.dec;
-    var anhang = el.textContent.replace(/^[\d.,]+/, "");
-    var beginn = performance.now();
-    (function schritt(jetzt) {
-      var t = Math.min(1, (jetzt - beginn) / 1600);
-      var wert = t === 1 ? ziel : ziel * (1 - Math.pow(2, -10 * t));
-      el.textContent =
-        new Intl.NumberFormat(sprache, {
-          minimumFractionDigits: stellen,
-          maximumFractionDigits: stellen,
-        }).format(wert) + anhang;
-      if (t < 1) requestAnimationFrame(schritt);
-    })(beginn);
+  // Rollende Ziffern: jede Stelle ist eine Trommel mit zehn Flaechen.
+  function baueZiffern(el) {
+    // Ausgangstext merken: nach dem Aufbau besteht der Inhalt aus allen Trommelflaechen
+    var inhalt = sprache === "en" && el.dataset.en ? el.dataset.en : el.dataset.de;
+    el.setAttribute("aria-label", inhalt);
+    el.replaceChildren();
+    Array.from(inhalt).forEach(function (zeichen, stelle) {
+      var span = document.createElement("span");
+      span.setAttribute("aria-hidden", "true");
+      if (/\d/.test(zeichen)) {
+        span.className = "digit";
+        var trommel = document.createElement("span");
+        trommel.className = "drum";
+        for (var n = 0; n < 10; n++) {
+          var flaeche = document.createElement("i");
+          flaeche.textContent = n;
+          flaeche.style.setProperty("--n", n);
+          trommel.append(flaeche);
+        }
+        // jede Stelle dreht eine Runde mehr als die davor
+        trommel.dataset.ziel = +zeichen + 10 * (stelle + 1);
+        if (el.dataset.rolled || ruhig.matches) trommel.style.setProperty("--v", trommel.dataset.ziel);
+        span.append(trommel);
+      } else span.textContent = zeichen;
+      el.append(span);
+    });
   }
-
-  // Einblenden beim Scrollen: Geschwister nacheinander, Balken und Zaehler starten mit.
+  function rolle(el) {
+    el.dataset.rolled = "1";
+    el.querySelectorAll(".drum").forEach(function (trommel) {
+      trommel.style.setProperty("--v", trommel.dataset.ziel);
+    });
+  }
+  // Einblenden beim Scrollen: Geschwister nacheinander; Balken wachsen, Ziffern rollen.
   function zeige(el) {
     el.classList.add("in");
-    $$("[data-w]").forEach(function (balken) {
-      if (el.contains(balken)) balken.style.width = balken.dataset.w + "%";
+    el.querySelectorAll("[data-w]").forEach(function (balken, i) {
+      setTimeout(function () {
+        balken.style.setProperty("--w", balken.dataset.w);
+      }, 350 + i * 160);
     });
-    if (!ruhig.matches)
-      $$("[data-count]").forEach(function (zahl) {
-        if (el.contains(zahl)) zaehle(zahl);
-      });
+    el.querySelectorAll("[data-roll]").forEach(rolle);
+    if (el.classList.contains("tile"))
+      setTimeout(function () {
+        el.classList.add("done");
+      }, 1700);
   }
   var ziele = $$("[data-reveal], .tile, .stat, tbody tr, tfoot tr");
   if ("IntersectionObserver" in window) {
@@ -339,35 +396,53 @@
           beobachter.unobserve(e.target);
         });
       },
-      { threshold: 0.2, rootMargin: "0px 0px -6% 0px" },
+      { threshold: 0.08, rootMargin: "0px 0px -8% 0px" },
     );
     ziele.forEach(function (el) {
       beobachter.observe(el);
     });
   } else ziele.forEach(zeige);
 
-  // Scrollen: Fortschrittsbalken, schmalere Kopfzeile, das Fenster richtet sich auf.
-  var fenster = $("#hero-window");
-  var mausX = 0,
-    mausY = 0,
-    kippX = 0,
-    kippY = 0,
-    bild = 0;
+  // Scrollen und Maus, alles weich nachgefuehrt: die dunkle Buehne waechst aus einer runden Karte,
+  // das App-Fenster richtet sich auf, die Diagramme drehen sich leicht mit.
+  var flaeche = $(".stage");
+  var buehne = $(".feature-panels");
+  var szenen = $$(".stat");
+  var maus = [0, 0];
+  var weich = { x: 0, y: 0, k: 1, g: 0 };
+  var bild = 0;
+  function grenze(wert) {
+    return Math.min(1, Math.max(0, wert));
+  }
   function zeichne() {
     bild = 0;
-    var hoch = document.documentElement.scrollHeight - innerHeight;
-    wurzel.style.setProperty("--scroll", hoch > 0 ? (scrollY / hoch).toFixed(4) : 0);
-    $(".nav").classList.toggle("small", scrollY > 60);
     if (ruhig.matches) return;
-    var r = fenster.parentElement.getBoundingClientRect();
-    // 1 = Fenster noch unten im Bild, 0 = oben angekommen
-    var k = Math.min(1, Math.max(0, (r.top - innerHeight * 0.18) / (innerHeight * 0.62)));
-    kippX += (mausX - kippX) * 0.08;
-    kippY += (mausY - kippY) * 0.08;
-    fenster.style.setProperty("--rx", (k * 22 - kippY * 3).toFixed(2) + "deg");
-    fenster.style.setProperty("--ry", (kippX * 4).toFixed(2) + "deg");
-    fenster.style.setProperty("--s", (1 - k * 0.1).toFixed(4));
-    if (Math.abs(mausX - kippX) + Math.abs(mausY - kippY) > 0.002) anfordern();
+    var hoch = innerHeight;
+    // g: 0 = Buehne kommt gerade ins Bild, 1 = fuellt die Breite
+    var g = grenze((hoch - flaeche.getBoundingClientRect().top) / (hoch * 0.75));
+    // k: 1 = Fenster kommt unten ins Bild, 0 = oben angekommen
+    var k = grenze((buehne.getBoundingClientRect().top - hoch * 0.2) / (hoch * 0.7));
+    weich.x += (maus[0] - weich.x) * 0.07;
+    weich.y += (maus[1] - weich.y) * 0.07;
+    weich.k += (k - weich.k) * 0.12;
+    weich.g += (g - weich.g) * 0.12;
+    flaeche.style.setProperty("--grow", weich.g.toFixed(4));
+    buehne.style.setProperty("--rx", (weich.k * 22 - weich.y * 3).toFixed(2) + "deg");
+    buehne.style.setProperty("--ry", (weich.x * 5).toFixed(2) + "deg");
+    buehne.style.setProperty("--s", (1 - weich.k * 0.1).toFixed(4));
+    szenen.forEach(function (szene) {
+      if (!szene.classList.contains("in")) return;
+      var s = szene.getBoundingClientRect();
+      var mitte = (s.top + s.height / 2) / hoch - 0.5;
+      var diagramm = szene.querySelector(".chart3d");
+      diagramm.style.setProperty("--cx", (-8 - mitte * 10 - weich.y * 8).toFixed(2) + "deg");
+      diagramm.style.setProperty("--cy", (12 + weich.x * 22).toFixed(2) + "deg");
+    });
+    if (
+      Math.abs(maus[0] - weich.x) + Math.abs(maus[1] - weich.y) + Math.abs(k - weich.k) + Math.abs(g - weich.g) >
+      0.002
+    )
+      anfordern();
   }
   function anfordern() {
     if (!bild) bild = requestAnimationFrame(zeichne);
@@ -378,34 +453,28 @@
     "pointermove",
     function (e) {
       if (e.pointerType !== "mouse" || ruhig.matches) return;
-      mausX = e.clientX / innerWidth - 0.5;
-      mausY = e.clientY / innerHeight - 0.5;
+      maus = [e.clientX / innerWidth - 0.5, e.clientY / innerHeight - 0.5];
       anfordern();
     },
     { passive: true },
   );
   anfordern();
 
-  // Lichtfleck folgt der Maus (Kacheln, KI-Flaeche); der grosse Knopf zieht leicht zur Maus.
-  $$(".tile, [data-spot]").forEach(function (el) {
-    el.addEventListener("pointermove", function (e) {
-      var r = el.getBoundingClientRect();
-      el.style.setProperty("--mx", e.clientX - r.left + "px");
-      el.style.setProperty("--my", e.clientY - r.top + "px");
-    });
-  });
-  $$("[data-magnet]").forEach(function (el) {
+  // Kacheln neigen sich zur Maus.
+  $$(".tile").forEach(function (el) {
     el.addEventListener("pointermove", function (e) {
       if (e.pointerType !== "mouse" || ruhig.matches) return;
       var r = el.getBoundingClientRect();
-      el.style.setProperty("--tx", ((e.clientX - r.left - r.width / 2) * 0.18).toFixed(1) + "px");
-      el.style.setProperty("--ty", ((e.clientY - r.top - r.height / 2) * 0.3).toFixed(1) + "px");
+      el.style.setProperty("--ty", (((e.clientX - r.left) / r.width - 0.5) * 16).toFixed(1) + "deg");
+      el.style.setProperty("--tx", ((0.5 - (e.clientY - r.top) / r.height) * 16).toFixed(1) + "deg");
     });
     el.addEventListener("pointerleave", function () {
-      el.style.setProperty("--tx", "0px");
-      el.style.setProperty("--ty", "0px");
+      el.style.setProperty("--tx", "0deg");
+      el.style.setProperty("--ty", "0deg");
     });
   });
+
+  zeigeBefehl(true);
 
   var meldung;
   function zeigeMeldung(inhalt) {
@@ -424,7 +493,8 @@
   }
   $$("[data-copy-from]").forEach(function (knopf) {
     knopf.addEventListener("click", function () {
-      var inhalt = $(knopf.dataset.copyFrom).textContent.trim();
+      var quelle = $(knopf.dataset.copyFrom);
+      var inhalt = (quelle.dataset.full || quelle.textContent).trim();
       if (navigator.clipboard)
         navigator.clipboard.writeText(inhalt).then(
           function () {
