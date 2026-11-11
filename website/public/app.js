@@ -260,6 +260,7 @@
   };
   var szene = (window.easyScene = { n: 0, text: null, hoch: 1, A: FARBEN.start[0], B: FARBEN.start[1] });
   var letzterText = "";
+  var traeger = null; // Abschnitt, an dem das Relief haengt
   var reliefs = $$("[data-relief]");
   var funktionen = $$(".feature");
   var bilder = funktionen.map(function (el) {
@@ -280,7 +281,10 @@
     var art = null;
     reliefs.forEach(function (el) {
       var r = el.getBoundingClientRect();
-      if (r.top <= mitte && r.bottom > mitte) art = el.dataset.relief;
+      if (r.top <= mitte && r.bottom > mitte) {
+        art = el.dataset.relief;
+        traeger = el;
+      }
     });
     var farbe = art ? FARBEN[art] : FARBEN.ruhig;
     funktionen.forEach(function (el) {
@@ -295,6 +299,9 @@
     szene.A = farbe[0];
     szene.B = farbe[1];
     szene.hoch = spez ? 1 : 0;
+    // das Relief scrollt mit seinem Abschnitt mit, die Fluessigkeit zieht langsamer nach
+    szene.versatz = traeger ? -traeger.getBoundingClientRect().top / innerHeight : 0;
+    szene.lauf = scrollY / innerHeight;
     // ohne Relief bleibt der letzte Text stehen und versinkt nur (hoch = 0)
     var kennung = spez ? JSON.stringify(spez) + innerWidth + "x" + innerHeight : letzterText;
     if (kennung !== letzterText) {

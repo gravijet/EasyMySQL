@@ -16,8 +16,8 @@
 :root {
   --night: #03040a;
   --fg: #f4f1ea;
-  --mute: #b9bfd0;
-  --dim: #ffffff47;
+  --mute: #c8cddb;
+  --dim: #ffffff73;
   --line: #ffffff26;
   --blue: #a6c2ff;
   --pad: clamp(20px, 4vw, 60px);
@@ -133,7 +133,7 @@ section {
 
 /* Kopf: nur das Zeichen und die Sprache */
 .nav {
-  position: fixed;
+  position: absolute;
   z-index: 30;
   inset: 0 0 auto;
   display: flex;
@@ -154,7 +154,7 @@ section {
 }
 .lang {
   justify-items: end;
-  font: 500 0.78rem var(--mono);
+  font: 500 0.86rem var(--mono);
   color: var(--mute);
   transition: color 0.3s;
 }
@@ -172,7 +172,7 @@ section {
 }
 .hero-foot {
   display: grid;
-  grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+  grid-template-columns: minmax(0, 4fr) minmax(0, 7fr);
   align-items: end;
   gap: 2rem clamp(2rem, 6vw, 6rem);
 }
@@ -188,7 +188,7 @@ section {
 .install-os button {
   position: relative;
   min-height: 44px;
-  font: 500 0.78rem var(--mono);
+  font: 500 0.86rem var(--mono);
   color: var(--dim);
   transition: color 0.3s;
 }
@@ -247,12 +247,12 @@ section {
 .cmd code {
   flex: 1;
   min-width: 0;
-  font: 500 clamp(0.74rem, 1.2vw, 1rem) / 1.6 var(--mono);
+  font: 500 clamp(0.74rem, 1.15vw, 1rem) / 1.6 var(--mono);
   letter-spacing: 0;
   overflow-wrap: anywhere;
 }
 .tap {
-  font: 500 0.72rem var(--mono);
+  font: 500 0.8rem var(--mono);
   color: var(--mute);
   transition: color 0.3s;
 }
@@ -269,7 +269,7 @@ section {
 .foot a {
   position: relative;
   line-height: 44px;
-  font: 500 0.74rem/44px var(--mono);
+  font: 500 0.82rem/44px var(--mono);
   color: var(--mute);
   transition: color 0.3s;
 }
@@ -296,7 +296,7 @@ section {
 }
 .download-notice,
 .release-error {
-  font: 500 0.72rem/1.6 var(--mono);
+  font: 500 0.8rem/1.6 var(--mono);
   color: var(--dim);
 }
 
@@ -324,8 +324,9 @@ section {
 .feature p {
   max-width: 24ch;
   margin-top: 1.1rem;
-  font: 500 clamp(1.05rem, 1.5vw, 1.3rem) / 1.35 var(--display);
-  color: var(--mute);
+  font: 500 clamp(1.1rem, 1.6vw, 1.4rem) / 1.35 var(--display);
+  color: var(--fg);
+  opacity: 0.86;
 }
 .shot {
   display: block;
@@ -359,78 +360,96 @@ section {
 }
 .statement .claim,
 .end .claim {
-  max-width: 24ch;
-  color: var(--mute);
+  max-width: 30ch;
+  font: 560 clamp(1.2rem, 2.1vw, 1.9rem) / 1.2 var(--display);
+  letter-spacing: -0.03em;
 }
 
-/* Alle Messwerte: der Wert von EasyMySQL gross, die anderen klein mit duennen Balken */
+/* Alle Messwerte: eine Zeile je Messung, drei Spalten wie in der Tabelle darunter */
 .measures {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: clamp(56px, 8vw, 110px) clamp(40px, 8vw, 128px);
   max-width: 1320px;
   margin-inline: auto;
-  padding: 6vh var(--pad) 10vh;
+  padding: 4vh var(--pad) 8vh;
+}
+.m-head,
+.measure {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) repeat(3, minmax(0, 17%));
+  column-gap: 1.5rem;
+  align-items: end;
+}
+.m-head {
+  padding-bottom: 1.1rem;
+  font: 500 0.82rem var(--mono);
+  letter-spacing: 0;
+  color: var(--mute);
+}
+.m-head span:first-child {
+  grid-column: 2;
+  color: var(--blue);
+}
+.measure {
+  padding: clamp(1.3rem, 2.6vh, 2rem) 0;
+  border-top: 1px solid var(--line);
 }
 .measure h3 {
   margin: 0;
-  padding-bottom: 0.9rem;
-  font: 500 0.76rem var(--mono);
-  letter-spacing: 0;
-  color: var(--mute);
-  border-bottom: 1px solid var(--line);
+  /* steht auf der Grundlinie der Werte, die Balken liegen darunter */
+  padding-bottom: calc(0.7rem + 2px);
+  font: 500 clamp(1rem, 1.7vw, 1.35rem) / 1.1 var(--display);
+  letter-spacing: -0.02em;
 }
 .measure dl {
-  display: grid;
-  gap: 1rem;
-  margin: 1.3rem 0 0;
+  display: contents;
 }
+/* die Namen stehen in der Kopfzeile; je Wert bleiben sie nur fuer Vorlesen im Dokument */
 .measure dt {
-  font: 500 0.72rem var(--mono);
-  letter-spacing: 0;
-  color: var(--mute);
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 .measure dd {
-  margin: 0.2rem 0 0;
+  margin: 0;
 }
 .measure dd b {
   display: block;
-  font: 660 1.7rem/1.15 var(--display);
+  font: 600 1.35rem/1.1 var(--display);
   letter-spacing: -0.03em;
   font-variant-numeric: tabular-nums;
-}
-.measure .us dt {
-  color: var(--blue);
+  white-space: nowrap;
 }
 .measure .us dd b {
-  font-size: clamp(4rem, 8.6vw, 7.4rem);
-  font-weight: 780;
-  line-height: 0.95;
-  letter-spacing: -0.055em;
+  font-size: clamp(1.8rem, 3.3vw, 2.9rem);
+  font-weight: 740;
+  letter-spacing: -0.045em;
   color: var(--blue);
 }
 .bar {
   display: block;
-  width: calc(var(--w, 0) * 1%);
+  width: calc(var(--w, 0) * 0.9%);
   min-width: 2px;
-  height: 1px;
-  margin-top: 0.6rem;
+  height: 2px;
+  margin-top: 0.7rem;
   background: var(--fg);
+  opacity: 0.55;
   transition: width 1.6s var(--out);
 }
 .us .bar {
-  height: 3px;
-  margin-top: 0.9rem;
   background: var(--blue);
-  box-shadow: 0 0 22px 2px #a6c2ff8c;
+  opacity: 1;
 }
 html:not(.js) .bar {
   display: none;
 }
 .na dd {
-  font: 500 0.76rem var(--mono);
+  padding-bottom: calc(0.7rem + 4px);
+  font: 500 0.82rem var(--mono);
   letter-spacing: 0;
-  color: var(--dim);
+  color: var(--mute);
 }
 
 /* Tabelle */
@@ -463,7 +482,7 @@ tfoot th {
 thead th {
   width: 15%;
   padding-bottom: 1.1rem;
-  font: 500 0.74rem var(--mono);
+  font: 500 0.82rem var(--mono);
   letter-spacing: 0;
   color: var(--mute);
 }
@@ -476,7 +495,7 @@ tbody tr:not(.group) {
 tr.group th {
   padding: 3.2rem 0 0.9rem;
   text-align: left;
-  font: 500 0.74rem var(--mono);
+  font: 500 0.82rem var(--mono);
   letter-spacing: 0;
   color: var(--mute);
 }
@@ -506,7 +525,7 @@ tfoot tr {
 }
 tfoot td {
   padding-top: 1.6rem;
-  font: 500 0.74rem var(--mono);
+  font: 500 0.82rem var(--mono);
   color: var(--mute);
 }
 tfoot td::before {
@@ -540,7 +559,7 @@ tfoot td:nth-child(2) b {
 }
 .foot > span {
   margin-right: auto;
-  font: 500 0.72rem var(--mono);
+  font: 500 0.8rem var(--mono);
   color: var(--dim);
 }
 body {
@@ -555,7 +574,7 @@ body {
   padding: 0.75rem 1.2rem;
   max-width: calc(100% - 2rem);
   width: max-content;
-  font: 500 0.76rem var(--mono);
+  font: 500 0.84rem var(--mono);
   color: var(--night);
   background: var(--fg);
   border-radius: 999px;
@@ -661,8 +680,47 @@ body {
   .feature.flip > div {
     order: 0;
   }
-  .measures {
-    grid-template-columns: 1fr;
+  /* der Befehl bricht nur an Leerzeichen um, "kopieren" steht darunter */
+  .cmd {
+    flex-wrap: wrap;
+  }
+  .tap {
+    flex-basis: 100%;
+  }
+  .m-head {
+    display: none;
+  }
+  .measure {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.9rem 0.6rem;
+    padding: 1.5rem 0;
+  }
+  .measure h3 {
+    grid-column: 1 / -1;
+    padding-bottom: 0;
+  }
+  .na dd {
+    padding-bottom: 0;
+    font-size: 0.66rem;
+  }
+  .measure dt {
+    position: static;
+    width: auto;
+    height: auto;
+    margin: 0 0 0.2rem;
+    clip-path: none;
+    font: 500 0.66rem var(--mono);
+    letter-spacing: 0;
+    color: var(--mute);
+  }
+  .measure .us dt {
+    color: var(--blue);
+  }
+  .measure dd b {
+    font-size: 1.1rem;
+  }
+  .measure .us dd b {
+    font-size: 1.5rem;
   }
   thead th {
     width: 17%;

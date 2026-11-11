@@ -26,6 +26,8 @@ uniform float H;         // Staerke des Reliefs
 uniform vec3 A;          // Spiegelfarbe 1
 uniform vec3 B;          // Spiegelfarbe 2
 uniform vec3 W[6];       // Wellen: x, y, Startzeit
+uniform float O;         // Relief wandert mit seinem Abschnitt (in Bildhoehen)
+uniform float S;         // gescrollte Strecke in Bildhoehen
 
 float h(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float n(vec2 p){
@@ -41,13 +43,15 @@ float fbm(vec2 p){
 // Text: der alte schmilzt fleckig weg, der neue steigt auf
 float schrift(vec2 uv){
   vec2 st = vec2(uv.x * R.y / R.x, uv.y) * .5 + .5;
+  st.y -= O;
   float fleck = n(st * 7. + T * .15);
   float k = smoothstep(fleck - .3, fleck + .3, Q * 1.6 - .3);
   return mix(texture2D(X0, st).r, texture2D(X1, st).r, k);
 }
 float hoehe(vec2 uv){
-  float see = fbm(uv * .85 + vec2(T * .04, -T * .03) + 1.1 * fbm(uv * 1.1 - T * .045));
-  float hh = see * .5 + smoothstep(.12, .7, schrift(uv)) * .5 * H;
+  vec2 ww = uv - vec2(0., S * .6);
+  float see = fbm(ww * .7 + vec2(T * .035, -T * .025) + 1.1 * fbm(ww * .9 - T * .04));
+  float hh = see * .42 + smoothstep(.12, .7, schrift(uv)) * .5 * H;
   for (int i = 0; i < 6; i++) {
     float alt = T - W[i].z;
     if (alt > 0. && alt < 3.2) {
@@ -75,10 +79,12 @@ void main(){
   vec3 c = vec3(.008, .010, .024) + mix(B, A, smoothstep(-.9, .9, uv.y + uv.x * .4)) * .07;
   // Licht von links oben (wandert mit der Maus): Kanten zum Licht hin leuchten farbig,
   // abgewandte Kanten bleiben dunkel. So wirkt das Relief wirklich erhaben.
+  // volle Glanzlichter nur am Relief: die freie Flaeche bleibt ruhig, damit Text darauf lesbar ist
+  float kraft = mix(.46, 1., smoothstep(.02, .3, schrift(uv)) * H);
   float zum = dot(nn, normalize(vec3(-.5 + M.x * .5, .62 + M.y * .35, .6)));
   float hin = max(zum, 0.);
-  c += spiegel * schraeg * (.5 + 2.4 * hin) + mix(film, vec3(1.), .3) * schraeg * schraeg * 2.6 * hin;
-  c += pow(max(zum - .6, 0.) * 2.5, 2.) * 1.6 * (A * .4 + .6) + glanz;
+  c += kraft * (spiegel * schraeg * (.5 + 2.4 * hin) + mix(film, vec3(1.), .3) * schraeg * schraeg * 2.6 * hin);
+  c += kraft * (pow(max(zum - .6, 0.) * 2.5, 2.) * 1.6 * (A * .4 + .6) + glanz);
   c *= 1. - schraeg * (1. - hin) * .75;
   // Die Buchstaben bestehen aus derselben Fluessigkeit: innen etwas heller und nass,
   // ein Lichtstreifen wandert langsam darueber und folgt der Maus.
@@ -116,7 +122,7 @@ void main(){
   gl.enableVertexAttribArray(ort);
   gl.vertexAttribPointer(ort, 2, gl.FLOAT, false, 0, 0);
   var u = {};
-  ["R", "T", "M", "X0", "X1", "Q", "H", "A", "B", "W"].forEach(function (name) {
+  ["R", "T", "M", "X0", "X1", "Q", "H", "A", "B", "W", "O", "S"].forEach(function (name) {
     u[name] = gl.getUniformLocation(programm, name);
   });
 
@@ -164,7 +170,7 @@ void main(){
       stift.textBaseline = "middle";
       stift.fillStyle = "#fff";
       stift.shadowColor = "#fff";
-      stift.shadowBlur = px * 0.07;
+      stift.shadowBlur = px * 0.055;
       zeilen.forEach(function (zeile, i) {
         var y = spez.y * blatt.height + (i - (zeilen.length - 1) / 2) * px * 0.9;
         // zweimal: der Schatten macht die Kante weich, die Flaeche bleibt voll
@@ -211,7 +217,7 @@ void main(){
     if (stand.n !== ziel.n) {
       stand.n = ziel.n;
       schreibe(ziel.text);
-      stand.q = ruhig.matches ? 1 : 0;
+      stand.q = ruhig.matches || stand.hoch < 0.08 ? 1 : 0;
     }
     // alles nach vergangener Zeit bewegen, nicht nach Bildern: auf langsamen Geraeten gleich schnell
     var jetztMs = performance.now();
@@ -234,6 +240,8 @@ void main(){
     gl.uniform1i(u.X1, vorn);
     gl.uniform1f(u.Q, weichQ);
     gl.uniform1f(u.H, stand.hoch);
+    gl.uniform1f(u.O, ziel.versatz || 0);
+    gl.uniform1f(u.S, ruhig.matches ? 0 : ziel.lauf || 0);
     gl.uniform3f(u.A, stand.A[0], stand.A[1], stand.A[2]);
     gl.uniform3f(u.B, stand.B[0], stand.B[1], stand.B[2]);
     gl.uniform3fv(u.W, wellen);

@@ -1,8 +1,8 @@
 # Design System: EasyMySQL Website
 
-The page is one stage: a dark, glossy liquid behind everything. At three moments large words rise out of it as an embossed relief, lit from the upper left. Between them the liquid stays calm and normal large type and real screenshots carry the page. About thirteen screens long, free scrolling, nothing has to be clicked.
+The page is one stage: a dark, glossy liquid behind everything. At three moments large words rise out of it as an embossed relief, lit from the upper left. Between them the liquid stays calm and normal large type and real screenshots carry the page. About twelve screens long, free scrolling, nothing has to be clicked.
 
-Direction from the user (2026-11-11, last rounds): unique background, no rounded 3D discs, nothing that must be clicked, no scroll bars, no standard underlined links, no mention of GitHub; then: a longer page, not over the top, still worth looking at.
+Direction from the user (2026-11-11, last rounds): unique background, no rounded 3D discs, nothing that must be clicked, no scroll bars, no standard underlined links, no mention of GitHub; then: a longer page, not over the top, still worth looking at; then: too overloaded, make it clean, smooth and clearly readable.
 
 ## The stage (`gl.js`)
 
@@ -15,11 +15,11 @@ One WebGL fragment shader. Height = slow liquid swells + blurred text (drawn to 
 | Top | EasyMySQL | one sentence, OS words, the install command, file words |
 | Six features | none, colors change per feature | large title, one line, the real screenshot (alternating sides) |
 | One number | 0,47 s | one sentence with the other two values |
-| Measurements | none | eight blocks: EasyMySQL's value large, the others small with thin bars |
+| Measurements | none | eight rows with three columns (EasyMySQL, XAMPP, Workbench), a thin bar under each value |
 | Table | none | the feature table |
 | End | Claude Code & Codex | one sentence and the footer |
 
-When a relief section leaves the middle of the screen its text sinks back; the next one rises by melting through a noise mask.
+The relief is attached to its section and scrolls with it (`easyScene.versatz`), so page text never lies on top of it; the liquid drifts along more slowly (`easyScene.lauf`). When the section leaves the middle of the screen the relief sinks back. Full highlights exist only at the relief: the open liquid stays dim so text on it is readable.
 
 ## Custom parts
 
@@ -31,7 +31,7 @@ When a relief section leaves the middle of the screen its text sinks back; the n
 - **Table marks:** a diamond that spins in for yes, a faint small ring for no; totals as large numbers.
 - **Scrolling:** native scroll bars are hidden.
 
-Removed as too much: the custom pointer, the slat images, automatic cycling and section snapping.
+Removed as too much: the custom pointer, the slat images, automatic cycling, section snapping, the eight huge number blocks, bright liquid highlights behind text and the fixed header.
 
 ## Type and color
 
