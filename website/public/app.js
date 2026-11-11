@@ -41,10 +41,13 @@
     var befehl = windows
       ? "irm https://mysql.benjaminberger.at/install | iex"
       : "curl -fsSL https://mysql.benjaminberger.at/install | sh";
-    var ziel = $("#hero-cmd");
-    ziel.dataset.full = befehl;
-    $("#prompt").textContent = windows ? "PS>" : "$";
-    ziel.textContent = befehl;
+    $("#hero-cmd").dataset.full = befehl;
+    $$("[data-prompt]").forEach(function (el) {
+      el.textContent = windows ? "PS>" : "$";
+    });
+    $$("[data-cmd]").forEach(function (el) {
+      el.textContent = befehl;
+    });
   }
   function waehleSystem(knopf, fokus) {
     system = knopf.dataset.installOs;
@@ -246,9 +249,7 @@
   // ---------- Buehne: was als Relief in der Fluessigkeit steht und welche Farben sich spiegeln ----------
   var FARBEN = {
     start: [[0.25, 0.45, 1], [0.7, 0.25, 0.95]],
-    zahl: [[1, 0.35, 0.55], [0.3, 0.35, 1]],
     ruhig: [[0.14, 0.2, 0.45], [0.1, 0.26, 0.34]],
-    ende: [[0.2, 0.85, 0.7], [0.3, 0.45, 1]],
     funktionen: [
       [[0.25, 0.5, 1], [0.1, 0.8, 0.8]],
       [[0.1, 0.8, 0.75], [0.2, 0.4, 1]],
@@ -271,9 +272,7 @@
   function relief(art) {
     var schmal = innerWidth < innerHeight;
     if (art === "start")
-      return schmal ? { zeilen: ["Easy", "MySQL"], h: 0.17, y: 0.3 } : { zeilen: ["EasyMySQL"], h: 0.36, y: 0.4 };
-    if (art === "zahl") return { zeilen: [text("0,47 s", "0.47 s")], h: schmal ? 0.2 : 0.46, y: schmal ? 0.36 : 0.4 };
-    if (art === "ende") return { zeilen: ["Claude Code", "& Codex"], h: schmal ? 0.11 : 0.24, y: schmal ? 0.34 : 0.38 };
+      return schmal ? { zeilen: ["Easy", "MySQL"], h: 0.14, y: 0.27, anteil: 0.8 } : { zeilen: ["EasyMySQL"], h: 0.36, y: 0.36, anteil: 0.7 };
     return null;
   }
   function stelle() {
@@ -294,7 +293,7 @@
     var spez = relief(art);
     if (spez) {
       spez.x = Math.min(60, Math.max(20, innerWidth * 0.04)) / innerWidth;
-      spez.breit = 1 - 2 * spez.x;
+      spez.breit = (1 - 2 * spez.x) * spez.anteil;
     }
     szene.A = farbe[0];
     szene.B = farbe[1];
@@ -371,7 +370,7 @@
     });
     if (!ruhig.matches) el.querySelectorAll("[data-count]").forEach(zaehle);
   }
-  var ziele = $$(".feature > div, .measure, .table h2, tbody tr, tfoot tr");
+  var ziele = $$(".rv, .feature > div, tbody tr, tfoot tr");
   if ("IntersectionObserver" in window) {
     var beobachter = new IntersectionObserver(
       function (eintraege) {
