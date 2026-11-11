@@ -1,47 +1,42 @@
 # Design System: EasyMySQL Website
 
-Light and airy: white round cards on a pale ground, one strong blue, colorful icons. Depth comes from real 3D scenes instead of glows and color gradients. Written for people who are not experts: little text, the terminal command first.
+Plain and large. White ground, very big type, one blue, thin rules and thin bars. The user chose this direction on 2026-11-11 after rejecting cards, icon tiles, pill tabs, check-mark circles, gradients and 3D charts as generic.
 
 ## Colors
 
 | Token | Value | Use |
 |---|---|---|
-| bg | `#f5f6fb` | page ground |
-| card | `#fff` | cards, table, header, pill bars |
-| ink | `#0f1730` | text, terminal, AI panel |
-| mute | `#5a637c` | secondary text |
-| blue | `#2a5ee0` | EasyMySQL: headline ending, selected pill, copy button, its puck and cylinder |
-| green / red | `#12a150` `#e5484d` | check and cross, stopped pucks |
-| orange / amber / teal | `#f07c12` `#d99a00` `#0d9db8` | icon tiles and statistic cards |
-
-No decorative gradients, light clouds, hover lighting or shine. The only gradient is the shading that makes the cylinders round. Other products are always grey.
+| bg | `#fff` | page |
+| ink | `#0c1226` | text, strong rules, command line, "yes" dots of the other products |
+| mute | `#5d6579` | secondary text |
+| soft | `#c9cedb` | unselected tabs, bars of the other products, "no" dashes, "not available" |
+| line | `#e6e8ef` | fine rules |
+| blue | `#2456e6` | EasyMySQL only: headline ending, its numbers, bars and dots, copy button, links |
 
 ## Type
 
-Inter Tight for headings and figures, Instrument Sans for reading text, Martian Mono for the terminal.
+Inter Tight for headings and numbers (headline up to 9.4rem, EasyMySQL numbers up to 7.6rem), Instrument Sans for reading text at 18px, Martian Mono for the command.
 
 ## Structure
 
-1. Headline, then the terminal with the install command (typed out, OS switch, copy button with a pressable edge). File downloads are one small line below.
-2. Features: pill tabs and a 3D carousel of the six real app screenshots, then eight icon tiles.
-3. Comparison: a race on a tilted board (five measurements to choose), three cards with rolling digits and cylinders for memory, disk and download size, then the feature table with a count per product.
-4. AI panel.
+Left-aligned, 1248px wide, large gaps between sections.
 
-Nothing says "free" and nothing explains how the numbers were measured. Imprint and privacy stay in the footer.
+1. Plain header (name, three links, language).
+2. Headline, OS switch as underlined words, the install command on one dark line with a copy button, file downloads as small links.
+3. Features: word tabs with a sliding blue line, one real screenshot, eight short text entries under a rule.
+4. Comparison: eight measurements in two columns. Each shows the EasyMySQL value very large in blue with a thicker bar, the other two smaller with thin grey bars, or grey words where a product cannot do it.
+5. Feature table: text rows, a filled dot for yes and a thin dash for no, totals as large numbers.
+6. AI: one heading and one sentence.
 
-## Motion (all off with reduced motion)
+No cards, shadows on boxes, icons, pills or gradients. The only rounded things are the command line, the copy button and the screenshot.
 
-- Headline words tip up one after another; the terminal unfolds; the command is typed.
-- Carousel: the chosen window is in front, the others stand turned to the sides in depth; clicking a tab or a side window turns it. The whole carousel starts tilted, straightens with scroll and follows the mouse.
-- Race: three lanes, each puck is a stack of layers standing on the board. Pucks travel in proportion to the measured times while the seconds count up; where a product cannot do the task, its puck stops red.
-- Statistics: every digit is a drum with ten faces that rolls to its value; cylinders grow.
-- Sections and tiles rise from a slight backward tilt; tiles lean toward the mouse and lift their icon.
-- Check and cross marks flip in row by row; pill markers glide with a spring; the header narrows after scrolling.
+## Motion (off with reduced motion)
+
+Only fading in with a small rise, numbers counting up, bars growing, the tab line sliding, screenshots cross-fading, and the screenshot straightening slightly while it scrolls in.
 
 ## Rules
 
-- Numbers come from `/home/benj/client-benchmark-2026-11` (2026-11-11), rounded for reading.
+- Numbers come from `/home/benj/client-benchmark-2026-11` (2026-11-11), rounded for reading. Nothing on the page says "free" or explains the measurement.
 - Screenshots load eagerly; the first one is preloaded.
-- CSP forbids inline styles: positions and custom properties are set from JavaScript, never with `style` attributes.
-- Icons are Lucide (ISC), inlined as one SVG sprite.
+- CSP forbids inline styles: positions and custom properties are set from JavaScript.
 - Both languages via `data-en`; keyboard tabs, visible focus and 44px targets stay intact.
