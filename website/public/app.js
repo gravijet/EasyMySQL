@@ -154,23 +154,7 @@
   function zeigeFehler() {
     var el = $("#release-error");
     el.hidden = !ladefehler;
-    el.replaceChildren();
-    if (!ladefehler) return;
-    el.append(
-      document.createTextNode(
-        text(
-          "Release-Status nicht erreichbar. ",
-          "Release status unavailable. ",
-        ),
-      ),
-    );
-    var link = document.createElement("a");
-    link.href = "https://github.com/gravijet/EasyMySQL/releases/latest";
-    link.textContent = text(
-      "Downloads auf GitHub öffnen",
-      "Open downloads on GitHub",
-    );
-    el.append(link);
+    el.textContent = ladefehler ? text("Downloads gerade nicht erreichbar.", "Downloads are unavailable right now.") : "";
   }
 
   function setzeSprache(neu) {
@@ -259,70 +243,36 @@
       clearTimeout(zeitlimit);
     });
 
-  // ---------- 3D-Szene: drei Scheiben, erst Symbol, dann Saeulen des Vergleichs ----------
-  function grenze(wert) {
-    return Math.min(1, Math.max(0, wert));
-  }
-  function weich(t) {
-    return t * t * (3 - 2 * t);
-  }
-  function misch(a, b, t) {
-    return a + (b - a) * t;
-  }
-  // Farben der Wolken je Abschnitt (zwei Toene, Werte 0 bis 1)
+  // ---------- Buehne: welcher Text als Relief in der Fluessigkeit steht ----------
+  // Spiegelfarben je Abschnitt (zwei Toene, Werte 0 bis 1)
   var FARBEN = {
-    start: [[0.09, 0.2, 0.62], [0.3, 0.1, 0.52]],
-    vergleich: [[0.44, 0.1, 0.32], [0.1, 0.16, 0.56]],
-    funktionen: [
-      [[0.08, 0.22, 0.66], [0.04, 0.36, 0.52]],
-      [[0.03, 0.36, 0.4], [0.05, 0.2, 0.5]],
-      [[0.5, 0.26, 0.06], [0.42, 0.1, 0.22]],
-      [[0.34, 0.14, 0.6], [0.1, 0.16, 0.56]],
-      [[0.1, 0.4, 0.22], [0.05, 0.26, 0.38]],
-      [[0.14, 0.24, 0.42], [0.36, 0.16, 0.3]],
-    ],
-    tabelle: [[0.05, 0.08, 0.18], [0.04, 0.1, 0.14]],
-    ki: [[0.06, 0.34, 0.3], [0.1, 0.18, 0.58]],
+    start: [[0.25, 0.45, 1], [0.7, 0.25, 0.95]],
+    vergleich: [[1, 0.35, 0.55], [0.3, 0.35, 1]],
+    tabelle: [[0.12, 0.18, 0.4], [0.1, 0.25, 0.3]],
+    ende: [[0.2, 0.85, 0.7], [0.3, 0.45, 1]],
   };
-  var STAPEL = [
-    [0, 0.5, 0.15],
-    [0, 0, 0.15],
-    [0, -0.5, 0.15],
+  var FUNKTIONEN = [
+    { de: "SQL-Editor", en: "SQL editor", bild: "sql", f: [[0.25, 0.5, 1], [0.1, 0.8, 0.8]] },
+    { de: "Tabellen", en: "Tables", bild: "data", f: [[0.1, 0.8, 0.75], [0.2, 0.4, 1]] },
+    { de: "ER-Diagramme", en: "ER diagrams", bild: "er", f: [[1, 0.6, 0.15], [0.9, 0.2, 0.45]] },
+    { de: "Query Builder", en: "Query builder", bild: "builder", f: [[0.65, 0.35, 1], [0.25, 0.4, 1]] },
+    { de: "Java", en: "Java", bild: "code", f: [[0.25, 0.9, 0.5], [0.1, 0.6, 0.8]] },
+    { de: "Git", en: "Git", bild: "git", f: [[0.4, 0.6, 0.9], [0.8, 0.4, 0.65]] },
   ];
-  var szene = (window.easyScene = {
-    V: 1,
-    K: 0.82,
-    O: [0.9, 0],
-    C: 0,
-    G: 0,
-    W: 2.2,
-    D: JSON.parse(JSON.stringify(STAPEL)),
-    A: FARBEN.start[0],
-    B: FARBEN.start[1],
-  });
-
-  // Vergleich: Sekunden bzw. MB fuer EasyMySQL, XAMPP, Workbench; null = geht dort nicht.
+  // Sekunden bzw. MB fuer EasyMySQL, XAMPP, Workbench; null = geht dort nicht.
   var FEHLT = ["nicht vorhanden", "not available"];
   var MESSUNGEN = [
-    { w: [0.47, 2.7, 5.7], e: "s" },
-    { w: [0.17, 0.33, 2.1], e: "s" },
-    { w: [0.2, 0.34, 0.25], e: "s" },
-    { w: [0.22, 0.6, null], e: "s", g: [null, null, FEHLT] },
-    { w: [7.7, null, null], e: "s", g: [null, ["Datei zu groß", "file too large"], FEHLT] },
-    { w: [133, 252, 266], e: "MB" },
-    { w: [260, 929, 870], e: "MB" },
-    { w: [77, 200, 273], e: "MB" },
+    { de: "Programm starten", en: "Starting the app", w: [0.47, 2.7, 5.7], e: "s" },
+    { de: "Tabelle öffnen", en: "Opening a table", w: [0.17, 0.33, 2.1], e: "s" },
+    { de: "In 1 Mio. Zeilen suchen", en: "Searching 1M rows", w: [0.2, 0.34, 0.25], e: "s" },
+    { de: "ER-Diagramm zeichnen", en: "Drawing an ER diagram", w: [0.22, 0.6, null], e: "s", g: [null, null, FEHLT] },
+    { de: "1 Mio. Zeilen importieren", en: "Importing 1M rows", w: [7.7, null, null], e: "s", g: [null, ["Datei zu groß", "file too large"], FEHLT] },
+    { de: "Arbeitsspeicher", en: "Memory", w: [133, 252, 266], e: "MB" },
+    { de: "Platz auf der Festplatte", en: "Disk space", w: [260, 929, 870], e: "MB" },
+    { de: "Download", en: "Download", w: [77, 200, 273], e: "MB" },
   ];
-  var ABSTAND = 2.3; // Abstand der Saeulen im Raum des Objekts
-  var BODEN = -1.1; // Standflaeche der Saeulen
-  var NEIGUNG = -0.42; // wie in gl.js (lage) fuer das Diagramm
-  var vAbschnitt = $("#compare");
-  var wahl = $$(".picks button");
-  var spalten = $$(".col").map(function (el) {
-    return { el: el, wert: el.querySelector("b") };
-  });
-  var messung = 0;
-  var selbstGewaehlt = false;
+  var szene = (window.easyScene = { n: 0, text: null, hoch: 1, A: FARBEN.start[0], B: FARBEN.start[1] });
+  var letzterText = "";
   function zahl(wert, einheit) {
     var stellen = einheit === "MB" ? 0 : wert < 1 ? 2 : 1;
     return (
@@ -331,202 +281,195 @@
       einheit
     );
   }
-  // halbe Hoehe der Saeule i fuer die gewaehlte Messung
-  function hoehe(i) {
-    var m = MESSUNGEN[messung];
-    if (m.w[i] === null) return 0.11;
-    return 0.13 + 0.82 * (m.w[i] / Math.max.apply(null, m.w.filter(Boolean)));
-  }
-  var zaehler = 0;
-  function waehleMessung(index, weichZaehlen) {
-    var vorher = MESSUNGEN[messung];
-    messung = index;
-    var m = MESSUNGEN[index];
-    wahl.forEach(function (knopf, i) {
-      knopf.setAttribute("aria-pressed", String(i === index));
-    });
-    var meiner = ++zaehler;
-    var beginn = performance.now();
-    (function schritt(jetzt) {
-      if (meiner !== zaehler) return;
-      var t = weichZaehlen && !ruhig.matches ? grenze((jetzt - beginn) / 700) : 1;
-      spalten.forEach(function (spalte, i) {
-        var w = m.w[i];
-        spalte.el.classList.toggle("na", w === null);
-        if (w === null) {
-          spalte.wert.textContent = text(m.g[i][0], m.g[i][1]);
-          return;
-        }
-        // von der alten zur neuen Zahl zaehlen, wenn die Einheit gleich bleibt
-        var von = vorher.e === m.e && vorher.w[i] !== null ? vorher.w[i] : 0;
-        spalte.wert.textContent = zahl(t === 1 ? w : misch(von, w, weich(t)), m.e);
-      });
-      if (t < 1) requestAnimationFrame(schritt);
-    })(beginn);
-    document.dispatchEvent(new Event("easymysql-scene"));
-    anfordern();
-  }
-  wahl.forEach(function (knopf, i) {
-    knopf.addEventListener("click", function () {
-      selbstGewaehlt = true;
-      waehleMessung(i, true);
-    });
-  });
 
-  // Funktionen: Stapel der App-Fenster.
-  var fAbschnitt = $("#features");
-  var tabs = $$("[role=tab]");
-  var blaetter = tabs.map(function (tab) {
-    return document.getElementById(tab.getAttribute("aria-controls"));
+  var abschnitte = ["top", "compare", "features", "table", "ai"].map(function (id) {
+    return document.getElementById(id);
   });
-  var blatt = 0;
-  var selbstGeblaettert = false;
-  function waehleBlatt(index, fokus) {
-    blatt = index;
-    tabs.forEach(function (tab, i) {
-      tab.setAttribute("aria-selected", String(i === index));
-      tab.tabIndex = i === index ? 0 : -1;
-      blaetter[i].classList.toggle("on", i === index);
-      blaetter[i].setAttribute("aria-hidden", String(i !== index));
-    });
-    if (fokus) tabs[index].focus({ preventScroll: true });
-    anfordern();
-  }
-  tabs.forEach(function (tab, i) {
-    function nimm() {
-      selbstGeblaettert = true;
-      waehleBlatt(i, false);
+  var aktiv = 0;
+  var messung = 0;
+  var funktion = 0;
+
+  // Legt fest, was die Buehne zeigt: Text, Lage, Groesse und Farben.
+  function stelle() {
+    var schmal = innerWidth < innerHeight;
+    var rand = Math.min(60, Math.max(20, innerWidth * 0.04)) / innerWidth;
+    var spez = null;
+    var farbe = FARBEN.start;
+    if (aktiv === 0) {
+      spez = schmal
+        ? { zeilen: ["Easy", "MySQL"], h: 0.17, y: 0.3 }
+        : { zeilen: ["EasyMySQL"], h: 0.36, y: 0.4 };
+    } else if (aktiv === 1) {
+      var m = MESSUNGEN[messung];
+      spez = { zeilen: [zahl(m.w[0], m.e)], h: schmal ? 0.2 : 0.46, y: schmal ? 0.4 : 0.46 };
+      farbe = FARBEN.vergleich;
+    } else if (aktiv === 2) {
+      var f = FUNKTIONEN[funktion];
+      spez = { zeilen: [text(f.de, f.en)], h: schmal ? 0.085 : 0.2, y: schmal ? 0.17 : 0.2, breit: schmal ? 1 - 2 * rand : 0.6 };
+      farbe = f.f;
+    } else if (aktiv === 3) {
+      farbe = FARBEN.tabelle;
+    } else {
+      spez = { zeilen: ["Claude Code", "& Codex"], h: schmal ? 0.11 : 0.24, y: 0.42 };
+      farbe = FARBEN.ende;
     }
-    tab.addEventListener("click", nimm);
-    tab.addEventListener("pointerenter", function (e) {
-      if (e.pointerType === "mouse") nimm();
-    });
-    blaetter[i].addEventListener("click", nimm);
-    tab.addEventListener("keydown", function (e) {
-      var ziel =
-        e.key === "ArrowDown" || e.key === "ArrowRight"
-          ? (i + 1) % tabs.length
-          : e.key === "ArrowUp" || e.key === "ArrowLeft"
-            ? (i + tabs.length - 1) % tabs.length
-            : e.key === "Home"
-              ? 0
-              : e.key === "End"
-                ? tabs.length - 1
-                : -1;
-      if (ziel !== -1) {
-        e.preventDefault();
-        selbstGeblaettert = true;
-        waehleBlatt(ziel, true);
-      }
-    });
-  });
-  waehleBlatt(0, false);
-
-  // Solange niemand selbst waehlt, laufen Messungen und Fenster von allein weiter.
-  function imBild(el) {
-    var r = el.getBoundingClientRect();
-    return r.top < innerHeight * 0.6 && r.bottom > innerHeight * 0.4;
+    if (spez) {
+      spez.x = rand;
+      if (!spez.breit) spez.breit = 1 - 2 * rand;
+    }
+    szene.A = farbe[0];
+    szene.B = farbe[1];
+    szene.hoch = spez ? 1 : 0;
+    var kennung = JSON.stringify(spez) + innerWidth + "x" + innerHeight;
+    if (kennung !== letzterText) {
+      letzterText = kennung;
+      szene.text = spez;
+      szene.n++;
+    }
+    document.dispatchEvent(new Event("easymysql-scene"));
   }
-  setInterval(function () {
-    if (ruhig.matches || document.hidden) return;
-    if (!selbstGewaehlt && imBild(vAbschnitt)) waehleMessung((messung + 1) % MESSUNGEN.length, true);
-    if (!selbstGeblaettert && imBild(fAbschnitt)) waehleBlatt((blatt + 1) % tabs.length, false);
-  }, 3400);
 
-  // Klick auf das Symbol oben laesst die Scheiben kurz auseinanderspringen.
-  var stoss = 0;
-  $("#top").addEventListener("pointerdown", function (e) {
-    if (e.target.closest("a, button, code")) return;
-    stoss = 1;
-    anfordern();
+  // ---------- Vergleich: laeuft von allein durch ----------
+  var mName = $("#m-name");
+  var mUns = $("#m-us");
+  var gegner = $$(".rival").map(function (el) {
+    return { el: el, wert: el.querySelector("b") };
   });
+  function zeigeMessung() {
+    var m = MESSUNGEN[messung];
+    var groesste = Math.max.apply(null, m.w.filter(Boolean));
+    mName.textContent = text(m.de, m.en);
+    mName.classList.remove("swap");
+    void mName.offsetWidth; // Animation neu starten
+    mName.classList.add("swap");
+    mUns.textContent = text(m.de, m.en) + ": EasyMySQL " + zahl(m.w[0], m.e);
+    gegner.forEach(function (g, i) {
+      var w = m.w[i];
+      g.el.classList.toggle("na", w === null);
+      g.el.style.setProperty("--f", w === null ? 0 : ((w / groesste) * 100).toFixed(1));
+      if (g.wert) g.wert.textContent = w === null ? text(m.g[i][0], m.g[i][1]) : zahl(w, m.e);
+    });
+  }
 
+  // ---------- Funktionen: Bild aus Lamellen, die sich der Reihe nach drehen ----------
+  var LAMELLEN = 14;
+  var blende = $("#blinds");
+  var lamellen = [];
+  var gedreht = false;
+  var gross = innerWidth > 820 ? "2000" : "1000";
+  function bildAdresse(i) {
+    return "url(/shots/" + FUNKTIONEN[i].bild + "-" + gross + ".webp)";
+  }
+  blende.replaceChildren();
+  for (var l = 0; l < LAMELLEN; l++) {
+    var lamelle = document.createElement("div");
+    lamelle.className = "slat";
+    lamelle.style.setProperty("--i", l);
+    lamelle.style.setProperty("--count", LAMELLEN);
+    var vorn = document.createElement("s");
+    var hinten = document.createElement("s");
+    vorn.style.backgroundImage = bildAdresse(0);
+    lamelle.append(vorn, hinten);
+    blende.append(lamelle);
+    lamellen.push([lamelle, vorn, hinten]);
+  }
+  // alle Bilder vorab laden, damit beim Drehen nichts fehlt
+  FUNKTIONEN.forEach(function (f) {
+    new Image().src = "/shots/" + f.bild + "-" + gross + ".webp";
+  });
+  function zeigeFunktion() {
+    // das neue Bild kommt auf die Rueckseite, dann drehen sich alle Lamellen
+    lamellen.forEach(function (teile) {
+      teile[gedreht ? 1 : 2].style.backgroundImage = bildAdresse(funktion);
+      teile[0].classList.toggle("flip", !gedreht);
+    });
+    gedreht = !gedreht;
+    $("#f-name").textContent = text(FUNKTIONEN[funktion].de, FUNKTIONEN[funktion].en);
+  }
+
+  // Alle 3,6 s geht der sichtbare Abschnitt einen Schritt weiter; niemand muss etwas anklicken.
+  setInterval(function () {
+    if (document.hidden) return;
+    if (aktiv === 1) {
+      messung = (messung + 1) % MESSUNGEN.length;
+      zeigeMessung();
+      stelle();
+    } else if (aktiv === 2) {
+      funktion = (funktion + 1) % FUNKTIONEN.length;
+      zeigeFunktion();
+      stelle();
+    }
+  }, 3600);
+
+  // ---------- Scrollen, Maus, eigener Zeiger ----------
+  var zeiger = $("#cursor");
+  var eigenerZeiger = matchMedia("(hover: hover) and (pointer: fine)").matches && !ruhig.matches;
+  if (eigenerZeiger) wurzel.classList.add("cur");
+  var maus = [innerWidth / 2, innerHeight / 2];
+  var folgt = maus.slice();
+  var neigung = [0, 0];
   var bild = 0;
   function zeichne() {
     bild = 0;
-    var hoch = innerHeight;
-    var seite = innerWidth / hoch;
-    var schmal = seite < 1;
-    var vRect = vAbschnitt.getBoundingClientRect();
-    var fRect = fAbschnitt.getBoundingClientRect();
-    var tRect = $("#table").getBoundingClientRect();
-    var aRect = $("#ai").getBoundingClientRect();
-
-    // c: 0 = Symbol oben, 1 = Saeulen im Vergleich
-    var c = weich(grenze(1 - vRect.top / hoch));
-    stoss *= 0.93;
-    // Ankerpunkte auf der Seite (in Pixeln ab Seitenanfang), dazwischen gleitet das Objekt
-    var obenY = hoch * 0.47;
-    var saeulenY = scrollY + vRect.top + vRect.height * (schmal ? 0.6 : 0.58);
-    var obenX = schmal ? seite * 0.32 : seite * 0.56;
-    var saeulenX = schmal ? 0 : seite * 0.2;
-    var obenK = schmal ? 0.5 : 0.82;
-    var saeulenK = Math.min(0.4, seite * 0.38);
-    var amEnde = weich(grenze((hoch * 0.9 - aRect.top) / (hoch * 0.6)));
-    var k, x, yPx;
-    if (amEnde > 0) {
-      // ganz unten kommt das Symbol zurueck
-      c = 0;
-      k = schmal ? 0.42 : 0.7;
-      x = schmal ? 0 : seite * 0.5;
-      yPx = scrollY + aRect.top + aRect.height * (schmal ? 0.74 : 0.5);
-      szene.V = amEnde;
-    } else {
-      k = misch(obenK, saeulenK, c);
-      x = misch(obenX, saeulenX, c);
-      yPx = misch(obenY, saeulenY, c);
-      // hinter dem Vergleich verschwindet es
-      szene.V = grenze(vRect.bottom / (hoch * 0.55));
-    }
-    szene.K = k;
-    szene.C = c;
-    szene.G = c;
-    szene.W = misch(2.2, 5.4, c);
-    szene.O = [x, 1 - (2 * (yPx - scrollY)) / hoch];
-    for (var i = 0; i < 3; i++) {
-      var h = hoehe(i);
-      szene.D[i][0] = misch(0, (i - 1) * ABSTAND, c);
-      szene.D[i][1] = misch(STAPEL[i][1] * (1 + stoss * 1.6), BODEN + h, c);
-      szene.D[i][2] = misch(0.15, h, c);
-    }
-
-    // Beschriftung unter jeder Saeule: gleiche Projektion wie in gl.js
-    var wy = BODEN * Math.cos(NEIGUNG);
-    var wz = -BODEN * Math.sin(NEIGUNG);
-    var p = 3.1 / (5 - wz);
-    spalten.forEach(function (spalte, i) {
-      var px = innerWidth / 2 + (saeulenX + saeulenK * (i - 1) * ABSTAND * p) * (hoch / 2);
-      // Unterkante der Saeule: Standflaeche plus der nach vorn geneigte Rand
-      var py = vRect.height * (schmal ? 0.6 : 0.58) - saeulenK * (wy - 0.9 * Math.sin(-NEIGUNG)) * p * (hoch / 2);
-      spalte.el.style.setProperty("--x", px.toFixed(1) + "px");
-      spalte.el.style.setProperty("--y", (py + hoch * 0.035).toFixed(1) + "px");
-      spalte.el.style.setProperty("--o", grenze((c - 0.8) / 0.2).toFixed(3));
-    });
-
-    var farbe;
-    if (aRect.top < hoch * 0.8) farbe = FARBEN.ki;
-    else if (tRect.top < hoch * 0.6) farbe = FARBEN.tabelle;
-    else if (fRect.top < hoch * 0.55) farbe = FARBEN.funktionen[blatt];
-    else if (vRect.top < hoch * 0.55) farbe = FARBEN.vergleich;
-    else farbe = FARBEN.start;
-    szene.A = farbe[0];
-    szene.B = farbe[1];
-    if (stoss > 0.01 && !ruhig.matches) anfordern();
+    folgt[0] += (maus[0] - folgt[0]) * 0.22;
+    folgt[1] += (maus[1] - folgt[1]) * 0.22;
+    zeiger.style.setProperty("--x", folgt[0].toFixed(1) + "px");
+    zeiger.style.setProperty("--y", folgt[1].toFixed(1) + "px");
+    // das App-Bild neigt sich leicht zur Maus
+    neigung[0] += (maus[0] / innerWidth - 0.5 - neigung[0]) * 0.06;
+    neigung[1] += (maus[1] / innerHeight - 0.5 - neigung[1]) * 0.06;
+    blende.style.setProperty("--ry", (-12 + neigung[0] * 16).toFixed(2) + "deg");
+    blende.style.setProperty("--rx", (6 - neigung[1] * 10).toFixed(2) + "deg");
+    if (Math.abs(maus[0] - folgt[0]) + Math.abs(maus[1] - folgt[1]) > 0.3) anfordern();
   }
   function anfordern() {
-    if (!bild) bild = requestAnimationFrame(zeichne);
+    if (!bild && !ruhig.matches) bild = requestAnimationFrame(zeichne);
   }
-  addEventListener("scroll", anfordern, { passive: true });
-  addEventListener("resize", anfordern, { passive: true });
-  // nach einem Sprachwechsel die Werte neu schreiben
+  addEventListener(
+    "pointermove",
+    function (e) {
+      if (e.pointerType !== "mouse") return;
+      maus = [e.clientX, e.clientY];
+      var ziel = e.target.closest ? e.target.closest("[data-cursor]") : null;
+      zeiger.classList.toggle("on", !!ziel);
+      if (ziel) {
+        var wort = text(ziel.dataset.cursor, ziel.dataset.cursorEn || ziel.dataset.cursor);
+        zeiger.firstElementChild.textContent = wort;
+        zeiger.style.setProperty("--w", wort.length * 8 + 34 + "px");
+      } else zeiger.style.setProperty("--w", e.target.closest && e.target.closest("a, button") ? "34px" : "18px");
+      anfordern();
+    },
+    { passive: true },
+  );
+  function pruefeAbschnitt() {
+    var mitte = innerHeight / 2;
+    var neu = aktiv;
+    abschnitte.forEach(function (el, i) {
+      var r = el.getBoundingClientRect();
+      if (r.top <= mitte && r.bottom > mitte) neu = i;
+    });
+    if (neu !== aktiv) {
+      aktiv = neu;
+      stelle();
+    }
+  }
+  addEventListener("scroll", pruefeAbschnitt, { passive: true });
+  addEventListener("resize", function () {
+    pruefeAbschnitt();
+    stelle();
+  });
+  // nach einem Sprachwechsel alles neu schreiben
   function male() {
-    waehleMessung(messung, false);
+    zeigeMessung();
+    $("#f-name").textContent = text(FUNKTIONEN[funktion].de, FUNKTIONEN[funktion].en);
+    stelle();
   }
   bereit = true;
+  pruefeAbschnitt();
   male();
 
-  // Tabelle und Schlusssatz blenden ein.
-  var ziele = $$("[data-reveal], tbody tr, tfoot tr");
+  // Tabelle: Zeilen blenden nacheinander ein.
+  var ziele = $$(".table h2, tbody tr, tfoot tr");
   if ("IntersectionObserver" in window) {
     var beobachter = new IntersectionObserver(
       function (eintraege) {

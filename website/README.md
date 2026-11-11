@@ -2,7 +2,7 @@
 
 Static site plus a small Cloudflare Worker (`src/worker.js`) for `mysql.benjaminberger.at`.
 
-- `public/` is the bilingual page: `index.html`, `style.css`, `app.js` (language, release info, scene control) and `gl.js` (WebGL background with drifting clouds and three 3D discs that are the database icon at the top and the columns of the comparison below). Design rules are in `DESIGN.md`.
+- `public/` is the bilingual page: `index.html`, `style.css`, `app.js` (language, release info, what the stage shows) and `gl.js` (WebGL stage: a dark liquid from which the large words and numbers rise as a relief). Design rules are in `DESIGN.md`.
 - `/api/release` returns the newest release (version, size, SHA-256) as JSON. It is cached at the edge for five minutes and falls back to the last known value.
 - `/download/setup`, `/download/portable`, `/download/macos` and `/download/linux` stream the files of the newest release. Visitors only ever see this domain. Missing packages are marked unavailable. The terminal command is visible above file downloads; system requirements are collapsed beneath them.
 

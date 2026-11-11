@@ -1,44 +1,43 @@
 # Design System: EasyMySQL Website
 
-A dark, cinematic page: drifting color clouds behind very large off-white type, and one 3D object that carries the page. It is short (about six screens) and nothing is pinned: the user asked on 2026-11-11 not to be forced to scroll for long, not to repeat the effects of their own sites one to one, for more real 3D, and for less text and fewer buttons.
+The page is one stage: a dark, glossy liquid. The large words and numbers are not set in HTML type; they rise out of the liquid as an embossed relief, lit from the upper left, and melt into each other when the content changes. Everything on top of it is small, plain and custom. About five screens long; nothing has to be clicked.
 
-## Colors
+Direction from the user (2026-11-11, last round): the background must not look like their other sites, no rounded 3D discs or cylinders, nothing that must be clicked to see content, no scroll bars, no standard underlined links, no mention of GitHub, and no element that looks like stock HTML and CSS.
 
-| Token | Value | Use |
+## The stage (`gl.js`)
+
+One WebGL fragment shader. Height = slow liquid swells + blurred text (drawn to a 2D canvas with Inter Tight and uploaded as a texture) + ripples from the pointer. Normals from that height give colored reflections on edges facing the light, dark edges facing away, a thin-film tint and a light streak that drifts over the letters and follows the mouse. On a text change the old texture melts into the new one through a noise mask. `window.easyScene` (set by `app.js`) carries the text (`text`, counter `n`), the relief strength (`hoch`) and two reflection colors (`A`, `B`). Without WebGL: a static gradient and the headline as normal type. With reduced motion: single frames, no ripples.
+
+## What stands in the relief
+
+| Section | Relief | On top (HTML) |
 |---|---|---|
-| night | `#04060d` | ground behind the clouds |
-| fg | `#f4f1ea` | type, copy button, "yes" dots of the other products |
-| mute | `#b4bacb` | secondary text |
-| dim | `#ffffff3d` | words that are not selected, "no" dashes, "not available" |
-| blue | `#9dbcff` | EasyMySQL: headline ending, its numbers and dots, links |
+| Top | EasyMySQL | one sentence, OS words, the install command, file words |
+| Comparison | EasyMySQL's value for the current measurement | measurement name, three thin bars with XAMPP and Workbench values |
+| App windows | name of the current feature | the screenshot |
+| Table | nothing, the liquid goes calm | the feature table |
+| End | Claude Code & Codex | "sind eingebaut." and the footer |
 
-Cloud colors change per section (two tones each, `FARBEN` in `app.js`): blue/violet at the top, magenta/blue for the comparison, one pair per app window, near black for the table, green/blue at the end.
+Comparison and app windows advance by themselves every 3.6 s while they are on screen. Reflection colors change per section and per feature (`FARBEN`, `FUNKTIONEN` in `app.js`).
 
-## Type
+## Custom parts
 
-Inter Tight for everything large, Instrument Sans for reading text, Martian Mono for the command.
+- **Pointer:** a ring that follows the mouse with a delay; over the command it grows into a white pill that says "kopieren". Fine pointers only.
+- **Command:** the whole line is the button; a click copies it. A blue line sweeps along its top edge on hover. No boxed button.
+- **OS choice:** three mono words, a small dot marks the chosen one.
+- **Links:** mono words without underlines; file links carry an arrow that drops on hover.
+- **Screenshot:** built from 14 vertical slats that turn in 3D one after another to reveal the next image; the whole board leans toward the mouse.
+- **Table marks:** a diamond that spins in for yes, a faint small ring for no; totals as large numbers.
+- **Scrolling:** native scroll bars are hidden; sections snap softly.
 
-## The 3D object (`gl.js`)
+## Type and color
 
-One WebGL fragment shader draws the clouds (layered noise, a few stars, grain) and three rounded discs by ray marching, lit with a highlight and a colored rim. `app.js` sets `window.easyScene` (place, size, and per disc x, y and half height); the shader eases toward it.
-
-- **Top:** the discs are stacked as the database icon beside the headline, lean with the mouse, and jump apart for a moment when clicked.
-- **Scrolling one screen:** the same three discs slide apart, the two right ones turn grey, and all three grow into the columns of the comparison. Name and value stand under each column; the labels are placed with the same projection as the shader.
-- **Choosing a measurement** (eight plain words on the left; they also advance by themselves until the user picks one) lets the columns grow or shrink and the numbers count over. Where a product cannot do the task its column is a flat disc and grey words stand below.
-- **End:** the stacked icon returns beside the closing sentence.
-
-Without WebGL a static gradient is shown; with reduced motion only single frames are drawn.
-
-## Other sections
-
-- **Hero:** headline words tip up out of blur. Below: OS switch, the install command in a glass pill with the copy button, one small line with file links.
-- **App windows:** six real screenshots lie as a slanted stack in space (CSS 3D). The chosen one folds out to the front; choose by pointing at or clicking one of the six large words, or by clicking a sheet. They advance by themselves until the user chooses.
-- **Table:** plain rows, a dot for yes and a dash for no, large totals.
+Inter Tight for the relief and the few larger lines, Martian Mono for all small labels. Off-white `#f4f1ea` text, `#a6c2ff` for EasyMySQL, ground `#03040a`.
 
 ## Rules
 
-- No header links, no install button in the header, no captions, no cards, icons or check circles. Every control on the page changes something that is shown.
-- Nothing says "free" and nothing explains how the numbers were measured. Numbers come from `/home/benj/client-benchmark-2026-11` (2026-11-11), rounded.
-- Terminal installation is the main action; file downloads are a small line.
-- CSP forbids inline styles: positions and custom properties are set from JavaScript.
-- Both languages via `data-en`; word lists work with keyboard; visible focus and 44px targets stay intact.
+- Nothing says "free", nothing explains the measurements, no GitHub. Numbers come from `/home/benj/client-benchmark-2026-11` (2026-11-11), rounded.
+- Terminal installation is the main action; file downloads are small words.
+- Relief text also exists in the document (class `ghost`) for screen readers and search.
+- CSP forbids inline styles: custom properties and background images are set from JavaScript.
+- Both languages via `data-en`; visible focus and 44px targets stay intact.
