@@ -4,6 +4,7 @@
 
 use super::refactor::{self, Generate, Surround};
 use super::*;
+use crate::dev::java::outline;
 use crate::icons::{self, Icon};
 use crate::keymap::{Cmd, take};
 
@@ -11,12 +12,16 @@ use crate::keymap::{Cmd, take};
 pub(super) enum PickKind {
     Generate,
     Surround,
+    /// Dateistruktur: Eintraege mit Sprungziel, beim Tippen gefiltert
+    Structure,
 }
 
 /// Kleine Auswahlliste am Cursor (Alt+Einfg, Strg+Alt+T)
 pub(super) struct Picker {
     pub kind: PickKind,
     pub selected: usize,
+    pub items: Vec<(String, usize)>,
+    pub filter: String,
 }
 
 /// Umbenennen in der Datei: Feld direkt am Wort
@@ -62,7 +67,8 @@ impl SqlEditor {
     /// Tastenkuerzel der Umbauten (vor dem Zeichnen, nur mit Fokus)
     pub(super) fn handle_refactor_keys(&mut self, ui: &mut egui::Ui, text: &mut String, out: &mut EditorOutput) {
         let java = self.lang == Lang::Java;
-        let pairs: [(Cmd, Option<EditAction>, bool); 11] = [
+        let pairs: [(Cmd, Option<EditAction>, bool); 12] = [
+            (Cmd::FileStructure, None, matches!(self.lang, Lang::Java | Lang::Sql)),
             (Cmd::GenerateCode, None, java),
             (Cmd::SurroundWith, None, java),
             (Cmd::IntroduceVariable, Some(EditAction::IntroduceVariable), java),
@@ -80,8 +86,9 @@ impl SqlEditor {
                 continue;
             }
             match (cmd, action) {
-                (Cmd::GenerateCode, _) => self.picker = Some(Picker { kind: PickKind::Generate, selected: 0 }),
-                (Cmd::SurroundWith, _) => self.picker = Some(Picker { kind: PickKind::Surround, selected: 0 }),
+                (Cmd::GenerateCode, _) => self.picker = Some(Picker { kind: PickKind::Generate, selected: 0, items: Vec::new(), filter: String::new() }),
+                (Cmd::SurroundWith, _) => self.picker = Some(Picker { kind: PickKind::Surround, selected: 0, items: Vec::new(), filter: String::new() }),
+                (Cmd::FileStructure, _) => self.open_structure(text, out),
                 (_, Some(a)) => self.run_action(ui.ctx(), text, a, out),
                 _ => {}
             }
@@ -224,53 +231,90 @@ impl SqlEditor {
     /// Auswahlliste fuer Generieren / Umgeben mit an der Stelle `pos`
     pub(super) fn picker_ui(&mut self, ctx: &egui::Context, text: &mut String, pos: egui::Pos2, out: &mut EditorOutput) {
         let Some(p) = self.picker.as_ref() else { return };
+        let structure = p.kind == PickKind::Structure;
+        // Tippen filtert die Dateistruktur
+        let mut filter = p.filter.clone();
+        if structure {
+            ctx.input_mut(|i| {
+                i.events.retain(|e| match e {
+                    egui::Event::Text(t) => {
+                        filter.push_str(t);
+                        false
+                    }
+                    _ => true,
+                });
+                if i.consume_key(Modifiers::NONE, Key::Backspace) {
+                    filter.pop();
+                }
+            });
+        }
+        let needle = filter.to_lowercase();
+        let targets: Vec<usize> = p.items.iter().filter(|(l, _)| l.to_lowercase().contains(&needle)).map(|(_, at)| *at).collect();
         let labels: Vec<&str> = match p.kind {
             PickKind::Generate => Generate::ALL.iter().map(|g| g.label()).collect(),
             PickKind::Surround => Surround::ALL.iter().map(|s| s.label()).collect(),
+            PickKind::Structure => p.items.iter().filter(|(l, _)| l.to_lowercase().contains(&needle)).map(|(l, _)| l.as_str()).collect(),
         };
         let (down, up, enter, esc) = ctx.input_mut(|i| {
             (i.consume_key(Modifiers::NONE, Key::ArrowDown), i.consume_key(Modifiers::NONE, Key::ArrowUp), i.consume_key(Modifiers::NONE, Key::Enter), i.consume_key(Modifiers::NONE, Key::Escape))
         });
         let esc = esc || ESCAPE.swap(false, std::sync::atomic::Ordering::Relaxed);
         let mut chosen = None;
-        let mut selected = p.selected;
-        if down {
+        let mut selected = if filter == p.filter { p.selected.min(labels.len().saturating_sub(1)) } else { 0 };
+        if down && !labels.is_empty() {
             selected = (selected + 1) % labels.len();
         }
-        if up {
+        if up && !labels.is_empty() {
             selected = (selected + labels.len() - 1) % labels.len();
         }
-        if enter {
+        if enter && !labels.is_empty() {
             chosen = Some(selected);
         }
         let pal = crate::style::pal();
         let title = match p.kind {
             PickKind::Generate => crate::i18n::tr("Generieren", "Generate"),
             PickKind::Surround => crate::i18n::tr("Umgeben mit", "Surround with"),
+            PickKind::Structure => crate::i18n::tr("Dateistruktur – tippen zum Filtern", "File structure – type to filter"),
         };
+        // Unten zu wenig Platz: Liste ueber den Cursor legen
+        let height = 26.0 * labels.len().clamp(1, 14) as f32 + 44.0;
+        let pos = if pos.y + height > ctx.content_rect().bottom() { egui::pos2(pos.x, (pos.y - height - 24.0).max(4.0)) } else { pos };
         let area = egui::Area::new(self.id.with("picker")).order(egui::Order::Foreground).fixed_pos(pos).show(ctx, |ui| {
             egui::Frame::popup(&ctx.global_style()).inner_margin(egui::Margin::same(4)).show(ui, |ui| {
                 ui.set_min_width(260.0);
-                ui.label(RichText::new(title).strong().color(pal.text_weak));
+                ui.label(RichText::new(if filter.is_empty() { title.to_string() } else { filter.clone() }).strong().color(if filter.is_empty() { pal.text_weak } else { pal.accent }));
                 ui.add_space(2.0);
-                for (i, l) in labels.iter().enumerate() {
-                    let r = ui.add(egui::Button::selectable(i == selected, *l).min_size(egui::vec2(252.0, 26.0)));
-                    if r.clicked() {
-                        chosen = Some(i);
+                egui::ScrollArea::vertical().max_height(26.0 * 14.0).show(ui, |ui| {
+                    for (i, l) in labels.iter().enumerate() {
+                        let text = if structure { RichText::new(*l).monospace() } else { RichText::new(*l) };
+                        let r = ui.add(egui::Button::selectable(i == selected, text).min_size(egui::vec2(252.0, 26.0)));
+                        if r.clicked() {
+                            chosen = Some(i);
+                        }
+                        // Maus waehlt nur bei Bewegung, sonst wuerde sie die Pfeiltasten ueberstimmen
+                        if r.hovered() && ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO) {
+                            selected = i;
+                        }
+                        if i == selected && (down || up) {
+                            r.scroll_to_me(None);
+                        }
                     }
-                    if r.hovered() {
-                        selected = i;
-                    }
-                }
+                });
             });
         });
         let clicked_outside = ctx.input(|i| i.pointer.any_pressed() && i.pointer.interact_pos().is_some_and(|p| !area.response.rect.contains(p)));
         if let Some(p) = self.picker.as_mut() {
             p.selected = selected;
+            p.filter = filter;
         }
         if let Some(i) = chosen {
             let kind = self.picker.take().map(|p| p.kind);
             let action = match kind {
+                Some(PickKind::Structure) => {
+                    // restore springt im naechsten Bild zur Zeile und setzt den Cursor
+                    self.restore = Some(targets[i]);
+                    return;
+                }
                 Some(PickKind::Generate) => EditAction::Generate(Generate::ALL[i]),
                 _ => EditAction::Surround(Surround::ALL[i]),
             };
@@ -281,11 +325,24 @@ impl SqlEditor {
         }
     }
 
+    /// Dateistruktur oeffnen (Strg+F12)
+    pub(super) fn open_structure(&mut self, text: &str, out: &mut EditorOutput) {
+        let items = structure(text, self.lang);
+        if items.is_empty() {
+            out.notice = Some(crate::i18n::tr("In dieser Datei gibt es nichts zum Anspringen.", "There is nothing to jump to in this file.").to_string());
+            return;
+        }
+        // Mit dem Eintrag beginnen, in dem der Cursor steht
+        let selected = items.iter().rposition(|(_, at)| *at <= self.cursor).unwrap_or(0);
+        self.picker = Some(Picker { kind: PickKind::Structure, selected, items, filter: String::new() });
+    }
+
     /// Rechtsklickmenue des Editors
     pub(super) fn context_menu(&mut self, resp: &egui::Response, text: &mut String, out: &mut EditorOutput) {
         let ctx = resp.ctx.clone();
         let mut action: Option<EditAction> = None;
         let mut command: Option<Cmd> = None;
+        let mut structure = false;
         let java = self.lang == Lang::Java;
         let sql = self.lang == Lang::Sql;
         let has_sel = self.selection(&ctx).is_some_and(|(a, b)| a != b);
@@ -308,6 +365,9 @@ impl SqlEditor {
                     command = Some(Cmd::Explain);
                 }
                 ui.separator();
+            }
+            if (java || sql) && item(ui, Icon::Braces, pal.syn_type, crate::i18n::tr("Dateistruktur …", "File structure …"), Some(Cmd::FileStructure)) {
+                structure = true;
             }
             if java {
                 icons::submenu(ui, Some(Icon::Wizard), crate::i18n::tr("Generieren", "Generate"), |ui| {
@@ -400,12 +460,15 @@ impl SqlEditor {
             if item(ui, Icon::Refresh, pal.text_weak, crate::i18n::tr("Ersetzen …", "Replace …"), Some(Cmd::Replace)) {
                 command = Some(Cmd::Replace);
             }
-            if action.is_some() || command.is_some() {
+            if action.is_some() || command.is_some() || structure {
                 ui.close();
             }
         });
         if let Some(a) = action {
             self.run_action(&ctx, text, a, out);
+        }
+        if structure {
+            self.open_structure(text, out);
         }
         match command {
             Some(c @ (Cmd::Find | Cmd::Replace)) => self.pending = Some(c),
@@ -517,9 +580,48 @@ pub(super) fn expand(text: &str, a: usize, b: usize) -> Option<(usize, usize)> {
     cands.into_iter().filter(|&(x, y)| x <= a && b <= y && y - x > b - a).min_by_key(|&(x, y)| y - x)
 }
 
+/// Sprungziele einer Datei: Java-Klassen mit ihren Mitgliedern bzw. die Anfaenge der SQL-Anweisungen
+pub(super) fn structure(text: &str, lang: Lang) -> Vec<(String, usize)> {
+    let mut items = Vec::new();
+    match lang {
+        Lang::Java => {
+            for c in outline::outline(text) {
+                items.push((format!("{} {}", c.kind, c.name), c.at));
+                items.extend(c.members.iter().map(|m| (format!("    {}", outline::signature(m)), m.at)));
+            }
+            items.sort_by_key(|(_, at)| *at);
+        }
+        Lang::Sql => {
+            let (mut at, mut start) = (0, true);
+            for line in text.split('\n') {
+                let t = line.trim();
+                if start && !t.is_empty() && !t.starts_with("--") && !t.starts_with('#') {
+                    items.push((t.chars().take(70).collect(), at + line.chars().count() - line.trim_start().chars().count()));
+                    start = false;
+                }
+                start |= t.ends_with(';');
+                at += line.chars().count() + 1;
+            }
+        }
+        _ => {}
+    }
+    items
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn structure_lists_java_members_and_sql_statements() {
+        let j = structure("class A {\n    int x;\n    void run(int n) {}\n}\n", Lang::Java);
+        let labels: Vec<&str> = j.iter().map(|(l, _)| l.as_str()).collect();
+        assert_eq!(labels, ["class A", "    int x", "    void run(int n)"]);
+        let sql = "-- Kommentar\nCREATE TABLE a (\n  id INT\n);\n\nSELECT *\nFROM a;\n";
+        let s = structure(sql, Lang::Sql);
+        assert_eq!(s.len(), 2);
+        assert_eq!(s[1], ("SELECT *".to_string(), sql.find("SELECT").unwrap()));
+    }
 
     #[test]
     fn selection_grows_from_word_to_brackets_and_lines() {

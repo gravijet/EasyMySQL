@@ -1,13 +1,13 @@
 [package]
 name = "easymysql"
-version = "1.1.17"
+version = "1.1.18"
 edition = "2024"
 description = "EasyMySQL - MariaDB server and graphical database manager for Windows, macOS and Linux"
 build = "build.rs"
 
 # Interne laufende Nummer: jedes Release +1 (das 30. Release ist 30); sichtbar ist nur "version".
 [package.metadata.easymysql]
-build-number = 30
+build-number = 31
 
 [dependencies]
 eframe = { version = "0.35.0", default-features = false, features = ["default_fonts", "glow", "x11", "wayland"] }
