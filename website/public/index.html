@@ -28,13 +28,7 @@
     <a class="skip" data-en="Skip to content" href="#main">Zum Inhalt</a>
     <header class="nav">
       <a aria-label="Zum Seitenanfang" class="brand" data-en-label="Back to top" href="#top"><img alt="" height="24" src="/favicon.svg" width="24" />EasyMySQL</a>
-      <nav aria-label="Seite" class="links" data-en-label="Page">
-        <a data-en="Features" href="#features">Funktionen</a>
-        <a data-en="Compare" href="#compare">Vergleich</a>
-        <a data-en="AI" href="#ai">KI</a>
-      </nav>
       <button aria-label="English" class="lang" id="lang" lang="en" type="button">EN</button>
-      <a class="pill" data-en="Install" href="#install">Installieren</a>
     </header>
     <main id="main">
       <section aria-labelledby="product-name" class="hero" id="top">
@@ -47,64 +41,51 @@
             <span aria-hidden="true" class="prompt" id="prompt">PS&gt;</span><code id="hero-cmd">irm https://mysql.benjaminberger.at/install | iex</code>
             <button class="copy" data-copy-from="#hero-cmd" data-en="Copy" type="button">Kopieren</button>
           </div>
-          <p class="hint"><span id="terminal-shell">PowerShell öffnen, einfügen, Enter drücken.</span>
-            <span class="files"><span data-en="Or as a file:">Oder als Datei:</span>
-              <a data-dl="setup" href="/download/setup">Windows</a>
-              <a data-dl="portable" data-en="Portable ZIP" href="/download/portable">Portable ZIP</a>
-              <a data-dl="macos" href="/download/macos">macOS</a>
-              <a data-dl="linux" href="/download/linux">Linux</a>
-            </span>
+          <p class="files"><span data-en="Or as a file:">Oder als Datei:</span>
+            <a data-dl="setup" href="/download/setup">Windows</a>
+            <a data-dl="portable" data-en="Portable ZIP" href="/download/portable">Portable ZIP</a>
+            <a data-dl="macos" href="/download/macos">macOS</a>
+            <a data-dl="linux" href="/download/linux">Linux</a>
           </p>
           <p class="download-notice" hidden="" id="download-notice" role="status"></p>
           <p class="release-error" hidden="" id="release-error" role="status"></p>
         </div>
       </section>
 
-      <section aria-labelledby="f-h" class="pin features" id="features">
-        <div class="stage">
-          <h2 class="kicker" data-en="Everything in one window" id="f-h">Alles in einem Fenster</h2>
-          <div class="titles"><h3 id="title-sql" data-en="SQL editor">SQL-Editor</h3><h3 id="title-data" data-en="Tables">Tabellen</h3><h3 id="title-er" data-en="ER diagrams">ER-Diagramme</h3><h3 id="title-builder" data-en="Query builder">Query Builder</h3><h3 id="title-code" data-en="Java">Java</h3><h3 id="title-git" data-en="Git">Git</h3></div>
-          <div class="caps"><p data-en="Suggestions that know your tables. Errors are explained and fixed with one click.">Vorschläge passend zu deinen Tabellen. Fehler werden erklärt und mit einem Klick behoben.</p><p data-en="Change values like in a spreadsheet. Ctrl + Z undoes it.">Werte ändern wie in einer Tabellenkalkulation. Strg + Z macht es rückgängig.</p><p data-en="Your database as a picture, drawn automatically.">Deine Datenbank als Bild, automatisch gezeichnet.</p><p data-en="Click queries together and learn SQL along the way.">Abfragen zusammenklicken und dabei SQL lernen.</p><p data-en="Projects with a ready database connection. Write, run, debug.">Projekte mit fertiger Datenbankverbindung. Schreiben, starten, debuggen.</p><p data-en="Save your changes and share them on GitHub.">Änderungen sichern und mit GitHub teilen.</p></div>
-          <div class="screen">
-            <picture aria-labelledby="tab-sql" id="panel-sql" role="tabpanel">
-              <source sizes="(max-width: 900px) 92vw, 62vw" srcset="/shots/sql-1000.avif 1000w, /shots/sql-2000.avif 2000w" type="image/avif" />
-              <img alt="SQL-Editor mit Vorschlägen und Abfrageergebnis" data-en-alt="SQL editor with suggestions and query results" decoding="async" height="1250" sizes="(max-width: 900px) 92vw, 62vw" src="/shots/sql-2000.webp" srcset="/shots/sql-1000.webp 1000w, /shots/sql-2000.webp 2000w" width="2000" />
-            </picture>
-            <picture aria-labelledby="tab-data" id="panel-data" role="tabpanel">
-              <source sizes="(max-width: 900px) 92vw, 62vw" srcset="/shots/data-1000.avif 1000w, /shots/data-2000.avif 2000w" type="image/avif" />
-              <img alt="Produkttabelle zum direkten Bearbeiten" data-en-alt="Product table with inline editing" decoding="async" height="1250" sizes="(max-width: 900px) 92vw, 62vw" src="/shots/data-2000.webp" srcset="/shots/data-1000.webp 1000w, /shots/data-2000.webp 2000w" width="2000" />
-            </picture>
-            <picture aria-labelledby="tab-er" id="panel-er" role="tabpanel">
-              <source sizes="(max-width: 900px) 92vw, 62vw" srcset="/shots/er-1000.avif 1000w, /shots/er-2000.avif 2000w" type="image/avif" />
-              <img alt="ER-Diagramm mit Tabellen und Fremdschlüsseln" data-en-alt="ER diagram with tables and foreign keys" decoding="async" height="1250" sizes="(max-width: 900px) 92vw, 62vw" src="/shots/er-2000.webp" srcset="/shots/er-1000.webp 1000w, /shots/er-2000.webp 2000w" width="2000" />
-            </picture>
-            <picture aria-labelledby="tab-builder" id="panel-builder" role="tabpanel">
-              <source sizes="(max-width: 900px) 92vw, 62vw" srcset="/shots/builder-1000.avif 1000w, /shots/builder-2000.avif 2000w" type="image/avif" />
-              <img alt="Visueller Query Builder mit erzeugtem SQL" data-en-alt="Visual query builder with generated SQL" decoding="async" height="1250" sizes="(max-width: 900px) 92vw, 62vw" src="/shots/builder-2000.webp" srcset="/shots/builder-1000.webp 1000w, /shots/builder-2000.webp 2000w" width="2000" />
-            </picture>
-            <picture aria-labelledby="tab-code" id="panel-code" role="tabpanel">
-              <source sizes="(max-width: 900px) 92vw, 62vw" srcset="/shots/code-1000.avif 1000w, /shots/code-2000.avif 2000w" type="image/avif" />
-              <img alt="Java-Projekt mit Editor und Terminal" data-en-alt="Java project with editor and terminal" decoding="async" height="1250" sizes="(max-width: 900px) 92vw, 62vw" src="/shots/code-2000.webp" srcset="/shots/code-1000.webp 1000w, /shots/code-2000.webp 2000w" width="2000" />
-            </picture>
-            <picture aria-labelledby="tab-git" id="panel-git" role="tabpanel">
-              <source sizes="(max-width: 900px) 92vw, 62vw" srcset="/shots/git-1000.avif 1000w, /shots/git-2000.avif 2000w" type="image/avif" />
-              <img alt="Git-Ansicht mit Änderungen" data-en-alt="Git view with changes" decoding="async" height="1250" sizes="(max-width: 900px) 92vw, 62vw" src="/shots/git-2000.webp" srcset="/shots/git-1000.webp 1000w, /shots/git-2000.webp 2000w" width="2000" />
-            </picture>
-          </div>
-          <div aria-label="Funktionen" class="rail" data-en-label="Features" role="tablist"><button aria-controls="panel-sql" aria-selected="true" data-en="SQL editor" id="tab-sql" role="tab" type="button">SQL-Editor</button><button aria-controls="panel-data" aria-selected="false" data-en="Tables" id="tab-data" role="tab" type="button">Tabellen</button><button aria-controls="panel-er" aria-selected="false" data-en="ER diagrams" id="tab-er" role="tab" type="button">ER-Diagramme</button><button aria-controls="panel-builder" aria-selected="false" data-en="Query builder" id="tab-builder" role="tab" type="button">Query Builder</button><button aria-controls="panel-code" aria-selected="false" data-en="Java" id="tab-code" role="tab" type="button">Java</button><button aria-controls="panel-git" aria-selected="false" data-en="Git" id="tab-git" role="tab" type="button">Git</button></div>
-        </div>
+      <section aria-labelledby="c-h" class="chart" id="compare">
+        <h2 class="sr-only" data-en="EasyMySQL compared with XAMPP and MySQL Workbench" id="c-h">EasyMySQL im Vergleich mit XAMPP und MySQL Workbench</h2>
+        <div aria-label="Messung" class="picks" data-en-label="Measurement" role="group"><button aria-pressed="true" data-en="Starting the app" type="button">Programm starten</button><button aria-pressed="false" data-en="Opening a table" type="button">Tabelle öffnen</button><button aria-pressed="false" data-en="Searching 1M rows" type="button">In 1 Mio. Zeilen suchen</button><button aria-pressed="false" data-en="Drawing an ER diagram" type="button">ER-Diagramm zeichnen</button><button aria-pressed="false" data-en="Importing 1M rows" type="button">1 Mio. Zeilen importieren</button><button aria-pressed="false" data-en="Memory" type="button">Arbeitsspeicher</button><button aria-pressed="false" data-en="Disk space" type="button">Platz auf der Festplatte</button><button aria-pressed="false" data-en="Download" type="button">Download</button></div>
+        <div aria-live="polite" class="cols"><div class="col us"><b></b><span>EasyMySQL</span></div><div class="col"><b></b><span>XAMPP</span></div><div class="col"><b></b><span>Workbench</span></div></div>
       </section>
 
-      <section aria-labelledby="c-h" class="pin compare" id="compare">
-        <div class="stage">
-          <h2 class="kicker" data-en="Against XAMPP and MySQL Workbench" id="c-h">Gegen XAMPP und MySQL Workbench</h2>
-          <div class="titles"><h3 data-en="Starting the app">Programm starten</h3><h3 data-en="Opening a table">Tabelle öffnen</h3><h3 data-en="Searching 1M rows">In 1 Mio. Zeilen suchen</h3><h3 data-en="Drawing an ER diagram">ER-Diagramm zeichnen</h3><h3 data-en="Importing 1M rows">1 Mio. Zeilen importieren</h3><h3 data-en="Memory">Arbeitsspeicher</h3><h3 data-en="Disk space">Platz auf der Festplatte</h3><h3 data-en="Download">Download</h3></div>
-          <div class="lanes">
-            <div class="lane us"><span class="who">EasyMySQL</span><span class="track"><i></i></span><b data-en="0.47 s">0,47 s</b></div>
-            <div class="lane"><span class="who">XAMPP</span><span class="track"><i></i></span><b data-en="2.7 s">2,7 s</b></div>
-            <div class="lane"><span class="who">Workbench</span><span class="track"><i></i></span><b data-en="5.7 s">5,7 s</b></div>
-          </div>
-          <div aria-label="Messung" class="rail" data-en-label="Measurement" role="group"><button aria-pressed="true" data-en="Starting the app" type="button">Programm starten</button><button aria-pressed="false" data-en="Opening a table" type="button">Tabelle öffnen</button><button aria-pressed="false" data-en="Searching 1M rows" type="button">In 1 Mio. Zeilen suchen</button><button aria-pressed="false" data-en="Drawing an ER diagram" type="button">ER-Diagramm zeichnen</button><button aria-pressed="false" data-en="Importing 1M rows" type="button">1 Mio. Zeilen importieren</button><button aria-pressed="false" data-en="Memory" type="button">Arbeitsspeicher</button><button aria-pressed="false" data-en="Disk space" type="button">Platz auf der Festplatte</button><button aria-pressed="false" data-en="Download" type="button">Download</button></div>
+      <section aria-labelledby="f-h" class="features" id="features">
+        <h2 class="sr-only" data-en="Features" id="f-h">Funktionen</h2>
+        <div aria-label="Funktionen" class="names" data-en-label="Features" role="tablist"><button aria-controls="panel-sql" aria-selected="true" data-en="SQL editor" id="tab-sql" role="tab" type="button">SQL-Editor</button><button aria-controls="panel-data" aria-selected="false" data-en="Tables" id="tab-data" role="tab" type="button">Tabellen</button><button aria-controls="panel-er" aria-selected="false" data-en="ER diagrams" id="tab-er" role="tab" type="button">ER-Diagramme</button><button aria-controls="panel-builder" aria-selected="false" data-en="Query builder" id="tab-builder" role="tab" type="button">Query Builder</button><button aria-controls="panel-code" aria-selected="false" data-en="Java" id="tab-code" role="tab" type="button">Java</button><button aria-controls="panel-git" aria-selected="false" data-en="Git" id="tab-git" role="tab" type="button">Git</button></div>
+        <div class="deck">
+          <picture aria-labelledby="tab-sql" id="panel-sql" role="tabpanel">
+            <source sizes="(max-width: 900px) 92vw, 62vw" srcset="/shots/sql-1000.avif 1000w, /shots/sql-2000.avif 2000w" type="image/avif" />
+            <img alt="SQL-Editor mit Vorschlägen und Abfrageergebnis" data-en-alt="SQL editor with suggestions and query results" decoding="async" height="1250" sizes="(max-width: 900px) 92vw, 62vw" src="/shots/sql-2000.webp" srcset="/shots/sql-1000.webp 1000w, /shots/sql-2000.webp 2000w" width="2000" />
+          </picture>
+          <picture aria-labelledby="tab-data" id="panel-data" role="tabpanel">
+            <source sizes="(max-width: 900px) 92vw, 62vw" srcset="/shots/data-1000.avif 1000w, /shots/data-2000.avif 2000w" type="image/avif" />
+            <img alt="Produkttabelle zum direkten Bearbeiten" data-en-alt="Product table with inline editing" decoding="async" height="1250" sizes="(max-width: 900px) 92vw, 62vw" src="/shots/data-2000.webp" srcset="/shots/data-1000.webp 1000w, /shots/data-2000.webp 2000w" width="2000" />
+          </picture>
+          <picture aria-labelledby="tab-er" id="panel-er" role="tabpanel">
+            <source sizes="(max-width: 900px) 92vw, 62vw" srcset="/shots/er-1000.avif 1000w, /shots/er-2000.avif 2000w" type="image/avif" />
+            <img alt="ER-Diagramm mit Tabellen und Fremdschlüsseln" data-en-alt="ER diagram with tables and foreign keys" decoding="async" height="1250" sizes="(max-width: 900px) 92vw, 62vw" src="/shots/er-2000.webp" srcset="/shots/er-1000.webp 1000w, /shots/er-2000.webp 2000w" width="2000" />
+          </picture>
+          <picture aria-labelledby="tab-builder" id="panel-builder" role="tabpanel">
+            <source sizes="(max-width: 900px) 92vw, 62vw" srcset="/shots/builder-1000.avif 1000w, /shots/builder-2000.avif 2000w" type="image/avif" />
+            <img alt="Visueller Query Builder mit erzeugtem SQL" data-en-alt="Visual query builder with generated SQL" decoding="async" height="1250" sizes="(max-width: 900px) 92vw, 62vw" src="/shots/builder-2000.webp" srcset="/shots/builder-1000.webp 1000w, /shots/builder-2000.webp 2000w" width="2000" />
+          </picture>
+          <picture aria-labelledby="tab-code" id="panel-code" role="tabpanel">
+            <source sizes="(max-width: 900px) 92vw, 62vw" srcset="/shots/code-1000.avif 1000w, /shots/code-2000.avif 2000w" type="image/avif" />
+            <img alt="Java-Projekt mit Editor und Terminal" data-en-alt="Java project with editor and terminal" decoding="async" height="1250" sizes="(max-width: 900px) 92vw, 62vw" src="/shots/code-2000.webp" srcset="/shots/code-1000.webp 1000w, /shots/code-2000.webp 2000w" width="2000" />
+          </picture>
+          <picture aria-labelledby="tab-git" id="panel-git" role="tabpanel">
+            <source sizes="(max-width: 900px) 92vw, 62vw" srcset="/shots/git-1000.avif 1000w, /shots/git-2000.avif 2000w" type="image/avif" />
+            <img alt="Git-Ansicht mit Änderungen" data-en-alt="Git view with changes" decoding="async" height="1250" sizes="(max-width: 900px) 92vw, 62vw" src="/shots/git-2000.webp" srcset="/shots/git-1000.webp 1000w, /shots/git-2000.webp 2000w" width="2000" />
+          </picture>
         </div>
       </section>
 
@@ -143,8 +124,8 @@
         </div>
       </section>
 
-      <section aria-labelledby="ai-h" class="ai wrap" id="ai">
-        <h2 data-light="" id="ai-h" data-en="Claude Code and Codex are built in. Ask the AI about your database. It knows your tables, reads only until you allow more, and backs up before anything is deleted.">Claude Code und Codex sind eingebaut. Frag die KI zu deiner Datenbank. Sie kennt deine Tabellen, liest nur, bis du mehr erlaubst, und sichert, bevor etwas gelöscht wird.</h2>
+      <section aria-labelledby="ai-h" class="ai" id="ai">
+        <h2 data-reveal="" data-en="Claude Code and Codex are built in." id="ai-h">Claude Code und Codex sind eingebaut.</h2>
       </section>
     </main>
     <footer class="foot wrap">

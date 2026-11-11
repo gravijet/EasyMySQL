@@ -1,6 +1,7 @@
-/* Hintergrund der Seite: ziehende Farbwolken und das Datenbank-Symbol als echtes 3D-Objekt
-   (drei Scheiben, per Raymarching gezeichnet). app.js gibt ueber window.easyScene vor, wo das
-   Objekt steht, wie weit die Scheiben auseinander sind und welche Farben die Wolken haben. */
+/* Hintergrund der Seite: ziehende Farbwolken und drei Scheiben als echtes 3D-Objekt
+   (Raymarching). Gestapelt sind sie das Datenbank-Symbol, nebeneinander und verschieden hoch
+   sind sie die Saeulen des Vergleichs. app.js gibt ueber window.easyScene vor, wo jede Scheibe
+   steht und wie hoch sie ist; hier laeuft alles weich hinterher. */
 (function () {
   "use strict";
   var leinwand = document.getElementById("gl");
@@ -18,10 +19,15 @@ precision highp float;
 uniform vec2 R;      // Groesse in Pixeln
 uniform float T;     // Zeit
 uniform vec2 M;      // Maus, -0.5 bis 0.5
-uniform float S;     // Scheiben auseinander, 0 bis 1
 uniform float V;     // Objekt sichtbar, 0 bis 1
 uniform float K;     // Objektgroesse
 uniform vec2 O;      // Objektmitte in Bildkoordinaten
+uniform float C;     // 0 = Symbol (lebendig, geneigt), 1 = Diagramm (ruhig)
+uniform float G;     // Scheibe 2 und 3 grau, 0 bis 1
+uniform float W;     // Radius des Bereichs, in dem das Objekt liegt
+uniform vec3 D0;     // je Scheibe: x, y, halbe Hoehe
+uniform vec3 D1;
+uniform vec3 D2;
 uniform vec3 A;      // Wolkenfarbe 1
 uniform vec3 B;      // Wolkenfarbe 2
 
@@ -48,42 +54,41 @@ vec3 wolken(vec2 uv){
   return c;
 }
 mat2 dreh(float a){ float c = cos(a), s = sin(a); return mat2(c, -s, s, c); }
-float scheibe(vec3 p){
-  vec2 d = vec2(length(p.xz) - .9, abs(p.y) - .15);
+float scheibe(vec3 p, float hh){
+  vec2 d = vec2(length(p.xz) - .8, abs(p.y) - max(hh - .1, .01));
   return min(max(d.x, d.y), 0.) + length(max(d, 0.)) - .1;
 }
 vec3 lage(vec3 p){
-  p.yz *= dreh(-.62 + M.y * .35 + sin(T * .31) * .06);
-  p.xy *= dreh(.18 + M.x * .3 + sin(T * .23) * .08);
+  float l = 1. - C;
+  p.yz *= dreh(mix(-.62, -.42, C) + (M.y * .35 + sin(T * .31) * .06) * l + M.y * .12 * C);
+  p.xy *= dreh((.18 + M.x * .3 + sin(T * .23) * .08) * l);
+  p.xz *= dreh(M.x * .35 * C);
   return p;
 }
 vec2 feld(vec3 p){
   p = lage(p);
-  float g = .5 + S * .95, d = 1e9, id = 0.;
-  for (int i = 0; i < 3; i++) {
-    float f = float(i) - 1.;
-    vec3 q = p - vec3(sin(f * 2.1 + T * .4) * S * .4, f * g, cos(f * 1.7 + T * .3) * S * .3);
-    q.xy *= dreh(f * S * .35);
-    float e = scheibe(q);
-    if (e < d) { d = e; id = f; }
-  }
+  float d = scheibe(p - vec3(D0.xy, 0.), D0.z), id = 0.;
+  float e = scheibe(p - vec3(D1.xy, 0.), D1.z);
+  if (e < d) { d = e; id = 1.; }
+  e = scheibe(p - vec3(D2.xy, 0.), D2.z);
+  if (e < d) { d = e; id = 2.; }
   return vec2(d, id);
 }
 void main(){
   vec2 uv = (gl_FragCoord.xy * 2. - R) / R.y;
   vec3 c = wolken(uv);
   vec2 q = (uv - O) / K;
-  if (V > .01 && dot(q, q) < 4.2) {
+  if (V > .01 && dot(q, q) < W * W) {
     vec3 ro = vec3(0., 0., 5.), rd = normalize(vec3(q, -3.1));
     float t = 0., nah = 1e9;
     vec2 m = vec2(0.);
     bool treffer = false;
-    for (int i = 0; i < 60; i++) {
+    for (int i = 0; i < 72; i++) {
       m = feld(ro + rd * t);
       nah = min(nah, m.x);
       if (m.x < .003) { treffer = true; break; }
       t += m.x;
-      if (t > 9.) break;
+      if (t > 14.) break;
     }
     if (treffer) {
       vec3 p = ro + rd * t;
@@ -94,8 +99,9 @@ void main(){
       float glanz = pow(max(dot(reflect(rd, nn), l), 0.), 46.);
       float rand = pow(1. - max(dot(nn, -rd), 0.), 3.);
       float deckel = smoothstep(.55, .95, lage(nn).y);
-      vec3 farbe = mix(vec3(.07, .20, .56), vec3(.50, .70, 1.), deckel * .85);
-      farbe = mix(farbe, vec3(.10, .28, .70), .25 * (m.y + 1.) * (1. - deckel));
+      vec3 blau = mix(vec3(.07, .20, .56), vec3(.50, .70, 1.), deckel * .85);
+      vec3 grau = mix(vec3(.27, .30, .40), vec3(.70, .74, .84), deckel * .85);
+      vec3 farbe = mix(blau, grau, G * step(.5, m.y));
       vec3 o = farbe * (.22 + .95 * hell) + glanz * .9 + rand * (A * 1.6 + .12);
       c = mix(c, o, V);
     } else {
@@ -130,18 +136,33 @@ void main(){
   gl.enableVertexAttribArray(ort);
   gl.vertexAttribPointer(ort, 2, gl.FLOAT, false, 0, 0);
   var u = {};
-  ["R", "T", "M", "S", "V", "K", "O", "A", "B"].forEach(function (name) {
+  ["R", "T", "M", "V", "K", "O", "C", "G", "W", "D0", "D1", "D2", "A", "B"].forEach(function (name) {
     u[name] = gl.getUniformLocation(programm, name);
   });
 
-  // Ziel kommt von app.js; `jetzt` laeuft ihm weich hinterher.
-  var ziel = (window.easyScene = window.easyScene || { S: 0, V: 1, K: 1, O: [0.9, 0], A: [0.1, 0.22, 0.62], B: [0.05, 0.4, 0.5] });
+  // Ziel kommt von app.js; `jetzt` laeuft ihm weich hinterher. `fest` wird ohne Nachlauf uebernommen.
+  var ziel = (window.easyScene = window.easyScene || {
+    V: 1,
+    K: 0.82,
+    O: [0.9, 0],
+    C: 0,
+    G: 0,
+    W: 2.2,
+    D: [
+      [0, 0.5, 0.15],
+      [0, 0, 0.15],
+      [0, -0.5, 0.15],
+    ],
+    A: [0.09, 0.2, 0.62],
+    B: [0.3, 0.1, 0.52],
+  });
   var jetzt = JSON.parse(JSON.stringify(ziel));
   var maus = [0, 0];
   var mausWeich = [0, 0];
   function groesse() {
     // unter voller Aufloesung rechnen: Wolken sind ohnehin weich, das spart viel Rechenzeit
-    var faktor = Math.min(1, 1500 / (innerWidth * Math.min(devicePixelRatio || 1, 2))) * Math.min(devicePixelRatio || 1, 2) * 0.7;
+    var dichte = Math.min(devicePixelRatio || 1, 2);
+    var faktor = Math.min(1, 1500 / (innerWidth * dichte)) * dichte * 0.7;
     leinwand.width = Math.max(2, Math.round(innerWidth * faktor));
     leinwand.height = Math.max(2, Math.round(innerHeight * faktor));
     gl.viewport(0, 0, leinwand.width, leinwand.height);
@@ -152,22 +173,30 @@ void main(){
   var start = performance.now();
   var sichtbar = true;
   function bild(zeit) {
-    var k = ruhig.matches ? 1 : 0.07;
-    ["S", "V", "K"].forEach(function (n) {
+    var k = ruhig.matches ? 1 : 0.09;
+    // Ort folgt der Seite sofort, sonst wuerde das Objekt beim Scrollen nachziehen
+    jetzt.O = ziel.O.slice();
+    ["V", "K", "C", "G", "W"].forEach(function (n) {
       jetzt[n] = naeher(jetzt[n], ziel[n], k);
     });
-    ["O", "A", "B"].forEach(function (n) {
-      for (var i = 0; i < ziel[n].length; i++) jetzt[n][i] = naeher(jetzt[n][i], ziel[n][i], k);
+    ["A", "B"].forEach(function (n) {
+      for (var i = 0; i < 3; i++) jetzt[n][i] = naeher(jetzt[n][i], ziel[n][i], 0.05);
     });
+    for (var s = 0; s < 3; s++) for (var j = 0; j < 3; j++) jetzt.D[s][j] = naeher(jetzt.D[s][j], ziel.D[s][j], k);
     mausWeich[0] = naeher(mausWeich[0], maus[0], 0.05);
     mausWeich[1] = naeher(mausWeich[1], maus[1], 0.05);
     gl.uniform2f(u.R, leinwand.width, leinwand.height);
     gl.uniform1f(u.T, ruhig.matches ? 12 : (zeit - start) / 1000);
     gl.uniform2f(u.M, mausWeich[0], mausWeich[1]);
-    gl.uniform1f(u.S, jetzt.S);
     gl.uniform1f(u.V, jetzt.V);
     gl.uniform1f(u.K, jetzt.K);
     gl.uniform2f(u.O, jetzt.O[0], jetzt.O[1]);
+    gl.uniform1f(u.C, jetzt.C);
+    gl.uniform1f(u.G, jetzt.G);
+    gl.uniform1f(u.W, jetzt.W);
+    gl.uniform3f(u.D0, jetzt.D[0][0], jetzt.D[0][1], jetzt.D[0][2]);
+    gl.uniform3f(u.D1, jetzt.D[1][0], jetzt.D[1][1], jetzt.D[1][2]);
+    gl.uniform3f(u.D2, jetzt.D[2][0], jetzt.D[2][1], jetzt.D[2][2]);
     gl.uniform3f(u.A, jetzt.A[0], jetzt.A[1], jetzt.A[2]);
     gl.uniform3f(u.B, jetzt.B[0], jetzt.B[1], jetzt.B[2]);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
@@ -181,7 +210,7 @@ void main(){
     groesse();
     if (ruhig.matches) neu();
   });
-  // ohne Bewegung: nur neu zeichnen, wenn sich durch Scrollen etwas aendert
+  // ohne Bewegung: nur neu zeichnen, wenn sich etwas aendert
   addEventListener(
     "scroll",
     function () {
@@ -189,6 +218,9 @@ void main(){
     },
     { passive: true },
   );
+  document.addEventListener("easymysql-scene", function () {
+    if (ruhig.matches) neu();
+  });
   addEventListener(
     "pointermove",
     function (e) {

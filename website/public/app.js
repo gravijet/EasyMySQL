@@ -44,9 +44,6 @@
     var ziel = $("#hero-cmd");
     ziel.dataset.full = befehl;
     $("#prompt").textContent = windows ? "PS>" : "$";
-    $("#terminal-shell").textContent = windows
-      ? text("PowerShell öffnen, einfügen, Enter drücken.", "Open PowerShell, paste, press Enter.")
-      : text("Terminal öffnen, einfügen, Enter drücken.", "Open a terminal, paste, press Enter.");
     ziel.textContent = befehl;
   }
   function waehleSystem(knopf, fokus) {
@@ -262,23 +259,20 @@
       clearTimeout(zeitlimit);
     });
 
-  // ---------- Szenen: alles haengt am Scrollen und wird weich nachgefuehrt ----------
+  // ---------- 3D-Szene: drei Scheiben, erst Symbol, dann Saeulen des Vergleichs ----------
   function grenze(wert) {
     return Math.min(1, Math.max(0, wert));
   }
   function weich(t) {
     return t * t * (3 - 2 * t);
   }
-  function setze(liste, index) {
-    liste.forEach(function (el, i) {
-      el.classList.toggle("on", i === index);
-      el.classList.toggle("before", i < index);
-      el.classList.toggle("after", i > index);
-    });
+  function misch(a, b, t) {
+    return a + (b - a) * t;
   }
   // Farben der Wolken je Abschnitt (zwei Toene, Werte 0 bis 1)
   var FARBEN = {
     start: [[0.09, 0.2, 0.62], [0.3, 0.1, 0.52]],
+    vergleich: [[0.44, 0.1, 0.32], [0.1, 0.16, 0.56]],
     funktionen: [
       [[0.08, 0.22, 0.66], [0.04, 0.36, 0.52]],
       [[0.03, 0.36, 0.4], [0.05, 0.2, 0.5]],
@@ -287,20 +281,25 @@
       [[0.1, 0.4, 0.22], [0.05, 0.26, 0.38]],
       [[0.14, 0.24, 0.42], [0.36, 0.16, 0.3]],
     ],
-    vergleich: [[[0.46, 0.1, 0.3], [0.12, 0.14, 0.52]], [[0.1, 0.3, 0.6], [0.4, 0.12, 0.4]]],
     tabelle: [[0.05, 0.08, 0.18], [0.04, 0.1, 0.14]],
     ki: [[0.06, 0.34, 0.3], [0.1, 0.18, 0.58]],
   };
-  var szene = (window.easyScene = { S: 0, V: 1, K: 1, O: [0.9, 0], A: FARBEN.start[0].slice(), B: FARBEN.start[1].slice() });
-
-  // Funktionen: Titel, Text und App-Fenster wechseln gemeinsam.
-  var fAbschnitt = $("#features");
-  var fTitel = $$("#features .titles h3");
-  var fTexte = $$("#features .caps p");
-  var fBilder = $$("#features .screen picture");
-  var fKnoepfe = $$("#features .rail button");
-  var fBuehne = $("#features .screen");
-  var fIndex = -1;
+  var STAPEL = [
+    [0, 0.5, 0.15],
+    [0, 0, 0.15],
+    [0, -0.5, 0.15],
+  ];
+  var szene = (window.easyScene = {
+    V: 1,
+    K: 0.82,
+    O: [0.9, 0],
+    C: 0,
+    G: 0,
+    W: 2.2,
+    D: JSON.parse(JSON.stringify(STAPEL)),
+    A: FARBEN.start[0],
+    B: FARBEN.start[1],
+  });
 
   // Vergleich: Sekunden bzw. MB fuer EasyMySQL, XAMPP, Workbench; null = geht dort nicht.
   var FEHLT = ["nicht vorhanden", "not available"];
@@ -314,13 +313,16 @@
     { w: [260, 929, 870], e: "MB" },
     { w: [77, 200, 273], e: "MB" },
   ];
+  var ABSTAND = 2.3; // Abstand der Saeulen im Raum des Objekts
+  var BODEN = -1.1; // Standflaeche der Saeulen
+  var NEIGUNG = -0.42; // wie in gl.js (lage) fuer das Diagramm
   var vAbschnitt = $("#compare");
-  var vTitel = $$("#compare .titles h3");
-  var vKnoepfe = $$("#compare .rail button");
-  var bahnen = $$(".lane").map(function (el) {
-    return { el: el, balken: el.querySelector("i"), wert: el.querySelector("b") };
+  var wahl = $$(".picks button");
+  var spalten = $$(".col").map(function (el) {
+    return { el: el, wert: el.querySelector("b") };
   });
-  var vIndex = -1;
+  var messung = 0;
+  var selbstGewaehlt = false;
   function zahl(wert, einheit) {
     var stellen = einheit === "MB" ? 0 : wert < 1 ? 2 : 1;
     return (
@@ -329,212 +331,201 @@
       einheit
     );
   }
-  // Stand einer Messung: u laeuft von 0 (Start) bis 1 (alle fertig).
-  function maleMessung(index, u) {
+  // halbe Hoehe der Saeule i fuer die gewaehlte Messung
+  function hoehe(i) {
+    var m = MESSUNGEN[messung];
+    if (m.w[i] === null) return 0.11;
+    return 0.13 + 0.82 * (m.w[i] / Math.max.apply(null, m.w.filter(Boolean)));
+  }
+  var zaehler = 0;
+  function waehleMessung(index, weichZaehlen) {
+    var vorher = MESSUNGEN[messung];
+    messung = index;
     var m = MESSUNGEN[index];
-    var groesste = Math.max.apply(
-      null,
-      m.w.filter(function (w) {
-        return w !== null;
-      }),
-    );
-    bahnen.forEach(function (bahn, i) {
-      var w = m.w[i];
-      bahn.el.classList.toggle("na", w === null);
-      if (w === null) {
-        bahn.balken.style.setProperty("--f", 0);
-        bahn.wert.textContent = text(m.g[i][0], m.g[i][1]);
-        return;
-      }
-      // Zeiten laufen wie eine Stoppuhr bis zum eigenen Wert, Groessen wachsen gemeinsam
-      var stand = m.e === "s" ? Math.min(w, u * groesste) : w * weich(u);
-      bahn.balken.style.setProperty("--f", ((stand / groesste) * 100).toFixed(2));
-      bahn.wert.textContent = zahl(u >= 1 ? w : Math.max(stand, m.e === "s" ? 0.01 : 1), m.e);
+    wahl.forEach(function (knopf, i) {
+      knopf.setAttribute("aria-pressed", String(i === index));
     });
-  }
-
-  // KI-Satz in Woerter teilen; sie werden beim Scrollen nacheinander hell.
-  var licht = [];
-  function teileLicht() {
-    licht = [];
-    $$("[data-light]").forEach(function (el) {
-      var woerter = el.textContent.trim().split(/\s+/);
-      el.replaceChildren();
-      woerter.forEach(function (wort) {
-        var span = document.createElement("span");
-        span.className = "w";
-        span.textContent = wort;
-        el.append(span, " ");
-        licht.push(span);
+    var meiner = ++zaehler;
+    var beginn = performance.now();
+    (function schritt(jetzt) {
+      if (meiner !== zaehler) return;
+      var t = weichZaehlen && !ruhig.matches ? grenze((jetzt - beginn) / 700) : 1;
+      spalten.forEach(function (spalte, i) {
+        var w = m.w[i];
+        spalte.el.classList.toggle("na", w === null);
+        if (w === null) {
+          spalte.wert.textContent = text(m.g[i][0], m.g[i][1]);
+          return;
+        }
+        // von der alten zur neuen Zahl zaehlen, wenn die Einheit gleich bleibt
+        var von = vorher.e === m.e && vorher.w[i] !== null ? vorher.w[i] : 0;
+        spalte.wert.textContent = zahl(t === 1 ? w : misch(von, w, weich(t)), m.e);
       });
+      if (t < 1) requestAnimationFrame(schritt);
+    })(beginn);
+    document.dispatchEvent(new Event("easymysql-scene"));
+    anfordern();
+  }
+  wahl.forEach(function (knopf, i) {
+    knopf.addEventListener("click", function () {
+      selbstGewaehlt = true;
+      waehleMessung(i, true);
     });
-  }
+  });
 
-  var maus = [0, 0];
-  var nach = { f: 0, v: 0, ein: 1, mx: 0, my: 0 };
-  var bild = 0;
-  function fortschritt(abschnitt) {
-    var r = abschnitt.getBoundingClientRect();
-    return grenze(-r.top / Math.max(1, r.height - innerHeight));
+  // Funktionen: Stapel der App-Fenster.
+  var fAbschnitt = $("#features");
+  var tabs = $$("[role=tab]");
+  var blaetter = tabs.map(function (tab) {
+    return document.getElementById(tab.getAttribute("aria-controls"));
+  });
+  var blatt = 0;
+  var selbstGeblaettert = false;
+  function waehleBlatt(index, fokus) {
+    blatt = index;
+    tabs.forEach(function (tab, i) {
+      tab.setAttribute("aria-selected", String(i === index));
+      tab.tabIndex = i === index ? 0 : -1;
+      blaetter[i].classList.toggle("on", i === index);
+      blaetter[i].setAttribute("aria-hidden", String(i !== index));
+    });
+    if (fokus) tabs[index].focus({ preventScroll: true });
+    anfordern();
   }
+  tabs.forEach(function (tab, i) {
+    function nimm() {
+      selbstGeblaettert = true;
+      waehleBlatt(i, false);
+    }
+    tab.addEventListener("click", nimm);
+    tab.addEventListener("pointerenter", function (e) {
+      if (e.pointerType === "mouse") nimm();
+    });
+    blaetter[i].addEventListener("click", nimm);
+    tab.addEventListener("keydown", function (e) {
+      var ziel =
+        e.key === "ArrowDown" || e.key === "ArrowRight"
+          ? (i + 1) % tabs.length
+          : e.key === "ArrowUp" || e.key === "ArrowLeft"
+            ? (i + tabs.length - 1) % tabs.length
+            : e.key === "Home"
+              ? 0
+              : e.key === "End"
+                ? tabs.length - 1
+                : -1;
+      if (ziel !== -1) {
+        e.preventDefault();
+        selbstGeblaettert = true;
+        waehleBlatt(ziel, true);
+      }
+    });
+  });
+  waehleBlatt(0, false);
+
+  // Solange niemand selbst waehlt, laufen Messungen und Fenster von allein weiter.
+  function imBild(el) {
+    var r = el.getBoundingClientRect();
+    return r.top < innerHeight * 0.6 && r.bottom > innerHeight * 0.4;
+  }
+  setInterval(function () {
+    if (ruhig.matches || document.hidden) return;
+    if (!selbstGewaehlt && imBild(vAbschnitt)) waehleMessung((messung + 1) % MESSUNGEN.length, true);
+    if (!selbstGeblaettert && imBild(fAbschnitt)) waehleBlatt((blatt + 1) % tabs.length, false);
+  }, 3400);
+
+  // Klick auf das Symbol oben laesst die Scheiben kurz auseinanderspringen.
+  var stoss = 0;
+  $("#top").addEventListener("pointerdown", function (e) {
+    if (e.target.closest("a, button, code")) return;
+    stoss = 1;
+    anfordern();
+  });
+
+  var bild = 0;
   function zeichne() {
     bild = 0;
     var hoch = innerHeight;
     var seite = innerWidth / hoch;
     var schmal = seite < 1;
-    var k = ruhig.matches ? 1 : 0.14;
-
-    // --- Funktionen ---
-    var fRect = fAbschnitt.getBoundingClientRect();
-    var fZiel = fortschritt(fAbschnitt);
-    nach.f += (fZiel - nach.f) * k;
-    nach.ein += (grenze(fRect.top / hoch) - nach.ein) * k;
-    var fStand = Math.min(fTitel.length - 0.0001, nach.f * fTitel.length);
-    var fNeu = Math.floor(fStand);
-    if (fNeu !== fIndex) {
-      fIndex = fNeu;
-      setze(fTitel, fIndex);
-      setze(fTexte, fIndex);
-      setze(fBilder, fIndex);
-      fKnoepfe.forEach(function (knopf, i) {
-        knopf.setAttribute("aria-selected", String(i === fIndex));
-        knopf.tabIndex = i === fIndex ? 0 : -1;
-      });
-      fBilder.forEach(function (b, i) {
-        b.setAttribute("aria-hidden", String(i !== fIndex));
-      });
-      zeigeInLeiste(fKnoepfe[fIndex]);
-    }
-    fKnoepfe.forEach(function (knopf, i) {
-      knopf.style.setProperty("--p", i < fIndex ? 1 : i === fIndex ? (fStand - i).toFixed(3) : 0);
-    });
-    nach.mx += (maus[0] - nach.mx) * 0.08;
-    nach.my += (maus[1] - nach.my) * 0.08;
-    // das Fenster kommt gekippt von unten und richtet sich auf
-    fBuehne.style.setProperty("--rx", (nach.ein * 46 - nach.my * 5).toFixed(2) + "deg");
-    fBuehne.style.setProperty("--ry", (nach.mx * 7).toFixed(2) + "deg");
-    fBuehne.style.setProperty("--sc", (1 - nach.ein * 0.22).toFixed(4));
-
-    // --- Vergleich ---
-    var vZiel = fortschritt(vAbschnitt);
-    nach.v += (vZiel - nach.v) * k;
-    var vStand = Math.min(MESSUNGEN.length - 0.0001, nach.v * MESSUNGEN.length);
-    var vNeu = Math.floor(vStand);
-    if (vNeu !== vIndex) {
-      vIndex = vNeu;
-      setze(vTitel, vIndex);
-      vKnoepfe.forEach(function (knopf, i) {
-        knopf.setAttribute("aria-pressed", String(i === vIndex));
-      });
-      zeigeInLeiste(vKnoepfe[vIndex]);
-    }
-    vKnoepfe.forEach(function (knopf, i) {
-      knopf.style.setProperty("--p", i < vIndex ? 1 : i === vIndex ? (vStand - i).toFixed(3) : 0);
-    });
-    // erste 70 % eines Schritts laeuft die Messung, danach bleibt das Ergebnis stehen
-    maleMessung(vIndex, ruhig.matches ? 1 : grenze((vStand - vIndex) / 0.7));
-
-    // --- KI-Satz ---
-    var aRect = $("#ai").getBoundingClientRect();
-    var aStand = grenze((hoch * 0.85 - aRect.top) / (aRect.height * 0.62));
-    licht.forEach(function (wort, i) {
-      wort.classList.toggle("lit", i < aStand * (licht.length + 1));
-    });
-
-    // --- Wolken und 3D-Objekt ---
-    var oben = grenze(scrollY / hoch);
     var vRect = vAbschnitt.getBoundingClientRect();
+    var fRect = fAbschnitt.getBoundingClientRect();
     var tRect = $("#table").getBoundingClientRect();
+    var aRect = $("#ai").getBoundingClientRect();
+
+    // c: 0 = Symbol oben, 1 = Saeulen im Vergleich
+    var c = weich(grenze(1 - vRect.top / hoch));
+    stoss *= 0.93;
+    // Ankerpunkte auf der Seite (in Pixeln ab Seitenanfang), dazwischen gleitet das Objekt
+    var obenY = hoch * 0.47;
+    var saeulenY = scrollY + vRect.top + vRect.height * (schmal ? 0.6 : 0.58);
+    var obenX = schmal ? seite * 0.32 : seite * 0.56;
+    var saeulenX = schmal ? 0 : seite * 0.2;
+    var obenK = schmal ? 0.5 : 0.82;
+    var saeulenK = Math.min(0.4, seite * 0.38);
+    var amEnde = weich(grenze((hoch * 0.9 - aRect.top) / (hoch * 0.6)));
+    var k, x, yPx;
+    if (amEnde > 0) {
+      // ganz unten kommt das Symbol zurueck
+      c = 0;
+      k = schmal ? 0.42 : 0.7;
+      x = schmal ? 0 : seite * 0.5;
+      yPx = scrollY + aRect.top + aRect.height * (schmal ? 0.74 : 0.5);
+      szene.V = amEnde;
+    } else {
+      k = misch(obenK, saeulenK, c);
+      x = misch(obenX, saeulenX, c);
+      yPx = misch(obenY, saeulenY, c);
+      // hinter dem Vergleich verschwindet es
+      szene.V = grenze(vRect.bottom / (hoch * 0.55));
+    }
+    szene.K = k;
+    szene.C = c;
+    szene.G = c;
+    szene.W = misch(2.2, 5.4, c);
+    szene.O = [x, 1 - (2 * (yPx - scrollY)) / hoch];
+    for (var i = 0; i < 3; i++) {
+      var h = hoehe(i);
+      szene.D[i][0] = misch(0, (i - 1) * ABSTAND, c);
+      szene.D[i][1] = misch(STAPEL[i][1] * (1 + stoss * 1.6), BODEN + h, c);
+      szene.D[i][2] = misch(0.15, h, c);
+    }
+
+    // Beschriftung unter jeder Saeule: gleiche Projektion wie in gl.js
+    var wy = BODEN * Math.cos(NEIGUNG);
+    var wz = -BODEN * Math.sin(NEIGUNG);
+    var p = 3.1 / (5 - wz);
+    spalten.forEach(function (spalte, i) {
+      var px = innerWidth / 2 + (saeulenX + saeulenK * (i - 1) * ABSTAND * p) * (hoch / 2);
+      // Unterkante der Saeule: Standflaeche plus der nach vorn geneigte Rand
+      var py = vRect.height * (schmal ? 0.6 : 0.58) - saeulenK * (wy - 0.9 * Math.sin(-NEIGUNG)) * p * (hoch / 2);
+      spalte.el.style.setProperty("--x", px.toFixed(1) + "px");
+      spalte.el.style.setProperty("--y", (py + hoch * 0.035).toFixed(1) + "px");
+      spalte.el.style.setProperty("--o", grenze((c - 0.8) / 0.2).toFixed(3));
+    });
+
     var farbe;
-    if (aRect.top < hoch * 0.7) farbe = FARBEN.ki;
+    if (aRect.top < hoch * 0.8) farbe = FARBEN.ki;
     else if (tRect.top < hoch * 0.6) farbe = FARBEN.tabelle;
-    else if (vRect.top < hoch * 0.5) farbe = FARBEN.vergleich[vIndex % 2];
-    else if (fRect.top < hoch * 0.6) farbe = FARBEN.funktionen[Math.max(0, fIndex)];
+    else if (fRect.top < hoch * 0.55) farbe = FARBEN.funktionen[blatt];
+    else if (vRect.top < hoch * 0.55) farbe = FARBEN.vergleich;
     else farbe = FARBEN.start;
     szene.A = farbe[0];
     szene.B = farbe[1];
-    var amEnde = grenze((hoch - aRect.top) / hoch);
-    if (amEnde > 0) {
-      // am Schluss kommt das Symbol zurueck und setzt sich wieder zusammen
-      szene.V = weich(amEnde);
-      szene.S = 1 - weich(aStand);
-      szene.K = schmal ? 0.46 : 0.8;
-      szene.O = schmal ? [seite * 0.3, -0.6] : [seite * 0.64, -0.05];
-    } else {
-      // am Anfang schwebt es neben der Ueberschrift und zerfaellt beim Wegscrollen
-      szene.V = 1 - weich(grenze((oben - 0.45) / 0.5));
-      szene.S = weich(oben);
-      szene.K = schmal ? 0.5 : 0.82;
-      szene.O = schmal ? [seite * 0.32, 0.56 + oben * 0.5] : [seite * 0.56, 0.04 + oben * 0.7];
-    }
-
-    if (
-      !ruhig.matches &&
-      Math.abs(fZiel - nach.f) + Math.abs(vZiel - nach.v) + Math.abs(maus[0] - nach.mx) + Math.abs(maus[1] - nach.my) > 0.0006
-    )
-      anfordern();
+    if (stoss > 0.01 && !ruhig.matches) anfordern();
   }
   function anfordern() {
     if (!bild) bild = requestAnimationFrame(zeichne);
   }
-  // gewaehlten Knopf in der Leiste sichtbar halten, ohne die Seite zu bewegen
-  function zeigeInLeiste(knopf) {
-    var leiste = knopf.parentElement;
-    if (leiste.scrollWidth <= leiste.clientWidth) return;
-    leiste.scrollTo({ left: knopf.offsetLeft - (leiste.clientWidth - knopf.offsetWidth) / 2, behavior: "smooth" });
-  }
-  // Klick oder Pfeiltaste in der Leiste springt an die passende Stelle der Szene.
-  function verbinde(abschnitt, knoepfe) {
-    function springe(i, fokus) {
-      var strecke = abschnitt.offsetHeight - innerHeight;
-      scrollTo({ top: abschnitt.offsetTop + ((i + 0.4) / knoepfe.length) * strecke, behavior: ruhig.matches ? "auto" : "smooth" });
-      if (fokus) knoepfe[i].focus({ preventScroll: true });
-    }
-    knoepfe.forEach(function (knopf, i) {
-      knopf.addEventListener("click", function () {
-        springe(i, false);
-      });
-      knopf.addEventListener("keydown", function (e) {
-        var ziel =
-          e.key === "ArrowRight"
-            ? (i + 1) % knoepfe.length
-            : e.key === "ArrowLeft"
-              ? (i + knoepfe.length - 1) % knoepfe.length
-              : e.key === "Home"
-                ? 0
-                : e.key === "End"
-                  ? knoepfe.length - 1
-                  : -1;
-        if (ziel !== -1) {
-          e.preventDefault();
-          springe(ziel, true);
-        }
-      });
-    });
-  }
-  verbinde(fAbschnitt, fKnoepfe);
-  verbinde(vAbschnitt, vKnoepfe);
   addEventListener("scroll", anfordern, { passive: true });
   addEventListener("resize", anfordern, { passive: true });
-  addEventListener(
-    "pointermove",
-    function (e) {
-      if (e.pointerType !== "mouse" || ruhig.matches) return;
-      maus = [e.clientX / innerWidth - 0.5, e.clientY / innerHeight - 0.5];
-      anfordern();
-    },
-    { passive: true },
-  );
-  // nach einem Sprachwechsel: Woerter neu teilen, Werte neu schreiben
+  // nach einem Sprachwechsel die Werte neu schreiben
   function male() {
-    teileLicht();
-    vIndex = -1;
-    anfordern();
+    waehleMessung(messung, false);
   }
   bereit = true;
   male();
 
-  // Tabelle: Zeilen blenden nacheinander ein.
+  // Tabelle und Schlusssatz blenden ein.
   var ziele = $$("[data-reveal], tbody tr, tfoot tr");
   if ("IntersectionObserver" in window) {
     var beobachter = new IntersectionObserver(
