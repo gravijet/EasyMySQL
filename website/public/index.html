@@ -4,15 +4,15 @@
     <meta charset="utf-8" />
     <meta content="width=device-width,initial-scale=1,viewport-fit=cover" name="viewport" />
     <title>EasyMySQL – Datenbank, SQL &amp; Java</title>
-    <meta content="MariaDB-Server, SQL-Editor, ER-Diagramme und Java-Entwicklung in einer nativen App. Kostenlos. Direkte Downloads für Windows, macOS und Linux." name="description" />
+    <meta content="Datenbank, SQL-Editor, ER-Diagramme und Java in einer App. Kostenlos für Windows, macOS und Linux." name="description" />
     <meta content="light" name="color-scheme" />
-    <meta content="#f3f5fa" name="theme-color" />
+    <meta content="#f5f6fc" name="theme-color" />
     <link href="https://mysql.benjaminberger.at/" rel="canonical" />
     <link href="/favicon.svg" rel="icon" type="image/svg+xml" />
     <link as="font" crossorigin="" href="/fonts/InterTight.woff2" rel="preload" type="font/woff2" />
     <meta content="website" property="og:type" />
     <meta content="EasyMySQL – Datenbank, SQL &amp; Java" property="og:title" />
-    <meta content="MariaDB, SQL-Editor und Java in einer nativen App. Kostenlos und quelloffen." property="og:description" />
+    <meta content="Datenbank, SQL und Java in einer App. Kostenlos." property="og:description" />
     <meta content="https://mysql.benjaminberger.at/" property="og:url" />
     <meta content="https://mysql.benjaminberger.at/og.jpg" property="og:image" />
     <meta content="1200" property="og:image:width" />
@@ -24,277 +24,251 @@
   </head>
   <body>
     <a class="skip" data-en="Skip to content" href="#main">Zum Inhalt</a>
+    <!-- Symbole: Lucide (ISC-Lizenz), lucide.dev -->
     <svg aria-hidden="true" class="defs" height="0" width="0">
-      <pattern height="6" id="hatch" patternTransform="rotate(45)" patternUnits="userSpaceOnUse" width="6">
-        <rect class="hatch-bg" height="6" width="6"></rect>
-        <rect class="hatch-fg" height="6" width="2.5"></rect>
-      </pattern>
+      <symbol fill="none" id="i-archive-restore" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24"><rect width="20" height="5" x="2" y="3" rx="1"></rect> <path d="M4 8v11a2 2 0 0 0 2 2h2"></path> <path d="M20 8v11a2 2 0 0 1-2 2h-2"></path> <path d="m9 15 3-3 3 3"></path> <path d="M12 12v9"></path></symbol>
+      <symbol fill="none" id="i-arrow-left-right" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24"><path d="M8 3 4 7l4 4"></path> <path d="M4 7h16"></path> <path d="m16 21 4-4-4-4"></path> <path d="M20 17H4"></path></symbol>
+      <symbol fill="none" id="i-book-open" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24"><path d="M12 7v14"></path> <path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"></path></symbol>
+      <symbol fill="none" id="i-bot" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24"><path d="M12 8V4H8"></path> <rect width="16" height="12" x="4" y="8" rx="2"></rect> <path d="M2 14h2"></path> <path d="M20 14h2"></path> <path d="M15 13v2"></path> <path d="M9 13v2"></path></symbol>
+      <symbol fill="none" id="i-bug" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24"><path d="m8 2 1.88 1.88"></path> <path d="M14.12 3.88 16 2"></path> <path d="M9 7.13v-1a3.003 3.003 0 1 1 6 0v1"></path> <path d="M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6"></path> <path d="M12 20v-9"></path> <path d="M6.53 9C4.6 8.8 3 7.1 3 5"></path> <path d="M6 13H2"></path> <path d="M3 21c0-2.1 1.7-3.9 3.8-4"></path> <path d="M20.97 5c0 2.1-1.6 3.8-3.5 4"></path> <path d="M22 13h-4"></path> <path d="M17.2 17c2.1.1 3.8 1.9 3.8 4"></path></symbol>
+      <symbol fill="none" id="i-check" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"></path></symbol>
+      <symbol fill="none" id="i-chevron-down" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"></path></symbol>
+      <symbol fill="none" id="i-coffee" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24"><path d="M10 2v2"></path> <path d="M14 2v2"></path> <path d="M16 8a1 1 0 0 1 1 1v8a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V9a1 1 0 0 1 1-1h14a4 4 0 1 1 0 8h-1"></path> <path d="M6 2v2"></path></symbol>
+      <symbol fill="none" id="i-copy" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect> <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></symbol>
+      <symbol fill="none" id="i-database" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse> <path d="M3 5V19A9 3 0 0 0 21 19V5"></path> <path d="M3 12A9 3 0 0 0 21 12"></path></symbol>
+      <symbol fill="none" id="i-download" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path> <polyline points="7 10 12 15 17 10"></polyline> <line x1="12" x2="12" y1="15" y2="3"></line></symbol>
+      <symbol fill="none" id="i-file-code-2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24"><path d="M4 22h14a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2v4"></path> <path d="M14 2v4a2 2 0 0 0 2 2h4"></path> <path d="m5 12-3 3 3 3"></path> <path d="m9 18 3-3-3-3"></path></symbol>
+      <symbol fill="none" id="i-git-branch" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24"><line x1="6" x2="6" y1="3" y2="15"></line> <circle cx="18" cy="6" r="3"></circle> <circle cx="6" cy="18" r="3"></circle> <path d="M18 9a9 9 0 0 1-9 9"></path></symbol>
+      <symbol fill="none" id="i-globe-lock" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24"><path d="M15.686 15A14.5 14.5 0 0 1 12 22a14.5 14.5 0 0 1 0-20 10 10 0 1 0 9.542 13"></path> <path d="M2 12h8.5"></path> <path d="M20 6V4a2 2 0 1 0-4 0v2"></path> <rect width="8" height="5" x="14" y="6" rx="1"></rect></symbol>
+      <symbol fill="none" id="i-heart" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"></path></symbol>
+      <symbol fill="none" id="i-languages" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24"><path d="m5 8 6 6"></path> <path d="m4 14 6-6 2-3"></path> <path d="M2 5h12"></path> <path d="M7 2h1"></path> <path d="m22 22-5-10-5 10"></path> <path d="M14 18h6"></path></symbol>
+      <symbol fill="none" id="i-lock" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"></rect> <path d="M7 11V7a5 5 0 0 1 10 0v4"></path></symbol>
+      <symbol fill="none" id="i-memory-stick" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24"><path d="M6 19v-3"></path> <path d="M10 19v-3"></path> <path d="M14 19v-3"></path> <path d="M18 19v-3"></path> <path d="M8 11V9"></path> <path d="M16 11V9"></path> <path d="M12 11V9"></path> <path d="M2 15h20"></path> <path d="M2 7a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v1.1a2 2 0 0 0 0 3.837V17a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-5.1a2 2 0 0 0 0-3.837Z"></path></symbol>
+      <symbol fill="none" id="i-mouse-pointer-click" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24"><path d="M14 4.1 12 6"></path> <path d="m5.1 8-2.9-.8"></path> <path d="m6 12-1.9 2"></path> <path d="M7.2 2.2 8 5.1"></path> <path d="M9.037 9.69a.498.498 0 0 1 .653-.653l11 4.5a.5.5 0 0 1-.074.949l-4.349 1.041a1 1 0 0 0-.74.739l-1.04 4.35a.5.5 0 0 1-.95.074z"></path></symbol>
+      <symbol fill="none" id="i-package" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24"><path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z"></path> <path d="M12 22V12"></path> <path d="m3.3 7 7.703 4.734a2 2 0 0 0 1.994 0L20.7 7"></path> <path d="m7.5 4.27 9 5.15"></path></symbol>
+      <symbol fill="none" id="i-refresh-cw" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path> <path d="M21 3v5h-5"></path> <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path> <path d="M8 16H3v5"></path></symbol>
+      <symbol fill="none" id="i-rocket" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"></path> <path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"></path> <path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"></path> <path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"></path></symbol>
+      <symbol fill="none" id="i-shield-check" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"></path> <path d="m9 12 2 2 4-4"></path></symbol>
+      <symbol fill="none" id="i-sparkles" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"></path> <path d="M20 3v4"></path> <path d="M22 5h-4"></path> <path d="M4 17v2"></path> <path d="M5 18H3"></path></symbol>
+      <symbol fill="none" id="i-square-terminal" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24"><path d="m7 11 2-2-2-2"></path> <path d="M11 13h4"></path> <rect width="18" height="18" x="3" y="3" rx="2" ry="2"></rect></symbol>
+      <symbol fill="none" id="i-table-2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24"><path d="M9 3H5a2 2 0 0 0-2 2v4m6-6h10a2 2 0 0 1 2 2v4M9 3v18m0 0h10a2 2 0 0 0 2-2V9M9 21H5a2 2 0 0 1-2-2V9m0 0h18"></path></symbol>
+      <symbol fill="none" id="i-users" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path> <circle cx="9" cy="7" r="4"></circle> <path d="M22 21v-2a4 4 0 0 0-3-3.87"></path> <path d="M16 3.13a4 4 0 0 1 0 7.75"></path></symbol>
+      <symbol fill="none" id="i-wand-sparkles" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24"><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72"></path> <path d="m14 7 3 3"></path> <path d="M5 6v4"></path> <path d="M19 14v4"></path> <path d="M10 2v2"></path> <path d="M7 8H3"></path> <path d="M21 16h-4"></path> <path d="M11 3H9"></path></symbol>
+      <symbol fill="none" id="i-workflow" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24"><rect width="8" height="8" x="3" y="3" rx="2"></rect> <path d="M7 11v4a2 2 0 0 0 2 2h4"></path> <rect width="8" height="8" x="13" y="13" rx="2"></rect></symbol>
+      <symbol fill="none" id="i-x" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24"><path d="M18 6 6 18"></path> <path d="m6 6 12 12"></path></symbol>
+      <symbol fill="none" id="i-zap" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"></path></symbol>
+      <symbol id="i-yes" viewBox="0 0 24 24"><circle cx="12" cy="12" fill="currentColor" r="11"></circle><path d="M17 8.5 10.5 15.5 7 12" fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.4"></path></symbol>
+      <symbol id="i-no" viewBox="0 0 24 24"><circle cx="12" cy="12" fill="currentColor" r="11"></circle><path d="m15.500 8.500-7 7m0-7 7 7" fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.4"></path></symbol>
     </svg>
+    <div aria-hidden="true" class="progress"></div>
     <header class="nav">
-      <div class="wrap">
-        <a aria-label="Zum Seitenanfang" class="brand" data-en-label="Back to top" href="#top"><img alt="" height="26" src="/favicon.svg" width="26" />EasyMySQL</a>
-        <nav aria-label="Seite" class="links" data-en-label="Page">
-          <a data-en="Features" href="#features">Funktionen</a>
-          <a data-en="Compare" href="#compare">Vergleich</a>
-          <a data-en="AI" href="#ai">KI</a>
-          <a href="https://github.com/gravijet/EasyMySQL">GitHub</a>
-        </nav>
-        <span class="version" data-release-version=""></span>
-        <button aria-label="English" class="lang" id="lang" lang="en" type="button">EN</button>
-      </div>
+      <a aria-label="Zum Seitenanfang" class="brand" data-en-label="Back to top" href="#top"><img alt="" height="26" src="/favicon.svg" width="26" />EasyMySQL</a>
+      <nav aria-label="Seite" class="links" data-en-label="Page">
+        <a data-en="Features" href="#features">Funktionen</a>
+        <a data-en="Compare" href="#compare">Vergleich</a>
+        <a data-en="AI" href="#ai">KI</a>
+      </nav>
+      <button aria-label="English" class="lang" id="lang" lang="en" type="button">EN</button>
+      <a class="btn small" data-en="Download" href="#download">Download</a>
     </header>
     <main id="main">
-      <section aria-labelledby="product-name" class="hero wrap" id="top">
-        <div class="pitch">
-          <h1 id="product-name" data-en="MariaDB, SQL and Java in one app.">MariaDB, SQL und Java in einer App.</h1>
-          <p class="lead" data-en="Start the server, write queries, edit tables and run Java programs. No browser, no extra tools. Free and open source.">Server starten, Abfragen schreiben, Tabellen bearbeiten und Java-Programme ausführen. Ohne Browser, ohne Zusatzprogramme. Kostenlos und quelloffen.</p>
-          <a class="facts" href="#compare">
-            <span><b data-en="0.47 s">0,47 s</b><span data-en="to start">bis zum Start</span></span>
-            <span><b>133 MiB</b><span data-en="memory">Arbeitsspeicher</span></span>
-            <span><b>77 MB</b><span data-en="download with MariaDB">Download mit MariaDB</span></span>
-          </a>
-        </div>
-        <div class="install" id="install">
-          <div class="install-head">
-            <h2 data-en="Install">Installieren</h2>
-            <div aria-label="Betriebssystem für Terminal-Installation" class="install-os" data-en-label="Operating system for terminal installation" role="radiogroup">
-              <button aria-checked="true" data-install-os="win" role="radio" type="button">Windows</button><button aria-checked="false" data-install-os="mac" role="radio" type="button">macOS</button><button aria-checked="false" data-install-os="linux" role="radio" type="button">Linux</button>
-            </div>
+      <section aria-labelledby="product-name" class="hero" id="top">
+        <div aria-hidden="true" class="aurora"><i></i><i></i><i></i></div>
+        <div class="wrap">
+          <p class="pill"><svg aria-hidden="true" class="ic"><use href="#i-heart"></use></svg><span data-en="Free for school, university and home">Kostenlos für Schule, Studium und Zuhause</span></p>
+          <h1 data-split="" id="product-name" data-en="Database, SQL and Java. All in one app.">Datenbank, SQL und Java. Alles in einer App.</h1>
+          <p class="lead" data-en="Install, open, get going.">Installieren, öffnen, loslegen.</p>
+          <div class="cta">
+            <a class="btn big" data-dl="setup" data-magnet="" href="/download/setup"><svg aria-hidden="true" class="ic"><use href="#i-download"></use></svg><span data-en="Download for Windows">Für Windows herunterladen</span></a>
+            <a class="more" data-en="macOS and Linux" href="#download">macOS und Linux</a>
           </div>
-          <div class="cmd">
-            <code id="hero-cmd">irm https://mysql.benjaminberger.at/install | iex</code>
-            <button class="copy" data-copy-from="#hero-cmd" data-en="Copy" type="button">Kopieren</button>
+          <div class="stage">
+            <div class="window" id="hero-window"><picture>
+              <source sizes="(max-width: 1100px) 100vw, 1080px" srcset="/shots/code-1000.avif 1000w, /shots/code-2000.avif 2000w" type="image/avif" />
+              <img alt="EasyMySQL mit Java-Projekt und Terminal" data-en-alt="EasyMySQL with a Java project and terminal" decoding="async" fetchpriority="high" height="1250" sizes="(max-width: 1100px) 100vw, 1080px" src="/shots/code-2000.webp" srcset="/shots/code-1000.webp 1000w, /shots/code-2000.webp 2000w" width="2000" />
+            </picture></div>
           </div>
-          <p class="terminal-shell" id="terminal-shell">PowerShell</p>
-          <p class="or" data-en="or download the file">oder Datei herunterladen</p>
-          <div aria-label="Direkt herunterladen" class="downloads" data-en-label="Direct downloads">
-            <a class="download primary" data-dl="setup" href="/download/setup"><svg aria-hidden="true" viewbox="0 0 24 24"><path d="M12 4v12m-5-5 5 5 5-5M5 17v3h14v-3"></path></svg><span>Windows <small>.exe</small></span></a>
-            <a class="download" data-dl="macos" href="/download/macos"><span>macOS <small>.tar.gz</small></span></a>
-            <a class="download" data-dl="linux" href="/download/linux"><span>Linux <small>.tar.gz</small></span></a>
-          </div>
-          <p class="download-notice" hidden="" id="download-notice" role="status"></p>
-          <p class="release-error" hidden="" id="release-error" role="status"></p>
         </div>
       </section>
 
       <section aria-labelledby="f-h" class="features wrap" id="features">
-        <h2 data-en="Everything in one window" id="f-h">Alles in einem Fenster</h2>
-        <div class="feature-grid">
-          <div aria-label="Funktionen" class="feature-tabs" data-en-label="Features" role="tablist">
-            <button aria-controls="panel-sql" aria-selected="true" id="tab-sql" role="tab" type="button">
-              <b data-en="SQL editor">SQL-Editor</b><small data-en="Schema-aware completion, error checks, quick fixes and execution plans.">Vervollständigung mit deinem Schema, Fehlerprüfung, Quick Fixes und Ausführungspläne.</small>
-            </button>
-            <button aria-controls="panel-data" aria-selected="false" id="tab-data" role="tab" type="button">
-              <b data-en="Tables">Tabellen</b><small data-en="Edit values and columns in the grid. Ctrl + Z undoes it.">Werte und Spalten direkt im Raster ändern. Strg + Z macht es rückgängig.</small>
-            </button>
-            <button aria-controls="panel-er" aria-selected="false" id="tab-er" role="tab" type="button">
-              <b data-en="ER diagrams">ER-Diagramme</b><small data-en="Your schema as a diagram, exportable as SVG or SQL.">Dein Schema als Diagramm, exportierbar als SVG oder SQL.</small>
-            </button>
-            <button aria-controls="panel-builder" aria-selected="false" id="tab-builder" role="tab" type="button">
-              <b data-en="Query builder">Query Builder</b><small data-en="Click together SELECT, INSERT, UPDATE and DELETE. The SQL appears alongside.">SELECT, INSERT, UPDATE und DELETE zusammenklicken. Das SQL entsteht daneben.</small>
-            </button>
-            <button aria-controls="panel-code" aria-selected="false" id="tab-code" role="tab" type="button">
-              <b data-en="Java">Java</b><small data-en="Projects with a ready database connection, completion, refactoring and a terminal.">Projekte mit fertiger Datenbankverbindung, Vervollständigung, Refactoring und Terminal.</small>
-            </button>
-            <button aria-controls="panel-git" aria-selected="false" id="tab-git" role="tab" type="button">
-              <b data-en="Git">Git</b><small data-en="Diffs, commits, branches and pull requests inside the app.">Diffs, Commits, Branches und Pull Requests direkt in der App.</small>
-            </button>
+        <h2 data-reveal="" data-en="Everything in one window" id="f-h">Alles in einem Fenster</h2>
+        <div class="tabs-scroll" data-reveal="">
+          <div aria-label="Funktionen" class="feature-tabs" data-en-label="Features" role="tablist"><span aria-hidden="true" class="glider"></span>
+            <button aria-controls="panel-sql" aria-selected="true" id="tab-sql" role="tab" type="button"><svg aria-hidden="true" class="ic"><use href="#i-database"></use></svg><span data-en="SQL editor">SQL-Editor</span></button>
+            <button aria-controls="panel-data" aria-selected="false" id="tab-data" role="tab" type="button"><svg aria-hidden="true" class="ic"><use href="#i-table-2"></use></svg><span data-en="Tables">Tabellen</span></button>
+            <button aria-controls="panel-er" aria-selected="false" id="tab-er" role="tab" type="button"><svg aria-hidden="true" class="ic"><use href="#i-workflow"></use></svg><span data-en="ER diagrams">ER-Diagramme</span></button>
+            <button aria-controls="panel-builder" aria-selected="false" id="tab-builder" role="tab" type="button"><svg aria-hidden="true" class="ic"><use href="#i-mouse-pointer-click"></use></svg><span data-en="Query builder">Query Builder</span></button>
+            <button aria-controls="panel-code" aria-selected="false" id="tab-code" role="tab" type="button"><svg aria-hidden="true" class="ic"><use href="#i-coffee"></use></svg><span data-en="Java">Java</span></button>
+            <button aria-controls="panel-git" aria-selected="false" id="tab-git" role="tab" type="button"><svg aria-hidden="true" class="ic"><use href="#i-git-branch"></use></svg><span data-en="Git">Git</span></button>
           </div>
-          <div class="feature-panels">
+        </div>
+        <div class="feature-panels" data-reveal="">
             <div aria-labelledby="tab-sql" class="feature-panel" id="panel-sql" role="tabpanel">
-              <a aria-label="SQL-Editor mit Autovervollständigung und Abfrageergebnis – in voller Größe öffnen" data-en-label="SQL editor with completion and query results – open full size" href="/shots/sql-2000.webp" rel="noopener" target="_blank"><picture>
-                <source sizes="(max-width: 900px) 100vw, 860px" srcset="/shots/sql-1000.avif 1000w, /shots/sql-2000.avif 2000w" type="image/avif" />
-                <img alt="SQL-Editor mit Autovervollständigung und Abfrageergebnis" data-en-alt="SQL editor with completion and query results" decoding="async" height="1250" loading="eager" fetchpriority="high" sizes="(max-width: 900px) 100vw, 860px" src="/shots/sql-2000.webp" srcset="/shots/sql-1000.webp 1000w, /shots/sql-2000.webp 2000w" width="2000" />
-              </picture></a>
+              <p class="caption" data-en="Suggestions that know your tables. Errors are explained and fixed with one click.">Vorschläge passend zu deinen Tabellen. Fehler werden erklärt und mit einem Klick behoben.</p>
+              <div class="window"><picture>
+                <source sizes="(max-width: 1100px) 100vw, 1080px" srcset="/shots/sql-1000.avif 1000w, /shots/sql-2000.avif 2000w" type="image/avif" />
+                <img alt="SQL-Editor mit Vorschlägen und Abfrageergebnis" data-en-alt="SQL editor with suggestions and query results" decoding="async" height="1250" loading="lazy" sizes="(max-width: 1100px) 100vw, 1080px" src="/shots/sql-2000.webp" srcset="/shots/sql-1000.webp 1000w, /shots/sql-2000.webp 2000w" width="2000" />
+              </picture></div>
             </div>
             <div aria-labelledby="tab-data" class="feature-panel" hidden="" id="panel-data" role="tabpanel">
-              <a aria-label="Produkttabelle zum direkten Bearbeiten – in voller Größe öffnen" data-en-label="Product table with inline editing – open full size" href="/shots/data-2000.webp" rel="noopener" target="_blank"><picture>
-                <source sizes="(max-width: 900px) 100vw, 860px" srcset="/shots/data-1000.avif 1000w, /shots/data-2000.avif 2000w" type="image/avif" />
-                <img alt="Produkttabelle zum direkten Bearbeiten" data-en-alt="Product table with inline editing" decoding="async" height="1250" loading="lazy" sizes="(max-width: 900px) 100vw, 860px" src="/shots/data-2000.webp" srcset="/shots/data-1000.webp 1000w, /shots/data-2000.webp 2000w" width="2000" />
-              </picture></a>
+              <p class="caption" data-en="Change values like in a spreadsheet. Ctrl + Z undoes it.">Werte ändern wie in einer Tabellenkalkulation. Strg + Z macht es rückgängig.</p>
+              <div class="window"><picture>
+                <source sizes="(max-width: 1100px) 100vw, 1080px" srcset="/shots/data-1000.avif 1000w, /shots/data-2000.avif 2000w" type="image/avif" />
+                <img alt="Produkttabelle zum direkten Bearbeiten" data-en-alt="Product table with inline editing" decoding="async" height="1250" loading="lazy" sizes="(max-width: 1100px) 100vw, 1080px" src="/shots/data-2000.webp" srcset="/shots/data-1000.webp 1000w, /shots/data-2000.webp 2000w" width="2000" />
+              </picture></div>
             </div>
             <div aria-labelledby="tab-er" class="feature-panel" hidden="" id="panel-er" role="tabpanel">
-              <a aria-label="ER-Diagramm mit Tabellen und Fremdschlüsseln – in voller Größe öffnen" data-en-label="ER diagram with tables and foreign keys – open full size" href="/shots/er-2000.webp" rel="noopener" target="_blank"><picture>
-                <source sizes="(max-width: 900px) 100vw, 860px" srcset="/shots/er-1000.avif 1000w, /shots/er-2000.avif 2000w" type="image/avif" />
-                <img alt="ER-Diagramm mit Tabellen und Fremdschlüsseln" data-en-alt="ER diagram with tables and foreign keys" decoding="async" height="1250" loading="lazy" sizes="(max-width: 900px) 100vw, 860px" src="/shots/er-2000.webp" srcset="/shots/er-1000.webp 1000w, /shots/er-2000.webp 2000w" width="2000" />
-              </picture></a>
+              <p class="caption" data-en="Your database as a picture, drawn automatically.">Deine Datenbank als Bild – automatisch gezeichnet.</p>
+              <div class="window"><picture>
+                <source sizes="(max-width: 1100px) 100vw, 1080px" srcset="/shots/er-1000.avif 1000w, /shots/er-2000.avif 2000w" type="image/avif" />
+                <img alt="ER-Diagramm mit Tabellen und Fremdschlüsseln" data-en-alt="ER diagram with tables and foreign keys" decoding="async" height="1250" loading="lazy" sizes="(max-width: 1100px) 100vw, 1080px" src="/shots/er-2000.webp" srcset="/shots/er-1000.webp 1000w, /shots/er-2000.webp 2000w" width="2000" />
+              </picture></div>
             </div>
             <div aria-labelledby="tab-builder" class="feature-panel" hidden="" id="panel-builder" role="tabpanel">
-              <a aria-label="Visueller Query Builder mit erzeugtem SQL – in voller Größe öffnen" data-en-label="Visual query builder with generated SQL – open full size" href="/shots/builder-2000.webp" rel="noopener" target="_blank"><picture>
-                <source sizes="(max-width: 900px) 100vw, 860px" srcset="/shots/builder-1000.avif 1000w, /shots/builder-2000.avif 2000w" type="image/avif" />
-                <img alt="Visueller Query Builder mit erzeugtem SQL" data-en-alt="Visual query builder with generated SQL" decoding="async" height="1250" loading="lazy" sizes="(max-width: 900px) 100vw, 860px" src="/shots/builder-2000.webp" srcset="/shots/builder-1000.webp 1000w, /shots/builder-2000.webp 2000w" width="2000" />
-              </picture></a>
+              <p class="caption" data-en="Click queries together and learn SQL along the way.">Abfragen zusammenklicken und dabei SQL lernen.</p>
+              <div class="window"><picture>
+                <source sizes="(max-width: 1100px) 100vw, 1080px" srcset="/shots/builder-1000.avif 1000w, /shots/builder-2000.avif 2000w" type="image/avif" />
+                <img alt="Visueller Query Builder mit erzeugtem SQL" data-en-alt="Visual query builder with generated SQL" decoding="async" height="1250" loading="lazy" sizes="(max-width: 1100px) 100vw, 1080px" src="/shots/builder-2000.webp" srcset="/shots/builder-1000.webp 1000w, /shots/builder-2000.webp 2000w" width="2000" />
+              </picture></div>
             </div>
             <div aria-labelledby="tab-code" class="feature-panel" hidden="" id="panel-code" role="tabpanel">
-              <a aria-label="Java-Projekt mit Editor und integriertem Terminal – in voller Größe öffnen" data-en-label="Java project with editor and integrated terminal – open full size" href="/shots/code-2000.webp" rel="noopener" target="_blank"><picture>
-                <source sizes="(max-width: 900px) 100vw, 860px" srcset="/shots/code-1000.avif 1000w, /shots/code-2000.avif 2000w" type="image/avif" />
-                <img alt="Java-Projekt mit Editor und integriertem Terminal" data-en-alt="Java project with editor and integrated terminal" decoding="async" height="1250" loading="lazy" sizes="(max-width: 900px) 100vw, 860px" src="/shots/code-2000.webp" srcset="/shots/code-1000.webp 1000w, /shots/code-2000.webp 2000w" width="2000" />
-              </picture></a>
+              <p class="caption" data-en="Java projects with a ready database connection. Write, run, debug.">Java-Projekte mit fertiger Datenbankverbindung. Schreiben, starten, debuggen.</p>
+              <div class="window"><picture>
+                <source sizes="(max-width: 1100px) 100vw, 1080px" srcset="/shots/code-1000.avif 1000w, /shots/code-2000.avif 2000w" type="image/avif" />
+                <img alt="Java-Projekt mit Editor und Terminal" data-en-alt="Java project with editor and terminal" decoding="async" height="1250" loading="lazy" sizes="(max-width: 1100px) 100vw, 1080px" src="/shots/code-2000.webp" srcset="/shots/code-1000.webp 1000w, /shots/code-2000.webp 2000w" width="2000" />
+              </picture></div>
             </div>
             <div aria-labelledby="tab-git" class="feature-panel" hidden="" id="panel-git" role="tabpanel">
-              <a aria-label="Git-Ansicht mit Änderungen und Diff – in voller Größe öffnen" data-en-label="Git view with changes and diff – open full size" href="/shots/git-2000.webp" rel="noopener" target="_blank"><picture>
-                <source sizes="(max-width: 900px) 100vw, 860px" srcset="/shots/git-1000.avif 1000w, /shots/git-2000.avif 2000w" type="image/avif" />
-                <img alt="Git-Ansicht mit Änderungen und Diff" data-en-alt="Git view with changes and diff" decoding="async" height="1250" loading="lazy" sizes="(max-width: 900px) 100vw, 860px" src="/shots/git-2000.webp" srcset="/shots/git-1000.webp 1000w, /shots/git-2000.webp 2000w" width="2000" />
-              </picture></a>
+              <p class="caption" data-en="Save your changes and share them on GitHub.">Änderungen sichern und mit GitHub teilen.</p>
+              <div class="window"><picture>
+                <source sizes="(max-width: 1100px) 100vw, 1080px" srcset="/shots/git-1000.avif 1000w, /shots/git-2000.avif 2000w" type="image/avif" />
+                <img alt="Git-Ansicht mit Änderungen" data-en-alt="Git view with changes" decoding="async" height="1250" loading="lazy" sizes="(max-width: 1100px) 100vw, 1080px" src="/shots/git-2000.webp" srcset="/shots/git-1000.webp 1000w, /shots/git-2000.webp 2000w" width="2000" />
+              </picture></div>
             </div>
-            <p class="gallery-note" data-en="Screenshots with sample data">Ansichten mit Beispieldaten</p>
-          </div>
+        </div>
+        <ul class="tiles">
+          <li class="tile c-blue"><svg aria-hidden="true" class="ic"><use href="#i-arrow-left-right"></use></svg><h3 data-en="Import &amp; export">Import &amp; Export</h3><p data-en="SQLite, PostgreSQL, MongoDB, Redis, CSV, JSON and more.">SQLite, PostgreSQL, MongoDB, Redis, CSV, JSON und mehr.</p></li>
+          <li class="tile c-green"><svg aria-hidden="true" class="ic"><use href="#i-archive-restore"></use></svg><h3 data-en="Automatic backups">Automatische Backups</h3><p data-en="Back up and restore with one click.">Sichern und wiederherstellen mit einem Klick.</p></li>
+          <li class="tile c-violet"><svg aria-hidden="true" class="ic"><use href="#i-wand-sparkles"></use></svg><h3 data-en="Fixes its own errors">Fehler selbst beheben</h3><p data-en="Corrects typos and creates missing tables.">Tippfehler korrigieren, fehlende Tabellen anlegen.</p></li>
+          <li class="tile c-red"><svg aria-hidden="true" class="ic"><use href="#i-bug"></use></svg><h3 data-en="Java debugger">Java-Debugger</h3><p data-en="Set breakpoints and watch step by step.">Haltepunkte setzen und Schritt für Schritt zusehen.</p></li>
+          <li class="tile c-ink"><svg aria-hidden="true" class="ic"><use href="#i-square-terminal"></use></svg><h3 data-en="Terminal">Terminal</h3><p data-en="Right in the window, ready with Java and MariaDB.">Direkt im Fenster, mit Java und MariaDB startklar.</p></li>
+          <li class="tile c-orange"><svg aria-hidden="true" class="ic"><use href="#i-users"></use></svg><h3 data-en="Users &amp; privileges">Benutzer &amp; Rechte</h3><p data-en="Grant access per database or table.">Zugriff pro Datenbank oder Tabelle vergeben.</p></li>
+          <li class="tile c-cyan"><svg aria-hidden="true" class="ic"><use href="#i-book-open"></use></svg><h3 data-en="Manual">Handbuch</h3><p data-en="F1 opens the searchable help.">F1 öffnet die durchsuchbare Hilfe.</p></li>
+          <li class="tile c-pink"><svg aria-hidden="true" class="ic"><use href="#i-refresh-cw"></use></svg><h3 data-en="Updates">Updates</h3><p data-en="Install quietly in the background.">Installieren sich leise im Hintergrund.</p></li>
+        </ul>
+        <div aria-hidden="true" class="marquee">
+          <div><span>MariaDB</span><span>MySQL</span><span>PostgreSQL</span><span>SQLite</span><span>MongoDB</span><span>Redis</span><span>CSV</span><span>JSON</span><span>XML</span><span>SQL</span><span>MariaDB</span><span>MySQL</span><span>PostgreSQL</span><span>SQLite</span><span>MongoDB</span><span>Redis</span><span>CSV</span><span>JSON</span><span>XML</span><span>SQL</span></div>
         </div>
       </section>
 
-      <section aria-labelledby="c-h" class="compare" id="compare">
-        <div class="wrap">
-          <h2 data-en="Measured against XAMPP and MySQL Workbench" id="c-h">Gemessen gegen XAMPP und MySQL Workbench</h2>
-          <p class="sub" data-en="Windows 11, Ryzen 7 8700G, median of five warm starts. Shorter bars are better.">Windows 11, Ryzen 7 8700G, Median aus fünf Warmstarts. Kürzere Balken sind besser.</p>
-          <div class="charts">
-          <article class="chart">
-            <h3 data-en="Start time">Startzeit</h3>
-            <p class="win"><b>13×</b> <span data-en="faster to start than MySQL Workbench">schneller bereit als MySQL Workbench</span></p>
+      <section aria-labelledby="c-h" class="compare wrap" id="compare">
+        <h2 data-reveal="" data-en="Faster. Lighter. Smaller." id="c-h">Schneller. Leichter. Kleiner.</h2>
+        <p class="sub" data-reveal="" data-en="Compared with XAMPP and MySQL Workbench on the same Windows PC.">Im Vergleich mit XAMPP und MySQL Workbench auf demselben Windows-PC.</p>
+        <div class="stats">
+          <article class="stat c-blue">
+            <svg aria-hidden="true" class="ic"><use href="#i-zap"></use></svg>
+            <p class="big"><b data-count="13" data-dec="0" data-en="13×">13×</b><span data-en="faster to start">schneller gestartet</span></p>
             <dl class="bars">
-              <div class="us">
-                <dt>EasyMySQL</dt>
-                <dd><svg aria-hidden="true" class="bar"><rect height="100%" width="7.8%"></rect></svg><span data-en="0.47 s">0,47 s</span></dd>
-              </div>
-              <div>
-                <dt>XAMPP</dt>
-                <dd><svg aria-hidden="true" class="bar"><rect height="100%" width="11.0%" fill="url(#hatch)"></rect></svg><span data-en="0.66 s">0,66 s</span></dd>
-              </div>
-              <div>
-                <dt>Workbench</dt>
-                <dd><svg aria-hidden="true" class="bar"><rect height="100%" width="100.0%" fill="url(#hatch)"></rect></svg><span data-en="6.01 s">6,01 s</span></dd>
-              </div>
+              <div class="us"><dt>EasyMySQL</dt><dd><span class="bar"><i data-w="7.8"></i></span><b data-en="0.47 s">0,47 s</b></dd></div>
+              <div><dt>XAMPP</dt><dd><span class="bar"><i data-w="11.0"></i></span><b data-en="0.66 s">0,66 s</b></dd></div>
+              <div><dt>Workbench</dt><dd><span class="bar"><i data-w="100.0"></i></span><b data-en="6.01 s">6,01 s</b></dd></div>
             </dl>
-            <p class="chart-note" data-en="Warm start until the start view is usable.">Warmstart bis zur bedienbaren Startansicht.</p>
           </article>
-          <article class="chart">
-            <h3 data-en="Memory">Arbeitsspeicher</h3>
-            <p class="win"><b data-en="2.5×">2,5×</b> <span data-en="less RAM than XAMPP with phpMyAdmin">weniger RAM als XAMPP mit phpMyAdmin</span></p>
+          <article class="stat c-violet">
+            <svg aria-hidden="true" class="ic"><use href="#i-memory-stick"></use></svg>
+            <p class="big"><b data-count="2.5" data-dec="1" data-en="2.5×">2,5×</b><span data-en="less memory">weniger Arbeitsspeicher</span></p>
             <dl class="bars">
-              <div class="us">
-                <dt>EasyMySQL</dt>
-                <dd><svg aria-hidden="true" class="bar"><rect height="100%" width="39.9%"></rect></svg><span data-en="133 MiB">133 MiB</span></dd>
-              </div>
-              <div>
-                <dt>XAMPP</dt>
-                <dd><svg aria-hidden="true" class="bar"><rect height="100%" width="100.0%" fill="url(#hatch)"></rect></svg><span data-en="334 MiB">334 MiB</span></dd>
-              </div>
-              <div>
-                <dt>Workbench</dt>
-                <dd><svg aria-hidden="true" class="bar"><rect height="100%" width="80.7%" fill="url(#hatch)"></rect></svg><span data-en="269 MiB">269 MiB</span></dd>
-              </div>
+              <div class="us"><dt>EasyMySQL</dt><dd><span class="bar"><i data-w="39.9"></i></span><b data-en="140 MB">140 MB</b></dd></div>
+              <div><dt>XAMPP</dt><dd><span class="bar"><i data-w="100.0"></i></span><b data-en="350 MB">350 MB</b></dd></div>
+              <div><dt>Workbench</dt><dd><span class="bar"><i data-w="80.7"></i></span><b data-en="282 MB">282 MB</b></dd></div>
             </dl>
-            <p class="chart-note" data-en="Private working set at idle, without the database server.">Privater Arbeitssatz im Leerlauf, ohne Datenbankserver.</p>
           </article>
-          <article class="chart">
-            <h3 data-en="Processes">Prozesse</h3>
-            <p class="win"><b>1</b> <span data-en="process instead of 11 with XAMPP">Prozess statt 11 bei XAMPP</span></p>
+          <article class="stat c-green">
+            <svg aria-hidden="true" class="ic"><use href="#i-package"></use></svg>
+            <p class="big"><b data-count="3.4" data-dec="1" data-en="3.4×">3,4×</b><span data-en="smaller download">kleinerer Download</span></p>
             <dl class="bars">
-              <div class="us">
-                <dt>EasyMySQL</dt>
-                <dd><svg aria-hidden="true" class="bar"><rect height="100%" width="9.1%"></rect></svg><span data-en="1">1</span></dd>
-              </div>
-              <div>
-                <dt>XAMPP</dt>
-                <dd><svg aria-hidden="true" class="bar"><rect height="100%" width="100.0%" fill="url(#hatch)"></rect></svg><span data-en="11">11</span></dd>
-              </div>
-              <div>
-                <dt>Workbench</dt>
-                <dd><svg aria-hidden="true" class="bar"><rect height="100%" width="54.5%" fill="url(#hatch)"></rect></svg><span data-en="6">6</span></dd>
-              </div>
+              <div class="us"><dt>EasyMySQL</dt><dd><span class="bar"><i data-w="29.5"></i></span><b data-en="77 MB">77 MB</b></dd></div>
+              <div><dt>XAMPP</dt><dd><span class="bar"><i data-w="73.2"></i></span><b data-en="191 MB">191 MB</b></dd></div>
+              <div><dt>Workbench</dt><dd><span class="bar"><i data-w="100.0"></i></span><b data-en="261 MB">261 MB</b></dd></div>
             </dl>
-            <p class="chart-note" data-en="All processes of the start view. For XAMPP including Apache and the browser for phpMyAdmin.">Alle Prozesse der Startansicht. Bei XAMPP samt Apache und Browser für phpMyAdmin.</p>
           </article>
-          <article class="chart">
-            <h3 data-en="Download">Download</h3>
-            <p class="win"><b data-en="3.4×">3,4×</b> <span data-en="smaller than MySQL Workbench">kleiner als MySQL Workbench</span></p>
-            <dl class="bars">
-              <div class="us">
-                <dt>EasyMySQL</dt>
-                <dd><svg aria-hidden="true" class="bar"><rect height="100%" width="29.5%"></rect></svg><span data-en="77 MB">77 MB</span></dd>
-              </div>
-              <div>
-                <dt>XAMPP</dt>
-                <dd><svg aria-hidden="true" class="bar"><rect height="100%" width="73.2%" fill="url(#hatch)"></rect></svg><span data-en="191 MB">191 MB</span></dd>
-              </div>
-              <div>
-                <dt>Workbench</dt>
-                <dd><svg aria-hidden="true" class="bar"><rect height="100%" width="100.0%" fill="url(#hatch)"></rect></svg><span data-en="261 MB">261 MB</span></dd>
-              </div>
-            </dl>
-            <p class="chart-note" data-en="Windows installers. EasyMySQL includes MariaDB, Workbench has no server.">Windows-Installer. EasyMySQL bringt MariaDB mit, Workbench keinen Server.</p>
-          </article>
-          </div>
-          <div aria-label="Funktionsvergleich, horizontal scrollbar" class="table-scroll" data-en-label="Feature comparison, scroll horizontally" role="region" tabindex="0">
-            <table>
-              <caption class="sr-only" data-en="Features of EasyMySQL, XAMPP and MySQL Workbench">Funktionen von EasyMySQL, XAMPP und MySQL Workbench</caption>
-              <thead>
-                <tr><td></td><th scope="col">EasyMySQL</th><th scope="col">XAMPP</th><th scope="col">Workbench</th></tr>
-              </thead>
-              <tbody>
-              <tr class="group"><th colspan="4" scope="colgroup" data-en="Database">Datenbank</th></tr>
-              <tr><th scope="row" data-en="Database server included">Datenbankserver enthalten</th><td class="yes"><span data-en="on Windows">unter Windows</span></td><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td></tr>
-              <tr><th scope="row" data-en="Works without a browser">Läuft ohne Browser</th><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td></tr>
-              <tr><th scope="row" data-en="SQL editor with completion">SQL-Editor mit Vervollständigung</th><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td></tr>
-              <tr><th scope="row" data-en="Edit tables in place">Tabellen direkt bearbeiten</th><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td></tr>
-              <tr><th scope="row" data-en="Fix errors with one click">Fehler per Klick beheben</th><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td></tr>
-              <tr class="group"><th colspan="4" scope="colgroup" data-en="Development">Entwicklung</th></tr>
-              <tr><th scope="row" data-en="Write and run Java projects">Java-Projekte schreiben und ausführen</th><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td></tr>
-              <tr><th scope="row" data-en="Git, branches and pull requests">Git, Branches und Pull Requests</th><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td></tr>
-              <tr class="group"><th colspan="4" scope="colgroup" data-en="AI">KI</th></tr>
-              <tr><th scope="row" data-en="Chat with Claude Code and Codex">Chat mit Claude Code und Codex</th><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td></tr>
-              <tr><th scope="row" data-en="MCP server for AI tools">MCP-Server für KI-Werkzeuge</th><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td></tr>
-              <tr class="group"><th colspan="4" scope="colgroup" data-en="What the others do better">Was die anderen besser können</th></tr>
-              <tr><th scope="row" data-en="Apache and PHP for websites">Apache und PHP für Webseiten</th><td class="no"><span class="sr-only" data-en="No">Nein</span></td><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td></tr>
-              <tr><th scope="row" data-en="Visual Explain and performance reports">Visual Explain und Performance-Berichte</th><td class="no"><span class="sr-only" data-en="No">Nein</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td></tr>
-              </tbody><tfoot><tr><th scope="row" data-en="Available">Vorhanden</th><td><span data-en="9 of 11">9 von 11</span></td><td><span data-en="4 of 11">4 von 11</span></td><td><span data-en="4 of 11">4 von 11</span></td></tr></tfoot><tbody>
-              </tbody>
-            </table>
-          </div>
-          <details class="method">
-            <summary data-en="How it was measured">So wurde gemessen</summary>
-            <p data-en="EasyMySQL 1.1.15, XAMPP Portable 8.2.12 with phpMyAdmin 5.2.1 in its own Chrome, MySQL Workbench 26.10.0. Five warm starts per app with fresh profiles; values are medians after 8 s of settling and 10 s idle. Memory is the private working set of all client processes without the shared MariaDB server. The start signals differ per app: input loop ready for EasyMySQL, visible welcome page for Workbench, loaded phpMyAdmin page with Apache already running. Download sizes: EasyMySQL setup, XAMPP 8.5.12 installer and Workbench 26.10.0 MSI.">EasyMySQL 1.1.15, XAMPP Portable 8.2.12 mit phpMyAdmin 5.2.1 im eigenen Chrome, MySQL Workbench 26.10.0. Fünf Warmstarts pro App mit frischen Profilen; die Werte sind Mediane nach 8 s Einschwingen und 10 s Leerlauf. Der Arbeitsspeicher ist der private Arbeitssatz aller Client-Prozesse ohne den gemeinsamen MariaDB-Server. Die Startsignale unterscheiden sich je App: Eingabeschleife bereit bei EasyMySQL, sichtbare Startseite bei Workbench, geladene phpMyAdmin-Seite bei laufendem Apache. Downloadgrößen: EasyMySQL-Setup, XAMPP-8.5.12-Installer und Workbench-26.10.0-MSI.</p>
-            <p><a data-en="Raw measurements (JSON)" href="/benchmarks.json">Rohdaten (JSON)</a> <a data-en="Measurement script" href="https://github.com/gravijet/EasyMySQL/blob/main/website/measure-runtime.py">Messskript</a></p>
-          </details>
+        </div>
+        <h3 class="table-title" data-reveal="" data-en="What each one can do">Wer kann was?</h3>
+        <div aria-label="Funktionsvergleich, horizontal scrollbar" class="table-scroll" data-en-label="Feature comparison, scroll horizontally" data-reveal="" role="region" tabindex="0">
+          <table>
+            <caption class="sr-only" data-en="Features of EasyMySQL, XAMPP and MySQL Workbench">Funktionen von EasyMySQL, XAMPP und MySQL Workbench</caption>
+            <thead>
+              <tr><td></td><th scope="col"><span>EasyMySQL</span></th><th scope="col">XAMPP</th><th scope="col">Workbench</th></tr>
+            </thead>
+            <tbody>
+              <tr class="group"><th colspan="4" scope="colgroup"><svg aria-hidden="true" class="ic"><use href="#i-database"></use></svg><span data-en="Database">Datenbank</span></th></tr>
+              <tr><th scope="row" data-en="Database server included">Datenbankserver schon dabei</th><td class="yes"><svg aria-hidden="true" class="ic"><use href="#i-yes"></use></svg><span class="sr-only" data-en="Yes">Ja</span></td><td class="yes"><svg aria-hidden="true" class="ic"><use href="#i-yes"></use></svg><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><svg aria-hidden="true" class="ic"><use href="#i-no"></use></svg><span class="sr-only" data-en="No">Nein</span></td></tr>
+              <tr><th scope="row" data-en="Works without a browser">Läuft ohne Browser</th><td class="yes"><svg aria-hidden="true" class="ic"><use href="#i-yes"></use></svg><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><svg aria-hidden="true" class="ic"><use href="#i-no"></use></svg><span class="sr-only" data-en="No">Nein</span></td><td class="yes"><svg aria-hidden="true" class="ic"><use href="#i-yes"></use></svg><span class="sr-only" data-en="Yes">Ja</span></td></tr>
+              <tr><th scope="row" data-en="SQL editor with suggestions">SQL-Editor mit Vorschlägen</th><td class="yes"><svg aria-hidden="true" class="ic"><use href="#i-yes"></use></svg><span class="sr-only" data-en="Yes">Ja</span></td><td class="yes"><svg aria-hidden="true" class="ic"><use href="#i-yes"></use></svg><span class="sr-only" data-en="Yes">Ja</span></td><td class="yes"><svg aria-hidden="true" class="ic"><use href="#i-yes"></use></svg><span class="sr-only" data-en="Yes">Ja</span></td></tr>
+              <tr><th scope="row" data-en="Fix errors with one click">Fehler mit einem Klick beheben</th><td class="yes"><svg aria-hidden="true" class="ic"><use href="#i-yes"></use></svg><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><svg aria-hidden="true" class="ic"><use href="#i-no"></use></svg><span class="sr-only" data-en="No">Nein</span></td><td class="no"><svg aria-hidden="true" class="ic"><use href="#i-no"></use></svg><span class="sr-only" data-en="No">Nein</span></td></tr>
+              <tr><th scope="row" data-en="Edit tables in place">Tabellen direkt bearbeiten</th><td class="yes"><svg aria-hidden="true" class="ic"><use href="#i-yes"></use></svg><span class="sr-only" data-en="Yes">Ja</span></td><td class="yes"><svg aria-hidden="true" class="ic"><use href="#i-yes"></use></svg><span class="sr-only" data-en="Yes">Ja</span></td><td class="yes"><svg aria-hidden="true" class="ic"><use href="#i-yes"></use></svg><span class="sr-only" data-en="Yes">Ja</span></td></tr>
+              <tr><th scope="row" data-en="ER diagrams">ER-Diagramme</th><td class="yes"><svg aria-hidden="true" class="ic"><use href="#i-yes"></use></svg><span class="sr-only" data-en="Yes">Ja</span></td><td class="yes"><svg aria-hidden="true" class="ic"><use href="#i-yes"></use></svg><span class="sr-only" data-en="Yes">Ja</span></td><td class="yes"><svg aria-hidden="true" class="ic"><use href="#i-yes"></use></svg><span class="sr-only" data-en="Yes">Ja</span></td></tr>
+              <tr><th scope="row" data-en="Click queries together">Abfragen zusammenklicken</th><td class="yes"><svg aria-hidden="true" class="ic"><use href="#i-yes"></use></svg><span class="sr-only" data-en="Yes">Ja</span></td><td class="yes"><svg aria-hidden="true" class="ic"><use href="#i-yes"></use></svg><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><svg aria-hidden="true" class="ic"><use href="#i-no"></use></svg><span class="sr-only" data-en="No">Nein</span></td></tr>
+              <tr><th scope="row" data-en="Import from MongoDB and Redis">Import aus MongoDB und Redis</th><td class="yes"><svg aria-hidden="true" class="ic"><use href="#i-yes"></use></svg><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><svg aria-hidden="true" class="ic"><use href="#i-no"></use></svg><span class="sr-only" data-en="No">Nein</span></td><td class="no"><svg aria-hidden="true" class="ic"><use href="#i-no"></use></svg><span class="sr-only" data-en="No">Nein</span></td></tr>
+              <tr><th scope="row" data-en="Automatic backups">Automatische Backups</th><td class="yes"><svg aria-hidden="true" class="ic"><use href="#i-yes"></use></svg><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><svg aria-hidden="true" class="ic"><use href="#i-no"></use></svg><span class="sr-only" data-en="No">Nein</span></td><td class="no"><svg aria-hidden="true" class="ic"><use href="#i-no"></use></svg><span class="sr-only" data-en="No">Nein</span></td></tr>
+              <tr><th scope="row" data-en="Manage users and privileges">Benutzer und Rechte verwalten</th><td class="yes"><svg aria-hidden="true" class="ic"><use href="#i-yes"></use></svg><span class="sr-only" data-en="Yes">Ja</span></td><td class="yes"><svg aria-hidden="true" class="ic"><use href="#i-yes"></use></svg><span class="sr-only" data-en="Yes">Ja</span></td><td class="yes"><svg aria-hidden="true" class="ic"><use href="#i-yes"></use></svg><span class="sr-only" data-en="Yes">Ja</span></td></tr>
+              <tr class="group"><th colspan="4" scope="colgroup"><svg aria-hidden="true" class="ic"><use href="#i-coffee"></use></svg><span data-en="Coding">Programmieren</span></th></tr>
+              <tr><th scope="row" data-en="Write, run and debug Java">Java schreiben, starten und debuggen</th><td class="yes"><svg aria-hidden="true" class="ic"><use href="#i-yes"></use></svg><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><svg aria-hidden="true" class="ic"><use href="#i-no"></use></svg><span class="sr-only" data-en="No">Nein</span></td><td class="no"><svg aria-hidden="true" class="ic"><use href="#i-no"></use></svg><span class="sr-only" data-en="No">Nein</span></td></tr>
+              <tr><th scope="row" data-en="Git and GitHub">Git und GitHub</th><td class="yes"><svg aria-hidden="true" class="ic"><use href="#i-yes"></use></svg><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><svg aria-hidden="true" class="ic"><use href="#i-no"></use></svg><span class="sr-only" data-en="No">Nein</span></td><td class="no"><svg aria-hidden="true" class="ic"><use href="#i-no"></use></svg><span class="sr-only" data-en="No">Nein</span></td></tr>
+              <tr><th scope="row" data-en="Web server with PHP">Webserver mit PHP</th><td class="no"><svg aria-hidden="true" class="ic"><use href="#i-no"></use></svg><span class="sr-only" data-en="No">Nein</span></td><td class="yes"><svg aria-hidden="true" class="ic"><use href="#i-yes"></use></svg><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><svg aria-hidden="true" class="ic"><use href="#i-no"></use></svg><span class="sr-only" data-en="No">Nein</span></td></tr>
+              <tr class="group"><th colspan="4" scope="colgroup"><svg aria-hidden="true" class="ic"><use href="#i-sparkles"></use></svg><span data-en="AI">KI</span></th></tr>
+              <tr><th scope="row" data-en="Chat with Claude Code and Codex">Chat mit Claude Code und Codex</th><td class="yes"><svg aria-hidden="true" class="ic"><use href="#i-yes"></use></svg><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><svg aria-hidden="true" class="ic"><use href="#i-no"></use></svg><span class="sr-only" data-en="No">Nein</span></td><td class="no"><svg aria-hidden="true" class="ic"><use href="#i-no"></use></svg><span class="sr-only" data-en="No">Nein</span></td></tr>
+              <tr><th scope="row" data-en="AI knows your tables">KI kennt deine Tabellen</th><td class="yes"><svg aria-hidden="true" class="ic"><use href="#i-yes"></use></svg><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><svg aria-hidden="true" class="ic"><use href="#i-no"></use></svg><span class="sr-only" data-en="No">Nein</span></td><td class="no"><svg aria-hidden="true" class="ic"><use href="#i-no"></use></svg><span class="sr-only" data-en="No">Nein</span></td></tr>
+              <tr class="group"><th colspan="4" scope="colgroup"><svg aria-hidden="true" class="ic"><use href="#i-heart"></use></svg><span data-en="Other">Sonstiges</span></th></tr>
+              <tr><th scope="row" data-en="Performance reports for experts">Leistungsberichte für Profis</th><td class="no"><svg aria-hidden="true" class="ic"><use href="#i-no"></use></svg><span class="sr-only" data-en="No">Nein</span></td><td class="no"><svg aria-hidden="true" class="ic"><use href="#i-no"></use></svg><span class="sr-only" data-en="No">Nein</span></td><td class="yes"><svg aria-hidden="true" class="ic"><use href="#i-yes"></use></svg><span class="sr-only" data-en="Yes">Ja</span></td></tr>
+              <tr><th scope="row" data-en="Free">Kostenlos</th><td class="yes"><svg aria-hidden="true" class="ic"><use href="#i-yes"></use></svg><span class="sr-only" data-en="Yes">Ja</span></td><td class="yes"><svg aria-hidden="true" class="ic"><use href="#i-yes"></use></svg><span class="sr-only" data-en="Yes">Ja</span></td><td class="yes"><svg aria-hidden="true" class="ic"><use href="#i-yes"></use></svg><span class="sr-only" data-en="Yes">Ja</span></td></tr>
+            </tbody>
+            <tfoot><tr><th scope="row" data-en="Total">Gesamt</th><td><b data-count="15" data-dec="0">15</b><span> / 17</span></td><td><b data-count="8" data-dec="0">8</b><span> / 17</span></td><td><b data-count="7" data-dec="0">7</b><span> / 17</span></td></tr></tfoot>
+          </table>
         </div>
       </section>
 
-      <section aria-labelledby="ai-h" class="ai wrap" id="ai">
-        <div>
-          <h2 data-en="Claude Code and Codex built in" id="ai-h">Claude Code und Codex eingebaut</h2>
-          <p class="body" data-en="Chat with Claude Code or Codex right inside the app. Both read your schema and query your database through the built-in MCP server.">Chatte direkt in der App mit Claude Code oder Codex. Beide lesen dein Schema und fragen deine Datenbank über den eingebauten MCP-Server ab.</p>
+      <section aria-labelledby="ai-h" class="wrap" id="ai">
+        <div class="ai" data-reveal="" data-spot="">
+          <div aria-hidden="true" class="aurora"><i></i><i></i></div>
+          <svg aria-hidden="true" class="ic spark"><use href="#i-sparkles"></use></svg>
+          <h2 data-en="Claude Code and Codex are built in" id="ai-h">Claude Code und Codex sind eingebaut</h2>
+          <p data-en="Ask the AI about your database. It knows your tables. Just tick the box during installation.">Frag die KI zu deiner Datenbank. Sie kennt deine Tabellen. Beim Installieren einfach anhaken.</p>
+          <ul>
+            <li><svg aria-hidden="true" class="ic"><use href="#i-shield-check"></use></svg><span data-en="Reads only, until you allow more">Liest nur, bis du mehr erlaubst</span></li>
+            <li><svg aria-hidden="true" class="ic"><use href="#i-archive-restore"></use></svg><span data-en="Backs up before anything is deleted">Sichert, bevor etwas gelöscht wird</span></li>
+          </ul>
+        </div>
+      </section>
+
+      <section aria-labelledby="d-h" class="download wrap" id="download">
+        <h2 data-reveal="" data-en="Ready? Let's go." id="d-h">Bereit? Los geht’s.</h2>
+        <div class="cta" data-reveal="">
+          <a class="btn big" data-dl="setup" data-magnet="" href="/download/setup"><svg aria-hidden="true" class="ic"><use href="#i-download"></use></svg><span data-en="Download for Windows">Für Windows herunterladen</span></a>
+        </div>
+        <ul class="systems" data-reveal="">
+          <li><b>Windows 10/11</b><span data-en="Everything included.">Alles dabei.</span> <a data-dl="portable" data-en="Portable ZIP" href="/download/portable">Portable ZIP</a></li>
+          <li><b>macOS 11+</b><span data-en="Needs MariaDB from Homebrew.">Braucht MariaDB über Homebrew.</span> <a data-dl="macos" href="/download/macos">Download</a></li>
+          <li><b>Linux</b><span data-en="Needs MariaDB from your package manager.">Braucht MariaDB aus dem Paketmanager.</span> <a data-dl="linux" href="/download/linux">Download</a></li>
+        </ul>
+        <p class="download-notice" hidden="" id="download-notice" role="status"></p>
+        <p class="release-error" hidden="" id="release-error" role="status"></p>
+        <details class="terminal" data-reveal="">
+          <summary><svg aria-hidden="true" class="ic"><use href="#i-square-terminal"></use></svg><span data-en="Prefer installing from a terminal?">Lieber per Terminal installieren?</span><svg aria-hidden="true" class="ic chev"><use href="#i-chevron-down"></use></svg></summary>
+          <div aria-label="Betriebssystem" class="install-os" data-en-label="Operating system" role="radiogroup">
+            <button aria-checked="true" data-install-os="win" role="radio" type="button">Windows</button><button aria-checked="false" data-install-os="mac" role="radio" type="button">macOS</button><button aria-checked="false" data-install-os="linux" role="radio" type="button">Linux</button>
+          </div>
           <div class="cmd">
-            <code id="c-setup">easymysql install-ai</code>
-            <button class="copy" data-copy-from="#c-setup" data-en="Copy" type="button">Kopieren</button>
+            <code id="hero-cmd">irm https://mysql.benjaminberger.at/install | iex</code>
+            <button aria-label="Befehl kopieren" class="copy" data-copy-from="#hero-cmd" data-en-label="Copy command" type="button"><svg aria-hidden="true" class="ic"><use href="#i-copy"></use></svg></button>
           </div>
-          <p class="terminal-shell" data-en="Downloads both assistants and connects them. The installer offers this too.">Lädt beide Assistenten herunter und verbindet sie. Der Installer bietet das auch an.</p>
-        </div>
-        <dl class="ai-facts">
-          <div>
-            <dt data-en="Read-only by default">Standardmäßig nur lesend</dt>
-            <dd data-en="Queries run in READ ONLY transactions until you allow changes.">Abfragen laufen in READ-ONLY-Transaktionen, bis du Änderungen erlaubst.</dd>
-          </div>
-          <div>
-            <dt data-en="Backup before destructive SQL">Backup vor destruktivem SQL</dt>
-            <dd data-en="Automatic database backup before DROP, TRUNCATE or DELETE without WHERE.">Automatische Datenbanksicherung vor DROP, TRUNCATE oder DELETE ohne WHERE.</dd>
-          </div>
-        </dl>
-      </section>
-
-      <section aria-labelledby="s-h" class="systems wrap">
-        <h2 data-en="Systems and formats" id="s-h">Systeme und Formate</h2>
-        <dl>
-          <div><dt>Windows 10/11 x64</dt><dd><span data-en="MariaDB is included.">MariaDB ist enthalten.</span> <a data-dl="portable" data-en="Portable ZIP" href="/download/portable">Portable ZIP</a></dd></div>
-          <div><dt>macOS 11+</dt><dd data-en="Apple Silicon and Intel. Needs MariaDB from Homebrew.">Apple Silicon und Intel. Benötigt MariaDB über Homebrew.</dd></div>
-          <div><dt>Linux x64</dt><dd data-en="glibc 2.35 or newer. Needs MariaDB from your package manager.">glibc 2.35 oder neuer. Benötigt MariaDB aus dem Paketmanager.</dd></div>
-          <div><dt>Import</dt><dd data-en="MariaDB, MySQL, PostgreSQL, SQLite, MongoDB, Redis and CSV">MariaDB, MySQL, PostgreSQL, SQLite, MongoDB, Redis und CSV</dd></div>
-          <div><dt>Export</dt><dd data-en="SQL, CSV, JSON, XML, SQLite, Redis and server transfer">SQL, CSV, JSON, XML, SQLite, Redis und Servertransfer</dd></div>
-        </dl>
+          <p class="terminal-shell" id="terminal-shell">PowerShell</p>
+        </details>
       </section>
     </main>
     <footer class="foot wrap">
-      <span data-en="Free and open source under the MIT license">Kostenlos und quelloffen unter der MIT-Lizenz</span>
-      <a href="https://github.com/gravijet/EasyMySQL">GitHub</a>
-      <a href="https://benjaminberger.at">Benjamin Berger</a>
+      <span><span data-en="Free and open source">Kostenlos und quelloffen</span> <span data-release-version=""></span></span>
       <a data-en="Imprint" href="https://benjaminberger.at/impressum">Impressum</a>
       <a data-en="Privacy" href="https://benjaminberger.at/datenschutz">Datenschutz</a>
     </footer>

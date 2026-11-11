@@ -184,11 +184,28 @@
       "EasyMySQL – Database, SQL & Java",
     );
     $('meta[name="description"]').content = text(
-      "MariaDB-Server, SQL-Editor, ER-Diagramme und Java-Entwicklung in einer nativen App. Kostenlos. Direkte Downloads für Windows, macOS und Linux.",
-      "MariaDB server, SQL editor, ER diagrams and Java development in one native app. Free. Direct downloads for Windows, macOS and Linux.",
+      "Datenbank, SQL-Editor, ER-Diagramme und Java in einer App. Kostenlos für Windows, macOS und Linux.",
+      "Database, SQL editor, ER diagrams and Java in one app. Free for Windows, macOS and Linux.",
     );
+    teileWoerter();
     zeigeRelease();
     zeigeFehler();
+  }
+  // Ueberschrift in Woerter teilen, damit sie einzeln einblenden
+  function teileWoerter() {
+    $$("[data-split]").forEach(function (el) {
+      var woerter = el.textContent.trim().split(/\s+/);
+      el.replaceChildren();
+      woerter.forEach(function (wort, i) {
+        var span = document.createElement("span");
+        span.className = "w";
+        span.textContent = wort;
+        span.style.setProperty("--i", i);
+        // der farbige Schlusssatz (letzte vier Woerter) beginnt in einer neuen Zeile
+        if (i === woerter.length - 4) el.append(document.createElement("br"));
+        el.append(span, " ");
+      });
+    });
   }
   $("#lang").addEventListener("click", function () {
     var neu = sprache === "de" ? "en" : "de";
@@ -230,71 +247,30 @@
       clearTimeout(zeitlimit);
     });
 
-  // Tabs: Pfeiltasten, Home/End und eine einzige Tabposition pro Gruppe.
+  var ruhig = window.matchMedia("(prefers-reduced-motion: reduce)");
+
+  // Tabs: Pfeiltasten, Home/End, eine Tabposition; die farbige Flaeche gleitet zum gewaehlten Tab.
   var tabs = $$("[role=tab]");
-  var bewegungReduziert = window.matchMedia("(prefers-reduced-motion: reduce)");
-  var bildAnfrage = 0;
-  function waehleTab(tab, fokus) {
-    var anfrage = ++bildAnfrage;
-    var bild = document
-      .getElementById(tab.getAttribute("aria-controls"))
-      .querySelector("img");
-    bild.loading = "eager";
-    if (bild.complete && bild.naturalWidth) {
-      zeigeTab(tab, fokus);
-      return;
-    }
-    $(".feature-panels").setAttribute("aria-busy", "true");
-    bild
-      .decode()
-      .then(function () {
-        if (anfrage !== bildAnfrage) return;
-        $(".feature-panels").removeAttribute("aria-busy");
-        zeigeTab(tab, fokus);
-      })
-      .catch(function () {
-        if (anfrage !== bildAnfrage) return;
-        $(".feature-panels").removeAttribute("aria-busy");
-        zeigeMeldung(
-          text(
-            "Bild nicht geladen. Bitte erneut versuchen.",
-            "Image could not load. Please try again.",
-          ),
-        );
-      });
+  var gleiter = $(".glider");
+  function setzeGleiter() {
+    var tab = $("[role=tab][aria-selected=true]");
+    gleiter.style.width = tab.offsetWidth + "px";
+    gleiter.style.translate = tab.offsetLeft + "px 0";
   }
-  function zeigeTab(tab, fokus) {
-    var vorher = $("[role=tab][aria-selected=true]");
+  function waehleTab(tab, fokus) {
     tabs.forEach(function (el) {
       var aktiv = el === tab;
       el.setAttribute("aria-selected", String(aktiv));
       el.tabIndex = aktiv ? 0 : -1;
       document.getElementById(el.getAttribute("aria-controls")).hidden = !aktiv;
     });
-    var bild = document
-      .getElementById(tab.getAttribute("aria-controls"))
-      .querySelector("img");
-    if (vorher !== tab && bild.animate && !bewegungReduziert.matches) {
-      bild.animate(
-        [
-          { clipPath: "inset(0 12% 0 0)", opacity: 0.65 },
-          { clipPath: "inset(0 0% 0 0)", opacity: 1 },
-        ],
-        { duration: 520, easing: "cubic-bezier(0.19, 1, 0.22, 1)" },
-      );
-    }
-    if (fokus) {
-      tab.focus({ preventScroll: true });
-    }
-    var leiste = tab.parentElement;
-    if (
-      tab.offsetLeft < leiste.scrollLeft ||
-      tab.offsetLeft + tab.offsetWidth > leiste.scrollLeft + leiste.clientWidth
-    )
-      leiste.scrollTo({
-        left: Math.max(0, tab.offsetLeft - 20),
-        behavior: "instant",
-      });
+    setzeGleiter();
+    if (fokus) tab.focus({ preventScroll: true });
+    var leiste = $(".tabs-scroll");
+    leiste.scrollTo({
+      left: tab.offsetLeft - (leiste.clientWidth - tab.offsetWidth) / 2,
+      behavior: ruhig.matches ? "auto" : "smooth",
+    });
   }
   tabs.forEach(function (tab, index) {
     tab.tabIndex = index === 0 ? 0 : -1;
@@ -303,9 +279,9 @@
     });
     tab.addEventListener("keydown", function (e) {
       var ziel =
-        e.key === "ArrowRight" || e.key === "ArrowDown"
+        e.key === "ArrowRight"
           ? (index + 1) % tabs.length
-          : e.key === "ArrowLeft" || e.key === "ArrowUp"
+          : e.key === "ArrowLeft"
             ? (index + tabs.length - 1) % tabs.length
             : e.key === "Home"
               ? 0
@@ -318,19 +294,118 @@
       }
     });
   });
+  setzeGleiter();
+  addEventListener("resize", setzeGleiter, { passive: true });
+  if (document.fonts) document.fonts.ready.then(setzeGleiter);
 
-  // Balken wachsen einmal, sobald die Diagramme sichtbar sind.
-  var diagramme = $(".charts");
-  if ("IntersectionObserver" in window)
-    new IntersectionObserver(
-      function (e, beobachter) {
-        if (!e[0].isIntersecting) return;
-        diagramme.classList.add("seen");
-        beobachter.disconnect();
+  // Zahlen zaehlen hoch, sobald sie sichtbar werden.
+  function zaehle(el) {
+    var ziel = parseFloat(el.dataset.count);
+    var stellen = +el.dataset.dec;
+    var anhang = el.textContent.replace(/^[\d.,]+/, "");
+    var beginn = performance.now();
+    (function schritt(jetzt) {
+      var t = Math.min(1, (jetzt - beginn) / 1600);
+      var wert = t === 1 ? ziel : ziel * (1 - Math.pow(2, -10 * t));
+      el.textContent =
+        new Intl.NumberFormat(sprache, {
+          minimumFractionDigits: stellen,
+          maximumFractionDigits: stellen,
+        }).format(wert) + anhang;
+      if (t < 1) requestAnimationFrame(schritt);
+    })(beginn);
+  }
+
+  // Einblenden beim Scrollen: Geschwister nacheinander, Balken und Zaehler starten mit.
+  function zeige(el) {
+    el.classList.add("in");
+    $$("[data-w]").forEach(function (balken) {
+      if (el.contains(balken)) balken.style.width = balken.dataset.w + "%";
+    });
+    if (!ruhig.matches)
+      $$("[data-count]").forEach(function (zahl) {
+        if (el.contains(zahl)) zaehle(zahl);
+      });
+  }
+  var ziele = $$("[data-reveal], .tile, .stat, tbody tr, tfoot tr");
+  if ("IntersectionObserver" in window) {
+    var beobachter = new IntersectionObserver(
+      function (eintraege) {
+        var reihe = 0;
+        eintraege.forEach(function (e) {
+          if (!e.isIntersecting) return;
+          e.target.style.setProperty("--d", reihe++);
+          zeige(e.target);
+          beobachter.unobserve(e.target);
+        });
       },
-      { threshold: 0.15 },
-    ).observe(diagramme);
-  else diagramme.classList.add("seen");
+      { threshold: 0.2, rootMargin: "0px 0px -6% 0px" },
+    );
+    ziele.forEach(function (el) {
+      beobachter.observe(el);
+    });
+  } else ziele.forEach(zeige);
+
+  // Scrollen: Fortschrittsbalken, schmalere Kopfzeile, das Fenster richtet sich auf.
+  var fenster = $("#hero-window");
+  var mausX = 0,
+    mausY = 0,
+    kippX = 0,
+    kippY = 0,
+    bild = 0;
+  function zeichne() {
+    bild = 0;
+    var hoch = document.documentElement.scrollHeight - innerHeight;
+    wurzel.style.setProperty("--scroll", hoch > 0 ? (scrollY / hoch).toFixed(4) : 0);
+    $(".nav").classList.toggle("small", scrollY > 60);
+    if (ruhig.matches) return;
+    var r = fenster.parentElement.getBoundingClientRect();
+    // 1 = Fenster noch unten im Bild, 0 = oben angekommen
+    var k = Math.min(1, Math.max(0, (r.top - innerHeight * 0.18) / (innerHeight * 0.62)));
+    kippX += (mausX - kippX) * 0.08;
+    kippY += (mausY - kippY) * 0.08;
+    fenster.style.setProperty("--rx", (k * 22 - kippY * 3).toFixed(2) + "deg");
+    fenster.style.setProperty("--ry", (kippX * 4).toFixed(2) + "deg");
+    fenster.style.setProperty("--s", (1 - k * 0.1).toFixed(4));
+    if (Math.abs(mausX - kippX) + Math.abs(mausY - kippY) > 0.002) anfordern();
+  }
+  function anfordern() {
+    if (!bild) bild = requestAnimationFrame(zeichne);
+  }
+  addEventListener("scroll", anfordern, { passive: true });
+  addEventListener("resize", anfordern, { passive: true });
+  addEventListener(
+    "pointermove",
+    function (e) {
+      if (e.pointerType !== "mouse" || ruhig.matches) return;
+      mausX = e.clientX / innerWidth - 0.5;
+      mausY = e.clientY / innerHeight - 0.5;
+      anfordern();
+    },
+    { passive: true },
+  );
+  anfordern();
+
+  // Lichtfleck folgt der Maus (Kacheln, KI-Flaeche); der grosse Knopf zieht leicht zur Maus.
+  $$(".tile, [data-spot]").forEach(function (el) {
+    el.addEventListener("pointermove", function (e) {
+      var r = el.getBoundingClientRect();
+      el.style.setProperty("--mx", e.clientX - r.left + "px");
+      el.style.setProperty("--my", e.clientY - r.top + "px");
+    });
+  });
+  $$("[data-magnet]").forEach(function (el) {
+    el.addEventListener("pointermove", function (e) {
+      if (e.pointerType !== "mouse" || ruhig.matches) return;
+      var r = el.getBoundingClientRect();
+      el.style.setProperty("--tx", ((e.clientX - r.left - r.width / 2) * 0.18).toFixed(1) + "px");
+      el.style.setProperty("--ty", ((e.clientY - r.top - r.height / 2) * 0.3).toFixed(1) + "px");
+    });
+    el.addEventListener("pointerleave", function () {
+      el.style.setProperty("--tx", "0px");
+      el.style.setProperty("--ty", "0px");
+    });
+  });
 
   var meldung;
   function zeigeMeldung(inhalt) {
