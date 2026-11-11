@@ -1,8 +1,8 @@
 # Design System: EasyMySQL Website
 
-The page is one stage: a dark, calm liquid behind everything. Only at the top the word EasyMySQL rises out of it as an embossed relief. Everything else is normal type at moderate sizes, real screenshots and one comparison table. About twelve screens long, free scrolling, nothing has to be clicked.
+The page is one stage: a dark, calm liquid behind everything. Only at the top the word EasyMySQL rises out of it as an embossed relief. Everything else is normal type at moderate sizes, real screenshots and one comparison table. About eleven screens long, free scrolling, nothing has to be clicked.
 
-Direction from the user (2026-11-11, last rounds): unique background, no rounded 3D discs, nothing that must be clicked, no scroll bars, no standard underlined links, no mention of GitHub; a longer page, not over the top; clean, smooth, clearly readable; then: measurements belong in one table together with the feature comparison, real check marks that look the same everywhere, no giant standalone text sections (the "0,47 s" and "Claude Code & Codex" reliefs were removed, the AI brands need not be named), more information and content.
+Direction from the user (2026-11-11, last rounds): unique background, no rounded 3D discs, nothing that must be clicked, no scroll bars, no standard underlined links, no mention of GitHub; a longer page, not over the top; clean, smooth, clearly readable; then: measurements belong in one table together with the feature comparison, real check marks that look the same everywhere, no giant standalone text sections (the "0,47 s" and "Claude Code & Codex" reliefs were removed, the AI brands need not be named), more information and content; then: no filler content (their example: mentioning Ctrl+Z), plain human wording instead of slogans, clearer numbers in the table, no version number in the footer.
 
 ## The stage (`gl.js`)
 
@@ -13,13 +13,12 @@ One WebGL fragment shader. Height = slow liquid swells + blurred text (drawn to 
 | Section | Content |
 |---|---|
 | Top | relief EasyMySQL (about 70% of the width), one sentence, OS words, the install command, file words |
-| Intro | one heading, one paragraph, four facts |
-| Six features | title, one line, three points, the real screenshot (alternating sides); liquid color changes per feature |
-| Also included | twelve short entries in three columns |
-| Comparison | one table: speed, size, then features by group; EasyMySQL column tinted; sticky header |
-| Three steps | numbered because it is a real sequence |
-| Good to know | six questions with answers, all open |
-| End | the install command again and the footer |
+| Intro | the question "What is EasyMySQL?" and one paragraph |
+| Six features | title, two or three plain sentences, the real screenshot (alternating sides); liquid color changes per feature |
+| What else it can do | six short entries in three columns |
+| Comparison | one left-aligned table: speed, size, then features by group; EasyMySQL column tinted; sticky header |
+| Common questions | four questions with answers, all open |
+| End | the install command again; the footer holds only imprint and privacy |
 
 ## Custom parts
 
@@ -27,7 +26,7 @@ One WebGL fragment shader. Height = slow liquid swells + blurred text (drawn to 
 - **OS choice:** three mono words, a small dot marks the chosen one.
 - **Links:** mono words without underlines; file links carry an arrow that moves on hover.
 - **Screenshots:** arrive slightly turned from below and straighten while scrolling in.
-- **Table marks:** one green check and one red cross (inline SVG symbols `#ok`, `#no`), identical in every column; they draw themselves when their row appears. Numbers count up and thin bars grow.
+- **Table marks:** one green check and one red cross (inline SVG symbols `#ok`, `#no`), identical in every column; they draw themselves when their row appears. Numbers are large with a small unit, count up, and a bar across the cell grows under each.
 - **Scrolling:** native scroll bars are hidden.
 
 Removed as too much: the custom pointer, the slat images, automatic cycling, section snapping, the huge number blocks, the relief sections for a number and for the AI tools, bright liquid highlights behind text and the fixed header. Headings stay below about 3rem.
@@ -37,6 +36,8 @@ Removed as too much: the custom pointer, the slat images, automatic cycling, sec
 Inter Tight for the relief and the few larger lines, Martian Mono for all small labels. Off-white `#f4f1ea` text, `#a6c2ff` for EasyMySQL, ground `#03040a`.
 
 ## Rules
+
+- Copy: plain sentences as you would explain it to a classmate. No slogans, no three-word staccato, no keyboard shortcuts or minor details. Every entry must matter to someone deciding whether to install.
 
 - Nothing says "free", nothing explains the measurements, no GitHub. Numbers come from `/home/benj/client-benchmark-2026-11` (2026-11-11), rounded.
 - Terminal installation is the main action; file downloads are small words.

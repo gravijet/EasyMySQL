@@ -321,42 +321,25 @@ section {
   color: var(--mute);
 }
 
-/* Kurz erklaert: links der Satz, rechts Text und vier Angaben */
+/* Was ist EasyMySQL: links die Frage, rechts ein Absatz */
 .intro {
   display: grid;
-  grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
-  gap: 2rem clamp(2rem, 6vw, 6rem);
+  grid-template-columns: minmax(0, 4fr) minmax(0, 7fr);
+  gap: 1.5rem clamp(2rem, 6vw, 6rem);
   align-items: start;
 }
 .intro > h2 {
   margin-bottom: 0;
 }
 .intro p {
-  max-width: 46ch;
-  font-size: clamp(1.05rem, 1.4vw, 1.25rem);
+  max-width: 56ch;
+  font-size: clamp(1.1rem, 1.55vw, 1.4rem);
   line-height: 1.5;
-}
-.facts {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0 2rem;
-  margin: 2.2rem 0 0;
-}
-.facts div {
-  padding: 0.9rem 0;
-  border-top: 1px solid var(--line);
-}
-.facts dt {
-  font: 500 0.8rem var(--mono);
-  letter-spacing: 0;
-  color: var(--mute);
-}
-.facts dd {
-  margin: 0.3rem 0 0;
   color: var(--fg);
+  opacity: 0.9;
 }
 
-/* Funktionen: Titel, Satz, drei Punkte und das echte App-Bild, abwechselnd links und rechts */
+/* Funktionen: Titel, ein kurzer Absatz und das echte App-Bild, abwechselnd links und rechts */
 .feature {
   display: grid;
   grid-template-columns: minmax(0, 4fr) minmax(0, 8fr);
@@ -373,37 +356,11 @@ section {
   order: 2;
 }
 .feature p {
-  max-width: 30ch;
-  margin-top: 1rem;
-  font-size: clamp(1.05rem, 1.4vw, 1.25rem);
-  line-height: 1.4;
-  color: var(--fg);
-  opacity: 0.9;
-}
-.feature ul {
-  margin: 1.6rem 0 0;
-  padding: 0;
-  list-style: none;
-  max-width: 34ch;
-}
-.feature li {
-  position: relative;
-  padding: 0.7rem 0 0.7rem 1.5rem;
-  font-size: 0.98rem;
-  line-height: 1.35;
+  max-width: 36ch;
+  margin-top: 1.1rem;
+  font-size: clamp(1.02rem, 1.3vw, 1.18rem);
+  line-height: 1.5;
   color: var(--mute);
-  border-top: 1px solid var(--line);
-}
-/* kurzer blauer Strich statt Aufzaehlungspunkt */
-.feature li::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 1.3rem;
-  width: 0.7rem;
-  height: 2px;
-  background: var(--blue);
-  border-radius: 2px;
 }
 .shot {
   display: block;
@@ -427,7 +384,7 @@ section {
   --dir: 1;
 }
 
-/* Ausserdem dabei: zwoelf kurze Eintraege */
+/* Was es sonst noch kann: sechs kurze Eintraege */
 .more ul {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -445,8 +402,7 @@ section {
   font: 620 1.12rem/1.25 var(--display);
   letter-spacing: -0.02em;
 }
-.more p,
-.steps p {
+.more p {
   margin-top: 0.4rem;
   font-size: 0.98rem;
   line-height: 1.45;
@@ -461,8 +417,8 @@ table {
 }
 th,
 td {
-  padding: 0.95rem 0.5rem;
-  text-align: center;
+  padding: 1rem clamp(0.6rem, 1.6vw, 1.5rem);
+  text-align: left;
   vertical-align: middle;
 }
 tbody th,
@@ -486,7 +442,7 @@ thead th {
   position: sticky;
   z-index: 2;
   top: 0;
-  width: 17%;
+  width: 18%;
   padding-block: 1.1rem;
   font: 600 0.95rem var(--display);
   letter-spacing: -0.01em;
@@ -538,48 +494,54 @@ tr.group td {
   stroke: #f0717c;
   opacity: 0.75;
 }
-/* Messwerte: Zahl und duenner Balken, in allen Spalten gleich gross */
+/* Messwerte: Zahl gross, Einheit klein, darunter ein Balken ueber die Zellenbreite */
 .val {
-  display: inline-block;
-  width: 6.2rem;
-  max-width: 100%;
-  text-align: left;
-}
-.val b {
   display: block;
-  font: 600 1.05rem/1.2 var(--display);
-  letter-spacing: -0.02em;
-  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+.val b {
+  font: 660 clamp(1.15rem, 1.7vw, 1.45rem) / 1.1 var(--display);
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+.unit {
+  margin-left: 0.1em;
+  font-size: 0.9rem;
+  letter-spacing: 0;
+  color: var(--mute);
+}
 tr > :nth-child(2) .val b {
-  font-weight: 720;
   color: var(--blue);
 }
 .bar {
   display: block;
+  height: 4px;
+  margin-top: 0.55rem;
+  background: #ffffff17;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.bar i {
+  display: block;
   width: calc(var(--w, 0) * 1%);
-  min-width: 3px;
-  height: 3px;
-  margin-top: 0.4rem;
-  background: var(--mute);
-  border-radius: 3px;
-  opacity: 0.6;
+  min-width: 4px;
+  height: 100%;
+  background: #d9dce6;
+  border-radius: 4px;
   transition: width 1.5s var(--out);
 }
-tr > :nth-child(2) .bar {
+tr > :nth-child(2) .bar i {
   background: var(--blue);
-  opacity: 1;
 }
 html:not(.js) .bar {
   display: none;
 }
 td small {
-  display: block;
-  margin-top: 0.25rem;
-  font: 500 0.72rem var(--mono);
+  margin-left: 0.5rem;
+  font: 500 0.78rem var(--mono);
   letter-spacing: 0;
   color: var(--mute);
+  vertical-align: middle;
 }
 tfoot td {
   padding-block: 1.3rem;
@@ -596,30 +558,7 @@ tfoot td:nth-child(2) b {
   color: var(--blue);
 }
 
-/* In drei Schritten: echte Reihenfolge, deshalb nummeriert */
-.steps ol {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0 clamp(1.5rem, 4vw, 3.5rem);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  counter-reset: schritt;
-}
-.steps li {
-  padding-top: 1.2rem;
-  border-top: 1px solid var(--fg);
-  counter-increment: schritt;
-}
-.steps li::before {
-  content: counter(schritt);
-  display: block;
-  margin-bottom: 1.4rem;
-  font: 500 0.86rem var(--mono);
-  color: var(--blue);
-}
-
-/* Gut zu wissen: Fragen und Antworten, alle offen */
+/* Haeufige Fragen: alle Antworten offen */
 .faq dl {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -676,14 +615,11 @@ tfoot td:nth-child(2) b {
   inset: auto 0 0;
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 1.6rem;
   padding: 0 var(--pad) 12px;
 }
-.foot > span {
-  margin-right: auto;
-  font: 500 0.8rem var(--mono);
-  color: var(--dim);
-}
+
 body {
   position: relative;
 }
@@ -788,7 +724,7 @@ body {
   html {
     scroll-behavior: auto;
   }
-  .bar {
+  .bar i {
     transition: none;
   }
 }
@@ -820,31 +756,24 @@ body {
   .faq dl {
     grid-template-columns: 1fr;
   }
-  .steps ol {
-    grid-template-columns: 1fr;
-    gap: 2rem;
-  }
-  .steps li::before {
-    margin-bottom: 0.7rem;
-  }
   thead th {
-    width: 19%;
-    padding-inline: 0;
+    width: 20%;
     font-size: 0.66rem;
   }
   th,
   td {
-    padding: 0.8rem 0.15rem;
-  }
-  .val {
-    width: 3.6rem;
+    padding: 0.8rem 0.35rem;
   }
   .val b {
-    font-size: 0.82rem;
+    font-size: 0.95rem;
+  }
+  .unit {
+    font-size: 0.6rem;
   }
   /* am Handy genuegt das Kreuz, der Grund bleibt fuer Vorlesen im Dokument */
   td small {
     position: absolute;
+    margin: 0;
     width: 1px;
     height: 1px;
     overflow: hidden;
