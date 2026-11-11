@@ -5,12 +5,11 @@
     <meta content="width=device-width,initial-scale=1,viewport-fit=cover" name="viewport" />
     <title>EasyMySQL – Datenbank, SQL &amp; Java</title>
     <meta content="Datenbank, SQL-Editor, ER-Diagramme und Java in einer App. Für Windows, macOS und Linux." name="description" />
-    <meta content="light" name="color-scheme" />
-    <meta content="#ffffff" name="theme-color" />
+    <meta content="dark" name="color-scheme" />
+    <meta content="#04060d" name="theme-color" />
     <link href="https://mysql.benjaminberger.at/" rel="canonical" />
     <link href="/favicon.svg" rel="icon" type="image/svg+xml" />
     <link as="font" crossorigin="" href="/fonts/InterTight.woff2" rel="preload" type="font/woff2" />
-    <link as="image" href="/shots/sql-2000.avif" imagesizes="(max-width: 1200px) 94vw, 1120px" imagesrcset="/shots/sql-1000.avif 1000w, /shots/sql-2000.avif 2000w" rel="preload" type="image/avif" />
     <meta content="website" property="og:type" />
     <meta content="EasyMySQL – Datenbank, SQL &amp; Java" property="og:title" />
     <meta content="Datenbank, SQL und Java in einer App." property="og:description" />
@@ -22,10 +21,12 @@
     <script src="/boot.js"></script>
     <link href="/style.css" rel="stylesheet" />
     <script defer="" src="/app.js"></script>
+    <script defer="" src="/gl.js"></script>
   </head>
   <body>
+    <canvas aria-hidden="true" id="gl"></canvas>
     <a class="skip" data-en="Skip to content" href="#main">Zum Inhalt</a>
-    <header class="nav wrap">
+    <header class="nav">
       <a aria-label="Zum Seitenanfang" class="brand" data-en-label="Back to top" href="#top"><img alt="" height="24" src="/favicon.svg" width="24" />EasyMySQL</a>
       <nav aria-label="Seite" class="links" data-en-label="Page">
         <a data-en="Features" href="#features">Funktionen</a>
@@ -33,9 +34,10 @@
         <a data-en="AI" href="#ai">KI</a>
       </nav>
       <button aria-label="English" class="lang" id="lang" lang="en" type="button">EN</button>
+      <a class="pill" data-en="Install" href="#install">Installieren</a>
     </header>
     <main id="main">
-      <section aria-labelledby="product-name" class="hero wrap" id="top">
+      <section aria-labelledby="product-name" class="hero" id="top">
         <h1 data-split="" id="product-name" data-en="Database, SQL and Java. All in one app.">Datenbank, SQL und Java. Alles in einer App.</h1>
         <div class="install" id="install">
           <div aria-label="Betriebssystem" class="install-os" data-en-label="Operating system" role="radiogroup">
@@ -58,181 +60,91 @@
         </div>
       </section>
 
-      <section aria-labelledby="f-h" class="features wrap" id="features">
-        <h2 data-reveal="" data-en="Everything in one window" id="f-h">Alles in einem Fenster</h2>
-        <div class="tabs-scroll" data-reveal="">
-          <div aria-label="Funktionen" class="tabs" data-en-label="Features" role="tablist">
-          <button aria-controls="panel-sql" aria-selected="true" data-en="SQL editor" id="tab-sql" role="tab" type="button">SQL-Editor</button>
-          <button aria-controls="panel-data" aria-selected="false" data-en="Tables" id="tab-data" role="tab" type="button">Tabellen</button>
-          <button aria-controls="panel-er" aria-selected="false" data-en="ER diagrams" id="tab-er" role="tab" type="button">ER-Diagramme</button>
-          <button aria-controls="panel-builder" aria-selected="false" data-en="Query builder" id="tab-builder" role="tab" type="button">Query Builder</button>
-          <button aria-controls="panel-code" aria-selected="false" data-en="Java" id="tab-code" role="tab" type="button">Java</button>
-          <button aria-controls="panel-git" aria-selected="false" data-en="Git" id="tab-git" role="tab" type="button">Git</button>
-            <span aria-hidden="true" class="glider"></span>
+      <section aria-labelledby="f-h" class="pin features" id="features">
+        <div class="stage">
+          <h2 class="kicker" data-en="Everything in one window" id="f-h">Alles in einem Fenster</h2>
+          <div class="titles"><h3 id="title-sql" data-en="SQL editor">SQL-Editor</h3><h3 id="title-data" data-en="Tables">Tabellen</h3><h3 id="title-er" data-en="ER diagrams">ER-Diagramme</h3><h3 id="title-builder" data-en="Query builder">Query Builder</h3><h3 id="title-code" data-en="Java">Java</h3><h3 id="title-git" data-en="Git">Git</h3></div>
+          <div class="caps"><p data-en="Suggestions that know your tables. Errors are explained and fixed with one click.">Vorschläge passend zu deinen Tabellen. Fehler werden erklärt und mit einem Klick behoben.</p><p data-en="Change values like in a spreadsheet. Ctrl + Z undoes it.">Werte ändern wie in einer Tabellenkalkulation. Strg + Z macht es rückgängig.</p><p data-en="Your database as a picture, drawn automatically.">Deine Datenbank als Bild, automatisch gezeichnet.</p><p data-en="Click queries together and learn SQL along the way.">Abfragen zusammenklicken und dabei SQL lernen.</p><p data-en="Projects with a ready database connection. Write, run, debug.">Projekte mit fertiger Datenbankverbindung. Schreiben, starten, debuggen.</p><p data-en="Save your changes and share them on GitHub.">Änderungen sichern und mit GitHub teilen.</p></div>
+          <div class="screen">
+            <picture aria-labelledby="tab-sql" id="panel-sql" role="tabpanel">
+              <source sizes="(max-width: 900px) 92vw, 62vw" srcset="/shots/sql-1000.avif 1000w, /shots/sql-2000.avif 2000w" type="image/avif" />
+              <img alt="SQL-Editor mit Vorschlägen und Abfrageergebnis" data-en-alt="SQL editor with suggestions and query results" decoding="async" height="1250" sizes="(max-width: 900px) 92vw, 62vw" src="/shots/sql-2000.webp" srcset="/shots/sql-1000.webp 1000w, /shots/sql-2000.webp 2000w" width="2000" />
+            </picture>
+            <picture aria-labelledby="tab-data" id="panel-data" role="tabpanel">
+              <source sizes="(max-width: 900px) 92vw, 62vw" srcset="/shots/data-1000.avif 1000w, /shots/data-2000.avif 2000w" type="image/avif" />
+              <img alt="Produkttabelle zum direkten Bearbeiten" data-en-alt="Product table with inline editing" decoding="async" height="1250" sizes="(max-width: 900px) 92vw, 62vw" src="/shots/data-2000.webp" srcset="/shots/data-1000.webp 1000w, /shots/data-2000.webp 2000w" width="2000" />
+            </picture>
+            <picture aria-labelledby="tab-er" id="panel-er" role="tabpanel">
+              <source sizes="(max-width: 900px) 92vw, 62vw" srcset="/shots/er-1000.avif 1000w, /shots/er-2000.avif 2000w" type="image/avif" />
+              <img alt="ER-Diagramm mit Tabellen und Fremdschlüsseln" data-en-alt="ER diagram with tables and foreign keys" decoding="async" height="1250" sizes="(max-width: 900px) 92vw, 62vw" src="/shots/er-2000.webp" srcset="/shots/er-1000.webp 1000w, /shots/er-2000.webp 2000w" width="2000" />
+            </picture>
+            <picture aria-labelledby="tab-builder" id="panel-builder" role="tabpanel">
+              <source sizes="(max-width: 900px) 92vw, 62vw" srcset="/shots/builder-1000.avif 1000w, /shots/builder-2000.avif 2000w" type="image/avif" />
+              <img alt="Visueller Query Builder mit erzeugtem SQL" data-en-alt="Visual query builder with generated SQL" decoding="async" height="1250" sizes="(max-width: 900px) 92vw, 62vw" src="/shots/builder-2000.webp" srcset="/shots/builder-1000.webp 1000w, /shots/builder-2000.webp 2000w" width="2000" />
+            </picture>
+            <picture aria-labelledby="tab-code" id="panel-code" role="tabpanel">
+              <source sizes="(max-width: 900px) 92vw, 62vw" srcset="/shots/code-1000.avif 1000w, /shots/code-2000.avif 2000w" type="image/avif" />
+              <img alt="Java-Projekt mit Editor und Terminal" data-en-alt="Java project with editor and terminal" decoding="async" height="1250" sizes="(max-width: 900px) 92vw, 62vw" src="/shots/code-2000.webp" srcset="/shots/code-1000.webp 1000w, /shots/code-2000.webp 2000w" width="2000" />
+            </picture>
+            <picture aria-labelledby="tab-git" id="panel-git" role="tabpanel">
+              <source sizes="(max-width: 900px) 92vw, 62vw" srcset="/shots/git-1000.avif 1000w, /shots/git-2000.avif 2000w" type="image/avif" />
+              <img alt="Git-Ansicht mit Änderungen" data-en-alt="Git view with changes" decoding="async" height="1250" sizes="(max-width: 900px) 92vw, 62vw" src="/shots/git-2000.webp" srcset="/shots/git-1000.webp 1000w, /shots/git-2000.webp 2000w" width="2000" />
+            </picture>
           </div>
+          <div aria-label="Funktionen" class="rail" data-en-label="Features" role="tablist"><button aria-controls="panel-sql" aria-selected="true" data-en="SQL editor" id="tab-sql" role="tab" type="button">SQL-Editor</button><button aria-controls="panel-data" aria-selected="false" data-en="Tables" id="tab-data" role="tab" type="button">Tabellen</button><button aria-controls="panel-er" aria-selected="false" data-en="ER diagrams" id="tab-er" role="tab" type="button">ER-Diagramme</button><button aria-controls="panel-builder" aria-selected="false" data-en="Query builder" id="tab-builder" role="tab" type="button">Query Builder</button><button aria-controls="panel-code" aria-selected="false" data-en="Java" id="tab-code" role="tab" type="button">Java</button><button aria-controls="panel-git" aria-selected="false" data-en="Git" id="tab-git" role="tab" type="button">Git</button></div>
         </div>
-        <div class="shots" data-reveal="" id="shots">
-          <figure aria-labelledby="tab-sql" class="shot" id="panel-sql" role="tabpanel">
-            <figcaption data-en="Suggestions that know your tables. Errors are explained and fixed with one click.">Vorschläge passend zu deinen Tabellen. Fehler werden erklärt und mit einem Klick behoben.</figcaption>
-            <picture>
-              <source sizes="(max-width: 1200px) 94vw, 1120px" srcset="/shots/sql-1000.avif 1000w, /shots/sql-2000.avif 2000w" type="image/avif" />
-              <img alt="SQL-Editor mit Vorschlägen und Abfrageergebnis" data-en-alt="SQL editor with suggestions and query results" decoding="async" height="1250" sizes="(max-width: 1200px) 94vw, 1120px" src="/shots/sql-2000.webp" srcset="/shots/sql-1000.webp 1000w, /shots/sql-2000.webp 2000w" width="2000" />
-            </picture>
-          </figure>
-          <figure aria-labelledby="tab-data" class="shot" id="panel-data" role="tabpanel">
-            <figcaption data-en="Change values like in a spreadsheet. Ctrl + Z undoes it.">Werte ändern wie in einer Tabellenkalkulation. Strg + Z macht es rückgängig.</figcaption>
-            <picture>
-              <source sizes="(max-width: 1200px) 94vw, 1120px" srcset="/shots/data-1000.avif 1000w, /shots/data-2000.avif 2000w" type="image/avif" />
-              <img alt="Produkttabelle zum direkten Bearbeiten" data-en-alt="Product table with inline editing" decoding="async" height="1250" sizes="(max-width: 1200px) 94vw, 1120px" src="/shots/data-2000.webp" srcset="/shots/data-1000.webp 1000w, /shots/data-2000.webp 2000w" width="2000" />
-            </picture>
-          </figure>
-          <figure aria-labelledby="tab-er" class="shot" id="panel-er" role="tabpanel">
-            <figcaption data-en="Your database as a picture, drawn automatically.">Deine Datenbank als Bild, automatisch gezeichnet.</figcaption>
-            <picture>
-              <source sizes="(max-width: 1200px) 94vw, 1120px" srcset="/shots/er-1000.avif 1000w, /shots/er-2000.avif 2000w" type="image/avif" />
-              <img alt="ER-Diagramm mit Tabellen und Fremdschlüsseln" data-en-alt="ER diagram with tables and foreign keys" decoding="async" height="1250" sizes="(max-width: 1200px) 94vw, 1120px" src="/shots/er-2000.webp" srcset="/shots/er-1000.webp 1000w, /shots/er-2000.webp 2000w" width="2000" />
-            </picture>
-          </figure>
-          <figure aria-labelledby="tab-builder" class="shot" id="panel-builder" role="tabpanel">
-            <figcaption data-en="Click queries together and learn SQL along the way.">Abfragen zusammenklicken und dabei SQL lernen.</figcaption>
-            <picture>
-              <source sizes="(max-width: 1200px) 94vw, 1120px" srcset="/shots/builder-1000.avif 1000w, /shots/builder-2000.avif 2000w" type="image/avif" />
-              <img alt="Visueller Query Builder mit erzeugtem SQL" data-en-alt="Visual query builder with generated SQL" decoding="async" height="1250" sizes="(max-width: 1200px) 94vw, 1120px" src="/shots/builder-2000.webp" srcset="/shots/builder-1000.webp 1000w, /shots/builder-2000.webp 2000w" width="2000" />
-            </picture>
-          </figure>
-          <figure aria-labelledby="tab-code" class="shot" id="panel-code" role="tabpanel">
-            <figcaption data-en="Java projects with a ready database connection. Write, run, debug.">Java-Projekte mit fertiger Datenbankverbindung. Schreiben, starten, debuggen.</figcaption>
-            <picture>
-              <source sizes="(max-width: 1200px) 94vw, 1120px" srcset="/shots/code-1000.avif 1000w, /shots/code-2000.avif 2000w" type="image/avif" />
-              <img alt="Java-Projekt mit Editor und Terminal" data-en-alt="Java project with editor and terminal" decoding="async" height="1250" sizes="(max-width: 1200px) 94vw, 1120px" src="/shots/code-2000.webp" srcset="/shots/code-1000.webp 1000w, /shots/code-2000.webp 2000w" width="2000" />
-            </picture>
-          </figure>
-          <figure aria-labelledby="tab-git" class="shot" id="panel-git" role="tabpanel">
-            <figcaption data-en="Save your changes and share them on GitHub.">Änderungen sichern und mit GitHub teilen.</figcaption>
-            <picture>
-              <source sizes="(max-width: 1200px) 94vw, 1120px" srcset="/shots/git-1000.avif 1000w, /shots/git-2000.avif 2000w" type="image/avif" />
-              <img alt="Git-Ansicht mit Änderungen" data-en-alt="Git view with changes" decoding="async" height="1250" sizes="(max-width: 1200px) 94vw, 1120px" src="/shots/git-2000.webp" srcset="/shots/git-1000.webp 1000w, /shots/git-2000.webp 2000w" width="2000" />
-            </picture>
-          </figure>
-        </div>
-        <ul class="more">
-          <li><b data-en="Import &amp; export">Import &amp; Export</b><span data-en="SQLite, PostgreSQL, MongoDB, Redis, CSV, JSON and more.">SQLite, PostgreSQL, MongoDB, Redis, CSV, JSON und mehr.</span></li>
-          <li><b data-en="Automatic backups">Automatische Backups</b><span data-en="Back up and restore with one click.">Sichern und wiederherstellen mit einem Klick.</span></li>
-          <li><b data-en="Fixes its own errors">Fehler selbst beheben</b><span data-en="Corrects typos and creates missing tables.">Tippfehler korrigieren, fehlende Tabellen anlegen.</span></li>
-          <li><b data-en="Java debugger">Java-Debugger</b><span data-en="Set breakpoints and watch step by step.">Haltepunkte setzen und Schritt für Schritt zusehen.</span></li>
-          <li><b data-en="Terminal">Terminal</b><span data-en="Right in the window, ready with Java and MariaDB.">Direkt im Fenster, mit Java und MariaDB startklar.</span></li>
-          <li><b data-en="Users &amp; privileges">Benutzer &amp; Rechte</b><span data-en="Grant access per database or table.">Zugriff pro Datenbank oder Tabelle vergeben.</span></li>
-          <li><b data-en="Manual">Handbuch</b><span data-en="F1 opens the searchable help.">F1 öffnet die durchsuchbare Hilfe.</span></li>
-          <li><b data-en="Updates">Updates</b><span data-en="Install quietly in the background.">Installieren sich leise im Hintergrund.</span></li>
-        </ul>
       </section>
 
-      <section aria-labelledby="c-h" class="compare wrap" id="compare">
-        <h2 data-reveal="" data-en="Faster. Lighter. Smaller." id="c-h">Schneller. Leichter. Kleiner.</h2>
-        <p class="sub" data-reveal="" data-en="Measured against XAMPP and MySQL Workbench on the same PC.">Gemessen gegen XAMPP und MySQL Workbench auf demselben PC.</p>
-        <div class="measures">
-          <article class="measure">
-            <h3 data-en="Starting the app">Programm starten</h3>
-            <dl>
-              <div class="us"><dt>EasyMySQL</dt><dd><b data-count="0.47" data-dec="2" data-en="0.47 s">0,47 s</b><i class="bar" data-w="8.2"></i></dd></div>
-              <div><dt>XAMPP</dt><dd><b data-count="2.7" data-dec="1" data-en="2.7 s">2,7 s</b><i class="bar" data-w="47.4"></i></dd></div>
-              <div><dt>Workbench</dt><dd><b data-count="5.7" data-dec="1" data-en="5.7 s">5,7 s</b><i class="bar" data-w="100.0"></i></dd></div>
-            </dl>
-          </article>
-          <article class="measure">
-            <h3 data-en="Opening a table with 1M rows">Tabelle mit 1 Mio. Zeilen öffnen</h3>
-            <dl>
-              <div class="us"><dt>EasyMySQL</dt><dd><b data-count="0.17" data-dec="2" data-en="0.17 s">0,17 s</b><i class="bar" data-w="8.1"></i></dd></div>
-              <div><dt>XAMPP</dt><dd><b data-count="0.33" data-dec="2" data-en="0.33 s">0,33 s</b><i class="bar" data-w="15.7"></i></dd></div>
-              <div><dt>Workbench</dt><dd><b data-count="2.1" data-dec="1" data-en="2.1 s">2,1 s</b><i class="bar" data-w="100.0"></i></dd></div>
-            </dl>
-          </article>
-          <article class="measure">
-            <h3 data-en="Searching 1M rows">In 1 Mio. Zeilen suchen</h3>
-            <dl>
-              <div class="us"><dt>EasyMySQL</dt><dd><b data-count="0.2" data-dec="2" data-en="0.20 s">0,20 s</b><i class="bar" data-w="58.8"></i></dd></div>
-              <div><dt>XAMPP</dt><dd><b data-count="0.34" data-dec="2" data-en="0.34 s">0,34 s</b><i class="bar" data-w="100.0"></i></dd></div>
-              <div><dt>Workbench</dt><dd><b data-count="0.25" data-dec="2" data-en="0.25 s">0,25 s</b><i class="bar" data-w="73.5"></i></dd></div>
-            </dl>
-          </article>
-          <article class="measure">
-            <h3 data-en="Drawing an ER diagram">ER-Diagramm zeichnen</h3>
-            <dl>
-              <div class="us"><dt>EasyMySQL</dt><dd><b data-count="0.22" data-dec="2" data-en="0.22 s">0,22 s</b><i class="bar" data-w="36.7"></i></dd></div>
-              <div><dt>XAMPP</dt><dd><b data-count="0.6" data-dec="2" data-en="0.60 s">0,60 s</b><i class="bar" data-w="100.0"></i></dd></div>
-              <div class="na"><dt>Workbench</dt><dd><span data-en="not available">nicht vorhanden</span></dd></div>
-            </dl>
-          </article>
-          <article class="measure">
-            <h3 data-en="Importing 1M rows">1 Mio. Zeilen importieren</h3>
-            <dl>
-              <div class="us"><dt>EasyMySQL</dt><dd><b data-count="7.7" data-dec="1" data-en="7.7 s">7,7 s</b><i class="bar" data-w="100.0"></i></dd></div>
-              <div class="na"><dt>XAMPP</dt><dd><span data-en="file too large">Datei zu groß</span></dd></div>
-              <div class="na"><dt>Workbench</dt><dd><span data-en="not available">nicht vorhanden</span></dd></div>
-            </dl>
-          </article>
-          <article class="measure">
-            <h3 data-en="Memory">Arbeitsspeicher</h3>
-            <dl>
-              <div class="us"><dt>EasyMySQL</dt><dd><b data-count="133" data-dec="0" data-en="133 MB">133 MB</b><i class="bar" data-w="50.0"></i></dd></div>
-              <div><dt>XAMPP</dt><dd><b data-count="252" data-dec="0" data-en="252 MB">252 MB</b><i class="bar" data-w="94.7"></i></dd></div>
-              <div><dt>Workbench</dt><dd><b data-count="266" data-dec="0" data-en="266 MB">266 MB</b><i class="bar" data-w="100.0"></i></dd></div>
-            </dl>
-          </article>
-          <article class="measure">
-            <h3 data-en="Disk space">Platz auf der Festplatte</h3>
-            <dl>
-              <div class="us"><dt>EasyMySQL</dt><dd><b data-count="260" data-dec="0" data-en="260 MB">260 MB</b><i class="bar" data-w="28.0"></i></dd></div>
-              <div><dt>XAMPP</dt><dd><b data-count="929" data-dec="0" data-en="929 MB">929 MB</b><i class="bar" data-w="100.0"></i></dd></div>
-              <div><dt>Workbench</dt><dd><b data-count="870" data-dec="0" data-en="870 MB">870 MB</b><i class="bar" data-w="93.6"></i></dd></div>
-            </dl>
-          </article>
-          <article class="measure">
-            <h3 data-en="Download">Download</h3>
-            <dl>
-              <div class="us"><dt>EasyMySQL</dt><dd><b data-count="77" data-dec="0" data-en="77 MB">77 MB</b><i class="bar" data-w="28.2"></i></dd></div>
-              <div><dt>XAMPP</dt><dd><b data-count="200" data-dec="0" data-en="200 MB">200 MB</b><i class="bar" data-w="73.3"></i></dd></div>
-              <div><dt>Workbench</dt><dd><b data-count="273" data-dec="0" data-en="273 MB">273 MB</b><i class="bar" data-w="100.0"></i></dd></div>
-            </dl>
-          </article>
+      <section aria-labelledby="c-h" class="pin compare" id="compare">
+        <div class="stage">
+          <h2 class="kicker" data-en="Against XAMPP and MySQL Workbench" id="c-h">Gegen XAMPP und MySQL Workbench</h2>
+          <div class="titles"><h3 data-en="Starting the app">Programm starten</h3><h3 data-en="Opening a table">Tabelle öffnen</h3><h3 data-en="Searching 1M rows">In 1 Mio. Zeilen suchen</h3><h3 data-en="Drawing an ER diagram">ER-Diagramm zeichnen</h3><h3 data-en="Importing 1M rows">1 Mio. Zeilen importieren</h3><h3 data-en="Memory">Arbeitsspeicher</h3><h3 data-en="Disk space">Platz auf der Festplatte</h3><h3 data-en="Download">Download</h3></div>
+          <div class="lanes">
+            <div class="lane us"><span class="who">EasyMySQL</span><span class="track"><i></i></span><b data-en="0.47 s">0,47 s</b></div>
+            <div class="lane"><span class="who">XAMPP</span><span class="track"><i></i></span><b data-en="2.7 s">2,7 s</b></div>
+            <div class="lane"><span class="who">Workbench</span><span class="track"><i></i></span><b data-en="5.7 s">5,7 s</b></div>
+          </div>
+          <div aria-label="Messung" class="rail" data-en-label="Measurement" role="group"><button aria-pressed="true" data-en="Starting the app" type="button">Programm starten</button><button aria-pressed="false" data-en="Opening a table" type="button">Tabelle öffnen</button><button aria-pressed="false" data-en="Searching 1M rows" type="button">In 1 Mio. Zeilen suchen</button><button aria-pressed="false" data-en="Drawing an ER diagram" type="button">ER-Diagramm zeichnen</button><button aria-pressed="false" data-en="Importing 1M rows" type="button">1 Mio. Zeilen importieren</button><button aria-pressed="false" data-en="Memory" type="button">Arbeitsspeicher</button><button aria-pressed="false" data-en="Disk space" type="button">Platz auf der Festplatte</button><button aria-pressed="false" data-en="Download" type="button">Download</button></div>
         </div>
-        <h2 class="second" data-reveal="" data-en="What each one can do">Wer kann was?</h2>
-        <div aria-label="Funktionsvergleich" class="table-scroll" data-en-label="Feature comparison" data-reveal="" role="region" tabindex="0">
+      </section>
+
+      <section aria-labelledby="t-h" class="table wrap" id="table">
+        <h2 data-reveal="" data-en="What each one can do" id="t-h">Wer kann was?</h2>
+        <div aria-label="Funktionsvergleich" class="table-scroll" data-en-label="Feature comparison" role="region" tabindex="0">
           <table>
             <caption class="sr-only" data-en="Features of EasyMySQL, XAMPP and MySQL Workbench">Funktionen von EasyMySQL, XAMPP und MySQL Workbench</caption>
             <thead>
               <tr><td></td><th scope="col">EasyMySQL</th><th scope="col">XAMPP</th><th scope="col">Workbench</th></tr>
             </thead>
             <tbody>
-              <tr class="group"><th colspan="4" data-en="Database" scope="colgroup">Datenbank</th></tr>
-              <tr><th scope="row" data-en="Database server included">Datenbankserver schon dabei</th><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td></tr>
-              <tr><th scope="row" data-en="Works without a browser">Läuft ohne Browser</th><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td></tr>
-              <tr><th scope="row" data-en="Works with MariaDB">Arbeitet mit MariaDB</th><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td></tr>
-              <tr><th scope="row" data-en="SQL editor with suggestions">SQL-Editor mit Vorschlägen</th><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td></tr>
-              <tr><th scope="row" data-en="Fix errors with one click">Fehler mit einem Klick beheben</th><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td></tr>
-              <tr><th scope="row" data-en="Edit tables in place">Tabellen direkt bearbeiten</th><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td></tr>
-              <tr><th scope="row" data-en="ER diagrams">ER-Diagramme</th><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td></tr>
-              <tr><th scope="row" data-en="Click queries together">Abfragen zusammenklicken</th><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td></tr>
-              <tr><th scope="row" data-en="Import CSV files">CSV-Dateien importieren</th><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td></tr>
-              <tr><th scope="row" data-en="Import from MongoDB and Redis">Import aus MongoDB und Redis</th><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td></tr>
-              <tr><th scope="row" data-en="Automatic backups">Automatische Backups</th><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td></tr>
-              <tr class="group"><th colspan="4" data-en="Coding" scope="colgroup">Programmieren</th></tr>
-              <tr><th scope="row" data-en="Write, run and debug Java">Java schreiben, starten und debuggen</th><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td></tr>
-              <tr><th scope="row" data-en="Git and GitHub">Git und GitHub</th><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td></tr>
-              <tr><th scope="row" data-en="Web server with PHP">Webserver mit PHP</th><td class="no"><span class="sr-only" data-en="No">Nein</span></td><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td></tr>
-              <tr><th scope="row" data-en="SQL notebooks">SQL-Notebooks</th><td class="no"><span class="sr-only" data-en="No">Nein</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td></tr>
-              <tr class="group"><th colspan="4" data-en="AI" scope="colgroup">KI</th></tr>
-              <tr><th scope="row" data-en="Chat with Claude Code and Codex">Chat mit Claude Code und Codex</th><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td></tr>
-              <tr><th scope="row" data-en="AI knows your tables">KI kennt deine Tabellen</th><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td></tr>
+            <tr class="group"><th colspan="4" data-en="Database" scope="colgroup">Datenbank</th></tr>
+            <tr><th scope="row" data-en="Database server included">Datenbankserver schon dabei</th><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td></tr>
+            <tr><th scope="row" data-en="Works without a browser">Läuft ohne Browser</th><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td></tr>
+            <tr><th scope="row" data-en="Works with MariaDB">Arbeitet mit MariaDB</th><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td></tr>
+            <tr><th scope="row" data-en="SQL editor with suggestions">SQL-Editor mit Vorschlägen</th><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td></tr>
+            <tr><th scope="row" data-en="Fix errors with one click">Fehler mit einem Klick beheben</th><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td></tr>
+            <tr><th scope="row" data-en="Edit tables in place">Tabellen direkt bearbeiten</th><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td></tr>
+            <tr><th scope="row" data-en="ER diagrams">ER-Diagramme</th><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td></tr>
+            <tr><th scope="row" data-en="Click queries together">Abfragen zusammenklicken</th><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td></tr>
+            <tr><th scope="row" data-en="Import CSV files">CSV-Dateien importieren</th><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td></tr>
+            <tr><th scope="row" data-en="Import from MongoDB and Redis">Import aus MongoDB und Redis</th><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td></tr>
+            <tr><th scope="row" data-en="Automatic backups">Automatische Backups</th><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td></tr>
+            <tr class="group"><th colspan="4" data-en="Coding" scope="colgroup">Programmieren</th></tr>
+            <tr><th scope="row" data-en="Write, run and debug Java">Java schreiben, starten und debuggen</th><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td></tr>
+            <tr><th scope="row" data-en="Git and GitHub">Git und GitHub</th><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td></tr>
+            <tr><th scope="row" data-en="Web server with PHP">Webserver mit PHP</th><td class="no"><span class="sr-only" data-en="No">Nein</span></td><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td></tr>
+            <tr><th scope="row" data-en="SQL notebooks">SQL-Notebooks</th><td class="no"><span class="sr-only" data-en="No">Nein</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td></tr>
+            <tr class="group"><th colspan="4" data-en="AI" scope="colgroup">KI</th></tr>
+            <tr><th scope="row" data-en="Chat with Claude Code and Codex">Chat mit Claude Code und Codex</th><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td></tr>
+            <tr><th scope="row" data-en="AI knows your tables">KI kennt deine Tabellen</th><td class="yes"><span class="sr-only" data-en="Yes">Ja</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td><td class="no"><span class="sr-only" data-en="No">Nein</span></td></tr>
             </tbody>
-            <tfoot><tr><th scope="row" data-en="Total">Gesamt</th><td><b data-count="15" data-dec="0">15</b> / 17</td><td><b data-count="8" data-dec="0">8</b> / 17</td><td><b data-count="4" data-dec="0">4</b> / 17</td></tr></tfoot>
+            <tfoot><tr><th scope="row" data-en="Total">Gesamt</th><td><b>15</b> / 17</td><td><b>8</b> / 17</td><td><b>4</b> / 17</td></tr></tfoot>
           </table>
         </div>
       </section>
 
       <section aria-labelledby="ai-h" class="ai wrap" id="ai">
-        <h2 data-reveal="" data-en="Claude Code and Codex are built in." id="ai-h">Claude Code und Codex sind eingebaut.</h2>
-        <p data-reveal="" data-en="Ask the AI about your database. It knows your tables, reads only until you allow more, and backs up before anything is deleted.">Frag die KI zu deiner Datenbank. Sie kennt deine Tabellen, liest nur, bis du mehr erlaubst, und sichert, bevor etwas gelöscht wird.</p>
+        <h2 data-light="" id="ai-h" data-en="Claude Code and Codex are built in. Ask the AI about your database. It knows your tables, reads only until you allow more, and backs up before anything is deleted.">Claude Code und Codex sind eingebaut. Frag die KI zu deiner Datenbank. Sie kennt deine Tabellen, liest nur, bis du mehr erlaubst, und sichert, bevor etwas gelöscht wird.</h2>
       </section>
     </main>
     <footer class="foot wrap">

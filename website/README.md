@@ -2,7 +2,7 @@
 
 Static site plus a small Cloudflare Worker (`src/worker.js`) for `mysql.benjaminberger.at`.
 
-- `public/` is the bilingual page (HTML, CSS, JS): the terminal install command first, real app screenshots behind word tabs, eight measurements shown as large numbers with thin bars, and a plain feature table. Design rules are in `DESIGN.md`.
+- `public/` is the bilingual page: `index.html`, `style.css`, `app.js` (language, release info, scroll scenes) and `gl.js` (WebGL background with drifting clouds and the 3D database icon). Two sections stay pinned while scrolling: six app screenshots and eight measurements. Design rules are in `DESIGN.md`.
 - `/api/release` returns the newest release (version, size, SHA-256) as JSON. It is cached at the edge for five minutes and falls back to the last known value.
 - `/download/setup`, `/download/portable`, `/download/macos` and `/download/linux` stream the files of the newest release. Visitors only ever see this domain. Missing packages are marked unavailable. The terminal command is visible above file downloads; system requirements are collapsed beneath them.
 

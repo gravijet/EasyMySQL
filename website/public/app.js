@@ -201,7 +201,7 @@
       "Database, SQL editor, ER diagrams and Java in one app. For Windows, macOS and Linux.",
     );
     teileWoerter();
-    if (bereit) setzeStrich();
+    if (bereit) male();
     zeigeBefehl();
     zeigeRelease();
     zeigeFehler();
@@ -262,90 +262,280 @@
       clearTimeout(zeitlimit);
     });
 
-  // Funktionen: Text-Tabs mit gleitendem Strich, die Bilder blenden ineinander.
-  var tabs = $$("[role=tab]");
-  var bilder = tabs.map(function (tab) {
-    return document.getElementById(tab.getAttribute("aria-controls"));
-  });
-  var strich = $(".glider");
-  function setzeStrich() {
-    var tab = $("[role=tab][aria-selected=true]");
-    strich.style.width = tab.offsetWidth + "px";
-    strich.style.translate = tab.offsetLeft + "px 0";
+  // ---------- Szenen: alles haengt am Scrollen und wird weich nachgefuehrt ----------
+  function grenze(wert) {
+    return Math.min(1, Math.max(0, wert));
   }
-  function waehleTab(tab, fokus) {
-    tabs.forEach(function (el, i) {
-      var aktiv = el === tab;
-      el.setAttribute("aria-selected", String(aktiv));
-      el.tabIndex = aktiv ? 0 : -1;
-      bilder[i].classList.toggle("on", aktiv);
-      bilder[i].setAttribute("aria-hidden", String(!aktiv));
-    });
-    setzeStrich();
-    if (fokus) tab.focus({ preventScroll: true });
-    var leiste = $(".tabs-scroll");
-    leiste.scrollTo({
-      left: tab.offsetLeft - (leiste.clientWidth - tab.offsetWidth) / 2,
-      behavior: ruhig.matches ? "auto" : "smooth",
+  function weich(t) {
+    return t * t * (3 - 2 * t);
+  }
+  function setze(liste, index) {
+    liste.forEach(function (el, i) {
+      el.classList.toggle("on", i === index);
+      el.classList.toggle("before", i < index);
+      el.classList.toggle("after", i > index);
     });
   }
-  tabs.forEach(function (tab, index) {
-    tab.addEventListener("click", function () {
-      waehleTab(tab, false);
-    });
-    tab.addEventListener("keydown", function (e) {
-      var ziel =
-        e.key === "ArrowRight"
-          ? (index + 1) % tabs.length
-          : e.key === "ArrowLeft"
-            ? (index + tabs.length - 1) % tabs.length
-            : e.key === "Home"
-              ? 0
-              : e.key === "End"
-                ? tabs.length - 1
-                : -1;
-      if (ziel !== -1) {
-        e.preventDefault();
-        waehleTab(tabs[ziel], true);
-      }
-    });
-  });
-  waehleTab(tabs[0], false);
-  addEventListener("resize", setzeStrich, { passive: true });
-  if (document.fonts) document.fonts.ready.then(setzeStrich);
-  bereit = true;
+  // Farben der Wolken je Abschnitt (zwei Toene, Werte 0 bis 1)
+  var FARBEN = {
+    start: [[0.09, 0.2, 0.62], [0.3, 0.1, 0.52]],
+    funktionen: [
+      [[0.08, 0.22, 0.66], [0.04, 0.36, 0.52]],
+      [[0.03, 0.36, 0.4], [0.05, 0.2, 0.5]],
+      [[0.5, 0.26, 0.06], [0.42, 0.1, 0.22]],
+      [[0.34, 0.14, 0.6], [0.1, 0.16, 0.56]],
+      [[0.1, 0.4, 0.22], [0.05, 0.26, 0.38]],
+      [[0.14, 0.24, 0.42], [0.36, 0.16, 0.3]],
+    ],
+    vergleich: [[[0.46, 0.1, 0.3], [0.12, 0.14, 0.52]], [[0.1, 0.3, 0.6], [0.4, 0.12, 0.4]]],
+    tabelle: [[0.05, 0.08, 0.18], [0.04, 0.1, 0.14]],
+    ki: [[0.06, 0.34, 0.3], [0.1, 0.18, 0.58]],
+  };
+  var szene = (window.easyScene = { S: 0, V: 1, K: 1, O: [0.9, 0], A: FARBEN.start[0].slice(), B: FARBEN.start[1].slice() });
 
-  // Zahlen zaehlen hoch, sobald sie sichtbar werden.
-  function zaehle(el) {
-    var ziel = parseFloat(el.dataset.count);
-    var stellen = +el.dataset.dec;
-    var ende = el.textContent;
-    var anhang = ende.replace(/^[\d.,]+/, "");
-    var beginn = performance.now();
-    (function schritt(jetzt) {
-      var t = Math.min(1, (jetzt - beginn) / 1700);
-      if (t === 1) {
-        el.textContent = ende;
+  // Funktionen: Titel, Text und App-Fenster wechseln gemeinsam.
+  var fAbschnitt = $("#features");
+  var fTitel = $$("#features .titles h3");
+  var fTexte = $$("#features .caps p");
+  var fBilder = $$("#features .screen picture");
+  var fKnoepfe = $$("#features .rail button");
+  var fBuehne = $("#features .screen");
+  var fIndex = -1;
+
+  // Vergleich: Sekunden bzw. MB fuer EasyMySQL, XAMPP, Workbench; null = geht dort nicht.
+  var FEHLT = ["nicht vorhanden", "not available"];
+  var MESSUNGEN = [
+    { w: [0.47, 2.7, 5.7], e: "s" },
+    { w: [0.17, 0.33, 2.1], e: "s" },
+    { w: [0.2, 0.34, 0.25], e: "s" },
+    { w: [0.22, 0.6, null], e: "s", g: [null, null, FEHLT] },
+    { w: [7.7, null, null], e: "s", g: [null, ["Datei zu groß", "file too large"], FEHLT] },
+    { w: [133, 252, 266], e: "MB" },
+    { w: [260, 929, 870], e: "MB" },
+    { w: [77, 200, 273], e: "MB" },
+  ];
+  var vAbschnitt = $("#compare");
+  var vTitel = $$("#compare .titles h3");
+  var vKnoepfe = $$("#compare .rail button");
+  var bahnen = $$(".lane").map(function (el) {
+    return { el: el, balken: el.querySelector("i"), wert: el.querySelector("b") };
+  });
+  var vIndex = -1;
+  function zahl(wert, einheit) {
+    var stellen = einheit === "MB" ? 0 : wert < 1 ? 2 : 1;
+    return (
+      new Intl.NumberFormat(sprache, { minimumFractionDigits: stellen, maximumFractionDigits: stellen }).format(wert) +
+      " " +
+      einheit
+    );
+  }
+  // Stand einer Messung: u laeuft von 0 (Start) bis 1 (alle fertig).
+  function maleMessung(index, u) {
+    var m = MESSUNGEN[index];
+    var groesste = Math.max.apply(
+      null,
+      m.w.filter(function (w) {
+        return w !== null;
+      }),
+    );
+    bahnen.forEach(function (bahn, i) {
+      var w = m.w[i];
+      bahn.el.classList.toggle("na", w === null);
+      if (w === null) {
+        bahn.balken.style.setProperty("--f", 0);
+        bahn.wert.textContent = text(m.g[i][0], m.g[i][1]);
         return;
       }
-      el.textContent =
-        new Intl.NumberFormat(sprache, {
-          minimumFractionDigits: stellen,
-          maximumFractionDigits: stellen,
-        }).format(ziel * (1 - Math.pow(1 - t, 4))) + anhang;
-      requestAnimationFrame(schritt);
-    })(beginn);
+      // Zeiten laufen wie eine Stoppuhr bis zum eigenen Wert, Groessen wachsen gemeinsam
+      var stand = m.e === "s" ? Math.min(w, u * groesste) : w * weich(u);
+      bahn.balken.style.setProperty("--f", ((stand / groesste) * 100).toFixed(2));
+      bahn.wert.textContent = zahl(u >= 1 ? w : Math.max(stand, m.e === "s" ? 0.01 : 1), m.e);
+    });
   }
 
-  // Einblenden beim Scrollen: Geschwister nacheinander; Balken wachsen, Zahlen zaehlen.
-  function zeige(el) {
-    el.classList.add("in");
-    el.querySelectorAll("[data-w]").forEach(function (balken) {
-      balken.style.setProperty("--w", balken.dataset.w);
+  // KI-Satz in Woerter teilen; sie werden beim Scrollen nacheinander hell.
+  var licht = [];
+  function teileLicht() {
+    licht = [];
+    $$("[data-light]").forEach(function (el) {
+      var woerter = el.textContent.trim().split(/\s+/);
+      el.replaceChildren();
+      woerter.forEach(function (wort) {
+        var span = document.createElement("span");
+        span.className = "w";
+        span.textContent = wort;
+        el.append(span, " ");
+        licht.push(span);
+      });
     });
-    if (!ruhig.matches) el.querySelectorAll("[data-count]").forEach(zaehle);
   }
-  var ziele = $$("[data-reveal], .measure, .more li, tbody tr, tfoot tr");
+
+  var maus = [0, 0];
+  var nach = { f: 0, v: 0, ein: 1, mx: 0, my: 0 };
+  var bild = 0;
+  function fortschritt(abschnitt) {
+    var r = abschnitt.getBoundingClientRect();
+    return grenze(-r.top / Math.max(1, r.height - innerHeight));
+  }
+  function zeichne() {
+    bild = 0;
+    var hoch = innerHeight;
+    var seite = innerWidth / hoch;
+    var schmal = seite < 1;
+    var k = ruhig.matches ? 1 : 0.14;
+
+    // --- Funktionen ---
+    var fRect = fAbschnitt.getBoundingClientRect();
+    var fZiel = fortschritt(fAbschnitt);
+    nach.f += (fZiel - nach.f) * k;
+    nach.ein += (grenze(fRect.top / hoch) - nach.ein) * k;
+    var fStand = Math.min(fTitel.length - 0.0001, nach.f * fTitel.length);
+    var fNeu = Math.floor(fStand);
+    if (fNeu !== fIndex) {
+      fIndex = fNeu;
+      setze(fTitel, fIndex);
+      setze(fTexte, fIndex);
+      setze(fBilder, fIndex);
+      fKnoepfe.forEach(function (knopf, i) {
+        knopf.setAttribute("aria-selected", String(i === fIndex));
+        knopf.tabIndex = i === fIndex ? 0 : -1;
+      });
+      fBilder.forEach(function (b, i) {
+        b.setAttribute("aria-hidden", String(i !== fIndex));
+      });
+      zeigeInLeiste(fKnoepfe[fIndex]);
+    }
+    fKnoepfe.forEach(function (knopf, i) {
+      knopf.style.setProperty("--p", i < fIndex ? 1 : i === fIndex ? (fStand - i).toFixed(3) : 0);
+    });
+    nach.mx += (maus[0] - nach.mx) * 0.08;
+    nach.my += (maus[1] - nach.my) * 0.08;
+    // das Fenster kommt gekippt von unten und richtet sich auf
+    fBuehne.style.setProperty("--rx", (nach.ein * 46 - nach.my * 5).toFixed(2) + "deg");
+    fBuehne.style.setProperty("--ry", (nach.mx * 7).toFixed(2) + "deg");
+    fBuehne.style.setProperty("--sc", (1 - nach.ein * 0.22).toFixed(4));
+
+    // --- Vergleich ---
+    var vZiel = fortschritt(vAbschnitt);
+    nach.v += (vZiel - nach.v) * k;
+    var vStand = Math.min(MESSUNGEN.length - 0.0001, nach.v * MESSUNGEN.length);
+    var vNeu = Math.floor(vStand);
+    if (vNeu !== vIndex) {
+      vIndex = vNeu;
+      setze(vTitel, vIndex);
+      vKnoepfe.forEach(function (knopf, i) {
+        knopf.setAttribute("aria-pressed", String(i === vIndex));
+      });
+      zeigeInLeiste(vKnoepfe[vIndex]);
+    }
+    vKnoepfe.forEach(function (knopf, i) {
+      knopf.style.setProperty("--p", i < vIndex ? 1 : i === vIndex ? (vStand - i).toFixed(3) : 0);
+    });
+    // erste 70 % eines Schritts laeuft die Messung, danach bleibt das Ergebnis stehen
+    maleMessung(vIndex, ruhig.matches ? 1 : grenze((vStand - vIndex) / 0.7));
+
+    // --- KI-Satz ---
+    var aRect = $("#ai").getBoundingClientRect();
+    var aStand = grenze((hoch * 0.85 - aRect.top) / (aRect.height * 0.62));
+    licht.forEach(function (wort, i) {
+      wort.classList.toggle("lit", i < aStand * (licht.length + 1));
+    });
+
+    // --- Wolken und 3D-Objekt ---
+    var oben = grenze(scrollY / hoch);
+    var vRect = vAbschnitt.getBoundingClientRect();
+    var tRect = $("#table").getBoundingClientRect();
+    var farbe;
+    if (aRect.top < hoch * 0.7) farbe = FARBEN.ki;
+    else if (tRect.top < hoch * 0.6) farbe = FARBEN.tabelle;
+    else if (vRect.top < hoch * 0.5) farbe = FARBEN.vergleich[vIndex % 2];
+    else if (fRect.top < hoch * 0.6) farbe = FARBEN.funktionen[Math.max(0, fIndex)];
+    else farbe = FARBEN.start;
+    szene.A = farbe[0];
+    szene.B = farbe[1];
+    var amEnde = grenze((hoch - aRect.top) / hoch);
+    if (amEnde > 0) {
+      // am Schluss kommt das Symbol zurueck und setzt sich wieder zusammen
+      szene.V = weich(amEnde);
+      szene.S = 1 - weich(aStand);
+      szene.K = schmal ? 0.46 : 0.8;
+      szene.O = schmal ? [seite * 0.3, -0.6] : [seite * 0.64, -0.05];
+    } else {
+      // am Anfang schwebt es neben der Ueberschrift und zerfaellt beim Wegscrollen
+      szene.V = 1 - weich(grenze((oben - 0.45) / 0.5));
+      szene.S = weich(oben);
+      szene.K = schmal ? 0.5 : 0.82;
+      szene.O = schmal ? [seite * 0.32, 0.56 + oben * 0.5] : [seite * 0.56, 0.04 + oben * 0.7];
+    }
+
+    if (
+      !ruhig.matches &&
+      Math.abs(fZiel - nach.f) + Math.abs(vZiel - nach.v) + Math.abs(maus[0] - nach.mx) + Math.abs(maus[1] - nach.my) > 0.0006
+    )
+      anfordern();
+  }
+  function anfordern() {
+    if (!bild) bild = requestAnimationFrame(zeichne);
+  }
+  // gewaehlten Knopf in der Leiste sichtbar halten, ohne die Seite zu bewegen
+  function zeigeInLeiste(knopf) {
+    var leiste = knopf.parentElement;
+    if (leiste.scrollWidth <= leiste.clientWidth) return;
+    leiste.scrollTo({ left: knopf.offsetLeft - (leiste.clientWidth - knopf.offsetWidth) / 2, behavior: "smooth" });
+  }
+  // Klick oder Pfeiltaste in der Leiste springt an die passende Stelle der Szene.
+  function verbinde(abschnitt, knoepfe) {
+    function springe(i, fokus) {
+      var strecke = abschnitt.offsetHeight - innerHeight;
+      scrollTo({ top: abschnitt.offsetTop + ((i + 0.4) / knoepfe.length) * strecke, behavior: ruhig.matches ? "auto" : "smooth" });
+      if (fokus) knoepfe[i].focus({ preventScroll: true });
+    }
+    knoepfe.forEach(function (knopf, i) {
+      knopf.addEventListener("click", function () {
+        springe(i, false);
+      });
+      knopf.addEventListener("keydown", function (e) {
+        var ziel =
+          e.key === "ArrowRight"
+            ? (i + 1) % knoepfe.length
+            : e.key === "ArrowLeft"
+              ? (i + knoepfe.length - 1) % knoepfe.length
+              : e.key === "Home"
+                ? 0
+                : e.key === "End"
+                  ? knoepfe.length - 1
+                  : -1;
+        if (ziel !== -1) {
+          e.preventDefault();
+          springe(ziel, true);
+        }
+      });
+    });
+  }
+  verbinde(fAbschnitt, fKnoepfe);
+  verbinde(vAbschnitt, vKnoepfe);
+  addEventListener("scroll", anfordern, { passive: true });
+  addEventListener("resize", anfordern, { passive: true });
+  addEventListener(
+    "pointermove",
+    function (e) {
+      if (e.pointerType !== "mouse" || ruhig.matches) return;
+      maus = [e.clientX / innerWidth - 0.5, e.clientY / innerHeight - 0.5];
+      anfordern();
+    },
+    { passive: true },
+  );
+  // nach einem Sprachwechsel: Woerter neu teilen, Werte neu schreiben
+  function male() {
+    teileLicht();
+    vIndex = -1;
+    anfordern();
+  }
+  bereit = true;
+  male();
+
+  // Tabelle: Zeilen blenden nacheinander ein.
+  var ziele = $$("[data-reveal], tbody tr, tfoot tr");
   if ("IntersectionObserver" in window) {
     var beobachter = new IntersectionObserver(
       function (eintraege) {
@@ -353,38 +543,19 @@
         eintraege.forEach(function (e) {
           if (!e.isIntersecting) return;
           e.target.style.setProperty("--d", reihe++);
-          zeige(e.target);
+          e.target.classList.add("in");
           beobachter.unobserve(e.target);
         });
       },
-      { threshold: 0.12, rootMargin: "0px 0px -8% 0px" },
+      { threshold: 0.1, rootMargin: "0px 0px -6% 0px" },
     );
     ziele.forEach(function (el) {
       beobachter.observe(el);
     });
-  } else ziele.forEach(zeige);
-
-  // Das App-Bild richtet sich beim Scrollen leicht auf, weich nachgefuehrt.
-  var buehne = $("#shots");
-  var kipp = 1;
-  var bild = 0;
-  function zeichne() {
-    bild = 0;
-    if (ruhig.matches) return;
-    var hoch = innerHeight;
-    // 1 = Bild kommt unten ins Sichtfeld, 0 = oben angekommen
-    var k = Math.min(1, Math.max(0, (buehne.getBoundingClientRect().top - hoch * 0.25) / (hoch * 0.7)));
-    kipp += (k - kipp) * 0.12;
-    buehne.style.setProperty("--rx", (kipp * 14).toFixed(2) + "deg");
-    buehne.style.setProperty("--s", (1 - kipp * 0.06).toFixed(4));
-    if (Math.abs(k - kipp) > 0.002) anfordern();
-  }
-  function anfordern() {
-    if (!bild) bild = requestAnimationFrame(zeichne);
-  }
-  addEventListener("scroll", anfordern, { passive: true });
-  addEventListener("resize", anfordern, { passive: true });
-  anfordern();
+  } else
+    ziele.forEach(function (el) {
+      el.classList.add("in");
+    });
 
   zeigeBefehl();
 
