@@ -124,18 +124,6 @@
         </picture>
       </section>
 
-      <section aria-labelledby="m-h" class="block more">
-        <h2 class="rv" data-en="What else it can do" id="m-h">Was es sonst noch kann</h2>
-        <ul class="rv">
-          <li><h3 data-en="Import">Import</h3><p data-en="Bring in data from CSV files, SQLite, MongoDB, Redis or PostgreSQL.">Daten aus CSV-Dateien, SQLite, MongoDB, Redis oder PostgreSQL übernehmen.</p></li>
-          <li><h3 data-en="Export">Export</h3><p data-en="Save a database as an SQL, CSV or JSON file, or copy it to another server.">Eine Datenbank als SQL-, CSV- oder JSON-Datei speichern oder auf einen anderen Server kopieren.</p></li>
-          <li><h3 data-en="Backups">Backups</h3><p data-en="EasyMySQL backs up your databases automatically. If something goes wrong, you bring back the earlier state.">EasyMySQL sichert deine Datenbanken automatisch. Geht etwas schief, holst du den alten Stand zurück.</p></li>
-          <li><h3 data-en="Users and privileges">Benutzer und Rechte</h3><p data-en="Create users and decide which databases and tables they may access.">Benutzer anlegen und festlegen, auf welche Datenbanken und Tabellen sie zugreifen dürfen.</p></li>
-          <li><h3 data-en="Other servers">Andere Server</h3><p data-en="You can also open databases on another computer, for example on your school&#x27;s server.">Auch Datenbanken auf einem anderen Rechner lassen sich öffnen, zum Beispiel auf dem Server deiner Schule.</p></li>
-          <li><h3 data-en="AI chat">KI-Chat</h3><p data-en="The built-in chat knows your tables and helps you write queries.">Der eingebaute Chat kennt deine Tabellen und hilft dir beim Schreiben von Abfragen.</p></li>
-        </ul>
-      </section>
-
       <section aria-labelledby="c-h" class="block compare" id="compare">
         <h2 class="rv" data-en="Compared with XAMPP and MySQL Workbench" id="c-h">Im Vergleich mit XAMPP und MySQL Workbench</h2>
         <table>
@@ -179,28 +167,13 @@
         </table>
       </section>
 
-      <section aria-labelledby="q-h" class="block faq">
-        <h2 class="rv" data-en="Common questions" id="q-h">Häufige Fragen</h2>
-        <dl>
-          <div class="rv"><dt data-en="Do I still need XAMPP?">Brauche ich noch XAMPP?</dt><dd data-en="Not for databases. If you build websites with PHP, you still need a web server for that.">Für Datenbanken nicht. Wenn du Webseiten mit PHP baust, brauchst du dafür weiterhin einen Webserver.</dd></div>
-          <div class="rv"><dt data-en="How do I connect my own program to the database?">Wie verbinde ich mein eigenes Programm mit der Datenbank?</dt><dd data-en="With localhost, port 3306 and the user root without a password. These are the same settings as in XAMPP, so existing programs keep working.">Mit localhost, Port 3306 und dem Benutzer root ohne Passwort. Das sind dieselben Angaben wie bei XAMPP, vorhandene Programme laufen also weiter.</dd></div>
-          <div class="rv"><dt data-en="Can I keep using my existing databases?">Kann ich meine bisherigen Datenbanken weiterverwenden?</dt><dd data-en="Yes. Export them in phpMyAdmin as an SQL file and open that file in EasyMySQL with Database → Import SQL file.">Ja. Exportiere sie in phpMyAdmin als SQL-Datei und öffne diese in EasyMySQL über Datenbank → SQL-Datei importieren.</dd></div>
-          <div class="rv"><dt data-en="Does it work without installing?">Geht es auch ohne Installation?</dt><dd data-en="On Windows, yes. The portable version only needs to be unzipped and started.">Unter Windows ja. Die portable Version wird nur entpackt und gestartet.</dd></div>
-        </dl>
-      </section>
-
-      <section aria-labelledby="e-h" class="block end">
-        <h2 class="rv" data-en="Install EasyMySQL" id="e-h">EasyMySQL installieren</h2>
-        <div class="rv">
-          <button aria-label="Installationsbefehl kopieren" class="cmd" data-copy-from="#hero-cmd" data-en-label="Copy the install command" type="button">
-            <span aria-hidden="true" class="prompt" data-prompt="">PS&gt;</span><code data-cmd="">irm https://mysql.benjaminberger.at/install | iex</code><span class="tap" data-en="copy">kopieren</span>
-          </button>
-          <p data-en="The command fetches the newest version and sets everything up.">Der Befehl lädt die neueste Version und richtet alles ein.</p>
-          <a class="up" data-en="Choose another system or a file" href="#top">Anderes System oder Datei wählen</a>
-        </div>
+      <section aria-labelledby="u-h" class="block intro">
+        <h2 class="rv" data-en="Switching from XAMPP" id="u-h">Von XAMPP umsteigen</h2>
+        <p class="rv" data-en="You can take your existing databases with you: export them in phpMyAdmin as an SQL file and open that file in EasyMySQL with Database → Import SQL file. Your own programs connect as before, with localhost, port 3306 and the user root without a password. Only if you build websites with PHP do you still need a web server for that.">Deine bisherigen Datenbanken nimmst du mit: In phpMyAdmin exportierst du sie als SQL-Datei, in EasyMySQL öffnest du diese über Datenbank → SQL-Datei importieren. Eigene Programme verbinden sich wie bisher mit localhost, Port 3306 und dem Benutzer root ohne Passwort. Nur wer Webseiten mit PHP baut, braucht dafür weiterhin einen Webserver.</p>
       </section>
     </main>
     <footer class="foot">
+      <a class="up" data-en="To the installation" href="#top">Zur Installation</a>
       <a data-en="Imprint" href="https://benjaminberger.at/impressum">Impressum</a>
       <a data-en="Privacy" href="https://benjaminberger.at/datenschutz">Datenschutz</a>
     </footer>

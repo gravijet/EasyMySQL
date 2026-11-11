@@ -316,10 +316,6 @@ section {
   max-width: 20ch;
   margin-bottom: clamp(28px, 5vh, 56px);
 }
-.block p,
-.block dd {
-  color: var(--mute);
-}
 
 /* Was ist EasyMySQL: links die Frage, rechts ein Absatz */
 .intro {
@@ -382,30 +378,6 @@ section {
 }
 .flip .shot img {
   --dir: 1;
-}
-
-/* Was es sonst noch kann: sechs kurze Eintraege */
-.more ul {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0 clamp(1.5rem, 4vw, 3.5rem);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.more li {
-  padding: 1.3rem 0 1.5rem;
-  border-top: 1px solid var(--line);
-}
-.block h3 {
-  margin: 0;
-  font: 620 1.12rem/1.25 var(--display);
-  letter-spacing: -0.02em;
-}
-.more p {
-  margin-top: 0.4rem;
-  font-size: 0.98rem;
-  line-height: 1.45;
 }
 
 /* Vergleich: eine Tabelle fuer Messwerte und Funktionen */
@@ -558,39 +530,6 @@ tfoot td:nth-child(2) b {
   color: var(--blue);
 }
 
-/* Haeufige Fragen: alle Antworten offen */
-.faq dl {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0 clamp(2rem, 6vw, 6rem);
-  margin: 0;
-}
-.faq dl div {
-  padding: 1.4rem 0 1.6rem;
-  border-top: 1px solid var(--line);
-}
-.faq dt {
-  font: 620 1.12rem/1.25 var(--display);
-  letter-spacing: -0.02em;
-}
-.faq dd {
-  max-width: 48ch;
-  margin: 0.5rem 0 0;
-  font-size: 0.98rem;
-  line-height: 1.5;
-}
-
-/* Schluss: der Befehl noch einmal */
-.end {
-  padding-bottom: clamp(120px, 20vh, 200px);
-}
-.end > div {
-  max-width: 760px;
-}
-.end p {
-  margin-top: 0.9rem;
-  font-size: 0.98rem;
-}
 .up {
   display: inline-block;
   font: 500 0.82rem/44px var(--mono);
@@ -604,6 +543,16 @@ tfoot td:nth-child(2) b {
   color: var(--blue);
   transition: translate 0.5s var(--out);
 }
+.foot .up {
+  margin-right: auto;
+}
+.up {
+  white-space: nowrap;
+}
+/* Platz fuer die Fusszeile, die unten ueber dem letzten Abschnitt liegt */
+main > .block:last-child {
+  padding-bottom: clamp(120px, 18vh, 170px);
+}
 .up:hover {
   color: var(--fg);
 }
@@ -615,7 +564,6 @@ tfoot td:nth-child(2) b {
   inset: auto 0 0;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
   gap: 1.6rem;
   padding: 0 var(--pad) 12px;
 }
@@ -745,16 +693,18 @@ body {
   .feature.flip > div {
     order: 0;
   }
+  .foot {
+    gap: 0.9rem;
+  }
+  .foot a {
+    font-size: 0.72rem;
+  }
   /* der Befehl bricht nur an Leerzeichen um, "kopieren" steht darunter */
   .cmd {
     flex-wrap: wrap;
   }
   .tap {
     flex-basis: 100%;
-  }
-  .more ul,
-  .faq dl {
-    grid-template-columns: 1fr;
   }
   thead th {
     width: 20%;
@@ -785,10 +735,5 @@ body {
   tfoot b {
     display: block;
     font-size: 1.3rem;
-  }
-}
-@media (min-width: 821px) and (max-width: 1100px) {
-  .more ul {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
