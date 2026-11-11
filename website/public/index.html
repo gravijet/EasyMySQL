@@ -25,14 +25,13 @@
   </head>
   <body>
     <canvas aria-hidden="true" id="gl"></canvas>
-    <div aria-hidden="true" class="cursor" id="cursor"><span></span></div>
     <a class="skip" data-en="Skip to content" href="#main">Zum Inhalt</a>
     <header class="nav">
       <a aria-label="Zum Seitenanfang" class="brand" data-en-label="Back to top" href="#top"><img alt="" height="22" src="/favicon.svg" width="22" /></a>
       <button aria-label="English" class="lang" id="lang" lang="en" type="button">EN</button>
     </header>
     <main id="main">
-      <section aria-labelledby="product-name" class="hero" id="top">
+      <section aria-labelledby="product-name" class="hero" data-relief="start" id="top">
         <h1 class="ghost" id="product-name">EasyMySQL</h1>
         <div class="hero-foot">
           <p class="claim" data-en="Database, SQL and Java in one app.">Datenbank, SQL und Java in einer App.</p>
@@ -40,7 +39,7 @@
             <div aria-label="Betriebssystem" class="install-os" data-en-label="Operating system" role="radiogroup">
               <button aria-checked="true" data-install-os="win" role="radio" type="button">Windows</button><button aria-checked="false" data-install-os="mac" role="radio" type="button">macOS</button><button aria-checked="false" data-install-os="linux" role="radio" type="button">Linux</button>
             </div>
-            <button aria-label="Installationsbefehl kopieren" class="cmd" data-copy-from="#hero-cmd" data-cursor="kopieren" data-cursor-en="copy" data-en-label="Copy the install command" type="button">
+            <button aria-label="Installationsbefehl kopieren" class="cmd" data-copy-from="#hero-cmd" data-en-label="Copy the install command" type="button">
               <span aria-hidden="true" class="prompt" id="prompt">PS&gt;</span><code id="hero-cmd">irm https://mysql.benjaminberger.at/install | iex</code><span class="tap" data-en="copy">kopieren</span>
             </button>
             <p class="files">
@@ -55,23 +54,105 @@
         </div>
       </section>
 
-      <section aria-labelledby="c-h" class="stats" id="compare">
-        <h2 class="ghost" data-en="EasyMySQL compared with XAMPP and MySQL Workbench" id="c-h">EasyMySQL im Vergleich mit XAMPP und MySQL Workbench</h2>
-        <p class="m-name" id="m-name">Programm starten</p>
-        <p aria-live="polite" class="ghost" id="m-us">EasyMySQL 0,47 s</p>
-        <div class="rivals">
-          <div class="rival us"><span>EasyMySQL</span><i></i></div>
-          <div class="rival"><span>XAMPP</span><b>2,7 s</b><i></i></div>
-          <div class="rival"><span>Workbench</span><b>5,7 s</b><i></i></div>
+      <section aria-labelledby="f-sql" class="feature" data-farbe="0">
+        <div>
+          <h2 id="f-sql" data-en="SQL editor">SQL-Editor</h2>
+          <p data-en="Suggestions that know your tables. Errors are explained and fixed with one click.">Vorschläge passend zu deinen Tabellen. Fehler werden erklärt und mit einem Klick behoben.</p>
         </div>
+        <picture class="shot">
+          <source sizes="(max-width: 820px) 92vw, 60vw" srcset="/shots/sql-1000.avif 1000w, /shots/sql-2000.avif 2000w" type="image/avif" />
+          <img alt="SQL-Editor mit Vorschlägen und Abfrageergebnis" data-en-alt="SQL editor with suggestions and query results" decoding="async" height="1250" loading="eager" sizes="(max-width: 820px) 92vw, 60vw" src="/shots/sql-2000.webp" srcset="/shots/sql-1000.webp 1000w, /shots/sql-2000.webp 2000w" width="2000" />
+        </picture>
+      </section>
+      <section aria-labelledby="f-data" class="feature flip" data-farbe="1">
+        <div>
+          <h2 id="f-data" data-en="Tables">Tabellen</h2>
+          <p data-en="Change values like in a spreadsheet. Ctrl + Z undoes it.">Werte ändern wie in einer Tabellenkalkulation. Strg + Z macht es rückgängig.</p>
+        </div>
+        <picture class="shot">
+          <source sizes="(max-width: 820px) 92vw, 60vw" srcset="/shots/data-1000.avif 1000w, /shots/data-2000.avif 2000w" type="image/avif" />
+          <img alt="Produkttabelle zum direkten Bearbeiten" data-en-alt="Product table with inline editing" decoding="async" height="1250" loading="lazy" sizes="(max-width: 820px) 92vw, 60vw" src="/shots/data-2000.webp" srcset="/shots/data-1000.webp 1000w, /shots/data-2000.webp 2000w" width="2000" />
+        </picture>
+      </section>
+      <section aria-labelledby="f-er" class="feature" data-farbe="2">
+        <div>
+          <h2 id="f-er" data-en="ER diagrams">ER-Diagramme</h2>
+          <p data-en="Your database as a picture, drawn automatically.">Deine Datenbank als Bild, automatisch gezeichnet.</p>
+        </div>
+        <picture class="shot">
+          <source sizes="(max-width: 820px) 92vw, 60vw" srcset="/shots/er-1000.avif 1000w, /shots/er-2000.avif 2000w" type="image/avif" />
+          <img alt="ER-Diagramm mit Tabellen und Fremdschlüsseln" data-en-alt="ER diagram with tables and foreign keys" decoding="async" height="1250" loading="lazy" sizes="(max-width: 820px) 92vw, 60vw" src="/shots/er-2000.webp" srcset="/shots/er-1000.webp 1000w, /shots/er-2000.webp 2000w" width="2000" />
+        </picture>
+      </section>
+      <section aria-labelledby="f-builder" class="feature flip" data-farbe="3">
+        <div>
+          <h2 id="f-builder" data-en="Query builder">Query Builder</h2>
+          <p data-en="Click queries together and learn SQL along the way.">Abfragen zusammenklicken und dabei SQL lernen.</p>
+        </div>
+        <picture class="shot">
+          <source sizes="(max-width: 820px) 92vw, 60vw" srcset="/shots/builder-1000.avif 1000w, /shots/builder-2000.avif 2000w" type="image/avif" />
+          <img alt="Visueller Query Builder mit erzeugtem SQL" data-en-alt="Visual query builder with generated SQL" decoding="async" height="1250" loading="lazy" sizes="(max-width: 820px) 92vw, 60vw" src="/shots/builder-2000.webp" srcset="/shots/builder-1000.webp 1000w, /shots/builder-2000.webp 2000w" width="2000" />
+        </picture>
+      </section>
+      <section aria-labelledby="f-code" class="feature" data-farbe="4">
+        <div>
+          <h2 id="f-code" data-en="Java">Java</h2>
+          <p data-en="Projects with a ready database connection. Write, run, debug.">Projekte mit fertiger Datenbankverbindung. Schreiben, starten, debuggen.</p>
+        </div>
+        <picture class="shot">
+          <source sizes="(max-width: 820px) 92vw, 60vw" srcset="/shots/code-1000.avif 1000w, /shots/code-2000.avif 2000w" type="image/avif" />
+          <img alt="Java-Projekt mit Editor und Terminal" data-en-alt="Java project with editor and terminal" decoding="async" height="1250" loading="lazy" sizes="(max-width: 820px) 92vw, 60vw" src="/shots/code-2000.webp" srcset="/shots/code-1000.webp 1000w, /shots/code-2000.webp 2000w" width="2000" />
+        </picture>
+      </section>
+      <section aria-labelledby="f-git" class="feature flip" data-farbe="5">
+        <div>
+          <h2 id="f-git" data-en="Git">Git</h2>
+          <p data-en="Save, compare and restore your changes.">Änderungen sichern, vergleichen und zurückholen.</p>
+        </div>
+        <picture class="shot">
+          <source sizes="(max-width: 820px) 92vw, 60vw" srcset="/shots/git-1000.avif 1000w, /shots/git-2000.avif 2000w" type="image/avif" />
+          <img alt="Git-Ansicht mit Änderungen" data-en-alt="Git view with changes" decoding="async" height="1250" loading="lazy" sizes="(max-width: 820px) 92vw, 60vw" src="/shots/git-2000.webp" srcset="/shots/git-1000.webp 1000w, /shots/git-2000.webp 2000w" width="2000" />
+        </picture>
       </section>
 
-      <section aria-labelledby="f-h" class="features" id="features">
-        <h2 class="ghost" data-en="Features" id="f-h">Funktionen</h2>
-        <p aria-live="polite" class="ghost" id="f-name">SQL-Editor</p>
-        <div class="blinds-wrap">
-          <div aria-hidden="true" class="blinds" id="blinds"><img alt="" decoding="async" height="1250" src="/shots/sql-2000.webp" width="2000" /></div>
-        </div>
+      <section aria-labelledby="s-h" class="statement" data-relief="zahl" id="compare">
+        <h2 class="ghost" data-en="EasyMySQL starts in 0.47 seconds" id="s-h">EasyMySQL startet in 0,47 Sekunden</h2>
+        <p class="claim" data-en="Until the app is open. XAMPP takes 2.7 s, MySQL Workbench 5.7 s.">Bis das Programm offen ist. XAMPP braucht 2,7 s, MySQL Workbench 5,7 s.</p>
+      </section>
+
+      <section aria-label="Messwerte" class="measures" data-en-label="Measurements">
+        <article class="measure">
+          <h3 data-en="Starting the app">Programm starten</h3>
+          <dl><div class=us><dt>EasyMySQL</dt><dd><b data-count="0.47" data-dec="2" data-en="0.47 s">0,47 s</b><i class="bar" data-w="8.2"></i></dd></div><div><dt>XAMPP</dt><dd><b data-count="2.7" data-dec="1" data-en="2.7 s">2,7 s</b><i class="bar" data-w="47.4"></i></dd></div><div><dt>Workbench</dt><dd><b data-count="5.7" data-dec="1" data-en="5.7 s">5,7 s</b><i class="bar" data-w="100.0"></i></dd></div></dl>
+        </article>
+        <article class="measure">
+          <h3 data-en="Opening a table with 1M rows">Tabelle mit 1 Mio. Zeilen öffnen</h3>
+          <dl><div class=us><dt>EasyMySQL</dt><dd><b data-count="0.17" data-dec="2" data-en="0.17 s">0,17 s</b><i class="bar" data-w="8.1"></i></dd></div><div><dt>XAMPP</dt><dd><b data-count="0.33" data-dec="2" data-en="0.33 s">0,33 s</b><i class="bar" data-w="15.7"></i></dd></div><div><dt>Workbench</dt><dd><b data-count="2.1" data-dec="1" data-en="2.1 s">2,1 s</b><i class="bar" data-w="100.0"></i></dd></div></dl>
+        </article>
+        <article class="measure">
+          <h3 data-en="Searching 1M rows">In 1 Mio. Zeilen suchen</h3>
+          <dl><div class=us><dt>EasyMySQL</dt><dd><b data-count="0.2" data-dec="2" data-en="0.20 s">0,20 s</b><i class="bar" data-w="58.8"></i></dd></div><div><dt>XAMPP</dt><dd><b data-count="0.34" data-dec="2" data-en="0.34 s">0,34 s</b><i class="bar" data-w="100.0"></i></dd></div><div><dt>Workbench</dt><dd><b data-count="0.25" data-dec="2" data-en="0.25 s">0,25 s</b><i class="bar" data-w="73.5"></i></dd></div></dl>
+        </article>
+        <article class="measure">
+          <h3 data-en="Drawing an ER diagram">ER-Diagramm zeichnen</h3>
+          <dl><div class=us><dt>EasyMySQL</dt><dd><b data-count="0.22" data-dec="2" data-en="0.22 s">0,22 s</b><i class="bar" data-w="36.7"></i></dd></div><div><dt>XAMPP</dt><dd><b data-count="0.6" data-dec="2" data-en="0.60 s">0,60 s</b><i class="bar" data-w="100.0"></i></dd></div><div class="na"><dt>Workbench</dt><dd><span data-en="not available">nicht vorhanden</span></dd></div></dl>
+        </article>
+        <article class="measure">
+          <h3 data-en="Importing 1M rows">1 Mio. Zeilen importieren</h3>
+          <dl><div class=us><dt>EasyMySQL</dt><dd><b data-count="7.7" data-dec="1" data-en="7.7 s">7,7 s</b><i class="bar" data-w="100.0"></i></dd></div><div class="na"><dt>XAMPP</dt><dd><span data-en="file too large">Datei zu groß</span></dd></div><div class="na"><dt>Workbench</dt><dd><span data-en="not available">nicht vorhanden</span></dd></div></dl>
+        </article>
+        <article class="measure">
+          <h3 data-en="Memory">Arbeitsspeicher</h3>
+          <dl><div class=us><dt>EasyMySQL</dt><dd><b data-count="133" data-dec="0" data-en="133 MB">133 MB</b><i class="bar" data-w="50.0"></i></dd></div><div><dt>XAMPP</dt><dd><b data-count="252" data-dec="0" data-en="252 MB">252 MB</b><i class="bar" data-w="94.7"></i></dd></div><div><dt>Workbench</dt><dd><b data-count="266" data-dec="0" data-en="266 MB">266 MB</b><i class="bar" data-w="100.0"></i></dd></div></dl>
+        </article>
+        <article class="measure">
+          <h3 data-en="Disk space">Platz auf der Festplatte</h3>
+          <dl><div class=us><dt>EasyMySQL</dt><dd><b data-count="260" data-dec="0" data-en="260 MB">260 MB</b><i class="bar" data-w="28.0"></i></dd></div><div><dt>XAMPP</dt><dd><b data-count="929" data-dec="0" data-en="929 MB">929 MB</b><i class="bar" data-w="100.0"></i></dd></div><div><dt>Workbench</dt><dd><b data-count="870" data-dec="0" data-en="870 MB">870 MB</b><i class="bar" data-w="93.6"></i></dd></div></dl>
+        </article>
+        <article class="measure">
+          <h3 data-en="Download">Download</h3>
+          <dl><div class=us><dt>EasyMySQL</dt><dd><b data-count="77" data-dec="0" data-en="77 MB">77 MB</b><i class="bar" data-w="28.2"></i></dd></div><div><dt>XAMPP</dt><dd><b data-count="200" data-dec="0" data-en="200 MB">200 MB</b><i class="bar" data-w="73.3"></i></dd></div><div><dt>Workbench</dt><dd><b data-count="273" data-dec="0" data-en="273 MB">273 MB</b><i class="bar" data-w="100.0"></i></dd></div></dl>
+        </article>
       </section>
 
       <section aria-labelledby="t-h" class="table" id="table">
@@ -107,9 +188,9 @@
         </table>
       </section>
 
-      <section aria-labelledby="ai-h" class="end" id="ai">
+      <section aria-labelledby="ai-h" class="end" data-relief="ende" id="ai">
         <h2 class="ghost" data-en="Claude Code and Codex are built in" id="ai-h">Claude Code und Codex sind eingebaut</h2>
-        <p class="end-line" data-en="are built in.">sind eingebaut.</p>
+        <p class="claim" data-en="are built in. Ask the AI about your database, it knows your tables.">sind eingebaut. Frag die KI zu deiner Datenbank, sie kennt deine Tabellen.</p>
       </section>
     </main>
     <footer class="foot">

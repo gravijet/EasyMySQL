@@ -30,11 +30,10 @@
 *::after {
   box-sizing: border-box;
 }
-/* keine Scrollleisten: die Seite ist kurz und rastet an den Abschnitten ein */
+/* keine Scrollleisten */
 html {
   overflow-x: clip;
   scroll-behavior: smooth;
-  scroll-snap-type: y proximity;
   scrollbar-width: none;
   -webkit-text-size-adjust: 100%;
   background: var(--night);
@@ -130,50 +129,6 @@ html:not(.js) .hero .ghost {
 }
 section {
   position: relative;
-  scroll-snap-align: start;
-}
-
-/* Eigener Zeiger: ein Ring, der der Maus weich folgt und sagt, was ein Klick tut */
-.cursor {
-  position: fixed;
-  left: 0;
-  top: 0;
-  z-index: 90;
-  display: none;
-  pointer-events: none;
-  translate: var(--x, -100px) var(--y, -100px);
-  mix-blend-mode: difference;
-}
-.cursor span {
-  position: absolute;
-  display: grid;
-  place-items: center;
-  width: var(--w, 18px);
-  height: 18px;
-  translate: -50% -50%;
-  font: 600 0 var(--mono);
-  color: #000;
-  white-space: nowrap;
-  background: transparent;
-  border: 1.5px solid #fff;
-  border-radius: 999px;
-  transition:
-    width 0.45s var(--out),
-    height 0.45s var(--out),
-    background 0.3s,
-    font-size 0.3s;
-}
-.cursor.on span {
-  height: 44px;
-  font-size: 0.72rem;
-  background: #fff;
-}
-.cur .cursor {
-  display: block;
-}
-.cur,
-.cur * {
-  cursor: none;
 }
 
 /* Kopf: nur das Zeichen und die Sprache */
@@ -304,9 +259,6 @@ section {
 .cmd:hover .tap {
   color: var(--fg);
 }
-.cur .tap {
-  display: none;
-}
 /* Dateien: kleine Woerter mit einem Pfeil, der beim Zeigen faellt */
 .files {
   display: flex;
@@ -348,112 +300,137 @@ section {
   color: var(--dim);
 }
 
-/* Vergleich: die Zahl von EasyMySQL steht als Relief, darunter laufen die drei Balken */
-.stats {
+/* Funktionen: je ein Abschnitt mit grossem Titel und dem echten App-Bild, abwechselnd links und rechts */
+.feature {
+  display: grid;
+  grid-template-columns: minmax(0, 4fr) minmax(0, 8fr);
+  align-items: center;
+  gap: clamp(1.5rem, 5vw, 5rem);
+  max-width: 1560px;
+  min-height: 92svh;
+  margin-inline: auto;
+  padding: 8vh var(--pad);
+}
+.feature.flip {
+  grid-template-columns: minmax(0, 8fr) minmax(0, 4fr);
+}
+.feature.flip > div {
+  order: 2;
+}
+.feature h2 {
+  font: 760 clamp(2.6rem, 6vw, 5.8rem) / 0.94 var(--display);
+  letter-spacing: -0.055em;
+}
+.feature p {
+  max-width: 24ch;
+  margin-top: 1.1rem;
+  font: 500 clamp(1.05rem, 1.5vw, 1.3rem) / 1.35 var(--display);
+  color: var(--mute);
+}
+.shot {
+  display: block;
+  perspective: 1800px;
+}
+/* das Bild kommt leicht gedreht von unten und richtet sich beim Scrollen auf (--k: 1 bis 0) */
+.shot img {
+  --dir: -1;
+  width: 100%;
+  height: auto;
+  background: #171c23;
+  border-radius: clamp(8px, 1.2vw, 16px);
+  box-shadow:
+    0 0 0 1px #ffffff26,
+    0 50px 90px -30px #000000c0;
+  transform: rotateY(calc(var(--k, 0) * var(--dir) * 16deg)) rotateX(calc(var(--k, 0) * 8deg)) translateY(calc(var(--k, 0) * 70px))
+    scale(calc(1 - var(--k, 0) * 0.08));
+  transform-origin: 50% 60%;
+}
+.flip .shot img {
+  --dir: 1;
+}
+
+/* Eine Zahl gross im Relief, darunter ein Satz */
+.statement {
   display: flex;
-  flex-direction: column;
-  justify-content: space-between;
+  align-items: flex-end;
   height: 100svh;
-  min-height: 560px;
-  padding: 92px var(--pad) clamp(28px, 6vh, 64px);
+  min-height: 520px;
+  padding: 0 var(--pad) clamp(70px, 13vh, 150px);
 }
-.m-name {
-  font: 640 clamp(1.5rem, 3vw, 2.8rem) / 1 var(--display);
-  letter-spacing: -0.045em;
+.statement .claim,
+.end .claim {
+  max-width: 24ch;
   color: var(--mute);
 }
-.rivals {
+
+/* Alle Messwerte: der Wert von EasyMySQL gross, die anderen klein mit duennen Balken */
+.measures {
   display: grid;
-  gap: 1.1rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: clamp(56px, 8vw, 110px) clamp(40px, 8vw, 128px);
+  max-width: 1320px;
+  margin-inline: auto;
+  padding: 6vh var(--pad) 10vh;
 }
-.rival {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: baseline;
-  gap: 0.45rem 2rem;
-}
-.rival span {
-  font: 500 0.76rem var(--mono);
-  color: var(--mute);
-}
-.rival b {
-  font: 660 clamp(1.2rem, 2.2vw, 2rem) / 1 var(--display);
-  letter-spacing: -0.04em;
-  font-variant-numeric: tabular-nums;
-}
-.rival.na b {
+.measure h3 {
+  margin: 0;
+  padding-bottom: 0.9rem;
   font: 500 0.76rem var(--mono);
   letter-spacing: 0;
-  color: var(--dim);
+  color: var(--mute);
+  border-bottom: 1px solid var(--line);
 }
-.rival i {
-  position: relative;
-  grid-column: 1 / -1;
-  height: 1px;
-  background: var(--line);
+.measure dl {
+  display: grid;
+  gap: 1rem;
+  margin: 1.3rem 0 0;
 }
-.rival i::after {
-  content: "";
-  position: absolute;
-  inset: -1px auto -1px 0;
-  width: calc(var(--f, 0) * 1%);
-  background: var(--fg);
-  transition: width 1.5s var(--out);
+.measure dt {
+  font: 500 0.72rem var(--mono);
+  letter-spacing: 0;
+  color: var(--mute);
 }
-.rival.us span {
+.measure dd {
+  margin: 0.2rem 0 0;
+}
+.measure dd b {
+  display: block;
+  font: 660 1.7rem/1.15 var(--display);
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+.measure .us dt {
   color: var(--blue);
 }
-.rival.us i::after {
-  inset: -2px auto -2px 0;
+.measure .us dd b {
+  font-size: clamp(4rem, 8.6vw, 7.4rem);
+  font-weight: 780;
+  line-height: 0.95;
+  letter-spacing: -0.055em;
+  color: var(--blue);
+}
+.bar {
+  display: block;
+  width: calc(var(--w, 0) * 1%);
+  min-width: 2px;
+  height: 1px;
+  margin-top: 0.6rem;
+  background: var(--fg);
+  transition: width 1.6s var(--out);
+}
+.us .bar {
+  height: 3px;
+  margin-top: 0.9rem;
   background: var(--blue);
   box-shadow: 0 0 22px 2px #a6c2ff8c;
 }
-
-/* Funktionen: das App-Bild besteht aus Lamellen, die sich beim Wechsel der Reihe nach drehen */
-.features {
-  display: grid;
-  align-items: end;
-  justify-items: end;
-  height: 100svh;
-  min-height: 560px;
-  padding: 92px var(--pad) clamp(28px, 6vh, 64px);
+html:not(.js) .bar {
+  display: none;
 }
-.blinds-wrap {
-  width: min(72vw, calc((100svh - 300px) * 1.6));
-  perspective: 1800px;
-}
-.blinds {
-  display: flex;
-  aspect-ratio: 1.6;
-  transform: rotateX(var(--rx, 6deg)) rotateY(var(--ry, -12deg));
-  transform-style: preserve-3d;
-  filter: drop-shadow(0 50px 70px #000000b3);
-}
-.blinds > img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-.slat {
-  position: relative;
-  flex: 1;
-  transform-style: preserve-3d;
-  transition: transform 1.1s var(--out);
-  transition-delay: calc(var(--i) * 55ms);
-}
-.slat.flip {
-  transform: rotateY(180deg);
-}
-.slat s {
-  position: absolute;
-  inset: 0 -0.5px;
-  background-color: #171c23;
-  background-size: calc(var(--count) * 100%) 100%;
-  background-position: calc(var(--i) / (var(--count) - 1) * 100%) 0;
-  backface-visibility: hidden;
-}
-.slat s + s {
-  transform: rotateY(180deg);
+.na dd {
+  font: 500 0.76rem var(--mono);
+  letter-spacing: 0;
+  color: var(--dim);
 }
 
 /* Tabelle */
@@ -553,11 +530,6 @@ tfoot td:nth-child(2) b {
   min-height: 520px;
   padding: 0 var(--pad) clamp(90px, 16vh, 170px);
 }
-.end-line {
-  font: 640 clamp(1.7rem, 3.4vw, 3.2rem) / 1 var(--display);
-  letter-spacing: -0.045em;
-  color: var(--mute);
-}
 .foot {
   position: absolute;
   inset: auto 0 0;
@@ -637,9 +609,8 @@ body {
   .js .hero-foot > * + * {
     animation-delay: 1.2s;
   }
-  .js .m-name.swap {
-    animation: rise 0.9s var(--out) both;
-  }
+  .js .feature > div,
+  .js .measure,
   .js .table h2,
   .js tbody tr,
   .js tfoot tr {
@@ -650,6 +621,8 @@ body {
       translate 1.2s var(--out);
     transition-delay: calc(var(--d, 0) * 55ms);
   }
+  .js .feature > div.in,
+  .js .measure.in,
   .js .table h2.in,
   .js tbody tr.in,
   .js tfoot tr.in {
@@ -665,8 +638,7 @@ body {
   html {
     scroll-behavior: auto;
   }
-  .slat,
-  .rival i::after {
+  .bar {
     transition: none;
   }
 }
@@ -678,11 +650,19 @@ body {
   .claim {
     max-width: none;
   }
-  .blinds-wrap {
-    width: 100%;
+  .feature,
+  .feature.flip {
+    grid-template-columns: 1fr;
+    align-content: center;
+    gap: 1.5rem;
+    min-height: 0;
+    padding-block: 9vh;
   }
-  .features {
-    justify-items: stretch;
+  .feature.flip > div {
+    order: 0;
+  }
+  .measures {
+    grid-template-columns: 1fr;
   }
   thead th {
     width: 17%;

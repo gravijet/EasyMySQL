@@ -243,84 +243,60 @@
       clearTimeout(zeitlimit);
     });
 
-  // ---------- Buehne: welcher Text als Relief in der Fluessigkeit steht ----------
-  // Spiegelfarben je Abschnitt (zwei Toene, Werte 0 bis 1)
+  // ---------- Buehne: was als Relief in der Fluessigkeit steht und welche Farben sich spiegeln ----------
   var FARBEN = {
     start: [[0.25, 0.45, 1], [0.7, 0.25, 0.95]],
-    vergleich: [[1, 0.35, 0.55], [0.3, 0.35, 1]],
-    tabelle: [[0.12, 0.18, 0.4], [0.1, 0.25, 0.3]],
+    zahl: [[1, 0.35, 0.55], [0.3, 0.35, 1]],
+    ruhig: [[0.14, 0.2, 0.45], [0.1, 0.26, 0.34]],
     ende: [[0.2, 0.85, 0.7], [0.3, 0.45, 1]],
+    funktionen: [
+      [[0.25, 0.5, 1], [0.1, 0.8, 0.8]],
+      [[0.1, 0.8, 0.75], [0.2, 0.4, 1]],
+      [[1, 0.6, 0.15], [0.9, 0.2, 0.45]],
+      [[0.65, 0.35, 1], [0.25, 0.4, 1]],
+      [[0.25, 0.9, 0.5], [0.1, 0.6, 0.8]],
+      [[0.4, 0.6, 0.9], [0.8, 0.4, 0.65]],
+    ],
   };
-  var FUNKTIONEN = [
-    { de: "SQL-Editor", en: "SQL editor", bild: "sql", f: [[0.25, 0.5, 1], [0.1, 0.8, 0.8]] },
-    { de: "Tabellen", en: "Tables", bild: "data", f: [[0.1, 0.8, 0.75], [0.2, 0.4, 1]] },
-    { de: "ER-Diagramme", en: "ER diagrams", bild: "er", f: [[1, 0.6, 0.15], [0.9, 0.2, 0.45]] },
-    { de: "Query Builder", en: "Query builder", bild: "builder", f: [[0.65, 0.35, 1], [0.25, 0.4, 1]] },
-    { de: "Java", en: "Java", bild: "code", f: [[0.25, 0.9, 0.5], [0.1, 0.6, 0.8]] },
-    { de: "Git", en: "Git", bild: "git", f: [[0.4, 0.6, 0.9], [0.8, 0.4, 0.65]] },
-  ];
-  // Sekunden bzw. MB fuer EasyMySQL, XAMPP, Workbench; null = geht dort nicht.
-  var FEHLT = ["nicht vorhanden", "not available"];
-  var MESSUNGEN = [
-    { de: "Programm starten", en: "Starting the app", w: [0.47, 2.7, 5.7], e: "s" },
-    { de: "Tabelle öffnen", en: "Opening a table", w: [0.17, 0.33, 2.1], e: "s" },
-    { de: "In 1 Mio. Zeilen suchen", en: "Searching 1M rows", w: [0.2, 0.34, 0.25], e: "s" },
-    { de: "ER-Diagramm zeichnen", en: "Drawing an ER diagram", w: [0.22, 0.6, null], e: "s", g: [null, null, FEHLT] },
-    { de: "1 Mio. Zeilen importieren", en: "Importing 1M rows", w: [7.7, null, null], e: "s", g: [null, ["Datei zu groß", "file too large"], FEHLT] },
-    { de: "Arbeitsspeicher", en: "Memory", w: [133, 252, 266], e: "MB" },
-    { de: "Platz auf der Festplatte", en: "Disk space", w: [260, 929, 870], e: "MB" },
-    { de: "Download", en: "Download", w: [77, 200, 273], e: "MB" },
-  ];
   var szene = (window.easyScene = { n: 0, text: null, hoch: 1, A: FARBEN.start[0], B: FARBEN.start[1] });
   var letzterText = "";
-  function zahl(wert, einheit) {
-    var stellen = einheit === "MB" ? 0 : wert < 1 ? 2 : 1;
-    return (
-      new Intl.NumberFormat(sprache, { minimumFractionDigits: stellen, maximumFractionDigits: stellen }).format(wert) +
-      " " +
-      einheit
-    );
-  }
-
-  var abschnitte = ["top", "compare", "features", "table", "ai"].map(function (id) {
-    return document.getElementById(id);
+  var reliefs = $$("[data-relief]");
+  var funktionen = $$(".feature");
+  var bilder = funktionen.map(function (el) {
+    return { el: el.querySelector("img"), k: 1 };
   });
-  var aktiv = 0;
-  var messung = 0;
-  var funktion = 0;
 
-  // Legt fest, was die Buehne zeigt: Text, Lage, Groesse und Farben.
-  function stelle() {
+  // Text, Lage und Groesse des Reliefs fuer den Abschnitt in der Bildmitte.
+  function relief(art) {
     var schmal = innerWidth < innerHeight;
-    var rand = Math.min(60, Math.max(20, innerWidth * 0.04)) / innerWidth;
-    var spez = null;
-    var farbe = FARBEN.start;
-    if (aktiv === 0) {
-      spez = schmal
-        ? { zeilen: ["Easy", "MySQL"], h: 0.17, y: 0.3 }
-        : { zeilen: ["EasyMySQL"], h: 0.36, y: 0.4 };
-    } else if (aktiv === 1) {
-      var m = MESSUNGEN[messung];
-      spez = { zeilen: [zahl(m.w[0], m.e)], h: schmal ? 0.2 : 0.46, y: schmal ? 0.4 : 0.46 };
-      farbe = FARBEN.vergleich;
-    } else if (aktiv === 2) {
-      var f = FUNKTIONEN[funktion];
-      spez = { zeilen: [text(f.de, f.en)], h: schmal ? 0.085 : 0.2, y: schmal ? 0.17 : 0.2, breit: schmal ? 1 - 2 * rand : 0.6 };
-      farbe = f.f;
-    } else if (aktiv === 3) {
-      farbe = FARBEN.tabelle;
-    } else {
-      spez = { zeilen: ["Claude Code", "& Codex"], h: schmal ? 0.11 : 0.24, y: 0.42 };
-      farbe = FARBEN.ende;
-    }
+    if (art === "start")
+      return schmal ? { zeilen: ["Easy", "MySQL"], h: 0.17, y: 0.3 } : { zeilen: ["EasyMySQL"], h: 0.36, y: 0.4 };
+    if (art === "zahl") return { zeilen: [text("0,47 s", "0.47 s")], h: schmal ? 0.2 : 0.46, y: schmal ? 0.36 : 0.4 };
+    if (art === "ende") return { zeilen: ["Claude Code", "& Codex"], h: schmal ? 0.11 : 0.24, y: schmal ? 0.34 : 0.38 };
+    return null;
+  }
+  function stelle() {
+    var mitte = innerHeight / 2;
+    var art = null;
+    reliefs.forEach(function (el) {
+      var r = el.getBoundingClientRect();
+      if (r.top <= mitte && r.bottom > mitte) art = el.dataset.relief;
+    });
+    var farbe = art ? FARBEN[art] : FARBEN.ruhig;
+    funktionen.forEach(function (el) {
+      var r = el.getBoundingClientRect();
+      if (r.top <= mitte && r.bottom > mitte) farbe = FARBEN.funktionen[+el.dataset.farbe];
+    });
+    var spez = relief(art);
     if (spez) {
-      spez.x = rand;
-      if (!spez.breit) spez.breit = 1 - 2 * rand;
+      spez.x = Math.min(60, Math.max(20, innerWidth * 0.04)) / innerWidth;
+      spez.breit = 1 - 2 * spez.x;
     }
     szene.A = farbe[0];
     szene.B = farbe[1];
     szene.hoch = spez ? 1 : 0;
-    var kennung = JSON.stringify(spez) + innerWidth + "x" + innerHeight;
+    // ohne Relief bleibt der letzte Text stehen und versinkt nur (hoch = 0)
+    var kennung = spez ? JSON.stringify(spez) + innerWidth + "x" + innerHeight : letzterText;
     if (kennung !== letzterText) {
       letzterText = kennung;
       szene.text = spez;
@@ -329,147 +305,66 @@
     document.dispatchEvent(new Event("easymysql-scene"));
   }
 
-  // ---------- Vergleich: laeuft von allein durch ----------
-  var mName = $("#m-name");
-  var mUns = $("#m-us");
-  var gegner = $$(".rival").map(function (el) {
-    return { el: el, wert: el.querySelector("b") };
-  });
-  function zeigeMessung() {
-    var m = MESSUNGEN[messung];
-    var groesste = Math.max.apply(null, m.w.filter(Boolean));
-    mName.textContent = text(m.de, m.en);
-    mName.classList.remove("swap");
-    void mName.offsetWidth; // Animation neu starten
-    mName.classList.add("swap");
-    mUns.textContent = text(m.de, m.en) + ": EasyMySQL " + zahl(m.w[0], m.e);
-    gegner.forEach(function (g, i) {
-      var w = m.w[i];
-      g.el.classList.toggle("na", w === null);
-      g.el.style.setProperty("--f", w === null ? 0 : ((w / groesste) * 100).toFixed(1));
-      if (g.wert) g.wert.textContent = w === null ? text(m.g[i][0], m.g[i][1]) : zahl(w, m.e);
-    });
-  }
-
-  // ---------- Funktionen: Bild aus Lamellen, die sich der Reihe nach drehen ----------
-  var LAMELLEN = 14;
-  var blende = $("#blinds");
-  var lamellen = [];
-  var gedreht = false;
-  var gross = innerWidth > 820 ? "2000" : "1000";
-  function bildAdresse(i) {
-    return "url(/shots/" + FUNKTIONEN[i].bild + "-" + gross + ".webp)";
-  }
-  blende.replaceChildren();
-  for (var l = 0; l < LAMELLEN; l++) {
-    var lamelle = document.createElement("div");
-    lamelle.className = "slat";
-    lamelle.style.setProperty("--i", l);
-    lamelle.style.setProperty("--count", LAMELLEN);
-    var vorn = document.createElement("s");
-    var hinten = document.createElement("s");
-    vorn.style.backgroundImage = bildAdresse(0);
-    lamelle.append(vorn, hinten);
-    blende.append(lamelle);
-    lamellen.push([lamelle, vorn, hinten]);
-  }
-  // alle Bilder vorab laden, damit beim Drehen nichts fehlt
-  FUNKTIONEN.forEach(function (f) {
-    new Image().src = "/shots/" + f.bild + "-" + gross + ".webp";
-  });
-  function zeigeFunktion() {
-    // das neue Bild kommt auf die Rueckseite, dann drehen sich alle Lamellen
-    lamellen.forEach(function (teile) {
-      teile[gedreht ? 1 : 2].style.backgroundImage = bildAdresse(funktion);
-      teile[0].classList.toggle("flip", !gedreht);
-    });
-    gedreht = !gedreht;
-    $("#f-name").textContent = text(FUNKTIONEN[funktion].de, FUNKTIONEN[funktion].en);
-  }
-
-  // Alle 3,6 s geht der sichtbare Abschnitt einen Schritt weiter; niemand muss etwas anklicken.
-  setInterval(function () {
-    if (document.hidden) return;
-    if (aktiv === 1) {
-      messung = (messung + 1) % MESSUNGEN.length;
-      zeigeMessung();
-      stelle();
-    } else if (aktiv === 2) {
-      funktion = (funktion + 1) % FUNKTIONEN.length;
-      zeigeFunktion();
-      stelle();
-    }
-  }, 3600);
-
-  // ---------- Scrollen, Maus, eigener Zeiger ----------
-  var zeiger = $("#cursor");
-  var eigenerZeiger = matchMedia("(hover: hover) and (pointer: fine)").matches && !ruhig.matches;
-  if (eigenerZeiger) wurzel.classList.add("cur");
-  var maus = [innerWidth / 2, innerHeight / 2];
-  var folgt = maus.slice();
-  var neigung = [0, 0];
+  // App-Bilder richten sich beim Hereinscrollen auf, weich nachgefuehrt.
   var bild = 0;
   function zeichne() {
     bild = 0;
-    folgt[0] += (maus[0] - folgt[0]) * 0.22;
-    folgt[1] += (maus[1] - folgt[1]) * 0.22;
-    zeiger.style.setProperty("--x", folgt[0].toFixed(1) + "px");
-    zeiger.style.setProperty("--y", folgt[1].toFixed(1) + "px");
-    // das App-Bild neigt sich leicht zur Maus
-    neigung[0] += (maus[0] / innerWidth - 0.5 - neigung[0]) * 0.06;
-    neigung[1] += (maus[1] / innerHeight - 0.5 - neigung[1]) * 0.06;
-    blende.style.setProperty("--ry", (-12 + neigung[0] * 16).toFixed(2) + "deg");
-    blende.style.setProperty("--rx", (6 - neigung[1] * 10).toFixed(2) + "deg");
-    if (Math.abs(maus[0] - folgt[0]) + Math.abs(maus[1] - folgt[1]) > 0.3) anfordern();
+    var hoch = innerHeight;
+    var unruhig = false;
+    bilder.forEach(function (b) {
+      var r = b.el.parentElement.getBoundingClientRect();
+      // 1 = Bild kommt unten ins Sichtfeld, 0 = steht in der Mitte
+      var ziel = ruhig.matches ? 0 : Math.min(1, Math.max(0, (r.top - hoch * 0.22) / (hoch * 0.75)));
+      b.k += (ziel - b.k) * 0.12;
+      if (Math.abs(ziel - b.k) > 0.002) unruhig = true;
+      b.el.style.setProperty("--k", b.k.toFixed(4));
+    });
+    if (unruhig) anfordern();
   }
   function anfordern() {
-    if (!bild && !ruhig.matches) bild = requestAnimationFrame(zeichne);
+    if (!bild) bild = requestAnimationFrame(zeichne);
   }
   addEventListener(
-    "pointermove",
-    function (e) {
-      if (e.pointerType !== "mouse") return;
-      maus = [e.clientX, e.clientY];
-      var ziel = e.target.closest ? e.target.closest("[data-cursor]") : null;
-      zeiger.classList.toggle("on", !!ziel);
-      if (ziel) {
-        var wort = text(ziel.dataset.cursor, ziel.dataset.cursorEn || ziel.dataset.cursor);
-        zeiger.firstElementChild.textContent = wort;
-        zeiger.style.setProperty("--w", wort.length * 8 + 34 + "px");
-      } else zeiger.style.setProperty("--w", e.target.closest && e.target.closest("a, button") ? "34px" : "18px");
+    "scroll",
+    function () {
+      stelle();
       anfordern();
     },
     { passive: true },
   );
-  function pruefeAbschnitt() {
-    var mitte = innerHeight / 2;
-    var neu = aktiv;
-    abschnitte.forEach(function (el, i) {
-      var r = el.getBoundingClientRect();
-      if (r.top <= mitte && r.bottom > mitte) neu = i;
-    });
-    if (neu !== aktiv) {
-      aktiv = neu;
-      stelle();
-    }
-  }
-  addEventListener("scroll", pruefeAbschnitt, { passive: true });
   addEventListener("resize", function () {
-    pruefeAbschnitt();
     stelle();
+    anfordern();
   });
-  // nach einem Sprachwechsel alles neu schreiben
-  function male() {
-    zeigeMessung();
-    $("#f-name").textContent = text(FUNKTIONEN[funktion].de, FUNKTIONEN[funktion].en);
-    stelle();
-  }
-  bereit = true;
-  pruefeAbschnitt();
-  male();
 
-  // Tabelle: Zeilen blenden nacheinander ein.
-  var ziele = $$(".table h2, tbody tr, tfoot tr");
+  // Zahlen zaehlen hoch, sobald sie sichtbar werden.
+  function zaehle(el) {
+    var ziel = parseFloat(el.dataset.count);
+    var stellen = +el.dataset.dec;
+    var ende = el.textContent;
+    var anhang = ende.replace(/^[\d.,]+/, "");
+    var beginn = performance.now();
+    (function schritt(jetzt) {
+      var t = Math.min(1, (jetzt - beginn) / 1700);
+      if (t === 1) {
+        el.textContent = ende;
+        return;
+      }
+      el.textContent =
+        new Intl.NumberFormat(sprache, { minimumFractionDigits: stellen, maximumFractionDigits: stellen }).format(
+          ziel * (1 - Math.pow(1 - t, 4)),
+        ) + anhang;
+      requestAnimationFrame(schritt);
+    })(beginn);
+  }
+  function zeige(el) {
+    el.classList.add("in");
+    el.querySelectorAll("[data-w]").forEach(function (balken) {
+      balken.style.setProperty("--w", balken.dataset.w);
+    });
+    if (!ruhig.matches) el.querySelectorAll("[data-count]").forEach(zaehle);
+  }
+  var ziele = $$(".feature > div, .measure, .table h2, tbody tr, tfoot tr");
   if ("IntersectionObserver" in window) {
     var beobachter = new IntersectionObserver(
       function (eintraege) {
@@ -477,19 +372,24 @@
         eintraege.forEach(function (e) {
           if (!e.isIntersecting) return;
           e.target.style.setProperty("--d", reihe++);
-          e.target.classList.add("in");
+          zeige(e.target);
           beobachter.unobserve(e.target);
         });
       },
-      { threshold: 0.1, rootMargin: "0px 0px -6% 0px" },
+      { threshold: 0.12, rootMargin: "0px 0px -6% 0px" },
     );
     ziele.forEach(function (el) {
       beobachter.observe(el);
     });
-  } else
-    ziele.forEach(function (el) {
-      el.classList.add("in");
-    });
+  } else ziele.forEach(zeige);
+
+  // nach einem Sprachwechsel das Relief neu schreiben
+  function male() {
+    stelle();
+  }
+  bereit = true;
+  stelle();
+  anfordern();
 
   zeigeBefehl();
 

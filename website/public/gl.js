@@ -213,10 +213,12 @@ void main(){
       schreibe(ziel.text);
       stand.q = ruhig.matches ? 1 : 0;
     }
+    // alles nach vergangener Zeit bewegen, nicht nach Bildern: auf langsamen Geraeten gleich schnell
     var jetztMs = performance.now();
-    stand.q = Math.min(1, stand.q + Math.min(0.1, (jetztMs - letztesBild) / 1100));
+    var dt = Math.min(0.25, (jetztMs - letztesBild) / 1000);
     letztesBild = jetztMs;
-    var k = ruhig.matches ? 1 : 0.06;
+    stand.q = Math.min(1, stand.q + dt / 1.1);
+    var k = ruhig.matches ? 1 : 1 - Math.exp(-dt * 4.5);
     stand.hoch += (ziel.hoch - stand.hoch) * k;
     for (var i = 0; i < 3; i++) {
       stand.A[i] += (ziel.A[i] - stand.A[i]) * k;
