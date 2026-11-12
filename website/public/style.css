@@ -682,6 +682,10 @@ tfoot td:nth-child(2) b {
 .foot a {
   padding: 0.3rem 0;
 }
+/* Nach oben links, Impressum und Datenschutz rechts */
+.foot a:nth-child(2) {
+  margin-left: auto;
+}
 .line {
   padding-bottom: 0.06em;
   background: linear-gradient(currentColor, currentColor) 100% 100% / 0% max(1px, 0.06em) no-repeat;
