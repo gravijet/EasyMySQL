@@ -204,7 +204,7 @@ html:not(.js) .switch button[aria-checked="true"] {
   flex-direction: column;
   justify-content: flex-end;
   min-height: 100svh;
-  padding: calc(36svh + 9vw) var(--pad) clamp(28px, 6vh, 64px);
+  padding: max(150px, 24svh) var(--pad) clamp(20px, 5vh, 64px);
 }
 .no-gl .hero,
 html:not(.js) .hero {
@@ -818,11 +818,7 @@ body {
     animation-delay: calc(var(--d, 0) * 50ms + 0.4s);
   }
 }
-@media (orientation: portrait) {
-  .hero {
-    padding-top: 45svh;
-  }
-}
+
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
@@ -867,6 +863,19 @@ body {
   }
   .files ul {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  /* niedrige Handys: alles etwas enger, damit der Download-Bereich ganz zu sehen ist */
+  .hero-foot {
+    gap: 1rem;
+  }
+  .cmd {
+    gap: 0.6rem;
+  }
+  .copy {
+    min-height: 42px;
+  }
+  .files a {
+    padding: 0.7rem 0 0.2rem;
   }
   thead th {
     width: 20%;

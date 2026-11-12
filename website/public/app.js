@@ -349,9 +349,18 @@
   // Text, Lage und Groesse des Reliefs fuer den Abschnitt in der Bildmitte.
   function relief(art) {
     var schmal = innerWidth < innerHeight;
-    if (art === "start")
-      return schmal ? { zeilen: ["Easy", "MySQL"], h: 0.14, y: 0.27, anteil: 0.8 } : { zeilen: ["EasyMySQL"], h: 0.36, y: 0.36, anteil: 0.7 };
-    return null;
+    if (art !== "start") return null;
+    // Das Wort fuellt den Platz zwischen Sprachschalter und Satz, damit der ganze Download-Bereich
+    // auch auf niedrigen Bildschirmen sichtbar bleibt.
+    var oben = 64 / innerHeight;
+    var platz = Math.max(0.06, ($(".claim").offsetTop - 12) / innerHeight - oben);
+    var zwei = schmal && platz > 0.26;
+    return {
+      zeilen: zwei ? ["Easy", "MySQL"] : ["EasyMySQL"],
+      h: Math.min(schmal ? 0.14 : 0.36, platz / (zwei ? 1.85 : 1)),
+      y: oben + platz / 2,
+      anteil: schmal ? 0.8 : 0.7,
+    };
   }
   function stelle() {
     var mitte = innerHeight / 2;
@@ -477,6 +486,7 @@
   }
   bereit = true;
   stelle();
+  if (document.fonts) document.fonts.ready.then(stelle);
   anfordern();
 
   zeigeBefehl();
