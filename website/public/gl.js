@@ -80,7 +80,8 @@ void main(){
   // Licht von links oben (wandert mit der Maus): Kanten zum Licht hin leuchten farbig,
   // abgewandte Kanten bleiben dunkel. So wirkt das Relief wirklich erhaben.
   // volle Glanzlichter nur am Relief: die freie Flaeche bleibt ruhig, damit Text darauf lesbar ist
-  float kraft = mix(.46, 1., smoothstep(.02, .3, schrift(uv)) * H);
+  float nah = smoothstep(.02, .3, schrift(uv)) * H;
+  float kraft = mix(.46, 1., nah);
   float zum = dot(nn, normalize(vec3(-.5 + M.x * .5, .62 + M.y * .35, .6)));
   float hin = max(zum, 0.);
   c += kraft * (spiegel * schraeg * (.5 + 2.4 * hin) + mix(film, vec3(1.), .3) * schraeg * schraeg * 2.6 * hin);
@@ -92,9 +93,11 @@ void main(){
   float streif = smoothstep(.2, 0., abs(fract((uv.x + uv.y * .45) * .3 - T * .07 - M.x * .25) - .5) - .06);
   c += oben * (vec3(.055, .06, .085) + (A * .55 + .45) * (.1 + .42 * streif));
   c *= 1. - .38 * dot(uv * .5, uv * .5);
-  c += (h(gl_FragCoord.xy + fract(T) * 61.) - .5) * .028;
+  c += (h(gl_FragCoord.xy + fract(T) * 61.) - .5) * .018;
   // weich begrenzen, damit helle Kanten nicht zu weissen Flaechen ausbrennen
   c = 1. - exp(-max(c, 0.) * 1.5);
+  // abseits des Reliefs bleibt die Flaeche dunkel: heller Text hat darauf immer genug Kontrast
+  c = mix(.2 * (1. - exp(-c / .2)), c, nah);
   gl_FragColor = vec4(pow(c, vec3(.92)), 1.);
 }`;
 
@@ -146,7 +149,7 @@ void main(){
 
   // Zeichnet den Text weichgezeichnet (so entsteht die Hoehe) und laedt ihn als neue Textur.
   function schreibe(spez) {
-    var breit = Math.min(1400, Math.max(480, innerWidth));
+    var breit = Math.min(2600, Math.max(480, Math.round(innerWidth * Math.min(devicePixelRatio || 1, 2))));
     blatt.width = breit;
     blatt.height = Math.round((breit * innerHeight) / innerWidth);
     stift.fillStyle = "#000";
@@ -203,9 +206,10 @@ void main(){
     naechste = (naechste + 1) % 6;
   }
   function groesse() {
-    // unter voller Aufloesung rechnen: die Flaeche ist weich, das spart viel Rechenzeit
-    var dichte = Math.min(devicePixelRatio || 1, 2);
-    var faktor = Math.min(1, 1500 / (innerWidth * dichte)) * dichte * 0.75;
+    // so scharf wie der Bildschirm, hoechstens rund 2,4 Mio. Bildpunkte; `guete` sinkt,
+    // wenn das Geraet dabei nicht fluessig bleibt (siehe bild)
+    var dichte = Math.min(devicePixelRatio || 1, 2.5);
+    var faktor = Math.min(dichte, Math.sqrt(2400000 / (innerWidth * innerHeight))) * guete;
     leinwand.width = Math.max(2, Math.round(innerWidth * faktor));
     leinwand.height = Math.max(2, Math.round(innerHeight * faktor));
     gl.viewport(0, 0, leinwand.width, leinwand.height);
@@ -213,6 +217,9 @@ void main(){
   }
   var sichtbar = true;
   var letztesBild = performance.now();
+  var guete = 1; // Anteil der vollen Aufloesung
+  var gemessen = 0;
+  var dauer = 0;
   function bild() {
     if (stand.n !== ziel.n) {
       stand.n = ziel.n;
@@ -223,6 +230,16 @@ void main(){
     var jetztMs = performance.now();
     var dt = Math.min(0.25, (jetztMs - letztesBild) / 1000);
     letztesBild = jetztMs;
+    // laeuft es ueber 40 Bilder langsamer als etwa 22 Bilder je Sekunde, wird groeber gerechnet
+    if (++gemessen > 10) dauer += dt;
+    if (gemessen === 50) {
+      if (dauer / 40 > 0.045 && guete > 0.45) {
+        guete *= 0.75;
+        groesse();
+      }
+      gemessen = 0;
+      dauer = 0;
+    }
     stand.q = Math.min(1, stand.q + dt / 1.1);
     var k = ruhig.matches ? 1 : 1 - Math.exp(-dt * 4.5);
     stand.hoch += (ziel.hoch - stand.hoch) * k;
@@ -289,6 +306,9 @@ void main(){
   );
   document.addEventListener("visibilitychange", function () {
     sichtbar = !document.hidden;
+    gemessen = 0;
+    dauer = 0;
+    letztesBild = performance.now();
     if (sichtbar) neu();
   });
   neu();

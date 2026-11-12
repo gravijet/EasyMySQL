@@ -33,6 +33,26 @@
 
   var ruhig = window.matchMedia("(prefers-reduced-motion: reduce)");
 
+  // Schalter: der helle Block gleitet unter das gewaehlte Wort (Lage als --l und --r).
+  function gleite(schalter) {
+    var knopf = schalter.querySelector('[aria-checked="true"]');
+    if (!knopf) return;
+    var links = knopf.offsetLeft;
+    var alt = parseFloat(schalter.style.getPropertyValue("--l"));
+    if (!isNaN(alt) && alt !== links) schalter.dataset.dir = links > alt ? "r" : "l";
+    schalter.style.setProperty("--l", links + "px");
+    schalter.style.setProperty("--r", schalter.clientWidth - links - knopf.offsetWidth + "px");
+    // erst nach der ersten Lage sichtbar und beweglich, sonst faehrt er beim Laden herein
+    requestAnimationFrame(function () {
+      schalter.classList.add("ready");
+    });
+  }
+  function gleiteAlle() {
+    $$(".switch").forEach(gleite);
+  }
+  addEventListener("resize", gleiteAlle);
+  if (document.fonts) document.fonts.ready.then(gleiteAlle);
+
   // Terminal: Befehl je Betriebssystem, steht sofort da.
   var systeme = $$("[data-install-os]");
   var system = "win";
@@ -56,6 +76,7 @@
       el.tabIndex = el === knopf ? 0 : -1;
     });
     zeigeBefehl();
+    gleite(knopf.parentElement);
     if (fokus) knopf.focus();
   }
   systeme.forEach(function (knopf, index) {
@@ -169,13 +190,11 @@
     attribute.forEach(function (p) {
       p[0].setAttribute(p[1], neu === "en" ? p[3] : p[2]);
     });
-    var andere = neu === "en" ? "de" : "en";
-    $("#lang").textContent = andere.toUpperCase();
-    $("#lang").lang = andere;
-    $("#lang").setAttribute(
-      "aria-label",
-      andere === "en" ? "English" : "Deutsch",
-    );
+    $$("[data-lang]").forEach(function (el) {
+      el.setAttribute("aria-checked", String(el.dataset.lang === neu));
+      el.tabIndex = el.dataset.lang === neu ? 0 : -1;
+    });
+    gleiteAlle();
     document.title = text(
       "EasyMySQL – Datenbank, SQL & Java",
       "EasyMySQL – Database, SQL & Java",
@@ -206,12 +225,29 @@
       });
     });
   }
-  $("#lang").addEventListener("click", function () {
-    var neu = sprache === "de" ? "en" : "de";
+  // Sprachwechsel: wo der Browser es kann, loest sich die alte Seite weich in die neue auf
+  function wechsle(neu) {
+    if (neu === sprache) return;
     try {
       localStorage.setItem("em-lang", neu);
     } catch (_) {}
-    setzeSprache(neu);
+    if (document.startViewTransition && !ruhig.matches)
+      document.startViewTransition(function () {
+        setzeSprache(neu);
+      });
+    else setzeSprache(neu);
+  }
+  $$("[data-lang]").forEach(function (knopf) {
+    knopf.addEventListener("click", function () {
+      wechsle(knopf.dataset.lang);
+    });
+    knopf.addEventListener("keydown", function (e) {
+      if (!/^Arrow/.test(e.key)) return;
+      e.preventDefault();
+      var andere = $('[data-lang]:not([data-lang="' + sprache + '"])');
+      wechsle(andere.dataset.lang);
+      andere.focus();
+    });
   });
   setzeSprache(sprache);
 
@@ -421,7 +457,14 @@
       if (navigator.clipboard)
         navigator.clipboard.writeText(inhalt).then(
           function () {
-            zeigeMeldung(text("Befehl kopiert", "Command copied"));
+            var schild = knopf.querySelector(".copy span");
+            knopf.classList.add("done");
+            schild.textContent = text("Kopiert", "Copied");
+            clearTimeout(knopf.zeit);
+            knopf.zeit = setTimeout(function () {
+              knopf.classList.remove("done");
+              schild.textContent = text("Kopieren", "Copy");
+            }, 1900);
           },
           function () {
             zeigeMeldung(

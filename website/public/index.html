@@ -32,7 +32,9 @@
     <a class="skip" data-en="Skip to content" href="#main">Zum Inhalt</a>
     <header class="nav">
       <a aria-label="Zum Seitenanfang" class="brand" data-en-label="Back to top" href="#top"><img alt="" height="22" src="/favicon.svg" width="22" /></a>
-      <button aria-label="English" class="lang" id="lang" lang="en" type="button">EN</button>
+      <div aria-label="Sprache" class="switch lang" data-en-label="Language" id="lang" role="radiogroup">
+        <i aria-hidden="true" class="glide"></i><button aria-checked="true" aria-label="Deutsch" data-lang="de" lang="de" role="radio" type="button">DE</button><button aria-checked="false" aria-label="English" data-lang="en" lang="en" role="radio" type="button">EN</button>
+      </div>
     </header>
     <main id="main">
       <section aria-labelledby="product-name" class="hero" data-relief="start" id="top">
@@ -40,14 +42,15 @@
         <div class="hero-foot">
           <p class="claim" data-en="Database, SQL and Java in one app.">Datenbank, SQL und Java in einer App.</p>
           <div class="install" id="install">
-            <div aria-label="Betriebssystem" class="install-os" data-en-label="Operating system" role="radiogroup">
-              <button aria-checked="true" data-install-os="win" role="radio" type="button">Windows</button><button aria-checked="false" data-install-os="mac" role="radio" type="button">macOS</button><button aria-checked="false" data-install-os="linux" role="radio" type="button">Linux</button>
+            <div aria-label="Betriebssystem" class="switch os" data-en-label="Operating system" role="radiogroup">
+              <i aria-hidden="true" class="glide"></i><button aria-checked="true" data-install-os="win" role="radio" type="button">Windows</button><button aria-checked="false" data-install-os="mac" role="radio" type="button">macOS</button><button aria-checked="false" data-install-os="linux" role="radio" type="button">Linux</button>
             </div>
             <button aria-label="Installationsbefehl kopieren" class="cmd" data-copy-from="#hero-cmd" data-en-label="Copy the install command" type="button">
-              <span aria-hidden="true" class="prompt" data-prompt="">PS&gt;</span><code data-cmd="" id="hero-cmd">irm https://mysql.benjaminberger.at/install | iex</code><span class="tap" data-en="copy">kopieren</span>
+              <span aria-hidden="true" class="prompt" data-prompt="">PS&gt;</span><code data-cmd="" id="hero-cmd">irm https://mysql.benjaminberger.at/install | iex</code><span class="copy"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="#ok" /></svg><span data-en="Copy">Kopieren</span></span>
             </button>
             <p class="files">
-              <a data-dl="setup" href="/download/setup">Windows</a>
+              <span data-en="Or as a file:">Oder als Datei:</span>
+              <a data-dl="setup" data-en="Windows installer" href="/download/setup">Windows-Installer</a>
               <a data-dl="portable" data-en="Portable" href="/download/portable">Portable</a>
               <a data-dl="macos" href="/download/macos">macOS</a>
               <a data-dl="linux" href="/download/linux">Linux</a>
@@ -124,6 +127,17 @@
         </picture>
       </section>
 
+      <section aria-labelledby="w-h" class="block intro why">
+        <h2 class="rv" data-en="Why switch?" id="w-h">Warum umsteigen?</h2>
+        <ul>
+          <li class="rv"><b data-en="EasyMySQL opens in half a second.">EasyMySQL ist in einer halben Sekunde offen.</b> <span data-en="XAMPP with phpMyAdmin takes almost three seconds, MySQL Workbench almost six.">XAMPP mit phpMyAdmin braucht knapp drei Sekunden, MySQL Workbench fast sechs.</span></li>
+          <li class="rv"><b data-en="You only need one app.">Du brauchst nur noch ein Programm.</b> <span data-en="With XAMPP you first start the server and then open phpMyAdmin in the browser. Here both are one window, and the server runs by itself.">Bei XAMPP startest du erst den Server und öffnest dann phpMyAdmin im Browser. Hier ist beides ein Fenster, und der Server läuft von selbst.</span></li>
+          <li class="rv"><b data-en="Large amounts of data work too.">Auch große Datenmengen funktionieren.</b> <span data-en="A million rows are imported in about eight seconds. phpMyAdmin rejects files that large.">Eine Million Zeilen sind in rund acht Sekunden importiert. phpMyAdmin lehnt so große Dateien ab.</span></li>
+          <li class="rv"><b data-en="It can do more.">Es kann mehr.</b> <span data-en="You fix mistakes in a query with one click, backups run automatically, and you need no second app for Java and Git.">Fehler in einer Abfrage behebst du mit einem Klick, Backups laufen automatisch, und für Java und Git brauchst du kein zweites Programm.</span></li>
+          <li class="rv"><b data-en="It takes less space.">Es braucht weniger Platz.</b> <span data-en="The download is 77 MB, installed it takes 260 MB. XAMPP takes more than three times as much.">Der Download hat 77 MB, installiert sind es 260 MB. XAMPP belegt mehr als dreimal so viel.</span></li>
+        </ul>
+      </section>
+
       <section aria-labelledby="c-h" class="block compare" id="compare">
         <h2 class="rv" data-en="Compared with XAMPP and MySQL Workbench" id="c-h">Im Vergleich mit XAMPP und MySQL Workbench</h2>
         <table>
@@ -169,7 +183,7 @@
 
       <section aria-labelledby="u-h" class="block intro">
         <h2 class="rv" data-en="Switching from XAMPP" id="u-h">Von XAMPP umsteigen</h2>
-        <p class="rv" data-en="You can take your existing databases with you: export them in phpMyAdmin as an SQL file and open that file in EasyMySQL with Database → Import SQL file. Your own programs connect as before, with localhost, port 3306 and the user root without a password. Only if you build websites with PHP do you still need a web server for that.">Deine bisherigen Datenbanken nimmst du mit: In phpMyAdmin exportierst du sie als SQL-Datei, in EasyMySQL öffnest du diese über Datenbank → SQL-Datei importieren. Eigene Programme verbinden sich wie bisher mit localhost, Port 3306 und dem Benutzer root ohne Passwort. Nur wer Webseiten mit PHP baut, braucht dafür weiterhin einen Webserver.</p>
+        <p class="rv" data-en="You can take your existing databases with you: export them in phpMyAdmin as an SQL file and open that file in EasyMySQL in the Database menu under “Import SQL file”. Your own programs connect as before, with localhost, port 3306 and the user root without a password. Only if you build websites with PHP do you still need a web server for that.">Deine bisherigen Datenbanken nimmst du mit: In phpMyAdmin exportierst du sie als SQL-Datei, in EasyMySQL öffnest du diese im Menü „Datenbank“ unter „SQL-Datei importieren“. Eigene Programme verbinden sich wie bisher mit localhost, Port 3306 und dem Benutzer root ohne Passwort. Nur wer Webseiten mit PHP baut, braucht dafür weiterhin einen Webserver.</p>
       </section>
     </main>
     <footer class="foot">
