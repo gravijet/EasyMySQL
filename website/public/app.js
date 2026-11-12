@@ -61,7 +61,19 @@
     var befehl = windows
       ? 'powershell -c "irm https://mysql.benjaminberger.at/install | iex"'
       : "curl -fsSL https://mysql.benjaminberger.at/install | sh";
-    $("#hero-cmd").dataset.full = befehl;
+    var feld = $("#hero-cmd");
+    if (feld.dataset.full && feld.dataset.full !== befehl && feld.animate && !ruhig.matches)
+      feld.animate(
+        [
+          { opacity: 0, filter: "blur(6px)", transform: "translateY(0.4em)" },
+          { opacity: 1, filter: "blur(0)", transform: "none" },
+        ],
+        { duration: 520, easing: "cubic-bezier(0.16, 1, 0.3, 1)" },
+      );
+    feld.dataset.full = befehl;
+    $$(".files li").forEach(function (li) {
+      li.classList.toggle("match", li.dataset.os === system);
+    });
     $$("[data-prompt]").forEach(function (el) {
       el.textContent = windows ? ">" : "$";
     });
@@ -143,17 +155,9 @@
         a.removeAttribute("tabindex");
       }
     });
-    $$("[data-file-state]").forEach(function (el) {
-      var datei = release.files[el.dataset.fileState];
-      el.textContent =
-        datei && datei.url === "/download/" + el.dataset.fileState
-          ? datei.size
-            ? groesse(datei.size)
-            : text("Direkter Download", "Direct download")
-          : text(
-              "Noch kein Paket im aktuellen Release.",
-              "No package in the current release yet.",
-            );
+    $$("[data-size]").forEach(function (el) {
+      var datei = release.files[el.dataset.size];
+      el.textContent = datei && datei.size ? " · " + groesse(datei.size) : "";
     });
     var fehlend = [
       ["setup", "Windows"],
@@ -225,17 +229,54 @@
       });
     });
   }
+  var laeuft = false;
   // Sprachwechsel: wo der Browser es kann, loest sich die alte Seite weich in die neue auf
   function wechsle(neu) {
-    if (neu === sprache) return;
+    if (laeuft || neu === sprache) return;
     try {
       localStorage.setItem("em-lang", neu);
     } catch (_) {}
-    if (document.startViewTransition && !ruhig.matches)
-      document.startViewTransition(function () {
-        setzeSprache(neu);
+    if (ruhig.matches || !document.body.animate) return setzeSprache(neu);
+    // Der Schalter springt sofort um; jeder sichtbare Text verschwimmt, tauscht sich und taucht
+    // wieder auf, als Welle, die vom Schalter aus ueber die Seite laeuft.
+    laeuft = true;
+    $$("[data-lang]").forEach(function (el) {
+      el.setAttribute("aria-checked", String(el.dataset.lang === neu));
+    });
+    gleite($("#lang"));
+    var s = $("#lang").getBoundingClientRect();
+    var fertig = texte
+      .filter(function (p) {
+        var r = p[0].getBoundingClientRect();
+        return r.width > 2 && r.bottom > 0 && r.top < innerHeight;
+      })
+      .map(function (p) {
+        var el = p[0];
+        var r = el.getBoundingClientRect();
+        var verzug = Math.min(520, Math.hypot(r.right - s.right, r.top - s.top) * 0.4);
+        var weg = el.animate(
+          [
+            { opacity: 1, filter: "blur(0)", transform: "none" },
+            { opacity: 0, filter: "blur(8px)", transform: "translateY(-0.3em) scale(0.98)" },
+          ],
+          { duration: 260, delay: verzug, easing: "cubic-bezier(0.5, 0, 0.75, 0)", fill: "forwards" },
+        );
+        return weg.finished.then(function () {
+          el.textContent = neu === "en" ? el.dataset.en : p[1];
+          el.animate(
+            [
+              { opacity: 0, filter: "blur(8px)", transform: "translateY(0.35em) scale(0.98)" },
+              { opacity: 1, filter: "blur(0)", transform: "none" },
+            ],
+            { duration: 640, easing: "cubic-bezier(0.16, 1, 0.3, 1)" },
+          );
+          weg.cancel();
+        });
       });
-    else setzeSprache(neu);
+    Promise.all(fertig).then(function () {
+      laeuft = false;
+      setzeSprache(neu);
+    });
   }
   $$("[data-lang]").forEach(function (knopf) {
     knopf.addEventListener("click", function () {

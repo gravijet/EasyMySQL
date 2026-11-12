@@ -22,7 +22,7 @@ One WebGL fragment shader. Height = slow liquid swells + blurred text (drawn to 
 ## Custom parts
 
 - **Switches (language, OS):** both options are always written out (DE EN; Windows macOS Linux). A light block glides under the chosen word; its leading edge moves faster than the trailing one, so it stretches briefly (`gleite` in `app.js`, `--l`/`--r`).
-- **Language change:** where the browser supports view transitions, the old page dissolves softly into the new one while the switch itself glides.
+- **Language change:** the switch glides at once; every visible text blurs out, swaps and rises back in as a wave that starts at the switch and runs across the page (Web Animations, skipped with reduced motion).
 - **Command:** a large dark panel; a click anywhere copies. The light "Kopieren" block on the right shows a check that draws itself and "Kopiert". No arrows, dots or other glyph decorations anywhere.
 - **Links:** file links are normal words with a fine line underneath; footer links are large and get an underline that grows from the left.
 - **Language switch:** fixed at the top right so it is reachable everywhere. There is no logo or header bar.
@@ -43,7 +43,7 @@ Inter Tight for the relief and the few larger lines, Martian Mono for all small 
 - Copy: plain sentences as you would explain it to a classmate. No slogans, no three-word staccato, no keyboard shortcuts or minor details. Every entry must matter to someone deciding whether to install.
 
 - Nothing says "free", nothing explains the measurements, no GitHub. Numbers come from `/home/benj/client-benchmark-2026-11` (2026-11-11), rounded.
-- Terminal installation is the main action; file downloads are small words.
+- Terminal installation is the main action; below it the four files as a row with large name, mono line (type, extension, size) and a drawing top line; the files for the chosen system stand brighter.
 - Relief text also exists in the document (class `ghost`) for screen readers and search.
 - CSP forbids inline styles: custom properties and background images are set from JavaScript.
 - Both languages via `data-en`; visible focus and 44px targets stay intact.
