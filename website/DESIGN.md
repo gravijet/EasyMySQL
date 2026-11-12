@@ -47,3 +47,4 @@ Inter Tight for the relief and the few larger lines, Martian Mono for all small 
 - Relief text also exists in the document (class `ghost`) for screen readers and search.
 - CSP forbids inline styles: custom properties and background images are set from JavaScript.
 - Both languages via `data-en`; visible focus and 44px targets stay intact.
+- Screenshots in `public/shots/` are cached for 7 days: when replacing them under the same name, raise the `?v=` number on their URLs in `index.html`.
