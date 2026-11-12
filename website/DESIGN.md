@@ -15,17 +15,18 @@ One WebGL fragment shader. Height = slow liquid swells + blurred text (drawn to 
 | Top | relief EasyMySQL (about 70% of the width), one sentence, OS words, the install command, file words |
 | Intro | the question "What is EasyMySQL?" and one paragraph |
 | Six features | title, two or three plain sentences, the real screenshot (alternating sides); liquid color changes per feature |
-| Why switch? | heading left, five reasons as plain sentences right, separated by hairlines |
-| Comparison | one left-aligned table: speed, size, then features by group; EasyMySQL column tinted; sticky header |
-| Switching from XAMPP | heading left, one paragraph right (same layout as the intro): moving databases, connection settings, PHP |
-| Footer | a link back up to the installation, imprint, privacy |
+| Why switch to EasyMySQL? | fourteen reasons in two columns, each a short statement plus one or two sentences; the hairline above each draws itself in. Facts come from the app's own manual (`src/tabs/help_content.rs`) |
+| Comparison | one left-aligned table: speed, size, then features by group (database, data safety, coding, AI); EasyMySQL column tinted; the header sticks below the language switch, with a dark band above it while stuck (`table.stuck`) |
+| Footer | three large words (install, imprint, privacy) in the style of benjaminberger.at: the underline grows from the left on hover |
 
 ## Custom parts
 
 - **Switches (language, OS):** both options are always written out (DE EN; Windows macOS Linux). A light block glides under the chosen word; its leading edge moves faster than the trailing one, so it stretches briefly (`gleite` in `app.js`, `--l`/`--r`).
 - **Language change:** where the browser supports view transitions, the old page dissolves softly into the new one while the switch itself glides.
 - **Command:** a large dark panel; a click anywhere copies. The light "Kopieren" block on the right shows a check that draws itself and "Kopiert". No arrows, dots or other glyph decorations anywhere.
-- **Links:** normal words with a fine line underneath that brightens on hover.
+- **Links:** file links are normal words with a fine line underneath; footer links are large and get an underline that grows from the left.
+- **Language switch:** fixed at the top right so it is reachable everywhere. There is no logo or header bar.
+- **Windows command:** `powershell -c "irm … | iex"`. It runs in PowerShell and in the command prompt. The bare `irm … | iex` form is swallowed by uBlock Origin's ClickFix rule (`prevent-clipboard-write` in `filters-general.txt`) when a page copies it; a click also selects the command so Ctrl+C works if a blocker swallows the copy.
 - **Screenshots:** arrive slightly turned from below and straighten while scrolling in.
 - **Table marks:** one green check and one red cross (inline SVG symbols `#ok`, `#no`), identical in every column; they draw themselves when their row appears. Numbers are large with a small unit, count up, and a bar across the cell grows under each.
 - **Scrolling:** native scroll bars are hidden.

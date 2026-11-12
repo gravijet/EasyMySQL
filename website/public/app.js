@@ -59,11 +59,11 @@
   function zeigeBefehl() {
     var windows = system === "win";
     var befehl = windows
-      ? "irm https://mysql.benjaminberger.at/install | iex"
+      ? 'powershell -c "irm https://mysql.benjaminberger.at/install | iex"'
       : "curl -fsSL https://mysql.benjaminberger.at/install | sh";
     $("#hero-cmd").dataset.full = befehl;
     $$("[data-prompt]").forEach(function (el) {
-      el.textContent = windows ? "PS>" : "$";
+      el.textContent = windows ? ">" : "$";
     });
     $$("[data-cmd]").forEach(function (el) {
       el.textContent = befehl;
@@ -298,6 +298,7 @@
   var szene = (window.easyScene = { n: 0, text: null, hoch: 1, A: FARBEN.start[0], B: FARBEN.start[1] });
   var letzterText = "";
   var traeger = null; // Abschnitt, an dem das Relief haengt
+  var tabelle = $(".compare table");
   var reliefs = $$("[data-relief]");
   var funktionen = $$(".feature");
   var bilder = funktionen.map(function (el) {
@@ -337,6 +338,10 @@
     // das Relief scrollt mit seinem Abschnitt mit, die Fluessigkeit zieht langsamer nach
     szene.versatz = traeger ? -traeger.getBoundingClientRect().top / innerHeight : 0;
     szene.lauf = scrollY / innerHeight;
+    if (tabelle) {
+      var lage = tabelle.getBoundingClientRect();
+      tabelle.classList.toggle("stuck", lage.top <= 68 && lage.bottom > 68 + tabelle.tHead.offsetHeight);
+    }
     // ohne Relief bleibt der letzte Text stehen und versinkt nur (hoch = 0)
     var kennung = spez ? JSON.stringify(spez) + innerWidth + "x" + innerHeight : letzterText;
     if (kennung !== letzterText) {
@@ -454,6 +459,8 @@
     knopf.addEventListener("click", function () {
       var quelle = $(knopf.dataset.copyFrom);
       var inhalt = (quelle.dataset.full || quelle.textContent).trim();
+      var befehl = knopf.querySelector("code");
+      if (befehl && window.getSelection) getSelection().selectAllChildren(befehl);
       if (navigator.clipboard)
         navigator.clipboard.writeText(inhalt).then(
           function () {

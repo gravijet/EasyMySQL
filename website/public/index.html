@@ -30,12 +30,9 @@
       <symbol id="no" viewBox="0 0 24 24"><path d="M18 6 6 18" pathLength="1" /><path d="m6 6 12 12" pathLength="1" /></symbol>
     </svg>
     <a class="skip" data-en="Skip to content" href="#main">Zum Inhalt</a>
-    <header class="nav">
-      <a aria-label="Zum Seitenanfang" class="brand" data-en-label="Back to top" href="#top"><img alt="" height="22" src="/favicon.svg" width="22" /></a>
-      <div aria-label="Sprache" class="switch lang" data-en-label="Language" id="lang" role="radiogroup">
-        <i aria-hidden="true" class="glide"></i><button aria-checked="true" aria-label="Deutsch" data-lang="de" lang="de" role="radio" type="button">DE</button><button aria-checked="false" aria-label="English" data-lang="en" lang="en" role="radio" type="button">EN</button>
-      </div>
-    </header>
+    <div aria-label="Sprache" class="switch lang" data-en-label="Language" id="lang" role="radiogroup">
+      <i aria-hidden="true" class="glide"></i><button aria-checked="true" aria-label="Deutsch" data-lang="de" lang="de" role="radio" type="button">DE</button><button aria-checked="false" aria-label="English" data-lang="en" lang="en" role="radio" type="button">EN</button>
+    </div>
     <main id="main">
       <section aria-labelledby="product-name" class="hero" data-relief="start" id="top">
         <h1 class="ghost" id="product-name">EasyMySQL</h1>
@@ -46,7 +43,7 @@
               <i aria-hidden="true" class="glide"></i><button aria-checked="true" data-install-os="win" role="radio" type="button">Windows</button><button aria-checked="false" data-install-os="mac" role="radio" type="button">macOS</button><button aria-checked="false" data-install-os="linux" role="radio" type="button">Linux</button>
             </div>
             <button aria-label="Installationsbefehl kopieren" class="cmd" data-copy-from="#hero-cmd" data-en-label="Copy the install command" type="button">
-              <span aria-hidden="true" class="prompt" data-prompt="">PS&gt;</span><code data-cmd="" id="hero-cmd">irm https://mysql.benjaminberger.at/install | iex</code><span class="copy"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="#ok" /></svg><span data-en="Copy">Kopieren</span></span>
+              <span aria-hidden="true" class="prompt" data-prompt="">&gt;</span><code data-cmd="" id="hero-cmd">powershell -c &quot;irm https://mysql.benjaminberger.at/install | iex&quot;</code><span class="copy"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="#ok" /></svg><span data-en="Copy">Kopieren</span></span>
             </button>
             <p class="files">
               <span data-en="Or as a file:">Oder als Datei:</span>
@@ -127,14 +124,23 @@
         </picture>
       </section>
 
-      <section aria-labelledby="w-h" class="block intro why">
-        <h2 class="rv" data-en="Why switch?" id="w-h">Warum umsteigen?</h2>
+      <section aria-labelledby="w-h" class="block why">
+        <h2 class="rv" data-en="Why switch to EasyMySQL?" id="w-h">Warum zu EasyMySQL wechseln?</h2>
         <ul>
-          <li class="rv"><b data-en="EasyMySQL opens in half a second.">EasyMySQL ist in einer halben Sekunde offen.</b> <span data-en="XAMPP with phpMyAdmin takes almost three seconds, MySQL Workbench almost six.">XAMPP mit phpMyAdmin braucht knapp drei Sekunden, MySQL Workbench fast sechs.</span></li>
-          <li class="rv"><b data-en="You only need one app.">Du brauchst nur noch ein Programm.</b> <span data-en="With XAMPP you first start the server and then open phpMyAdmin in the browser. Here both are one window, and the server runs by itself.">Bei XAMPP startest du erst den Server und öffnest dann phpMyAdmin im Browser. Hier ist beides ein Fenster, und der Server läuft von selbst.</span></li>
+          <li class="rv"><b data-en="Your database does not just break.">Deine Datenbank geht nicht einfach kaputt.</b> <span data-en="EasyMySQL shuts the server down cleanly when you close the window or turn off Windows. After a crash or power cut it checks every table on the next start.">EasyMySQL fährt den Server sauber herunter, wenn du das Fenster schließt oder Windows ausschaltest. Nach einem Absturz oder Stromausfall prüft es beim nächsten Start alle Tabellen.</span></li>
+          <li class="rv"><b data-en="Backups run by themselves.">Backups laufen von selbst.</b> <span data-en="EasyMySQL makes a backup at startup, then every two hours and before every delete. That is how you get a deleted table back.">Beim Start, danach alle zwei Stunden und vor jedem Löschen legt EasyMySQL eine Sicherung an. Eine gelöschte Tabelle holst du damit wieder zurück.</span></li>
+          <li class="rv"><b data-en="If the server no longer starts, there is a rescue.">Startet der Server nicht mehr, gibt es eine Rettung.</b> <span data-en="EasyMySQL puts the old data folder aside, recovers from it what can be recovered and takes the rest from the latest backup.">EasyMySQL legt den alten Datenordner beiseite, rettet daraus, was sich retten lässt, und holt den Rest aus der letzten Sicherung.</span></li>
+          <li class="rv"><b data-en="It opens right away.">Es ist sofort offen.</b> <span data-en="After half a second you can start working. XAMPP with phpMyAdmin takes almost three seconds, MySQL Workbench almost six.">Nach einer halben Sekunde kannst du arbeiten. XAMPP mit phpMyAdmin braucht knapp drei Sekunden, MySQL Workbench fast sechs.</span></li>
+          <li class="rv"><b data-en="One app instead of two.">Ein Programm statt zwei.</b> <span data-en="With XAMPP you first start the server and then open phpMyAdmin in the browser. Here both are one window, and the server runs by itself.">Bei XAMPP startest du erst den Server und öffnest dann phpMyAdmin im Browser. Hier ist beides ein Fenster, und der Server läuft von selbst.</span></li>
+          <li class="rv"><b data-en="It keeps itself up to date.">Es hält sich selbst aktuell.</b> <span data-en="EasyMySQL downloads and installs updates in the background while you keep working. It also brings MariaDB to the newest version and backs up every database first.">Updates lädt und installiert EasyMySQL im Hintergrund, während du weiterarbeitest. Auch MariaDB bringt es auf die neueste Version und sichert vorher alle Datenbanken.</span></li>
+          <li class="rv"><b data-en="It looks like an app from today.">Es sieht aus wie ein Programm von heute.</b> <span data-en="Tidy, dark or light, with tabs like in a code editor. You find every command through a search where a few letters are enough.">Aufgeräumt, dunkel oder hell, mit Tabs wie in einer Entwicklungsumgebung. Jeden Befehl findest du über eine Suche, in der ein paar Buchstaben genügen.</span></li>
+          <li class="rv"><b data-en="It helps you with mistakes.">Es hilft dir bei Fehlern.</b> <span data-en="EasyMySQL explains error messages and offers a button to fix them. If a database or table is missing, for example, it creates it with one click.">EasyMySQL erklärt Fehlermeldungen und bietet gleich einen Knopf zum Beheben an. Fehlt zum Beispiel eine Datenbank oder Tabelle, legt es sie mit einem Klick an.</span></li>
+          <li class="rv"><b data-en="Your work does not get lost.">Deine Arbeit geht nicht verloren.</b> <span data-en="Queries are saved while you type and are back after a restart. Every file keeps earlier versions, and the history remembers the last 3000 statements.">Abfragen werden beim Tippen gespeichert und sind nach einem Neustart wieder da. Zu jeder Datei gibt es frühere Fassungen, und der Verlauf merkt sich die letzten 3000 Anweisungen.</span></li>
           <li class="rv"><b data-en="Large amounts of data work too.">Auch große Datenmengen funktionieren.</b> <span data-en="A million rows are imported in about eight seconds. phpMyAdmin rejects files that large.">Eine Million Zeilen sind in rund acht Sekunden importiert. phpMyAdmin lehnt so große Dateien ab.</span></li>
-          <li class="rv"><b data-en="It can do more.">Es kann mehr.</b> <span data-en="You fix mistakes in a query with one click, backups run automatically, and you need no second app for Java and Git.">Fehler in einer Abfrage behebst du mit einem Klick, Backups laufen automatisch, und für Java und Git brauchst du kein zweites Programm.</span></li>
-          <li class="rv"><b data-en="It takes less space.">Es braucht weniger Platz.</b> <span data-en="The download is 77 MB, installed it takes 260 MB. XAMPP takes more than three times as much.">Der Download hat 77 MB, installiert sind es 260 MB. XAMPP belegt mehr als dreimal so viel.</span></li>
+          <li class="rv"><b data-en="Java and Git are already included.">Java und Git sind schon dabei.</b> <span data-en="You need no second development environment to write a Java program for your database. EasyMySQL downloads Java itself.">Für ein Java-Programm zu deiner Datenbank brauchst du keine zweite Entwicklungsumgebung. Java lädt EasyMySQL selbst herunter.</span></li>
+          <li class="rv"><b data-en="Nobody gets at your data from outside.">Von außen kommt niemand an deine Daten.</b> <span data-en="The server only accepts connections from your own PC unless you change that.">Der Server nimmt nur Verbindungen von deinem eigenen PC an, solange du es nicht anders einstellst.</span></li>
+          <li class="rv"><b data-en="You can keep XAMPP for now.">Du kannst XAMPP erst einmal behalten.</b> <span data-en="If a database server is already running on your PC, EasyMySQL simply uses that one. Your programs connect as before, with port 3306 and the user root.">Läuft auf deinem PC schon ein Datenbankserver, benutzt EasyMySQL einfach diesen. Deine Programme verbinden sich wie bisher mit Port 3306 und dem Benutzer root.</span></li>
+          <li class="rv"><b data-en="The AI knows your tables.">Die KI kennt deine Tabellen.</b> <span data-en="In the built-in chat you describe what you need and get a query that fits your database.">Im eingebauten Chat beschreibst du, was du brauchst, und bekommst eine Abfrage, die zu deiner Datenbank passt.</span></li>
         </ul>
       </section>
 
@@ -167,7 +173,11 @@
             <tr><th scope="row" data-en="Click queries together">Abfragen zusammenklicken</th><td><svg aria-hidden="true" class="ja" viewBox="0 0 24 24"><use href="#ok" /></svg><span class="ghost" data-en="Yes">Ja</span></td><td><svg aria-hidden="true" class="ja" viewBox="0 0 24 24"><use href="#ok" /></svg><span class="ghost" data-en="Yes">Ja</span></td><td><svg aria-hidden="true" class="nein" viewBox="0 0 24 24"><use href="#no" /></svg><span class="ghost" data-en="No">Nein</span></td></tr>
             <tr><th scope="row" data-en="Import CSV files">CSV-Dateien importieren</th><td><svg aria-hidden="true" class="ja" viewBox="0 0 24 24"><use href="#ok" /></svg><span class="ghost" data-en="Yes">Ja</span></td><td><svg aria-hidden="true" class="ja" viewBox="0 0 24 24"><use href="#ok" /></svg><span class="ghost" data-en="Yes">Ja</span></td><td><svg aria-hidden="true" class="nein" viewBox="0 0 24 24"><use href="#no" /></svg><span class="ghost" data-en="No">Nein</span></td></tr>
             <tr><th scope="row" data-en="Import from MongoDB and Redis">Import aus MongoDB und Redis</th><td><svg aria-hidden="true" class="ja" viewBox="0 0 24 24"><use href="#ok" /></svg><span class="ghost" data-en="Yes">Ja</span></td><td><svg aria-hidden="true" class="nein" viewBox="0 0 24 24"><use href="#no" /></svg><span class="ghost" data-en="No">Nein</span></td><td><svg aria-hidden="true" class="nein" viewBox="0 0 24 24"><use href="#no" /></svg><span class="ghost" data-en="No">Nein</span></td></tr>
+            <tr class="group"><th data-en="Keeping your data safe" scope="rowgroup">Sicherheit deiner Daten</th><td></td><td></td><td></td></tr>
             <tr><th scope="row" data-en="Automatic backups">Automatische Backups</th><td><svg aria-hidden="true" class="ja" viewBox="0 0 24 24"><use href="#ok" /></svg><span class="ghost" data-en="Yes">Ja</span></td><td><svg aria-hidden="true" class="nein" viewBox="0 0 24 24"><use href="#no" /></svg><span class="ghost" data-en="No">Nein</span></td><td><svg aria-hidden="true" class="nein" viewBox="0 0 24 24"><use href="#no" /></svg><span class="ghost" data-en="No">Nein</span></td></tr>
+            <tr><th scope="row" data-en="Backup before every delete">Sicherung vor jedem Löschen</th><td><svg aria-hidden="true" class="ja" viewBox="0 0 24 24"><use href="#ok" /></svg><span class="ghost" data-en="Yes">Ja</span></td><td><svg aria-hidden="true" class="nein" viewBox="0 0 24 24"><use href="#no" /></svg><span class="ghost" data-en="No">Nein</span></td><td><svg aria-hidden="true" class="nein" viewBox="0 0 24 24"><use href="#no" /></svg><span class="ghost" data-en="No">Nein</span></td></tr>
+            <tr><th scope="row" data-en="Checks the tables after a crash">Prüft die Tabellen nach einem Absturz</th><td><svg aria-hidden="true" class="ja" viewBox="0 0 24 24"><use href="#ok" /></svg><span class="ghost" data-en="Yes">Ja</span></td><td><svg aria-hidden="true" class="nein" viewBox="0 0 24 24"><use href="#no" /></svg><span class="ghost" data-en="No">Nein</span></td><td><svg aria-hidden="true" class="nein" viewBox="0 0 24 24"><use href="#no" /></svg><span class="ghost" data-en="No">Nein</span></td></tr>
+            <tr><th scope="row" data-en="Rescue when the server does not start">Rettung, wenn der Server nicht startet</th><td><svg aria-hidden="true" class="ja" viewBox="0 0 24 24"><use href="#ok" /></svg><span class="ghost" data-en="Yes">Ja</span></td><td><svg aria-hidden="true" class="nein" viewBox="0 0 24 24"><use href="#no" /></svg><span class="ghost" data-en="No">Nein</span></td><td><svg aria-hidden="true" class="nein" viewBox="0 0 24 24"><use href="#no" /></svg><span class="ghost" data-en="No">Nein</span></td></tr>
             <tr class="group"><th data-en="Coding" scope="rowgroup">Programmieren</th><td></td><td></td><td></td></tr>
             <tr><th scope="row" data-en="Write, run and debug Java">Java schreiben, starten und debuggen</th><td><svg aria-hidden="true" class="ja" viewBox="0 0 24 24"><use href="#ok" /></svg><span class="ghost" data-en="Yes">Ja</span></td><td><svg aria-hidden="true" class="nein" viewBox="0 0 24 24"><use href="#no" /></svg><span class="ghost" data-en="No">Nein</span></td><td><svg aria-hidden="true" class="nein" viewBox="0 0 24 24"><use href="#no" /></svg><span class="ghost" data-en="No">Nein</span></td></tr>
             <tr><th scope="row" data-en="Version control with Git">Versionen mit Git</th><td><svg aria-hidden="true" class="ja" viewBox="0 0 24 24"><use href="#ok" /></svg><span class="ghost" data-en="Yes">Ja</span></td><td><svg aria-hidden="true" class="nein" viewBox="0 0 24 24"><use href="#no" /></svg><span class="ghost" data-en="No">Nein</span></td><td><svg aria-hidden="true" class="nein" viewBox="0 0 24 24"><use href="#no" /></svg><span class="ghost" data-en="No">Nein</span></td></tr>
@@ -177,19 +187,15 @@
             <tr><th scope="row" data-en="AI chat inside the app">KI-Chat im Programm</th><td><svg aria-hidden="true" class="ja" viewBox="0 0 24 24"><use href="#ok" /></svg><span class="ghost" data-en="Yes">Ja</span></td><td><svg aria-hidden="true" class="nein" viewBox="0 0 24 24"><use href="#no" /></svg><span class="ghost" data-en="No">Nein</span></td><td><svg aria-hidden="true" class="nein" viewBox="0 0 24 24"><use href="#no" /></svg><span class="ghost" data-en="No">Nein</span></td></tr>
             <tr><th scope="row" data-en="AI knows your tables">KI kennt deine Tabellen</th><td><svg aria-hidden="true" class="ja" viewBox="0 0 24 24"><use href="#ok" /></svg><span class="ghost" data-en="Yes">Ja</span></td><td><svg aria-hidden="true" class="nein" viewBox="0 0 24 24"><use href="#no" /></svg><span class="ghost" data-en="No">Nein</span></td><td><svg aria-hidden="true" class="nein" viewBox="0 0 24 24"><use href="#no" /></svg><span class="ghost" data-en="No">Nein</span></td></tr>
           </tbody>
-          <tfoot><tr><th data-en="Features" scope="row">Funktionen</th><td><b>15</b> <span data-en="of 17">von 17</span></td><td><b>8</b> <span data-en="of 17">von 17</span></td><td><b>4</b> <span data-en="of 17">von 17</span></td></tr></tfoot>
+          <tfoot><tr><th data-en="Features" scope="row">Funktionen</th><td><b>18</b> <span data-en="of 20">von 20</span></td><td><b>8</b> <span data-en="of 20">von 20</span></td><td><b>4</b> <span data-en="of 20">von 20</span></td></tr></tfoot>
         </table>
       </section>
 
-      <section aria-labelledby="u-h" class="block intro">
-        <h2 class="rv" data-en="Switching from XAMPP" id="u-h">Von XAMPP umsteigen</h2>
-        <p class="rv" data-en="You can take your existing databases with you: export them in phpMyAdmin as an SQL file and open that file in EasyMySQL in the Database menu under “Import SQL file”. Your own programs connect as before, with localhost, port 3306 and the user root without a password. Only if you build websites with PHP do you still need a web server for that.">Deine bisherigen Datenbanken nimmst du mit: In phpMyAdmin exportierst du sie als SQL-Datei, in EasyMySQL öffnest du diese im Menü „Datenbank“ unter „SQL-Datei importieren“. Eigene Programme verbinden sich wie bisher mit localhost, Port 3306 und dem Benutzer root ohne Passwort. Nur wer Webseiten mit PHP baut, braucht dafür weiterhin einen Webserver.</p>
-      </section>
     </main>
     <footer class="foot">
-      <a class="up" data-en="To the installation" href="#top">Zur Installation</a>
-      <a data-en="Imprint" href="https://benjaminberger.at/impressum">Impressum</a>
-      <a data-en="Privacy" href="https://benjaminberger.at/datenschutz">Datenschutz</a>
+      <a href="#top"><span class="line" data-en="Install">Installieren</span></a>
+      <a href="https://benjaminberger.at/impressum"><span class="line" data-en="Imprint">Impressum</span></a>
+      <a href="https://benjaminberger.at/datenschutz"><span class="line" data-en="Privacy">Datenschutz</span></a>
     </footer>
   </body>
 </html>
