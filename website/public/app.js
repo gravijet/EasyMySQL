@@ -77,8 +77,12 @@
     $$("[data-prompt]").forEach(function (el) {
       el.textContent = windows ? ">" : "$";
     });
+    // Auf schmalen Bildschirmen darf der Befehl nur an Leerzeichen und vor "/install" umbrechen, nie mitten
+    // in einem Wort (frueher: "instal" / "l")
     $$("[data-cmd]").forEach(function (el) {
-      el.textContent = befehl;
+      var teile = befehl.split("/install");
+      el.replaceChildren(teile[0]);
+      for (var i = 1; i < teile.length; i++) el.append(document.createElement("wbr"), "/install" + teile[i]);
     });
   }
   function waehleSystem(knopf, fokus) {
@@ -130,9 +134,6 @@
 
   function zeigeRelease() {
     if (!release) return;
-    $$("[data-release-version]").forEach(function (el) {
-      el.textContent = "v" + release.version;
-    });
     $$("[data-dl]").forEach(function (a) {
       var datei = release.files[a.dataset.dl];
       var vorhanden = !!(datei && datei.url === "/download/" + a.dataset.dl);
@@ -207,27 +208,10 @@
       "Datenbank, SQL-Editor, ER-Diagramme und Java in einer App. Für Windows, macOS und Linux.",
       "Database, SQL editor, ER diagrams and Java in one app. For Windows, macOS and Linux.",
     );
-    teileWoerter();
-    if (bereit) male();
+    if (bereit) stelle();
     zeigeBefehl();
     zeigeRelease();
     zeigeFehler();
-  }
-  // Ueberschrift in Woerter teilen, damit sie einzeln einblenden
-  function teileWoerter() {
-    $$("[data-split]").forEach(function (el) {
-      var woerter = el.textContent.trim().split(/\s+/);
-      el.replaceChildren();
-      woerter.forEach(function (wort, i) {
-        var span = document.createElement("span");
-        span.className = "w";
-        span.textContent = wort;
-        span.style.setProperty("--i", i);
-        // der farbige Schlusssatz (letzte vier Woerter) beginnt in einer neuen Zeile
-        if (i === woerter.length - 4) el.append(document.createElement("br"));
-        el.append(span, " ");
-      });
-    });
   }
   var laeuft = false;
   // Sprachwechsel: wo der Browser es kann, loest sich die alte Seite weich in die neue auf
@@ -340,6 +324,10 @@
   var letzterText = "";
   var traeger = null; // Abschnitt, an dem das Relief haengt
   var tabelle = $(".compare table");
+  var kopf = tabelle && tabelle.tHead;
+  var spalten = kopf ? Array.from(kopf.querySelectorAll("th")) : [];
+  var sprachschalter = $("#lang");
+  var bereich = document.createRange();
   var reliefs = $$("[data-relief]");
   var funktionen = $$(".feature");
   var bilder = funktionen.map(function (el) {
@@ -390,7 +378,19 @@
     szene.lauf = scrollY / innerHeight;
     if (tabelle) {
       var lage = tabelle.getBoundingClientRect();
-      tabelle.classList.toggle("stuck", lage.top <= 68 && lage.bottom > 68 + tabelle.tHead.offsetHeight);
+      var klebt = lage.top < -1 && lage.bottom > kopf.offsetHeight;
+      tabelle.classList.toggle("stuck", klebt);
+      // der Sprachschalter weicht, wenn er auf einem Spaltennamen laege (schmale Bildschirme)
+      var weg = false;
+      if (klebt) {
+        var schalter = sprachschalter.getBoundingClientRect();
+        spalten.forEach(function (th) {
+          bereich.selectNodeContents(th);
+          var r = bereich.getBoundingClientRect();
+          if (r.right > schalter.left - 8 && r.left < schalter.right && r.top < schalter.bottom) weg = true;
+        });
+      }
+      sprachschalter.classList.toggle("weg", weg);
     }
     // ohne Relief bleibt der letzte Text stehen und versinkt nur (hoch = 0)
     var kennung = spez ? JSON.stringify(spez) + innerWidth + "x" + innerHeight : letzterText;
@@ -408,23 +408,37 @@
     bild = 0;
     var hoch = innerHeight;
     var unruhig = false;
-    bilder.forEach(function (b) {
-      var r = b.el.parentElement.getBoundingClientRect();
+    // erst alle Lagen lesen, dann schreiben: sonst erzwingt jedes Bild eine neue Berechnung des Layouts
+    var lagen = bilder.map(function (b) {
+      return b.el.parentElement.getBoundingClientRect().top;
+    });
+    bilder.forEach(function (b, i) {
       // 1 = Bild kommt unten ins Sichtfeld, 0 = steht in der Mitte
-      var ziel = ruhig.matches ? 0 : Math.min(1, Math.max(0, (r.top - hoch * 0.22) / (hoch * 0.75)));
-      b.k += (ziel - b.k) * 0.12;
-      if (Math.abs(ziel - b.k) > 0.002) unruhig = true;
-      b.el.style.setProperty("--k", b.k.toFixed(4));
+      var ziel = ruhig.matches ? 0 : Math.min(1, Math.max(0, (lagen[i] - hoch * 0.22) / (hoch * 0.75)));
+      var neu = Math.abs(ziel - b.k) < 0.002 ? ziel : b.k + (ziel - b.k) * 0.12;
+      if (neu !== ziel) unruhig = true;
+      var wert = neu.toFixed(4);
+      b.k = neu;
+      if (wert !== b.wert) {
+        b.wert = wert;
+        b.el.style.setProperty("--k", wert);
+      }
     });
     if (unruhig) anfordern();
   }
   function anfordern() {
     if (!bild) bild = requestAnimationFrame(zeichne);
   }
+  // Beim Scrollen kommen oft mehrere Ereignisse je Bild: die Szene nur einmal je Bild neu bestimmen
+  var szeneBild = 0;
   addEventListener(
     "scroll",
     function () {
-      stelle();
+      if (!szeneBild)
+        szeneBild = requestAnimationFrame(function () {
+          szeneBild = 0;
+          stelle();
+        });
       anfordern();
     },
     { passive: true },
@@ -438,19 +452,20 @@
   function zaehle(el) {
     var ziel = parseFloat(el.dataset.count);
     var stellen = +el.dataset.dec;
-    var ende = el.textContent;
-    var anhang = ende.replace(/^[\d.,]+/, "");
+    var deutsch = el.textContent;
+    if (sprache === "en") deutsch = deutsch.replace(".", ",");
     var beginn = performance.now();
     (function schritt(jetzt) {
       var t = Math.min(1, (jetzt - beginn) / 1700);
+      // am Ende der Wert in der Sprache, die jetzt gilt (die Sprache kann waehrend des Zaehlens wechseln)
       if (t === 1) {
-        el.textContent = ende;
+        el.textContent = sprache === "en" ? el.dataset.en : deutsch;
         return;
       }
       el.textContent =
         new Intl.NumberFormat(sprache, { minimumFractionDigits: stellen, maximumFractionDigits: stellen }).format(
           ziel * (1 - Math.pow(1 - t, 4)),
-        ) + anhang;
+        );
       requestAnimationFrame(schritt);
     })(beginn);
   }
@@ -480,10 +495,6 @@
     });
   } else ziele.forEach(zeige);
 
-  // nach einem Sprachwechsel das Relief neu schreiben
-  function male() {
-    stelle();
-  }
   bereit = true;
   stelle();
   if (document.fonts) document.fonts.ready.then(stelle);

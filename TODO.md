@@ -53,7 +53,7 @@ und nicht ausprobiert, **[Idee]** = neue Funktion. Alles lief nur unter Linux.
    unterwegs verändert werden. Hinweis vor dem Import anzeigen.
 4. **[Verdacht] Interne Adressen werden beim Download nicht abgewiesen** (`localhost`, `192.168.…`). Für eine Desktop-App
    gering; relevant, falls die KI-Schnittstelle (`src/mcp/`) Importe aus Adressen anstoßen darf. Das prüfen.
-5. **[Verdacht] Website-CSP erlaubt `script-src 'unsafe-inline'`** (`website/public/_headers`). Inline-Skripte auslagern
+5. **[erledigt] Website-CSP erlaubt `script-src 'unsafe-inline'`** (das einzige Inline-Skript der 404-Seite steht jetzt in `404.js`, die CSP erlaubt nur noch `'self'`) (`website/public/_headers`). Inline-Skripte auslagern
    oder mit Hash freigeben.
 6. **[bestätigt, positiv]** Das Update prüft SHA-256 und Größe vor dem Installieren (`src/updates.rs`). Beibehalten.
 7. **[Idee]** Warnung beim Verbinden ohne TLS mit einem Server außerhalb von `localhost`.
@@ -128,11 +128,11 @@ und nicht ausprobiert, **[Idee]** = neue Funktion. Alles lief nur unter Linux.
 
 ## 8. Website
 
-1. **[bestätigt] `website/public/og.jpg` (Vorschaubild beim Teilen von Links) ist veraltet.** Es zeigt die frühere Gestaltung
+1. **[erledigt] `website/public/og.jpg` (Vorschaubild beim Teilen von Links) ist veraltet.** Neu aus der Seite selbst gerendert. Es zeigt die frühere Gestaltung
    mit Tabs und dem nackten Befehl `irm mysql.benjaminberger.at/install | iex`. Die Seite nutzt inzwischen
    `powershell -c "irm … | iex"`, weil uBlock die nackte Form beim Kopieren schluckt. Neu erzeugen (1200×630, Wortmarke
    wie auf der Seite, Befehl in der neuen Form).
-2. **[bestätigt] Übrig gebliebene Datei `repo/website/public/og.png`.** Wird nirgends verwendet (die Seite verweist auf
+2. **[erledigt] Übrig gebliebene Datei `repo/website/public/og.png`.** Entfernt, ebenso die unbenutzten `brands/*.svg` und `InstrumentSans`. Wird nirgends verwendet (die Seite verweist auf
    `og.jpg`). Entfernen.
 3. **[bestätigt] Nur deutsche Metadaten:** `<html lang="de">`, kein `hreflang`, Beschreibung und Open-Graph-Texte nur
    deutsch, obwohl ein Schalter die Seite auf Englisch umstellt.
@@ -198,3 +198,24 @@ Alle Ansichten unter Linux (Xvfb, 1400×900) im dunklen und hellen Design durchg
 
 Geprüft und in Ordnung: Titelleiste, Einstellungen, Query Builder, Daten- und Ergebnistabelle, ER-Diagramm (mittig),
 Sicherungen, Benutzerverwaltung, Git, Suche, Menüs.
+
+## 12. Website, zweite Runde (2026-11-14)
+
+1. **Hintergrund wurde hell:** Stand die Maus unten rechts (z. B. über „Datenschutz“), kippte die Lichtrichtung im Shader
+   fast auf den Betrachter, und die ganze Fläche wurde grau (mittlere Helligkeit 44 statt 14). Das Licht kommt jetzt immer
+   schräg von oben, die Maus dreht nur die Richtung. Die freie Fläche schimmert in den Spiegelfarben statt in Weiß.
+2. **Leistung:** Wasser und Farbe der freien Fläche entstehen in kleinen Texturen (höchstens 240 Zeilen), nur das Relief in
+   voller Auflösung; höchstens etwa 60 Bilder je Sekunde, außer während das Relief mitscrollt; Relief nur im Rechteck um
+   die Schrift berechnet und erst nach dem Laden der Schrift (vorher zweimal); bei Größenänderungen erst, wenn es ruhig
+   ist (Handy-Adressleiste); Scroll-Arbeit einmal je Bild; Bilder erst alle Lagen lesen, dann schreiben.
+   Rauschen ohne `sin()` (gleichmäßig auch bei großen Koordinaten). Verlust des Grafikkontexts wird abgefangen.
+3. **Tabellenkopf:** klebt ganz oben, genau so hoch wie die Leiste des Sprachschalters; vorher ein 122 px hoher dunkler
+   Block. EasyMySQL-Spalte ohne runde Ecken. Auf 320 px breiten Handys lief „EasyMySQL“ in die Nachbarspalte; der
+   Sprachschalter weicht, wenn er einen Spaltennamen verdecken würde.
+4. **„Warum wechseln“** auf die sechs stärksten Gründe gekürzt (vorher 14).
+5. **Installationsbefehl** brach auf schmalen Handys mitten im Wort um („instal“ / „l“); jetzt nur an Leerzeichen und vor
+   `/install`.
+6. **Hochzählende Zahlen** setzen am Ende den Wert in der jetzt gewählten Sprache (vorher den beim Start gemerkten Text;
+   je nach Zeitpunkt eines Sprachwechsels konnte die alte Schreibweise stehen bleiben).
+7. **Ohne WebGL** klebte die Überschrift am Satz darunter.
+

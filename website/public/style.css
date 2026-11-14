@@ -109,7 +109,7 @@ html:not(.js) .hero .ghost {
   position: static;
   width: auto;
   height: auto;
-  margin: 0;
+  margin: 0 0 clamp(1rem, 4vh, 2.5rem);
   clip-path: none;
   font: 780 clamp(3.4rem, 15vw, 14rem) / 0.9 var(--display);
   letter-spacing: -0.06em;
@@ -219,6 +219,7 @@ html:not(.js) .hero {
 .claim {
   font: 640 clamp(1.6rem, 2.9vw, 2.6rem) / 1.06 var(--display);
   letter-spacing: -0.04em;
+  text-wrap: balance;
 }
 .install {
   display: grid;
@@ -462,6 +463,7 @@ html:not(.js) .hero {
 .why span {
   display: block;
   max-width: 48ch;
+  text-wrap: pretty;
 }
 
 /* Funktionen: Titel, ein kurzer Absatz und das echte App-Bild, abwechselnd links und rechts */
@@ -482,6 +484,7 @@ html:not(.js) .hero {
 }
 .feature p {
   max-width: 36ch;
+  text-wrap: pretty;
   margin-top: 1.1rem;
   font-size: clamp(1.02rem, 1.3vw, 1.18rem);
   line-height: 1.5;
@@ -539,39 +542,52 @@ tfoot td {
 tr > :nth-child(2) {
   background: #a6c2ff14;
 }
-thead th {
-  position: sticky;
-  z-index: 2;
-  top: 68px;
-  width: 18%;
-  padding-block: 1.1rem;
-  font: 600 0.95rem var(--display);
-  letter-spacing: -0.01em;
-  background: #05070e;
-}
+/* Der Kopf klebt oben, genau so hoch wie die Leiste mit dem Sprachschalter (14 + 50 + 14 px): die Spaltennamen
+   stehen auf einer Linie mit DE/EN. Waehrend er klebt, liegt hinter ihm ein dunkles Band ueber die ganze Breite,
+   das mit ihm mitwandert (am Ende der Tabelle schiebt es sich mit ihr hinaus). */
+thead th,
 thead td {
   position: sticky;
   z-index: 2;
-  top: 68px;
-  background: #05070e;
+  top: 0;
+  height: 78px;
+  padding-block: 0;
+}
+thead th {
+  width: 18%;
+  font: 600 0.95rem var(--display);
+  letter-spacing: -0.01em;
+  white-space: nowrap;
 }
 thead th:nth-child(2) {
   color: var(--blue);
-  background: linear-gradient(#a6c2ff14, #a6c2ff14), #05070e;
-  border-radius: 14px 14px 0 0;
 }
-tfoot td:nth-child(2) {
-  border-radius: 0 0 14px 14px;
-}
-table.stuck thead th::before,
-table.stuck thead td::before {
+thead td::before {
   content: "";
   position: absolute;
-  inset: -68px 0 100%;
-  background: #05070e;
+  z-index: -1;
+  top: 0;
+  bottom: 0;
+  left: -100vw;
+  width: 300vw;
+  background: #04050c;
+  border-bottom: 1px solid var(--line);
+  opacity: 0;
+  transition: opacity 0.25s;
+  pointer-events: none;
 }
-table.stuck thead th:nth-child(2) {
-  border-radius: 0;
+table.stuck thead td::before {
+  opacity: 1;
+}
+/* Sprachschalter, wenn er beim klebenden Kopf ueber einem Spaltennamen laege (schmale Bildschirme) */
+.lang {
+  transition:
+    opacity 0.25s,
+    visibility 0.25s;
+}
+.lang.weg {
+  opacity: 0;
+  visibility: hidden;
 }
 tr.group th {
   padding: 2.4rem 0 0.8rem;
@@ -582,6 +598,10 @@ tr.group th {
 tr.group th,
 tr.group td {
   border-top: 0;
+}
+/* direkt unter dem Kopf genuegt weniger Abstand */
+tbody tr.group:first-child th {
+  padding-top: 0.6rem;
 }
 /* Haken und Kreuz: in allen Spalten gleich */
 .ja,
@@ -883,7 +903,8 @@ body {
   }
   thead th {
     width: 20%;
-    font-size: 0.66rem;
+    font-size: min(0.66rem, 2.9vw);
+    letter-spacing: -0.02em;
   }
   th,
   td {

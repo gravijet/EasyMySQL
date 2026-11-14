@@ -6,7 +6,7 @@ Direction from the user (2026-11-11, last rounds): unique background, no rounded
 
 ## The stage (`gl.js`)
 
-One WebGL fragment shader. Height = slow liquid swells + blurred text (drawn to a 2D canvas with Inter Tight and uploaded as a texture) + ripples from the pointer. `window.easyScene` (set by `app.js`) carries the text (`text`, counter `n`), the relief strength (`hoch`), its scroll offset (`versatz`), the scrolled distance (`lauf`) and two reflection colors (`A`, `B`). The relief is attached to the hero and scrolls away with it; the liquid drifts along more slowly. Full highlights exist only at the relief: away from it the brightness is capped at about 20%, so light text always has high contrast. The canvas renders at screen resolution (up to about 2.4 million pixels) and steps down by itself if the device drops below about 22 frames per second. The hero's top padding keeps its text below the relief. Without WebGL: a static gradient and the headline as normal type. With reduced motion: single frames, no ripples.
+One WebGL fragment shader. Height = slow liquid swells + blurred text (drawn to a 2D canvas with Inter Tight and uploaded as a texture) + ripples from the pointer. `window.easyScene` (set by `app.js`) carries the text (`text`, counter `n`), the relief strength (`hoch`), its scroll offset (`versatz`), the scrolled distance (`lauf`) and two reflection colors (`A`, `B`). The relief is attached to the hero and scrolls away with it; the liquid drifts along more slowly. Full highlights exist only at the relief: away from it the brightness is capped at about 20%, so light text always has high contrast. Three passes per frame: the liquid's slope and the color of the free surface are computed in small textures (at most 240 rows) and enlarged smoothly; only the relief of the wordmark is computed at full resolution (four samples per pixel). The light always comes from above at a fixed angle; the pointer only turns its direction (before, a pointer at the bottom right turned the whole surface gray). The canvas renders at screen resolution (up to about 5 million pixels), draws at most about 60 frames per second unless the relief is scrolling, recomputes the relief only after resizing has calmed down, and steps down by itself if the device drops below about 22 frames per second. If the GPU context is lost, the static fallback shows until it returns. The hero's top padding keeps its text below the relief. Without WebGL: a static gradient and the headline as normal type. With reduced motion: single frames, no ripples.
 
 ## Sections
 
@@ -15,8 +15,8 @@ One WebGL fragment shader. Height = slow liquid swells + blurred text (drawn to 
 | Top | relief EasyMySQL (about 70% of the width), one sentence, OS words, the install command, file words |
 | Intro | the question "What is EasyMySQL?" and one paragraph |
 | Six features | title, two or three plain sentences, the real screenshot (alternating sides); liquid color changes per feature |
-| Why switch to EasyMySQL? | fourteen reasons in two columns, each a short statement plus one or two sentences; the hairline above each draws itself in. Facts come from the app's own manual (`src/tabs/help_content.rs`) |
-| Comparison | one left-aligned table: speed, size, then features by group (database, data safety, coding, AI); EasyMySQL column tinted; the header sticks below the language switch, with a dark band above it while stuck (`table.stuck`) |
+| Why switch to EasyMySQL? | the six strongest reasons in two columns (user, 2026-11-14: nobody reads a long list), each a short statement plus one or two sentences; the hairline above each draws itself in. Facts come from the app's own manual (`src/tabs/help_content.rs`) |
+| Comparison | one left-aligned table: speed, size, then features by group (database, data safety, coding, AI); EasyMySQL column tinted with straight edges (no rounded corners); the header sticks at the very top, exactly as tall as the language switch bar (78 px) so its labels line up with DE/EN, with a full-width dark band behind it while stuck (`table.stuck`); on narrow screens the language switch fades out while it would cover a column name |
 | Footer | three large words (install, imprint, privacy) in the style of benjaminberger.at: the underline grows from the left on hover |
 
 ## Custom parts
@@ -45,6 +45,7 @@ Inter Tight for the relief and the few larger lines, Martian Mono for all small 
 - Nothing says "free", nothing explains the measurements, no GitHub. Numbers come from `/home/benj/client-benchmark-2026-11` (2026-11-11), rounded.
 - Terminal installation is the main action; below it the four files as a row with large name, mono line (type, extension, size) and a drawing top line; the files for the chosen system stand brighter.
 - Relief text also exists in the document (class `ghost`) for screen readers and search.
-- CSP forbids inline styles: custom properties and background images are set from JavaScript.
+- CSP forbids inline styles and inline scripts: custom properties are set from JavaScript, the 404 page has its own `404.js`.
+- The link preview `og.jpg` (1200×630) is a screenshot of the hero (wordmark, sentence, Windows command) rendered by the page itself; renew it when the hero changes.
 - Both languages via `data-en`; visible focus and 44px targets stay intact.
 - Screenshots in `public/shots/` are cached for 7 days: when replacing them under the same name, raise the `?v=` number on their URLs in `index.html`.
