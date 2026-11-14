@@ -15,11 +15,34 @@ pub struct DiffTab {
     text: String,
     /// Nur Aenderungen zeigen (Kopfzeilen von git ausblenden)
     compact: bool,
+    /// Woher der Text kommt (zum Neuladen)
+    source: Source,
+}
+
+enum Source {
+    /// Aenderungen einer Datei: Repository und Eintrag aus `git status`
+    File(PathBuf, crate::git::FileStatus),
+    /// Ein Commit aendert sich nicht mehr
+    Commit,
 }
 
 impl DiffTab {
-    pub fn new(path: PathBuf, title: String, staged: bool, text: String) -> Self {
-        Self { path, title, staged, text, compact: true }
+    /// Aenderungen einer Datei (Arbeitsordner oder vorgemerkt)
+    pub fn file(root: &Path, f: crate::git::FileStatus, staged: bool, text: String) -> Self {
+        Self { path: root.join(&f.path), title: f.path.clone(), staged, text, compact: true, source: Source::File(root.to_path_buf(), f) }
+    }
+
+    /// Inhalt eines Commits (`git show`)
+    pub fn commit(root: &Path, hash: &str, text: String) -> Self {
+        Self { path: root.to_path_buf(), title: hash.to_string(), staged: false, text, compact: true, source: Source::Commit }
+    }
+
+    /// Diff der Datei neu von git holen
+    fn reload(&mut self) -> Result<(), String> {
+        if let Source::File(root, f) = &self.source {
+            self.text = crate::git::diff(root, f, self.staged)?;
+        }
+        Ok(())
     }
 }
 
@@ -70,7 +93,16 @@ impl TabView for DiffTab {
     }
 
     fn key(&self) -> Option<String> {
-        Some(format!("diff:{}:{}", self.staged, self.path.display()))
+        // Commits teilen sich den Pfad (Repository): der Hash im Titel unterscheidet sie
+        Some(format!("diff:{}:{}:{}", self.staged, self.path.display(), self.title))
+    }
+
+    fn replace_on_reopen(&self) -> bool {
+        true
+    }
+
+    fn git_changed(&mut self) {
+        let _ = self.reload();
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, cx: &mut Ctx) {
@@ -81,6 +113,12 @@ impl TabView for DiffTab {
                 cx.actions.push(super::Action::OpenFileAt { path: self.path.clone(), line: 0 });
             }
             ui.checkbox(&mut self.compact, crate::i18n::tr("Nur Änderungen", "Changes only"));
+            if matches!(self.source, Source::File(..))
+                && crate::icons::button(ui, crate::icons::Icon::Refresh, crate::i18n::text("Aktualisieren")).clicked()
+                && let Err(e) = self.reload()
+            {
+                cx.error(e);
+            }
         });
         ui.add_space(4.0);
         let font = egui::FontId::monospace(crate::sqledit::font_size());
@@ -119,6 +157,20 @@ impl TabView for DiffTab {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn commits_get_their_own_tab_and_reopen_replaces_text() {
+        let root = Path::new("/repo");
+        let a = DiffTab::commit(root, "abc123", "a".into());
+        let b = DiffTab::commit(root, "def456", "b".into());
+        assert_ne!(a.key(), b.key(), "zwei Commits duerfen nicht denselben Reiter teilen");
+        assert!(a.replace_on_reopen());
+        let f = crate::git::FileStatus { path: "src/x.rs".into(), staged: None, unstaged: Some(crate::git::Change::Modified) };
+        let w = DiffTab::file(root, f.clone(), false, String::new());
+        let s = DiffTab::file(root, f, true, String::new());
+        assert_ne!(w.key(), s.key());
+        assert_eq!(w.path, root.join("src/x.rs"));
+    }
 
     #[test]
     fn diff_lines_get_numbers_of_the_new_file() {

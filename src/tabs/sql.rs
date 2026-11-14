@@ -168,7 +168,11 @@ impl SqlTab {
         t.project = project.filter(|p| path.starts_with(p)).map(|p| p.to_path_buf());
         t.server = workspace::file_server(path).filter(|n| crate::profiles::find(n).is_some());
         // Auf einem anderen Server passt die Standarddatenbank des globalen nicht
-        t.database = workspace::file_db_any(t.project.as_deref(), path).unwrap_or_else(|| if t.server.is_some() { String::new() } else { default_db.to_string() });
+        // Reihenfolge: fuer die Datei gemerkt, USE am Anfang der Datei, haeufigste Datenbank des Projekts, zuletzt benutzte
+        t.database = workspace::file_db_any(t.project.as_deref(), path)
+            .or_else(|| workspace::sql_use_db(&t.text))
+            .or_else(|| t.project.as_deref().and_then(workspace::project_db))
+            .unwrap_or_else(|| if t.server.is_some() { String::new() } else { default_db.to_string() });
         t.file_mtime = std::fs::metadata(path).and_then(|m| m.modified()).ok();
         t.file = Some(path.to_path_buf());
         Ok(t)
@@ -184,13 +188,21 @@ impl SqlTab {
             Some(f) => f.clone(),
             None => workspace::scratch_path(self.scratch_id),
         };
+        // Von aussen geaendert, waehrend hier ungespeicherte Aenderungen lagen: fremde Fassung nicht verlieren
+        let external = self.file.is_some() && workspace::keep_external_version(&target, self.file_mtime, &self.text);
         if self.file.is_some() && self.saved_text != self.text {
             workspace::snapshot(&target, &self.saved_text);
         }
         match workspace::atomic_write(&target, &self.text) {
             Ok(_) => {
                 self.saved_text = self.text.clone();
-                self.save_error = None;
+                self.save_error = external.then(|| {
+                    crate::i18n::tr(
+                        "Die Datei wurde außerhalb geändert und jetzt überschrieben. Die fremde Fassung liegt unter „Frühere Fassungen“.",
+                        "The file was changed elsewhere and has now been overwritten. That version is kept under “Previous versions”.",
+                    )
+                    .to_string()
+                });
                 self.file_mtime = std::fs::metadata(&target).and_then(|m| m.modified()).ok();
             }
             Err(e) => self.save_error = Some(crate::tr_format!("Speichern fehlgeschlagen: {e}", "Save failed: {e}")),

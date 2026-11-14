@@ -513,7 +513,7 @@ fn install_tool(tool: Tool, progress: &Progress, cancel: &AtomicBool, stage: &dy
         Tool::JavaLsp => (latest_jdtls()?, tool_root().join("sprachserver"), "jdtls-"),
         Tool::Git => (latest_mingit()?, tool_root().join("git"), "git-"),
         Tool::GhCli => (latest_gh()?, tool_root().join("git"), "gh_"),
-        _ => unreachable!(),
+        other => return Err(crate::tr_format!("{} lässt sich nicht automatisch installieren.", "{} cannot be installed automatically.", other.label())),
     };
     // Schon die neueste Version: nichts laden
     if tools().own_version(tool).is_some_and(|v| !super::is_newer(&pkg.version, &v)) {

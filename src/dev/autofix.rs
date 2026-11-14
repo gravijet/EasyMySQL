@@ -1149,7 +1149,7 @@ pub fn projekt_sql(root: &Path, db: &str, table: Option<&str>) -> Option<(String
             let up = sql.to_uppercase();
             let fremd = |d: &Option<String>| d.as_deref().is_some_and(|d| !d.eq_ignore_ascii_case(db));
             if up.starts_with("USE ") {
-                passt = sql[4..].trim().trim_matches('`').eq_ignore_ascii_case(db);
+                passt = sql.get(4..).unwrap_or("").trim().trim_matches('`').eq_ignore_ascii_case(db);
                 continue;
             }
             if !passt {

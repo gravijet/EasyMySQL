@@ -470,7 +470,9 @@ pub const OPS: &[&str] = &["+", "-", "*", "/", "DIV", "%"];
 pub fn value_sql(v: &str) -> String {
     let t = v.trim();
     let upper = t.to_ascii_uppercase();
-    let number = !t.is_empty() && t.parse::<f64>().is_ok() && !(t.len() > 1 && t.starts_with('0') && !t.starts_with("0."));
+    // nur echte Zahlschreibweise: Rust liest auch "nan", "inf" und "Infinity" als f64
+    let numeric = t.bytes().any(|c| c.is_ascii_digit()) && t.bytes().all(|c| c.is_ascii_digit() || matches!(c, b'.' | b'-' | b'+' | b'e' | b'E'));
+    let number = numeric && t.parse::<f64>().is_ok() && !(t.len() > 1 && t.starts_with('0') && !t.starts_with("0."));
     let quoted = t.len() >= 2 && ((t.starts_with('\'') && t.ends_with('\'')) || (t.starts_with('"') && t.ends_with('"')));
     if number || quoted || matches!(upper.as_str(), "NULL" | "TRUE" | "FALSE" | "DEFAULT") || (t.starts_with('@') && t.len() > 1) {
         t.to_string()
@@ -746,6 +748,102 @@ fn limit_sql(s: &mut String, limit: &str, offset: &str) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Verweise auf eine Tabelle umbenennen (Alias oder Tabellenname geaendert)
+
+impl Expr {
+    fn rename_src(&mut self, old: &str, new: &str) {
+        match self {
+            Expr::Column { src, .. } => {
+                if src == old {
+                    *src = new.to_string();
+                }
+            }
+            Expr::All | Expr::Value(_) | Expr::Raw(_) => {}
+            Expr::Func { args, over, .. } => {
+                args.iter_mut().for_each(|a| a.rename_src(old, new));
+                if let Some(w) = over {
+                    w.rename_src(old, new);
+                }
+            }
+            Expr::Op { left, right, .. } => {
+                left.rename_src(old, new);
+                right.rename_src(old, new);
+            }
+            Expr::Case { whens, otherwise } => {
+                for (c, e) in whens {
+                    c.rename_src(old, new);
+                    e.rename_src(old, new);
+                }
+                if let Some(e) = otherwise {
+                    e.rename_src(old, new);
+                }
+            }
+            Expr::Cast { expr, .. } => expr.rename_src(old, new),
+            Expr::Sub(qr) => qr.rename_outer(old, new),
+        }
+    }
+}
+
+impl Window {
+    fn rename_src(&mut self, old: &str, new: &str) {
+        self.partition.iter_mut().for_each(|e| e.rename_src(old, new));
+        self.order.iter_mut().for_each(|o| o.expr.rename_src(old, new));
+    }
+}
+
+impl Cond {
+    fn rename_src(&mut self, old: &str, new: &str) {
+        match self {
+            Cond::Group { items, .. } => items.iter_mut().for_each(|c| c.rename_src(old, new)),
+            Cond::Cmp { left, right, sub, .. } => {
+                left.rename_src(old, new);
+                right.iter_mut().for_each(|e| e.rename_src(old, new));
+                if let Some(qr) = sub {
+                    qr.rename_outer(old, new);
+                }
+            }
+            Cond::Exists { query, .. } => query.rename_outer(old, new),
+            Cond::Raw(_) => {}
+        }
+    }
+}
+
+impl Query {
+    /// Verweise einer korrelierten Unterabfrage auf die aeussere Tabelle umbenennen.
+    /// Teile mit einer eigenen Tabelle gleichen Namens verdecken die aeussere und bleiben unveraendert.
+    fn rename_outer(&mut self, old: &str, new: &str) {
+        for c in &mut self.with {
+            c.query.rename_outer(old, new);
+        }
+        for p in &mut self.parts {
+            if !p.select.sources.iter().any(|s| s.reference() == old) {
+                p.select.rename_source(old, new);
+            }
+        }
+    }
+}
+
+impl Select {
+    /// Alle Verweise `old.spalte` dieses SELECT (auch in Bedingungen, Gruppierung, Sortierung und
+    /// korrelierten Unterabfragen) auf `new.spalte` umstellen.
+    pub fn rename_source(&mut self, old: &str, new: &str) {
+        if old == new {
+            return;
+        }
+        for it in &mut self.items {
+            it.expr.rename_src(old, new);
+        }
+        for src in &mut self.sources {
+            src.on.rename_src(old, new);
+        }
+        self.filter.rename_src(old, new);
+        self.group.iter_mut().for_each(|e| e.rename_src(old, new));
+        self.having.rename_src(old, new);
+        self.order.iter_mut().for_each(|o| o.expr.rename_src(old, new));
+    }
+}
+
 impl Query {
     /// Einzeiliges SQL (fuer die Anzeige wird es formatiert)
     pub fn sql(&self) -> String {
@@ -875,8 +973,7 @@ mod tests {
         qr.parts.push(Part { op: SetOp::UnionAll, select: a });
         assert!(qr.sql().contains(" UNION ALL SELECT"));
         // WITH RECURSIVE
-        let mut base = Select::default();
-        base.items = vec![Item { expr: Expr::Value("1".into()), alias: "n".into() }];
+        let base = Select { items: vec![Item { expr: Expr::Value("1".into()), alias: "n".into() }], ..Default::default() };
         let mut step = sel("zahlen");
         step.items = vec![Item { expr: Expr::Op { op: "+".into(), left: Box::new(col("zahlen", "n")), right: Box::new(Expr::Value("1".into())) }, alias: String::new() }];
         step.filter = Cond::Group { any: false, not: false, items: vec![cmp(col("zahlen", "n"), CmpOp::Lt, vec![Expr::Value("10".into())])] };
@@ -955,6 +1052,9 @@ mod tests {
         assert_eq!(value_sql("'x'"), "'x'");
         assert_eq!(value_sql("O'Neil"), "'O''Neil'");
         assert_eq!(value_sql("@v"), "@v");
+        assert_eq!(value_sql("Nan"), "'Nan'");
+        assert_eq!(value_sql("inf"), "'inf'");
+        assert_eq!(value_sql("-1.5e3"), "-1.5e3");
         assert_eq!(Expr::func("DATE_ADD", Some(col("b", "datum"))).sql(), "DATE_ADD(`b`.`datum`, INTERVAL 1 DAY)");
         let op = Expr::Op {
             op: "*".into(),
@@ -975,6 +1075,41 @@ mod tests {
         c.on = Cond::Group { any: false, not: false, items: vec![Cond::Raw("x".into())] };
         s.sources.push(c);
         assert_eq!(one(s).sql(), "SELECT * FROM `a` INNER JOIN `b` USING (`id`, `typ`) NATURAL LEFT JOIN `c`");
+    }
+
+    #[test]
+    fn rename_source_updates_all_references() {
+        let mut s = sel("kunde");
+        s.sources[0].alias = "k".into();
+        let mut b = Source::table("bestellung");
+        b.alias = "b".into();
+        b.join = JoinKind::Left;
+        b.on = Cond::Group { any: false, not: false, items: vec![cmp(col("b", "kunde_id"), CmpOp::Eq, vec![col("k", "id")])] };
+        s.sources.push(b);
+        // korrelierte Unterabfrage mit Verweis nach aussen und eine, die "k" selbst verdeckt
+        let mut corr = sel("bestellung");
+        corr.filter = Cond::Group { any: false, not: false, items: vec![cmp(col("bestellung", "kunde_id"), CmpOp::Eq, vec![col("k", "id")])] };
+        let mut shadow = sel("kunde");
+        shadow.sources[0].alias = "k".into();
+        shadow.items = vec![Item { expr: col("k", "id"), alias: String::new() }];
+        s.items = vec![
+            Item { expr: col("k", "nachname"), alias: String::new() },
+            Item { expr: col("k", "*"), alias: String::new() },
+            Item { expr: Expr::func("SUM", Some(col("b", "summe"))), alias: "summe".into() },
+            Item { expr: Expr::Sub(Box::new(one(shadow))), alias: String::new() },
+        ];
+        s.filter = Cond::Group { any: false, not: false, items: vec![Cond::Exists { not: false, query: Box::new(one(corr)) }] };
+        s.group = vec![col("k", "nachname")];
+        s.order = vec![OrderItem { expr: col("k", "nachname"), desc: false }];
+        s.sources[0].alias = "kd".into();
+        s.rename_source("k", "kd");
+        let sql = one(s).sql();
+        assert!(!sql.contains("`k`.`nachname`") && !sql.contains("= `k`.`id`"), "{sql}");
+        assert!(sql.contains("SELECT `kd`.`nachname`, `kd`.*"), "{sql}");
+        assert!(sql.contains("ON `b`.`kunde_id` = `kd`.`id`"), "{sql}");
+        assert!(sql.contains("`bestellung`.`kunde_id` = `kd`.`id`"), "{sql}");
+        assert!(sql.contains("(SELECT `k`.`id` FROM `kunde` AS `k`)"), "verdeckter Name bleibt: {sql}");
+        assert!(sql.contains("GROUP BY `kd`.`nachname`") && sql.contains("ORDER BY `kd`.`nachname`"), "{sql}");
     }
 
     #[test]
@@ -1045,5 +1180,22 @@ mod tests {
             let qr = Query { parts: vec![Part { op: SetOp::Union, select: k.clone() }, Part { op, select: h.clone() }], ..Default::default() };
             c.query_drop(qr.sql()).unwrap_or_else(|e| panic!("{}: {e}", qr.sql()));
         }
+        // Alias umbenennen: Spalten, ON, GROUP BY und korrelierte Unterabfrage folgen, die Abfrage bleibt gueltig
+        let mut j = sel("kunde");
+        j.sources[0].alias = "k".into();
+        let mut b = Source::table("bestellung");
+        b.alias = "b".into();
+        b.join = JoinKind::Left;
+        b.on = Cond::Group { any: false, not: false, items: vec![cmp(col("b", "kunde_id"), CmpOp::Eq, vec![col("k", "id")])] };
+        j.sources.push(b);
+        let mut corr = sel("bestellung");
+        corr.filter = Cond::Group { any: false, not: false, items: vec![cmp(col("bestellung", "kunde_id"), CmpOp::Eq, vec![col("k", "id")])] };
+        j.items = vec![Item { expr: col("k", "ort"), alias: String::new() }, Item { expr: Expr::Func { name: "COUNT".into(), args: vec![col("b", "id")], distinct: false, over: None }, alias: "n".into() }];
+        j.filter = Cond::Group { any: false, not: false, items: vec![Cond::Exists { not: true, query: Box::new(one(corr)) }] };
+        j.group = j.needed_group();
+        j.sources[0].alias = "kunden".into();
+        j.rename_source("k", "kunden");
+        let qr = one(j);
+        c.query_drop(qr.sql()).unwrap_or_else(|e| panic!("{}: {e}", qr.sql()));
     }
 }

@@ -188,7 +188,9 @@ pub fn lit(s: &str) -> String {
 /// Wert als Literal: Zahlen bleiben Zahlen, alles andere wird gequotet.
 pub fn smart_lit(s: &str) -> String {
     let t = s.trim();
-    let numeric = !t.is_empty()
+    // Rust liest auch "nan", "inf" und "infinity" als Zahl: nur Ziffern, Punkt, Vorzeichen und Exponent zaehlen
+    let numeric = t.bytes().any(|c| c.is_ascii_digit())
+        && t.bytes().all(|c| c.is_ascii_digit() || matches!(c, b'.' | b'-' | b'+' | b'e' | b'E'))
         && t.parse::<f64>().is_ok()
         && !t.starts_with('+')
         && !(t.len() > 1 && t.starts_with('0') && !t.starts_with("0."));
@@ -199,6 +201,28 @@ pub fn smart_lit(s: &str) -> String {
     } else {
         lit(s)
     }
+}
+
+/// Zahl in einer Schreibweise, die MariaDB auch in einer Textspalte unveraendert speichert (-12, 3.50):
+/// ohne Exponent, fuehrende Nullen, Leerzeichen, "-0" und ohne so viele Stellen, dass Genauigkeit verloren ginge.
+fn plain_number(t: &str) -> bool {
+    let d = t.strip_prefix('-').unwrap_or(t);
+    let (int, frac) = match d.split_once('.') {
+        Some((a, b)) => (a, Some(b)),
+        None => (d, None),
+    };
+    !int.is_empty()
+        && d.len() <= 18
+        && int.bytes().all(|c| c.is_ascii_digit())
+        && (int == "0" || !int.starts_with('0'))
+        && frac.is_none_or(|f| !f.is_empty() && f.bytes().all(|c| c.is_ascii_digit()))
+        && !(t.starts_with('-') && d.bytes().all(|c| c == b'0' || c == b'.'))
+}
+
+/// Gelesener Wert als Literal fuer INSERT: einfache Zahlen bleiben Zahlen, alles andere wird Text –
+/// auch der Text "null" (SQL-NULL ist `None` und wird vom Aufrufer behandelt). So bleibt jeder Wert genau erhalten.
+pub fn data_lit(s: &str) -> String {
+    if plain_number(s) { s.to_string() } else { lit(s) }
 }
 
 #[derive(Clone)]
@@ -424,6 +448,17 @@ mod tests {
         assert_eq!(smart_lit("007"), "'007'");
         assert_eq!(smart_lit("10a"), "'10a'");
         assert_eq!(smart_lit("null"), "NULL");
+        assert_eq!(smart_lit("nan"), "'nan'");
+        assert_eq!(smart_lit("Infinity"), "'Infinity'");
+        assert_eq!(smart_lit("1e3"), "1e3");
+        // Daten: jeder Wert bleibt genau erhalten
+        assert_eq!(data_lit("null"), "'null'");
+        assert_eq!(data_lit("42"), "42");
+        assert_eq!(data_lit("-3.50"), "-3.50");
+        assert_eq!(data_lit("0.5"), "0.5");
+        for text in ["1e5", " 42", "42 ", "007", "-0", "+5", ".5", "5.", "NaN", "inf", "", "12345678901234567890", "1.2.3", "-"] {
+            assert_eq!(data_lit(text), lit(text), "{text:?}");
+        }
     }
 
     #[test]
@@ -564,6 +599,9 @@ mod split_tests {
         assert_eq!(s.len(), 2, "{s:?}");
         assert!(s[0].sql.starts_with("CREATE PROCEDURE") && s[0].sql.ends_with("END"));
         assert_eq!(s[1].sql, "CALL p()");
+        // DELIMITER direkt nach einer Anweisung in derselben Zeile geht nicht als SQL an den Server
+        let s = split_statements("SELECT 1; DELIMITER //\nSELECT 2//\nDELIMITER ;");
+        assert_eq!(s.iter().map(|x| x.sql.as_str()).collect::<Vec<_>>(), ["SELECT 1", "SELECT 2"]);
     }
 
     #[test]

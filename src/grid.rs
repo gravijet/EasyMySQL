@@ -343,14 +343,14 @@ pub fn to_json(columns: &[String], rows: &[Row]) -> String {
 
 /// INSERT-Anweisungen (je 100 Zeilen eine)
 pub fn to_inserts(table: &str, columns: &[String], rows: &[Row]) -> String {
-    use crate::db::{q, smart_lit};
+    use crate::db::{data_lit, q};
     let cols: Vec<String> = columns.iter().map(|c| q(c)).collect();
     let mut s = String::new();
     for chunk in rows.chunks(100) {
         s.push_str(&format!("INSERT INTO {} ({}) VALUES\n", q(table), cols.join(", ")));
         let vals: Vec<String> = chunk
             .iter()
-            .map(|r| format!("  ({})", r.iter().map(|v| v.as_deref().map(smart_lit).unwrap_or("NULL".into())).collect::<Vec<_>>().join(", ")))
+            .map(|r| format!("  ({})", r.iter().map(|v| v.as_deref().map(data_lit).unwrap_or("NULL".into())).collect::<Vec<_>>().join(", ")))
             .collect();
         s.push_str(&vals.join(",\n"));
         s.push_str(";\n");

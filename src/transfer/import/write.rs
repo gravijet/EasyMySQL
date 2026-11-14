@@ -33,14 +33,19 @@ impl Progress {
 }
 
 pub fn create_sql(t: &TableScan) -> String {
+    create_sql_as(t, &t.name)
+}
+
+/// CREATE TABLE fuer `t` unter dem Namen `name` (z. B. Hilfstabelle beim Ersetzen)
+fn create_sql_as(t: &TableScan, name: &str) -> String {
     // Fertige Anweisung der Quelle (anderer MySQL-Server): nur den Namen ersetzen, falls er geaendert wurde
     if let Some(ddl) = &t.ddl {
-        if t.name == t.origin {
+        if name == t.origin {
             return ddl.clone();
         }
         let old = format!("CREATE TABLE {}", q(&t.origin));
         if let Some(rest) = ddl.strip_prefix(&old) {
-            return format!("CREATE TABLE {}{rest}", q(&t.name));
+            return format!("CREATE TABLE {}{rest}", q(name));
         }
     }
     let mut defs: Vec<String> = t
@@ -55,7 +60,7 @@ pub fn create_sql(t: &TableScan) -> String {
     if !t.pk.is_empty() {
         defs.push(format!("PRIMARY KEY ({})", t.pk.iter().map(|c| q(c)).collect::<Vec<_>>().join(", ")));
     }
-    format!("CREATE TABLE {} ({}) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4", q(&t.name), defs.join(", "))
+    format!("CREATE TABLE {} ({}) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4", q(name), defs.join(", "))
 }
 
 fn to_value(v: Val, ty: ColType) -> Value {
@@ -76,16 +81,17 @@ fn to_value(v: Val, ty: ColType) -> Value {
     }
 }
 
-fn flush(conn: &mut mysql::Conn, t: &TableScan, batch: &mut Vec<Value>, rows: usize) -> Result<(), String> {
+fn flush(conn: &mut mysql::Conn, t: &TableScan, target: &str, batch: &mut Vec<Value>, rows: usize) -> Result<(), String> {
     if rows == 0 {
         return Ok(());
     }
     let one = format!("({})", vec!["?"; t.columns.len()].join(","));
-    let sql = format!("INSERT INTO {} ({}) VALUES {}", q(&t.name), t.columns.iter().map(|c| q(&c.name)).collect::<Vec<_>>().join(","), vec![one; rows].join(","));
+    let sql = format!("INSERT INTO {} ({}) VALUES {}", q(target), t.columns.iter().map(|c| q(&c.name)).collect::<Vec<_>>().join(","), vec![one; rows].join(","));
     conn.exec_drop(sql, Params::Positional(std::mem::take(batch))).map_err(err_text)
 }
 
-fn import_table(conn: &mut mysql::Conn, src: &Source, t: &TableScan, p: &Progress) -> Result<u64, String> {
+/// Zeilen von `t` in die Tabelle `target` schreiben
+fn import_table(conn: &mut mysql::Conn, src: &Source, t: &TableScan, target: &str, p: &Progress) -> Result<u64, String> {
     *p.table.lock().unwrap() = t.name.clone();
     let cols = t.columns.len().max(1);
     let per_stmt = (60_000 / cols).clamp(1, 1000);
@@ -105,7 +111,7 @@ fn import_table(conn: &mut mysql::Conn, src: &Source, t: &TableScan, p: &Progres
         total += 1;
         since_commit += 1;
         if in_batch == per_stmt {
-            if let Err(e) = flush(conn, t, &mut batch, in_batch) {
+            if let Err(e) = flush(conn, t, target, &mut batch, in_batch) {
                 failed = Some(e);
                 return Ok(false);
             }
@@ -120,7 +126,7 @@ fn import_table(conn: &mut mysql::Conn, src: &Source, t: &TableScan, p: &Progres
         Ok(true)
     });
     if r.is_ok() && failed.is_none() {
-        failed = flush(conn, t, &mut batch, in_batch).err();
+        failed = flush(conn, t, target, &mut batch, in_batch).err();
         p.done.fetch_add(in_batch as u64, Ordering::Relaxed);
     }
     let end = if failed.is_some() || r.is_err() { "ROLLBACK" } else { "COMMIT" };
@@ -154,13 +160,36 @@ pub fn run(dbc: &Db, src: &Source, tables: &[TableScan], opts: &Options, p: &Pro
                 p.note(true, crate::tr_format!("{}: gibt es schon – übersprungen.", "{}: already exists — skipped.", t.name));
                 continue;
             }
+            // Erst vollstaendig in eine Hilfstabelle laden; die alte Tabelle verschwindet nur bei Erfolg.
+            // Scheitert der Import oder wird er abgebrochen, bleiben die alten Daten unveraendert.
+            let tmp = format!("{}__easymysql_neu", t.name.chars().take(40).collect::<String>());
+            let _ = conn.query_drop(format!("DROP TABLE IF EXISTS {}", q(&tmp)));
+            if conn.query_drop(create_sql_as(t, &tmp)).is_ok() {
+                let r = import_table(&mut conn, src, t, &tmp, p);
+                let cancelled = p.cancel.load(Ordering::Relaxed);
+                match r {
+                    Ok(n) if !cancelled => {
+                        conn.query_drop(format!("DROP TABLE {}", q(&t.name))).map_err(err_text)?;
+                        conn.query_drop(format!("RENAME TABLE {} TO {}", q(&tmp), q(&t.name))).map_err(err_text)?;
+                        all += n;
+                        imported.push(t);
+                        p.note(false, crate::tr_format!("{}: {} Zeile(n)", "{}: {} row(s)", t.name, n));
+                    }
+                    other => {
+                        let _ = conn.query_drop(format!("DROP TABLE IF EXISTS {}", q(&tmp)));
+                        let why = other.err().unwrap_or_else(|| crate::i18n::text("Abgebrochen.").into());
+                        p.note(true, crate::tr_format!("{}: {} – die vorhandene Tabelle bleibt unverändert.", "{}: {} — the existing table is unchanged.", t.name, why));
+                    }
+                }
+                continue;
+            }
             conn.query_drop(format!("DROP TABLE {}", q(&t.name))).map_err(err_text)?;
         }
         if let Err(e) = conn.query_drop(create_sql(t)) {
             p.note(true, format!("{}: {}", t.name, err_text(e)));
             continue;
         }
-        match import_table(&mut conn, src, t, p) {
+        match import_table(&mut conn, src, t, &t.name, p) {
             Ok(n) => {
                 all += n;
                 imported.push(t);
@@ -206,6 +235,41 @@ mod tests {
         let p = Progress::default();
         let n = run(dbc, src, &tables, &Options { database: db.into(), create_db: true, replace: true }, &p).unwrap();
         (tables, p, n)
+    }
+
+    /// Ersetzen: scheitert der Import, bleibt die vorhandene Tabelle unveraendert; klappt er, ist keine Hilfstabelle uebrig.
+    /// Braucht MariaDB auf 127.0.0.1:3306 (root ohne Passwort).
+    #[test]
+    #[ignore]
+    fn replace_keeps_old_table_when_import_fails() {
+        let dbc = Db::connect(&ConnInfo::default()).unwrap();
+        let mut c = dbc.new_conn().unwrap();
+        c.query_drop("DROP DATABASE IF EXISTS imp_replace").unwrap();
+        let dir = std::env::temp_dir().join(format!("import-replace-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let csv = dir.join("lager.csv");
+        std::fs::write(&csv, "artikel;menge\nA;1\nB;2\n").unwrap();
+        let (_, _, n) = go(&dbc, &Source::Csv(vec![csv.clone()]), "imp_replace");
+        assert_eq!(n, 2);
+        // Spalte "menge" wird als Zahl erkannt, danach steht Text in der Datei: das INSERT scheitert
+        std::fs::write(&csv, "artikel;menge\nC;3\nD;4\nE;5\n").unwrap();
+        let src = Source::Csv(vec![csv.clone()]);
+        let tables = scan(&src, &AtomicBool::new(false)).unwrap();
+        std::fs::write(&csv, "artikel;menge\nC;viele\nD;4\nE;5\n").unwrap();
+        let p = Progress::default();
+        let opts = Options { database: "imp_replace".into(), create_db: false, replace: true };
+        assert_eq!(run(&dbc, &src, &tables, &opts, &p).unwrap(), 0);
+        let count = |sql: &str| dbc.rows(sql, ()).unwrap()[0][0].clone().unwrap();
+        assert_eq!(count("SELECT COUNT(*) FROM imp_replace.lager"), "2", "{:?}", p.log.lock().unwrap());
+        assert_eq!(count("SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA = 'imp_replace'"), "1", "keine Hilfstabelle uebrig");
+        // Gueltige Datei: ersetzt die Tabelle
+        std::fs::write(&csv, "artikel;menge\nC;3\nD;4\nE;5\n").unwrap();
+        assert_eq!(run(&dbc, &src, &tables, &opts, &Progress::default()).unwrap(), 3);
+        assert_eq!(count("SELECT COUNT(*) FROM imp_replace.lager"), "3");
+        assert_eq!(count("SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA = 'imp_replace'"), "1");
+        c.query_drop("DROP DATABASE imp_replace").unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Braucht MariaDB auf 127.0.0.1:3306 (root ohne Passwort) und Redis auf 127.0.0.1:6379.

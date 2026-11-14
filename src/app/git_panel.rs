@@ -52,6 +52,8 @@ pub struct GitPanel {
     branches: Option<(Vec<String>, Vec<String>)>,
     /// Rueckfrage vor dem Verwerfen von Aenderungen
     discard: Option<FileStatus>,
+    /// Offene Diffs beim naechsten Status neu laden (Knopf Aktualisieren)
+    reload_diffs: bool,
 }
 
 fn spawn<T: Send + 'static>(ctx: &egui::Context, f: impl FnOnce() -> Result<T, String> + Send + 'static) -> Job<T> {
@@ -102,6 +104,13 @@ impl EasyApp {
         {
             self.git.loading = None;
             if Some(&root) == self.git_root().as_ref() {
+                // Offene Diffs zeigen sonst weiter den alten Stand: bei geaendertem Status oder auf Wunsch neu laden
+                let changed = self.git.status.as_ref() != Some(&st);
+                if changed || std::mem::take(&mut self.git.reload_diffs) {
+                    for t in &mut self.tabs {
+                        t.git_changed();
+                    }
+                }
                 self.git.status = Some(st);
             }
         }
@@ -285,6 +294,7 @@ impl EasyApp {
 
         super::side::section_header(ui, crate::i18n::tr("QUELLCODEVERWALTUNG", "SOURCE CONTROL"), |ui| {
             if icons::button(ui, Icon::Refresh, crate::i18n::text("Aktualisieren")).clicked() {
+                self.git.reload_diffs = true;
                 self.git_refresh();
                 self.git.gh_for = None;
             }
@@ -581,7 +591,7 @@ impl EasyApp {
         }
         if let Some((f, staged)) = open_diff {
             match git::diff(&r, &f, staged) {
-                Ok(text) => self.open_tab(Box::new(crate::tabs::diff::DiffTab::new(r.join(&f.path), f.path.clone(), staged, text))),
+                Ok(text) => self.open_tab(Box::new(crate::tabs::diff::DiffTab::file(&r, f.clone(), staged, text))),
                 Err(e) => self.git.note = Some((e, true)),
             }
         }
@@ -1051,7 +1061,7 @@ impl EasyApp {
                     if let (Some(h), Some(root)) = (show, self.git_root())
                         && let Ok(text) = git::show(&root, &h)
                     {
-                        self.open_tab(Box::new(crate::tabs::diff::DiffTab::new(root.clone(), h.clone(), false, text)));
+                        self.open_tab(Box::new(crate::tabs::diff::DiffTab::commit(&root, &h, text)));
                         close = true;
                     }
                     if ui.button(crate::i18n::text("Schließen")).clicked() || esc {

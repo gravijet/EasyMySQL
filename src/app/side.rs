@@ -522,7 +522,6 @@ impl EasyApp {
             ex.anchor = Some(p);
         }
         let mut cmd = cmd;
-        if std::env::var_os("EMDBG").is_some() && ui.input(|i| !i.events.is_empty()) { eprintln!("focused={} mem={:?} ev={:?}", ex.focused, ui.memory(|m| m.focused()), ui.input(|i| i.events.clone())); }
         if ex.focused && cmd.is_none() && !clicked_now {
             cmd = tree_keys(ui, ex, &order, &tree.path);
         }

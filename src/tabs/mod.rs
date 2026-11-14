@@ -301,6 +301,13 @@ pub trait TabView {
     fn key(&self) -> Option<String> {
         None
     }
+    /// Beim erneuten Oeffnen mit gleichem Schluessel den Inhalt der vorhandenen Registerkarte ersetzen
+    /// (z. B. Diff mit neuem Stand) statt nur zu ihr zu wechseln
+    fn replace_on_reopen(&self) -> bool {
+        false
+    }
+    /// Der Stand des Git-Repositorys hat sich geaendert (Aktualisieren, Commit, Pull …)
+    fn git_changed(&mut self) {}
     /// Laesst sich mit "Ausfuehren" starten (Startknopf in der oberen Leiste)
     fn runnable(&self) -> bool {
         false

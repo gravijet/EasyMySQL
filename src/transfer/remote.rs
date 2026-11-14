@@ -51,21 +51,35 @@ fn download(url: &str, dest: &std::path::Path, cancel: &AtomicBool) -> Result<()
     if !(url.starts_with("http://") || url.starts_with("https://")) {
         return Err(crate::i18n::text("Die Adresse muss mit http:// oder https:// beginnen.").into());
     }
-    let agent: ureq::Agent = ureq::Agent::config_builder().timeout_global(Some(Duration::from_secs(60 * 60))).user_agent(concat!("EasyMySQL/", env!("CARGO_PKG_VERSION"))).build().into();
+    // Gesamtgrenze fuer grosse Dateien; Verbindungsaufbau und erste Antwort duerfen aber nicht eine Stunde haengen
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .timeout_global(Some(Duration::from_secs(60 * 60)))
+        .timeout_resolve(Some(Duration::from_secs(20)))
+        .timeout_connect(Some(Duration::from_secs(30)))
+        .timeout_recv_response(Some(Duration::from_secs(120)))
+        .user_agent(concat!("EasyMySQL/", env!("CARGO_PKG_VERSION")))
+        .build()
+        .into();
     let mut resp = agent.get(url).call().map_err(|e| match e {
         ureq::Error::StatusCode(c) => crate::tr_format!("Der Server antwortet mit Fehler {c}.", "The server answered with error {c}."),
         other => other.to_string(),
     })?;
-    let mut reader = resp.body_mut().as_reader().take(MAX_BYTES);
+    // Ein Byte mehr als erlaubt lesen: so faellt eine zu grosse Datei auf, statt still abgeschnitten zu werden
+    let mut reader = resp.body_mut().as_reader().take(MAX_BYTES + 1);
     let mut file = std::fs::File::create(dest).map_err(|e| e.to_string())?;
     let mut buf = vec![0u8; 256 * 1024];
+    let mut total = 0u64;
     loop {
         if cancel.load(Ordering::Relaxed) {
             return Err(crate::i18n::text("Abgebrochen.").into());
         }
         let n = reader.read(&mut buf).map_err(|e| e.to_string())?;
         if n == 0 {
-            return Ok(());
+            return file.flush().map_err(|e| e.to_string());
+        }
+        total += n as u64;
+        if total > MAX_BYTES {
+            return Err(crate::i18n::tr("Die Datei ist größer als 32 GB.", "The file is larger than 32 GB.").into());
         }
         file.write_all(&buf[..n]).map_err(|e| e.to_string())?;
     }

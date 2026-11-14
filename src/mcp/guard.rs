@@ -2,7 +2,9 @@
 // "query" laufen. Zusaetzlich laeuft jede Leseabfrage in einer READ-ONLY-Transaktion (siehe tools.rs).
 
 /// Woerter einer Anweisung ausserhalb von Texten, `Bezeichnern` und Kommentaren, gross geschrieben.
-pub fn words(sql: &str) -> Vec<String> {
+/// `backslash` = ein Backslash maskiert im Text das naechste Zeichen (Standard). Ohne
+/// (sql_mode NO_BACKSLASH_ESCAPES, bei ANSI_QUOTES in "…") endet `'a\'` schon am zweiten Hochkomma.
+fn words_with(sql: &str, backslash: bool) -> Vec<String> {
     let chars: Vec<char> = sql.chars().collect();
     let n = chars.len();
     let mut out = Vec::new();
@@ -17,11 +19,12 @@ pub fn words(sql: &str) -> Vec<String> {
             continue;
         }
         if c == '/' && nx == '*' {
-            // Ausfuehrbare Kommentare (/*! ... */) zaehlen als Code
-            let exec = chars.get(i + 2) == Some(&'!');
+            // Ausfuehrbare Kommentare zaehlen als Code: /*! ... */ und MariaDBs /*M! ... */
+            let mariadb = matches!(chars.get(i + 2), Some('M' | 'm')) && chars.get(i + 3) == Some(&'!');
+            let exec = chars.get(i + 2) == Some(&'!') || mariadb;
             i += 2;
             if exec {
-                i += 1;
+                i += if mariadb { 2 } else { 1 };
                 while i < n && chars[i].is_ascii_digit() {
                     i += 1;
                 }
@@ -40,7 +43,7 @@ pub fn words(sql: &str) -> Vec<String> {
         if c == '\'' || c == '"' || c == '`' {
             i += 1;
             while i < n && chars[i] != c {
-                if chars[i] == '\\' && c != '`' {
+                if backslash && chars[i] == '\\' && c != '`' {
                     i += 1;
                 }
                 i += 1;
@@ -71,7 +74,12 @@ const READ_START: &[&str] = &["SELECT", "WITH", "SHOW", "DESCRIBE", "DESC", "EXP
 
 /// Darf diese einzelne Anweisung ueber das Lese-Werkzeug laufen? Fehler = Begruendung fuer die KI.
 pub fn check_read_only(sql: &str) -> Result<(), String> {
-    let w = words(sql);
+    // Beide Lesarten pruefen: welche der Server nutzt, haengt von seinem sql_mode ab
+    check_words(&words_with(sql, true))?;
+    check_words(&words_with(sql, false))
+}
+
+fn check_words(w: &[String]) -> Result<(), String> {
     let mut it = w.iter().skip_while(|t| t.is_empty());
     let Some(first) = it.next() else { return Err("Empty statement.".into()) };
     if !READ_START.contains(&first.as_str()) {
@@ -131,6 +139,10 @@ mod tests {
             "SELECT * FROM t INTO OUTFILE '/tmp/x'",
             "SELECT 1 INTO DUMPFILE '/tmp/x'",
             "SELECT /*!50000 1; DROP TABLE t */",
+            "SELECT 1 /*M! ; DROP TABLE t */",
+            "SELECT 1 /*M!100100 ; DROP TABLE t */",
+            "SELECT 'a\\' ; DROP TABLE t; -- '",
+            "SELECT \"a\\\" ; DROP TABLE t; -- \"",
             "CALL proc()",
             "SET GLOBAL read_only = 0",
             "",
@@ -142,7 +154,7 @@ mod tests {
 
     #[test]
     fn words_skip_strings_and_comments() {
-        assert_eq!(words("select 'a;b' -- x\n, `c` # y\n;"), vec!["SELECT", "'", "`", ";"]);
+        assert_eq!(words_with("select 'a;b' -- x\n, `c` # y\n;", true), vec!["SELECT", "'", "`", ";"]);
         assert_eq!(preview("SELECT\n  *\n  FROM t", 100), "SELECT * FROM t");
         assert_eq!(preview("abcdef", 3), "abc…");
     }

@@ -228,13 +228,21 @@ impl CodeTab {
     }
 
     fn save(&mut self) {
+        // Von aussen geaendert, waehrend hier ungespeicherte Aenderungen lagen: fremde Fassung nicht verlieren
+        let external = workspace::keep_external_version(&self.file, self.file_mtime, &self.text);
         if self.saved_text != self.text {
             workspace::snapshot(&self.file, &self.saved_text);
         }
         match workspace::atomic_write(&self.file, &self.text) {
             Ok(_) => {
                 self.saved_text = self.text.clone();
-                self.save_error = None;
+                self.save_error = external.then(|| {
+                    crate::i18n::tr(
+                        "Die Datei wurde außerhalb geändert und jetzt überschrieben. Die fremde Fassung liegt unter „Frühere Fassungen“.",
+                        "The file was changed elsewhere and has now been overwritten. That version is kept under “Previous versions”.",
+                    )
+                    .to_string()
+                });
                 self.file_mtime = std::fs::metadata(&self.file).and_then(|m| m.modified()).ok();
                 if let Some(s) = &self.lsp {
                     s.saved(&self.file);
@@ -329,7 +337,8 @@ impl CodeTab {
                         }
                     }
                 }
-                _ => unreachable!("nur Java ist ausfuehrbar"),
+                // Nur Java wird so vorbereitet; jede andere Sprache meldet einen Fehler statt die App zu beenden
+                _ => Err(dev::process::Failure::msg(crate::i18n::tr("Diese Sprache lässt sich hier nicht ausführen.", "This language cannot be run here."))),
             };
             let _ = tx.send(r);
             repaint.request_repaint();

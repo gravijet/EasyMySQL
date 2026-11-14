@@ -1,34 +1,42 @@
 # EasyMySQL – offene Punkte
 
-Stand: 2026-11-12, Version 1.1.18. Gesammelt beim Aufnehmen der Website-Screenshots und bei einer Durchsicht des Codes.
-`cargo test --locked` läuft sauber (284 bestanden, 29 ignoriert), `cargo clippy` meldet 2 Kleinigkeiten (siehe 1.9).
+Stand: 2026-11-14, Version 1.1.19. Gesammelt beim Aufnehmen der Website-Screenshots und bei einer Durchsicht des Codes.
+`cargo test --locked` läuft sauber, `cargo clippy --all-targets` ohne Warnungen. In 1.1.19 behobene Punkte sind mit
+**[erledigt 1.1.19]** markiert; Abschnitt 10 listet die dabei zusätzlich gefundenen und behobenen Fehler.
 
 Kennzeichnung: **[bestätigt]** = im Code oder in der laufenden App nachgewiesen, **[Verdacht]** = beim Lesen aufgefallen
 und nicht ausprobiert, **[Idee]** = neue Funktion. Alles lief nur unter Linux.
 
 ## 1. Fehler (zuerst)
 
-1. **[bestätigt] Query Builder: Alias umbenennen bricht die Abfrage.** Spalten und Join-Bedingungen speichern den
+1. **[erledigt 1.1.19] Query Builder: Alias umbenennen bricht die Abfrage.** Verweise ziehen jetzt mit (auch beim
+   Wechsel der Tabelle und in korrelierten Unterabfragen), Test `rename_source_updates_all_references`. Spalten und Join-Bedingungen speichern den
    Tabellennamen als Text (`Expr::Column { src, col }`, `src/tabs/builder/model.rs`). Wer den Alias ändert
    (`src/tabs/builder/mod.rs`, Zeile ~831), lässt alle Verweise auf dem alten Namen stehen, die SQL wird ungültig.
    Lösung: beim Ändern des Alias alle Verweise in Spalten, Bedingungen, Gruppierung und Sortierung mit umbenennen.
-2. **[bestätigt] Git-Diff zeigt nach dem Wiederöffnen den alten Stand.** `open_tab` (`src/app.rs`, Zeile ~508) springt bei
+2. **[erledigt 1.1.19] Git-Diff zeigt nach dem Wiederöffnen den alten Stand.** Der Tab wird ersetzt, „Aktualisieren“ und
+   ein geänderter Git-Status laden offene Diffs neu, der Diff-Tab hat einen eigenen Knopf. Zusätzlich teilten sich alle
+   Commit-Diffs einen Schlüssel (ein zweiter Commit öffnete nie). Alter Befund: `open_tab` (`src/app.rs`, Zeile ~508) springt bei
    gleichem Schlüssel nur zum vorhandenen Tab; der neue Diff-Text wird verworfen (`src/app/git_panel.rs`, Zeilen ~584 und ~1054).
    Auch „Aktualisieren“ im Git-Bereich ändert das nicht. Lösung: den Inhalt des vorhandenen Tabs ersetzen.
-3. **[bestätigt] Query Builder: `COUNT` startet als `COUNT(*)`.** Bei einem LEFT JOIN zählt das Zeilen ohne Treffer als 1.
+3. **[erledigt 1.1.19] Query Builder: `COUNT` startet als `COUNT(*)`.** Bei LEFT/RIGHT JOIN schlägt „+ Funktion → COUNT“
+   jetzt den Primärschlüssel der optionalen Tabelle vor; steht dort doch `COUNT(*)`, erscheint ein Hinweis. Bei einem LEFT JOIN zählt das Zeilen ohne Treffer als 1.
    Besser: eine Spalte der gejointen Tabelle vorschlagen oder bei LEFT JOIN einen Hinweis zeigen.
-4. **[bestätigt] Query Builder: Die Suchzeile im Menü „+ Spalte“ nimmt keine Tasten an.** Bei Tabellen mit vielen Spalten
-   muss man scrollen.
-5. **[bestätigt] Query Builder: Ein Klick neben ein Feld klappte einen ganzen Abschnitt ein** (beim Verlassen eines
+4. **[erledigt 1.1.19, war Testumgebung] Query Builder: Die Suchzeile im Menü „+ Spalte“ nimmt keine Tasten an.** Unter
+   Xvfb ohne Fenstermanager hatte das Fenster keinen Tastaturfokus (`xdotool windowfocus` hilft). Mit Fokus filtert die Suche;
+   sie hat jetzt beim Öffnen sofort den Fokus und wird beim Schließen geleert (Test `column_menu_search_takes_keys`).
+5. **[erledigt 1.1.19] Query Builder: Ein Klick neben ein Feld klappte einen ganzen Abschnitt ein** – nur noch Pfeil,
+   Schlüsselwort, Titel und Kurzfassung sind Klickziel (Test `section_header_click_target_is_the_title`). Alter Befund: (beim Verlassen eines
    Eingabefelds). Fehlklick-Falle; prüfen, ob die Überschrift zu viel Fläche als Klickziel hat.
-6. **[Verdacht] Eingaben kommen verzögert an.** Beim Tippen in ein Alias-Feld wurde aus „c“ ein „cc“. Kann an der
+6. **[wahrscheinlich Testumgebung] Eingaben kommen verzögert an.** Siehe 1.4 (fehlender X-Fokus unter Xvfb). Beim Tippen in ein Alias-Feld wurde aus „c“ ein „cc“. Kann an der
    Test-Umgebung (Xvfb, xdotool) liegen; mit echter Tastatur prüfen.
-7. **[Verdacht] Datenbankwahl pro Projekt statt „zuletzt benutzt“.** Beim Öffnen von `queries/revenue.sql` war „schule1“
+7. **[erledigt 1.1.19] Datenbankwahl pro Projekt statt „zuletzt benutzt“.** Ohne gemerkte Datenbank gilt jetzt ein
+   `USE` am Dateianfang, sonst die im Projekt meistgewählte Datenbank, erst dann die zuletzt benutzte. Alter Befund: Beim Öffnen von `queries/revenue.sql` war „schule1“
    gewählt, obwohl die Datenbank des Projekts `shop` ist.
-8. **[Verdacht] Teilstrings ohne Grenzprüfung.** `src/sqledit/schema_fix.rs:138` rechnet `at - 1` ohne Prüfung auf `at == 0`;
+8. **[geprüft, kein Fehler] Teilstrings ohne Grenzprüfung.** Alle drei Stellen prüfen vorher ASCII bzw. die Länge. `src/sqledit/schema_fix.rs:138` rechnet `at - 1` ohne Prüfung auf `at == 0`;
    `src/backup.rs:175` schneidet `&name[..19]` und verlässt sich auf `is_backup_name` (nur sicher, wenn dort ASCII erzwungen wird);
    `src/transfer/import/mod.rs:166` schneidet `&s[19..]`. Alle drei mit Umlauten und leeren Eingaben testen.
-9. **[bestätigt] Zwei Clippy-Warnungen:** eine Funktion mit 8 statt 7 Argumenten und ein `Some(x).filter(|_| …)`.
+9. **[erledigt 1.1.19] Zwei Clippy-Warnungen** (auch die in Tests): eine Funktion mit 8 statt 7 Argumenten und ein `Some(x).filter(|_| …)`.
    AGENTS.md verlangt „keine neuen Warnungen“; die zwei bestehenden bereinigen.
 
 ## 2. Sicherheit und Datenschutz
@@ -58,13 +66,16 @@ und nicht ausprobiert, **[Idee]** = neue Funktion. Alles lief nur unter Linux.
 2. **[bestätigt] Rund 320 `let _ = …`** verschlucken Fehler, vor allem in `src/server.rs` (30), `src/workspace.rs` (22),
    `src/tabs/er/svg.rs` (16), `src/updates.rs` (15). Bei Schreibvorgängen (Einstellungen, Sitzung, Backups) sollte ein
    Fehler sichtbar werden, statt dass Daten still verloren gehen.
-3. **[bestätigt] `unreachable!` in Laufzeitcode:** `src/tabs/code.rs:332` („nur Java ist ausführbar“) und
+3. **[erledigt 1.1.19] `unreachable!` in Laufzeitcode** (jetzt Fehlermeldungen; das in `export.rs` ist wirklich unerreichbar): `src/tabs/code.rs:332` („nur Java ist ausführbar“) und
    `src/dev/install.rs:516`. Wird eine weitere Sprache ausführbar, stürzt die App dort ab; durch eine Fehlermeldung ersetzen.
-4. **[Verdacht] Download-Zeitgrenzen:** `src/transfer/remote.rs` setzt eine Stunde als Gesamtgrenze, aber keine für
+4. **[erledigt 1.1.19] Download-Zeitgrenzen:** jetzt mit Grenzen für Namensauflösung, Verbindungsaufbau und erste Antwort;
+   eine zu große Datei bricht mit Meldung ab statt still abgeschnitten zu werden. Alter Befund: `src/transfer/remote.rs` setzt eine Stunde als Gesamtgrenze, aber keine für
    Verbindungsaufbau oder Stillstand. Ein hängender Server blockiert bis zum Abbruch.
-5. **[Verdacht] `thread::sleep` in `src/tabs/preview/pdf.rs:348,363`.** Prüfen, ob das im Oberflächen-Thread läuft (Ruckler).
+5. **[geprüft, kein Fehler] `thread::sleep` in `src/tabs/preview/pdf.rs:348,363`** steht nur in Tests. Prüfen, ob das im Oberflächen-Thread läuft (Ruckler).
 6. **[Verdacht] Sehr große Tabellen:** mit mehreren Millionen Zeilen, großen BLOB-Spalten und 200 Spalten testen.
-7. **[bestätigt] Außerhalb der App geänderte Dateien:** der offene Editor-Tab lud die Datei erst nach dem Schließen und
+7. **[teilweise erledigt 1.1.19] Außerhalb der App geänderte Dateien:** Ungespeicherte Tabs laden alle 2 s neu (gab es schon).
+   Neu: Hat der Tab ungespeicherte Änderungen, landet die fremde Fassung vor dem Überschreiben in „Frühere Fassungen“ und
+   ein Hinweis erscheint. Offen: echte Rückfrage „Neu laden oder behalten?“. der offene Editor-Tab lud die Datei erst nach dem Schließen und
    Öffnen neu. Dateiüberwachung oder Hinweis „Datei wurde geändert“ ergänzen (hängt mit 1.2 zusammen).
 
 ## 4. Neue Funktionen (Datenbank)
@@ -139,3 +150,26 @@ und nicht ausprobiert, **[Idee]** = neue Funktion. Alles lief nur unter Linux.
   (z. B. `website/screenshots/`).
 - Der Aufbau-Skript-Entwurf liegt unter
   `/tmp/claude-1000/-home-benj-EasyMySQL/b418496d-335a-4e60-9790-696d5e7969b6/scratchpad/s/gen.py`.
+
+## 10. In 1.1.19 zusätzlich gefunden und behoben
+
+1. **Sicherheit, KI-Schnittstelle:** Der Lese-Schutz (`src/mcp/guard.rs`) übersah MariaDBs ausführbare Kommentare
+   `/*M! … */`; `SELECT 1 /*M! ; DROP TABLE t */` galt als Leseabfrage. Außerdem wird jetzt auch ohne Backslash-Maskierung
+   geprüft (Server mit `NO_BACKSLASH_ESCAPES`/`ANSI_QUOTES`).
+2. **SQL-Formatierer verschluckte Code:** `SELECT a -- Kommentar` + neue Zeile `, b` wurde zu `SELECT a -- Kommentar, b`
+   (Spalte b im Kommentar). Komma steht jetzt vor dem Kommentar; zusätzlich bleibt eine Anweisung unformatiert, wenn sich
+   beim Formatieren die Bausteine ändern würden.
+3. **Export „als INSERT“ veränderte Daten:** Der Text `null` wurde zu SQL-NULL, `1e5` in Textspalten zu 100000, Leerzeichen
+   um Zahlen gingen verloren, `NaN`/`inf` ergaben ungültiges SQL (`db::data_lit`). Gleiches `NaN`-Problem in `smart_lit`
+   und im Query Builder (`value_sql`).
+4. **Import „Tabellen ersetzen“ konnte Daten verlieren:** Die alte Tabelle wurde vor dem Import gelöscht; scheiterte der
+   Import, war beides weg. Jetzt erst in eine Hilfstabelle, Tausch nur bei Erfolg (Server-Test
+   `replace_keeps_old_table_when_import_fails`).
+5. **„Verbinden“ tat bei 127.0.0.1 nichts**, solange der eigene Server gestoppt war – ein anderer lokaler Server (z. B. XAMPP)
+   war so nicht erreichbar, ohne jede Meldung.
+6. **`DELIMITER` nach einer Anweisung in derselben Zeile** ging als SQL an den Server.
+7. Query Builder: „+ Tabelle“ vergab doppelte Aliasse (`t2` auch wenn schon belegt); `COUNT` behält beim Funktionswechsel
+   die Spalte; beschädigte gespeicherte Abfrage ohne Teil stürzte ab.
+8. Liegengebliebene Debug-Ausgabe (`EMDBG`) im Explorer entfernt.
+
+Weiter offen aus Abschnitt 3: vergiftete Sperren (3.1), verschluckte Schreibfehler (3.2), sehr große Tabellen (3.6).

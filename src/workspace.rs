@@ -376,6 +376,26 @@ fn history_dir(path: &Path) -> PathBuf {
 
 /// Alte Fassung sichern (hoechstens alle 5 Minuten eine, max. 50 je Datei).
 pub fn snapshot(path: &Path, old_content: &str) {
+    snapshot_with(path, old_content, false);
+}
+
+/// Wurde die Datei seit `known` (letztes Laden oder Speichern) von aussen geaendert, wird diese fremde Fassung
+/// sofort im Verlauf gesichert, bevor sie ueberschrieben wird. true = es gab eine fremde Fassung.
+pub fn keep_external_version(path: &Path, known: Option<std::time::SystemTime>, new_content: &str) -> bool {
+    let (Some(known), Ok(now)) = (known, std::fs::metadata(path).and_then(|m| m.modified())) else { return false };
+    if now == known {
+        return false;
+    }
+    let Ok(disk) = std::fs::read(path) else { return false };
+    let disk = String::from_utf8_lossy(&disk);
+    if disk == new_content {
+        return false;
+    }
+    snapshot_with(path, &disk, true);
+    true
+}
+
+fn snapshot_with(path: &Path, old_content: &str, force: bool) {
     if old_content.trim().is_empty() {
         return;
     }
@@ -383,7 +403,7 @@ pub fn snapshot(path: &Path, old_content: &str) {
     let mut list = history(path);
     if let Some((_, newest)) = list.first() {
         let age = newest.metadata().and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok());
-        if age.is_some_and(|a| a.as_secs() < 300) {
+        if !force && age.is_some_and(|a| a.as_secs() < 300) {
             return;
         }
         if std::fs::read_to_string(newest).is_ok_and(|c| c == old_content) {
@@ -479,6 +499,29 @@ pub fn file_db_any(project: Option<&Path>, file: &Path) -> Option<String> {
         .lines()
         .find_map(|l| l.split_once('\t').filter(|(k, _)| *k == key).map(|(_, v)| v.to_string()))
         .filter(|v| !v.is_empty())
+}
+
+/// Datenbank, die in einem Projekt am haeufigsten fuer Dateien gewaehlt wurde (bei Gleichstand die zuletzt eingetragene)
+pub fn project_db(project: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(db_map_file(project)).ok()?;
+    let mut counts: Vec<(String, usize)> = Vec::new();
+    for v in text.lines().filter_map(|l| l.split_once('\t').map(|(_, v)| v)).filter(|v| !v.is_empty()) {
+        match counts.iter_mut().find(|(d, _)| d == v) {
+            Some(e) => e.1 += 1,
+            None => counts.push((v.to_string(), 1)),
+        }
+    }
+    counts.into_iter().rev().max_by_key(|(_, n)| *n).map(|(d, _)| d)
+}
+
+/// Datenbank aus einem `USE name;` als erster Anweisung der Datei
+pub fn sql_use_db(text: &str) -> Option<String> {
+    let first = crate::db::split_statements(text).into_iter().next()?;
+    let rest = first.sql.get(..4).filter(|w| w.eq_ignore_ascii_case("USE ")).map(|_| first.sql[4..].trim())?;
+    match rest.strip_prefix('`').and_then(|r| r.strip_suffix('`')) {
+        Some(quoted) => (!quoted.is_empty()).then(|| quoted.replace("``", "`")),
+        None => (!rest.is_empty() && !rest.contains(|c: char| c.is_whitespace() || c == '`')).then(|| rest.to_string()),
+    }
 }
 
 /// Datenbank einer Datei merken (Dateien im Projekt in dessen Liste, alle anderen in der allgemeinen).
@@ -588,6 +631,39 @@ impl Session {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn external_change_is_kept_before_overwriting() {
+        let dir = std::env::temp_dir().join(format!("easymysql-extern-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("a.sql");
+        std::fs::write(&f, "SELECT 1;").unwrap();
+        let known = std::fs::metadata(&f).and_then(|m| m.modified()).ok();
+        assert!(!super::keep_external_version(&f, known, "SELECT 2;"), "unveraendert: nichts zu sichern");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::fs::write(&f, "SELECT 'fremd';").unwrap();
+        assert!(super::keep_external_version(&f, known, "SELECT 2;"));
+        assert!(super::history(&f).iter().any(|(_, p)| std::fs::read_to_string(p).is_ok_and(|c| c == "SELECT 'fremd';")));
+        let _ = std::fs::remove_dir_all(super::history_dir(&f));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn database_of_a_new_file_follows_use_and_the_project() {
+        assert_eq!(super::sql_use_db("USE shop;\n\nSELECT 1;"), Some("shop".into()));
+        assert_eq!(super::sql_use_db("-- Umsatz\nuse `my db`;"), Some("my db".into()));
+        assert_eq!(super::sql_use_db("USE a b;"), None);
+        assert_eq!(super::sql_use_db("use `a``b`;"), Some("a`b".into()));
+        assert_eq!(super::sql_use_db("SELECT 1; USE shop;"), None);
+        let dir = std::env::temp_dir().join(format!("easymysql-projdb-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join(".easymysql")).unwrap();
+        assert_eq!(super::project_db(&dir), None);
+        std::fs::write(dir.join(".easymysql/datenbanken.txt"), "a.sql\tschule1\nb.sql\tshop\nc.sql\tshop\n").unwrap();
+        assert_eq!(super::project_db(&dir), Some("shop".into()));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     use super::*;
 
     #[test]

@@ -156,8 +156,8 @@ pub fn split_statements(text: &str) -> Vec<Stmt> {
     while i < n {
         let c = chars[i];
         let nx = chars.get(i + 1).copied().unwrap_or('\0');
-        // DELIMITER-Zeile (nur am Zeilenanfang, ausserhalb einer Anweisung)
-        if start.is_none() && at_line_start(i) {
+        // DELIMITER-Zeile (am Zeilenanfang oder nach dem Ende einer Anweisung, nie mitten in einer)
+        if start.is_none() && (at_line_start(i) || !chars[i].is_whitespace()) {
             let rest: String = chars[i..].iter().take(10).collect();
             if rest.to_uppercase().starts_with("DELIMITER ") {
                 let mut j = i + 10;
@@ -323,3 +323,4 @@ mod bench {
         c.query_drop("DROP DATABASE bench").unwrap();
     }
 }
+

@@ -202,7 +202,7 @@ impl Settings {
                 "java_project_kind" => s.java_project_kind = v,
                 "server_port" => s.server.port = v.parse().ok().filter(|p| *p > 0).unwrap_or(crate::server::DEFAULT_PORT),
                 "server_network" => s.server.network = on,
-                "server_data_dir" => s.server.data_dir = Some(PathBuf::from(&v)).filter(|_| !v.is_empty()),
+                "server_data_dir" => s.server.data_dir = (!v.is_empty()).then(|| PathBuf::from(&v)),
                 "server_buffer_mb" => s.server.buffer_pool_mb = v.parse().unwrap_or(128),
                 "server_max_connections" => s.server.max_connections = v.parse().unwrap_or(151),
                 "server_packet_mb" => s.server.packet_mb = v.parse().unwrap_or(64),
@@ -451,8 +451,7 @@ mod tests {
     #[test]
     fn awkward_passwords_survive_a_restart() {
         for pw in [" leer ", "a\\b", "zwei\nZeilen\nhost=evil", "tab\there", "ende\\"] {
-            let mut s = Settings::default();
-            s.save_password = true;
+            let mut s = Settings { save_password: true, ..Default::default() };
             s.conn.password = pw.into();
             s.ssh.password = pw.into();
             let back = Settings::from_text(&s.to_text());
@@ -471,6 +470,6 @@ mod tests {
         s.add_recent(std::path::Path::new("/p5"));
         assert_eq!(s.recent.len(), 12);
         assert_eq!(s.recent[0], PathBuf::from("/p5"));
-        assert_eq!(s.recent.iter().filter(|p| **p == PathBuf::from("/p5")).count(), 1);
+        assert_eq!(s.recent.iter().filter(|p| p.as_path() == std::path::Path::new("/p5")).count(), 1);
     }
 }

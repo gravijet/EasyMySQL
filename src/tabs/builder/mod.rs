@@ -45,7 +45,7 @@ impl Env<'_> {
     /// Spaltennamen des Ergebnisses einer Abfrage
     fn output_cols(&self, qr: &Query) -> Vec<String> {
         let env = self.with_ctes(qr);
-        let s = &qr.parts[0].select;
+        let Some(s) = qr.parts.first().map(|p| &p.select) else { return Vec::new() };
         if s.items.is_empty() {
             return s.sources.iter().flat_map(|src| env.source_cols(src)).collect();
         }
@@ -66,6 +66,25 @@ impl Env<'_> {
             }
         }
         out
+    }
+
+    /// Bei LEFT/RIGHT JOIN zaehlt COUNT(*) Zeilen ohne Partner als 1. Besser eine Spalte der Tabelle auf der
+    /// optionalen Seite zaehlen (Primaerschluessel, sonst erste Spalte); None ohne aeussere Verknuepfung.
+    fn count_column(&self, s: &Select) -> Option<Expr> {
+        let joined = s.sources.iter().skip(1);
+        let src = if let Some(src) = joined.clone().rev().find(|x| matches!(x.join, JoinKind::Left | JoinKind::NaturalLeft)) {
+            src
+        } else if joined.clone().any(|x| matches!(x.join, JoinKind::Right | JoinKind::NaturalRight)) {
+            s.sources.first()?
+        } else {
+            return None;
+        };
+        let pk = match &src.from {
+            From::Table(t) => self.schema.and_then(|sc| sc.table(t)).and_then(|t| t.columns.iter().find(|c| c.is_pk()).map(|c| c.name.clone())),
+            _ => None,
+        };
+        let col = pk.or_else(|| self.source_cols(src).into_iter().next())?;
+        Some(Expr::column(&src.reference(), &col))
     }
 
     /// Umgebung innerhalb einer Abfrage (mit ihren WITH-Definitionen)
@@ -134,10 +153,7 @@ fn section(ui: &mut egui::Ui, id: egui::Id, kw: &str, title: &str, open: bool, a
     section_ex(ui, id, kw, title, open, "", false, add);
 }
 
-/// Abschnitt als Karte: Schluesselwort als Marke, Titel, bei zugeklapptem Abschnitt eine Kurzfassung des Inhalts.
-/// `clearable`: Papierkorb in der Kopfzeile; gibt true zurueck, wenn er geklickt wurde.
-#[allow(clippy::too_many_arguments)]
-/// Karte für die Bereiche unten (SQL, Ergebnis): eigener Rahmen, füllt den freien Platz
+/// Karte fuer die Bereiche unten (SQL, Ergebnis): eigener Rahmen, fuellt den freien Platz
 fn pane_card(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
     let pal = style::pal();
     egui::Frame::new()
@@ -151,6 +167,9 @@ fn pane_card(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
         });
 }
 
+/// Abschnitt als Karte: Schluesselwort als Marke, Titel, bei zugeklapptem Abschnitt eine Kurzfassung des Inhalts.
+/// `clearable`: Papierkorb in der Kopfzeile; gibt true zurueck, wenn er geklickt wurde.
+#[allow(clippy::too_many_arguments)]
 fn section_ex(ui: &mut egui::Ui, id: egui::Id, kw: &str, title: &str, open: bool, summary: &str, clearable: bool, add: impl FnOnce(&mut egui::Ui)) -> bool {
     use egui::{FontId, Sense, Stroke, pos2, vec2};
     let ctx = ui.ctx().clone();
@@ -164,46 +183,57 @@ fn section_ex(ui: &mut egui::Ui, id: egui::Id, kw: &str, title: &str, open: bool
         .inner_margin(egui::Margin::symmetric(8, 3))
         .show(ui, |ui| {
             ui.set_min_width(ui.available_width());
-            let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::click());
-            let painter = ui.painter();
-            if resp.hovered() {
-                painter.rect_filled(rect, style::RADIUS as f32, pal.hover);
-            }
+            let (rect, row) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::hover());
+            let painter = ui.painter().clone();
             let is_open = state.is_open();
-            let chevron = egui::Rect::from_center_size(pos2(rect.left() + 12.0, rect.center().y), vec2(14.0, 14.0));
-            icons::paint(painter, chevron, if is_open { Icon::ChevronDown } else { Icon::ChevronRight }, pal.text_weak);
+            // Erst messen, dann zeichnen: nur Pfeil, Schluesselwort, Titel und Kurzfassung sind Klickziel.
+            // Ein Klick weiter rechts in der Kopfzeile (z. B. beim Verlassen eines Eingabefelds) klappt nichts ein.
+            let kw_g = (!kw.is_empty()).then(|| painter.layout_no_wrap(kw.to_string(), FontId::monospace(12.5), pal.syn_keyword));
+            let title_g = painter.layout_no_wrap(title.to_string(), FontId::proportional(12.5), pal.text_weak);
             let mut x = rect.left() + 28.0;
-            if !kw.is_empty() {
-                let g = painter.layout_no_wrap(kw.to_string(), FontId::monospace(12.5), pal.syn_keyword);
+            let pill = kw_g.as_ref().map(|g| {
                 let pill = egui::Rect::from_min_size(pos2(x, rect.center().y - 11.0), vec2(g.size().x + 14.0, 22.0));
-                painter.rect_filled(pill, 6.0, pal.syn_keyword.gamma_multiply(if pal.dark { 0.16 } else { 0.12 }));
-                painter.galley(pos2(pill.left() + 7.0, rect.center().y - g.size().y / 2.0), g, pal.syn_keyword);
                 x = pill.right() + 10.0;
-            }
-            let g = painter.layout_no_wrap(title.to_string(), FontId::proportional(12.5), pal.text_weak);
-            painter.galley(pos2(x, rect.center().y - g.size().y / 2.0), g.clone(), pal.text_weak);
-            x += g.size().x + 14.0;
+                pill
+            });
+            let title_x = x;
+            x += title_g.size().x + 14.0;
             // Kurzfassung, solange der Abschnitt zu ist (offen steht der Inhalt ja da)
             let right = rect.right() - if clearable { 30.0 } else { 8.0 };
-            if !is_open && !summary.is_empty() && right - x > 40.0 {
+            let summary_g = (!is_open && !summary.is_empty() && right - x > 40.0).then(|| {
                 let mut text = summary.to_string();
                 loop {
                     let g = painter.layout_no_wrap(text.clone(), FontId::proportional(12.5), pal.text);
                     if g.size().x <= right - x || text.chars().count() <= 3 {
-                        painter.galley(pos2(x, rect.center().y - g.size().y / 2.0), g, pal.text.gamma_multiply(0.85));
-                        break;
+                        break g;
                     }
                     text = text.chars().take(text.chars().count() - 2).collect::<String>().trim_end().to_string() + "…";
                     if text.ends_with("……") {
                         text.pop();
                     }
                 }
+            });
+            let end = summary_g.as_ref().map_or(x - 6.0, |g| x + g.size().x + 8.0).min(right);
+            let head = egui::Rect::from_min_max(rect.min, pos2(end.max(rect.left() + 40.0), rect.max.y));
+            let resp = ui.interact(head, id.with("head"), Sense::click());
+            if resp.hovered() {
+                painter.rect_filled(head, style::RADIUS as f32, pal.hover);
+            }
+            let chevron = egui::Rect::from_center_size(pos2(rect.left() + 12.0, rect.center().y), vec2(14.0, 14.0));
+            icons::paint(&painter, chevron, if is_open { Icon::ChevronDown } else { Icon::ChevronRight }, pal.text_weak);
+            if let (Some(g), Some(pill)) = (kw_g, pill) {
+                painter.rect_filled(pill, 6.0, pal.syn_keyword.gamma_multiply(if pal.dark { 0.16 } else { 0.12 }));
+                painter.galley(pos2(pill.left() + 7.0, rect.center().y - g.size().y / 2.0), g, pal.syn_keyword);
+            }
+            painter.galley(pos2(title_x, rect.center().y - title_g.size().y / 2.0), title_g.clone(), pal.text_weak);
+            if let Some(g) = summary_g {
+                painter.galley(pos2(x, rect.center().y - g.size().y / 2.0), g, pal.text.gamma_multiply(0.85));
             }
             let mut toggle = resp.clicked();
             if clearable {
                 let r = egui::Rect::from_center_size(pos2(rect.right() - 16.0, rect.center().y), vec2(22.0, 22.0));
                 let clear = ui.interact(r, id.with("clear"), Sense::click());
-                if resp.hovered() || clear.hovered() {
+                if row.hovered() || resp.hovered() || clear.hovered() {
                     if clear.hovered() {
                         ui.painter().rect_filled(r, 5.0, pal.hover.gamma_multiply(1.6));
                     }
@@ -403,9 +433,13 @@ fn expr_ui(ui: &mut egui::Ui, e: &mut Expr, env: &Env, id: egui::Id) {
             Expr::Func { name, args, distinct, over } => {
                 if func_picker(ui, name) {
                     let first = args.first().cloned().filter(|a| !matches!(a, Expr::All));
-                    let fresh = Expr::func(name, first.or_else(|| Some(env.first_column())));
+                    let fresh = Expr::func(name, first.clone().or_else(|| Some(env.first_column())));
                     if let Expr::Func { args: a, over: o, .. } = fresh {
-                        *args = a;
+                        // COUNT behaelt eine vorhandene Spalte (COUNT(spalte) statt COUNT(*))
+                        *args = match first {
+                            Some(c @ Expr::Column { .. }) if name.eq_ignore_ascii_case("COUNT") => vec![c],
+                            _ => a,
+                        };
                         *over = o.or(over.take().filter(|_| func_def(name).is_some_and(|d| d.window)));
                     }
                 }
@@ -776,7 +810,11 @@ fn sources_ui(ui: &mut egui::Ui, s: &mut Select, env: &Env, id: egui::Id) {
     let inner_env = env.inside(s);
     let mut remove = None;
     let n = s.sources.len();
+    // Namen der Quellen zu Beginn des Bildes: beim Umbenennen werden die Verweise mitgezogen
+    let refs: Vec<String> = s.sources.iter().map(|x| x.reference()).collect();
+    let mut rename: Option<(String, String)> = None;
     for (i, src) in s.sources.iter_mut().enumerate() {
+        let unique = |name: &str| refs.iter().enumerate().all(|(k, r)| k == i || r != name);
         ui.push_id(i, |ui| {
             ui.horizontal_wrapped(|ui| {
                 if i == 0 {
@@ -817,18 +855,36 @@ fn sources_ui(ui: &mut egui::Ui, s: &mut Select, env: &Env, id: egui::Id) {
                         }
                     };
                 }
-                match &mut src.from {
-                    From::Table(t) => {
-                        super::str_combo(ui, id.with(("t", i)), &env.tables, t, 150.0);
-                    }
+                let picked = match &mut src.from {
+                    From::Table(t) => super::str_combo(ui, id.with(("t", i)), &env.tables, t, 150.0),
                     From::Cte(c) => {
                         let names: Vec<String> = env.ctes.iter().map(|x| x.0.clone()).collect();
-                        super::str_combo(ui, id.with(("c", i)), &names, c, 150.0);
+                        super::str_combo(ui, id.with(("c", i)), &names, c, 150.0)
                     }
-                    From::Sub(_) => {}
-                }
+                    From::Sub(_) => false,
+                };
                 keyword(ui, "AS");
-                ui.add(crate::widgets::edit(&mut src.alias).desired_width(70.0).hint_text("Alias"));
+                let r = ui.add(crate::widgets::edit(&mut src.alias).desired_width(70.0).hint_text("Alias"));
+                // Verweise (Spalten, ON, WHERE, GROUP BY, ORDER BY …) auf den neuen Namen umstellen.
+                // Waehrend des Tippens kann der Name kurz mit einer anderen Tabelle uebereinstimmen; dann
+                // bleibt der zuletzt eindeutige Name gemerkt, bis er wieder eindeutig wird.
+                let key = id.with(("alias-ref", i));
+                if (picked && nk == kind) || r.changed() {
+                    let applied: String = if r.changed() { ui.data(|d| d.get_temp(key)).unwrap_or_else(|| refs[i].clone()) } else { refs[i].clone() };
+                    let after = src.reference();
+                    let next = if after != applied && unique(&after) && unique(&applied) {
+                        rename = Some((applied, after.clone()));
+                        after
+                    } else {
+                        applied
+                    };
+                    if r.changed() {
+                        ui.data_mut(|d| d.insert_temp(key, next));
+                    }
+                }
+                if r.lost_focus() {
+                    ui.data_mut(|d| d.remove::<String>(key));
+                }
                 if n > 1 && remove_button(ui) {
                     remove = Some(i);
                 }
@@ -862,6 +918,9 @@ fn sources_ui(ui: &mut egui::Ui, s: &mut Select, env: &Env, id: egui::Id) {
             }
         });
     }
+    if let Some((old, new)) = rename {
+        s.rename_source(&old, &new);
+    }
     if let Some(i) = remove {
         s.sources.remove(i);
     }
@@ -884,7 +943,11 @@ fn sources_ui(ui: &mut egui::Ui, s: &mut Select, env: &Env, id: egui::Id) {
                         if ui.button(t).clicked() {
                             let mut src = Source::table(t);
                             if s.sources.iter().any(|x| x.reference() == *t) {
-                                src.alias = format!("{t}2");
+                                let mut k = 2;
+                                while s.sources.iter().any(|x| x.reference() == format!("{t}{k}")) {
+                                    k += 1;
+                                }
+                                src.alias = format!("{t}{k}");
                             }
                             if s.sources.is_empty() {
                                 s.sources.push(src);
@@ -920,10 +983,16 @@ fn sources_ui(ui: &mut egui::Ui, s: &mut Select, env: &Env, id: egui::Id) {
 fn column_menu(ui: &mut egui::Ui, s: &mut Select, env: &Env, id: egui::Id) {
     use egui::containers::menu::{MenuButton, MenuConfig};
     let cfg = MenuConfig::new().close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside);
-    MenuButton::from_button(egui::Button::new(crate::i18n::text("+ Spalte"))).config(cfg).ui(ui, |ui| {
+    let opened = id.with("opened");
+    let (_, inner) = MenuButton::from_button(egui::Button::new(crate::i18n::text("+ Spalte"))).config(cfg).ui(ui, |ui| {
         ui.set_min_width(250.0);
         let mut filter: String = ui.data_mut(|d| d.get_temp(id.with("filter")).unwrap_or_default());
-        let r = ui.add(crate::widgets::edit(&mut filter).hint_text(crate::i18n::text("Suchen …")).desired_width(250.0));
+        let r = ui.add(crate::widgets::edit(&mut filter).id(id.with("filter-edit")).hint_text(crate::i18n::text("Suchen …")).desired_width(250.0));
+        // Beim Oeffnen gleich ins Suchfeld: Tippen filtert sofort, ohne erst hineinzuklicken
+        if !ui.data(|d| d.get_temp::<bool>(opened).unwrap_or(false)) {
+            r.request_focus();
+            ui.data_mut(|d| d.insert_temp(opened, true));
+        }
         if r.changed() {
             ui.data_mut(|d| d.insert_temp(id.with("filter"), filter.clone()));
         }
@@ -955,6 +1024,18 @@ fn column_menu(ui: &mut egui::Ui, s: &mut Select, env: &Env, id: egui::Id) {
             }
         });
     });
+    // Zu: Suche vergessen, beim naechsten Oeffnen stehen wieder alle Spalten da
+    if inner.is_none() && ui.data(|d| d.get_temp::<bool>(opened).is_some()) {
+        ui.data_mut(|d| {
+            d.remove::<bool>(opened);
+            d.remove::<String>(id.with("filter"));
+        });
+    }
+}
+
+/// COUNT(*) bzw. COUNT() ohne Spalte
+fn is_count_star(e: &Expr) -> bool {
+    matches!(e, Expr::Func { name, args, over: None, .. } if name.eq_ignore_ascii_case("COUNT") && (args.is_empty() || matches!(args.as_slice(), [Expr::All])))
 }
 
 fn items_ui(ui: &mut egui::Ui, s: &mut Select, env: &Env, id: egui::Id) {
@@ -967,6 +1048,7 @@ fn items_ui(ui: &mut egui::Ui, s: &mut Select, env: &Env, id: egui::Id) {
     let mut remove = None;
     let mut swap = None;
     let n = s.items.len();
+    let outer_join = s.sources.iter().skip(1).any(|x| matches!(x.join, JoinKind::Left | JoinKind::Right | JoinKind::NaturalLeft | JoinKind::NaturalRight));
     for (i, it) in s.items.iter_mut().enumerate() {
         ui.push_id(i, |ui| {
             ui.horizontal_wrapped(|ui| {
@@ -986,6 +1068,13 @@ fn items_ui(ui: &mut egui::Ui, s: &mut Select, env: &Env, id: egui::Id) {
                 if remove_button(ui) {
                     remove = Some(i);
                 }
+                if outer_join && is_count_star(&it.expr) {
+                    ui.label(RichText::new(crate::i18n::tr("COUNT(*) zählt Zeilen ohne Partner als 1", "COUNT(*) counts rows without a match as 1")).small().color(style::pal().warn_text))
+                        .on_hover_text(crate::i18n::tr(
+                            "Bei LEFT/RIGHT JOIN besser eine Spalte der verknüpften Tabelle zählen, z. B. COUNT(b.id): NULL wird nicht mitgezählt.",
+                            "With LEFT/RIGHT JOIN, count a column of the joined table instead, e.g. COUNT(b.id): NULL is not counted.",
+                        ));
+                }
             });
         });
     }
@@ -1004,7 +1093,15 @@ fn items_ui(ui: &mut egui::Ui, s: &mut Select, env: &Env, id: egui::Id) {
                 ui.menu_button(crate::i18n::text(g), |ui| {
                     for fd in FUNCS.iter().filter(|f| f.group == g) {
                         if ui.button(fd.name).on_hover_text(crate::i18n::text(fd.hint)).clicked() {
-                            s.items.push(Item { expr: Expr::func(fd.name, Some(env.first_column())), alias: fd.name.to_lowercase() });
+                            let mut expr = Expr::func(fd.name, Some(env.first_column()));
+                            // bei LEFT/RIGHT JOIN eine Spalte der optionalen Tabelle zaehlen, sonst zaehlt jede Zeile ohne Partner als 1
+                            if fd.name == "COUNT"
+                                && let Some(c) = env.count_column(s)
+                                && let Expr::Func { args, .. } = &mut expr
+                            {
+                                *args = vec![c];
+                            }
+                            s.items.push(Item { expr, alias: fd.name.to_lowercase() });
                             ui.close();
                         }
                     }
@@ -1301,6 +1398,10 @@ impl BuilderTab {
             t.query = s.query;
             t.mode = s.mode;
             t.dml = s.dml;
+            // beschaedigte Datei ohne Teilabfrage: mit einem leeren SELECT weitermachen statt abzustuerzen
+            if t.query.parts.is_empty() {
+                t.query.parts.push(Part::default());
+            }
             t.loaded_for = t.db.clone();
             t.initialized = true;
         }
@@ -1739,5 +1840,93 @@ impl TabView for BuilderTab {
         if close {
             self.view_name = None;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn click(pos: egui::Pos2) -> Vec<egui::Event> {
+        let b = |pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+        vec![egui::Event::PointerMoved(pos), b(true), b(false)]
+    }
+
+    #[test]
+    fn count_uses_a_column_of_the_optional_side() {
+        let env = Env {
+            schema: None,
+            tables: Vec::new(),
+            ctes: vec![("k".into(), vec!["id".into()]), ("b".into(), vec!["bid".into(), "summe".into()])],
+            scope: Vec::new(),
+            depth: 0,
+        };
+        let src = |n: &str, join| Source { join, from: From::Cte(n.into()), ..Source::table(n) };
+        let mut s = Select { sources: vec![src("k", JoinKind::Inner), src("b", JoinKind::Inner)], ..Default::default() };
+        assert_eq!(env.count_column(&s), None, "INNER JOIN: COUNT(*) passt");
+        s.sources[1].join = JoinKind::Left;
+        assert_eq!(env.count_column(&s), Some(Expr::column("b", "bid")));
+        s.sources[1].join = JoinKind::Right;
+        assert_eq!(env.count_column(&s), Some(Expr::column("k", "id")));
+        assert!(is_count_star(&Expr::func("COUNT", None)));
+        assert!(!is_count_star(&Expr::func("SUM", Some(Expr::column("b", "summe")))));
+    }
+
+    /// Nur Pfeil und Titel klappen einen Abschnitt ein, nicht ein Klick weit rechts in der Kopfzeile.
+    #[test]
+    fn section_header_click_target_is_the_title() {
+        let ctx = egui::Context::default();
+        let id = egui::Id::new("sec-test");
+        let frame = |events: Vec<egui::Event>| {
+            let _ = ctx.run_ui(egui::RawInput { events, screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0))), ..Default::default() }, |ui| {
+                section(ui, id, "WHERE", "Bedingungen", true, |ui| {
+                    ui.label("Inhalt");
+                });
+            });
+        };
+        let open = || egui::collapsing_header::CollapsingState::load(&ctx, id).is_some_and(|s| s.is_open());
+        frame(vec![]);
+        frame(vec![]);
+        assert!(open());
+        frame(click(egui::pos2(700.0, 18.0)));
+        frame(vec![]);
+        assert!(open(), "Klick rechts in der Kopfzeile laesst den Abschnitt offen");
+        frame(click(egui::pos2(24.0, 18.0)));
+        frame(vec![]);
+        assert!(!open(), "Klick auf den Pfeil klappt ein");
+    }
+
+    /// Das Suchfeld im Menue "+ Spalte" nimmt Tasten an und filtert die Spalten.
+    #[test]
+    fn column_menu_search_takes_keys() {
+        let ctx = egui::Context::default();
+        let mut s = Select { sources: vec![Source::table("kunde")], ..Default::default() };
+        let env = Env { schema: None, tables: Vec::new(), ctes: Vec::new(), scope: vec![("kunde".into(), vec!["id".into(), "name".into(), "ort".into()])], depth: 1 };
+        let id = egui::Id::new("cm-test");
+        let button = std::cell::Cell::new(egui::Rect::NOTHING);
+        let frame = |s: &mut Select, events: Vec<egui::Event>| {
+            let _ = ctx.run_ui(egui::RawInput { events, screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0))), ..Default::default() }, |ui| {
+                button.set(ui.horizontal(|ui| column_menu(ui, s, &env, id)).response.rect);
+            });
+        };
+        frame(&mut s, vec![]);
+        frame(&mut s, vec![]);
+        frame(&mut s, click(button.get().center()));
+        frame(&mut s, vec![]);
+        assert!(ctx.memory(|m| m.has_focus(id.with("filter-edit"))), "Suchfeld hat gleich den Fokus");
+        frame(&mut s, vec![egui::Event::Text("o".into())]);
+        let edit = ctx.read_response(id.with("filter-edit")).expect("Suchfeld sichtbar").rect;
+        frame(&mut s, click(edit.center()));
+        frame(&mut s, vec![]);
+        frame(&mut s, vec![egui::Event::Text("r".into())]);
+        frame(&mut s, vec![]);
+        let filter: String = ctx.data(|d| d.get_temp(id.with("filter"))).unwrap_or_default();
+        assert_eq!(filter, "or");
+        assert!(ctx.read_response(id.with("filter-edit")).is_some(), "Menue bleibt offen");
+        frame(&mut s, click(egui::pos2(790.0, 590.0)));
+        frame(&mut s, vec![]);
+        frame(&mut s, vec![]);
+        assert!(ctx.read_response(id.with("filter-edit")).is_none(), "Klick daneben schliesst");
+        assert_eq!(ctx.data(|d| d.get_temp::<String>(id.with("filter"))), None, "Suche geleert");
     }
 }

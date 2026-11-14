@@ -336,8 +336,9 @@ impl Fmt {
                 }
             }
             "VALUES" | "VALUE" => {
-                let items: Vec<String> = split_commas(body).iter().map(|p| self.expand(p, indent + 2)).collect();
-                return format!("{head}{}", items.join(&format!(",{cont}")));
+                let parts = split_commas(body);
+                let items: Vec<String> = parts.iter().enumerate().map(|(i, p)| self.list_item(p, indent + 2, i + 1 < parts.len()).0).collect();
+                return format!("{head}{}", items.join(&cont));
             }
             _ => {}
         }
@@ -353,20 +354,18 @@ impl Fmt {
         if items.len() > 1 && items.iter().any(|it| it.iter().any(|n| matches!(n, Node::G(g) if is_block_subquery(g)) || word_of(n).as_deref() == Some("CASE"))) {
             let lines: Vec<String> = items.iter().map(|it| self.expand(it, indent + 4)).collect();
             if lines.iter().any(|t| t.contains('\n')) {
-                let sep = format!(",{cont}");
-                return format!("{}{cont}{}", head.trim_end(), lines.join(&sep));
+                let lines: Vec<String> = items.iter().enumerate().map(|(i, it)| self.list_item(it, indent + 4, i + 1 < items.len()).0).collect();
+                return format!("{}{cont}{}", head.trim_end(), lines.join(&cont));
             }
         }
         if items.len() > 1 {
             let mut out = head.clone();
             let mut col = indent + out.chars().count();
+            let mut after_comment = false;
             for (i, it) in items.iter().enumerate() {
-                let mut t = self.expand(it, indent + 2);
-                if i + 1 < items.len() {
-                    t.push(',');
-                }
+                let (t, comment) = self.list_item(it, indent + 2, i + 1 < items.len());
                 let w = t.lines().next().unwrap_or("").chars().count();
-                if i > 0 && (col + 1 + w > WIDTH || t.contains('\n')) {
+                if i > 0 && (after_comment || col + 1 + w > WIDTH || t.contains('\n')) {
                     out.push_str(&cont);
                     col = indent + 2;
                 } else if i > 0 {
@@ -375,10 +374,34 @@ impl Fmt {
                 }
                 col = if t.contains('\n') { t.lines().last().unwrap_or("").chars().count() } else { col + w };
                 out.push_str(&t);
+                after_comment = comment;
             }
             return out;
         }
         format!("{head}{}", self.expand(body, indent + 2))
+    }
+
+    /// Eintrag einer Kommaliste. Ein Zeilenkommentar am Ende kommt hinter das Komma – sonst stuende das Komma
+    /// (und alles Weitere der Zeile) im Kommentar. Rueckgabe: Text und ob danach eine neue Zeile beginnen muss.
+    fn list_item(&self, it: &[Node], indent: usize, comma: bool) -> (String, bool) {
+        let k = it.iter().rposition(|n| !matches!(n, Node::T(Tok::LineComment(_)))).map_or(0, |p| p + 1);
+        let (code, comments) = it.split_at(k);
+        let mut t = self.expand(code, indent);
+        if comma {
+            t.push(',');
+        }
+        for (j, c) in comments.iter().enumerate() {
+            if let Node::T(Tok::LineComment(s)) = c {
+                if j > 0 {
+                    t.push('\n');
+                    t.push_str(&" ".repeat(indent));
+                } else if !t.is_empty() {
+                    t.push(' ');
+                }
+                t.push_str(s);
+            }
+        }
+        (t, !comments.is_empty())
     }
 
     /// Ausdruck; Unterabfragen und lange Spaltendefinitionen werden mehrzeilig.
@@ -654,7 +677,20 @@ fn format_statement(sql: &str) -> String {
     if opens != closes {
         return sql.trim().to_string();
     }
-    f.block(&nodes, 0).trim_end().to_string()
+    let out = f.block(&nodes, 0).trim_end().to_string();
+    // Sicherheitsnetz: Formatieren darf nur Leerraum und Gross-/Kleinschreibung von Woertern aendern
+    // (und Kommentare verschieben). Sonst bleibt die Anweisung, wie sie war.
+    if same_code(sql, &out) { out } else { sql.trim().to_string() }
+}
+
+/// Gleiche Bausteine in gleicher Reihenfolge (Woerter ohne Gross-/Kleinschreibung), gleiche Kommentare
+fn same_code(a: &str, b: &str) -> bool {
+    let key = |s: &str| {
+        let (comments, code): (Vec<Tok>, Vec<Tok>) = tokenize(s).into_iter().partition(|t| matches!(t, Tok::LineComment(_) | Tok::BlockComment(_)));
+        let code: Vec<Tok> = code.into_iter().map(|t| if let Tok::Word(w) = t { Tok::Word(w.to_uppercase()) } else { t }).collect();
+        (code, comments)
+    };
+    key(a) == key(b)
 }
 
 /// Ganzes Skript formatieren.
@@ -845,6 +881,23 @@ mod tests {
         assert!(f.contains("DELIMITER ;\n"), "{f}");
     }
 
+    /// Ein Zeilenkommentar am Ende eines Listeneintrags darf das Komma und den Rest nicht verschlucken
+    #[test]
+    fn line_comments_never_swallow_code() {
+        assert_eq!(format_sql("SELECT a -- kommentar\n, b FROM t"), "SELECT a, -- kommentar\n  b\nFROM t\n");
+        assert_eq!(format_sql("INSERT INTO t VALUES (1) -- eins\n, (2)"), "INSERT INTO t\nVALUES (1), -- eins\n  (2)\n");
+        for sql in [
+            "SELECT a, -- erste\nb, -- zweite\nc FROM t",
+            "SELECT very_long_column_name_number_one -- c\n, (SELECT MAX(x) FROM other_table WHERE other_table.id = t.id) AS m, z FROM t",
+        ] {
+            let f = format_sql(sql);
+            assert!(same_code(sql, &f) && f.contains('\n'), "{sql:?} -> {f:?}");
+        }
+        // Sicherheitsnetz erkennt verschluckten Code
+        assert!(!same_code("SELECT a -- x\n, b", "SELECT a -- x, b"));
+        assert!(same_code("select a from t", "SELECT a\nFROM t"));
+    }
+
     #[test]
     fn idempotent() {
         let t = "select k.name, (select count(*) from bestellung b where b.kunde_id = k.id) as anzahl from kunde k where k.ort like 'B%' order by 2 desc;";
@@ -857,3 +910,4 @@ mod tests {
         assert_eq!(format_sql("select 'a,b  from' , \"x\"\"y\" from t"), "SELECT 'a,b  from', \"x\"\"y\"\nFROM t\n");
     }
 }
+

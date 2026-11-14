@@ -508,6 +508,9 @@ impl EasyApp {
     fn open_tab(&mut self, tab: Box<dyn TabView>) {
         if let Some(k) = tab.key()
             && let Some(i) = self.tabs.iter().position(|t| t.key().as_deref() == Some(&k)) {
+                if tab.replace_on_reopen() {
+                    self.tabs[i] = tab;
+                }
                 self.active = i;
                 return;
             }
@@ -678,7 +681,9 @@ impl EasyApp {
                 Action::Reconnect | Action::Connect => {
                     self.auto_connect = true;
                     self.db = None;
-                    if self.server.state().is_running() || !self.is_local() {
+                    // Knopf "Verbinden": immer versuchen – auf 127.0.0.1 kann auch ein anderer Server laufen
+                    // (z. B. von XAMPP); schlaegt es fehl, erklaert die Fehlermeldung warum.
+                    if matches!(a, Action::Connect) || self.server.state().is_running() || !self.is_local() {
                         self.connect(true);
                     }
                 }
