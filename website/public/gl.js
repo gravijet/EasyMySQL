@@ -28,6 +28,7 @@ uniform vec3 B;          // Spiegelfarbe 2
 uniform vec3 W[6];       // Wellen: x, y, Startzeit
 uniform float O;         // Relief wandert mit seinem Abschnitt (in Bildhoehen)
 uniform float S;         // gescrollte Strecke in Bildhoehen
+uniform vec2 G;          // Groesse der Text-Texturen in Texeln
 
 float h(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float n(vec2 p){
@@ -40,13 +41,36 @@ float fbm(vec2 p){
   for (int i = 0; i < 3; i++) { s += a * n(p); p = p * 2.03 + vec2(1.7, 9.2); a *= .5; }
   return s;
 }
+// Bikubische Abtastung (B-Spline aus vier bilinearen Abfragen): bilinear gefiltert springt die Steigung
+// an jeder Texelgrenze, und weil das Licht aus der Steigung entsteht, zeigte sich das Texelraster als
+// Treppe an den Kanten. Die B-Spline ist auch in der Steigung stetig und glaettet die 8-Bit-Stufen.
+vec4 kubisch(float v){
+  vec4 m = vec4(1., 2., 3., 4.) - v;
+  vec4 q = m * m * m;
+  float x = q.x, y = q.y - 4. * q.x, z = q.z - 4. * q.y + 6. * q.x;
+  return vec4(x, y, z, 6. - x - y - z) / 6.;
+}
+float glatt(sampler2D t, vec2 st){
+  vec2 tc = st * G - .5;
+  vec2 f = fract(tc);
+  tc -= f;
+  vec4 xc = kubisch(f.x), yc = kubisch(f.y);
+  vec4 c = tc.xxyy + vec2(-.5, 1.5).xyxy;
+  vec4 s = vec4(xc.xz + xc.yw, yc.xz + yc.yw);
+  vec4 o = (c + vec4(xc.yw, yc.yw) / s) / G.xxyy;
+  float a0 = texture2D(t, o.xz).r, a1 = texture2D(t, o.yz).r, a2 = texture2D(t, o.xw).r, a3 = texture2D(t, o.yw).r;
+  float sx = s.x / (s.x + s.y), sy = s.z / (s.z + s.w);
+  return mix(mix(a3, a2, sx), mix(a1, a0, sx), sy);
+}
 // Text: der alte schmilzt fleckig weg, der neue steigt auf
 float schrift(vec2 uv){
   vec2 st = vec2(uv.x * R.y / R.x, uv.y) * .5 + .5;
   st.y -= O;
   float fleck = n(st * 7. + T * .15);
   float k = smoothstep(fleck - .3, fleck + .3, Q * 1.6 - .3);
-  return mix(texture2D(X0, st).r, texture2D(X1, st).r, k);
+  // ausserhalb eines Wechsels genuegt der neue Text
+  if (k > .999) return glatt(X1, st);
+  return mix(glatt(X0, st), glatt(X1, st), k);
 }
 float hoehe(vec2 uv){
   vec2 ww = uv - vec2(0., S * .6);
@@ -125,7 +149,7 @@ void main(){
   gl.enableVertexAttribArray(ort);
   gl.vertexAttribPointer(ort, 2, gl.FLOAT, false, 0, 0);
   var u = {};
-  ["R", "T", "M", "X0", "X1", "Q", "H", "A", "B", "W", "O", "S"].forEach(function (name) {
+  ["R", "T", "M", "X0", "X1", "Q", "H", "A", "B", "W", "O", "S", "G"].forEach(function (name) {
     u[name] = gl.getUniformLocation(programm, name);
   });
 
@@ -148,10 +172,14 @@ void main(){
   var stift = blatt.getContext("2d");
 
   // Zeichnet den Text weichgezeichnet (so entsteht die Hoehe) und laedt ihn als neue Textur.
+  // Mindestens so dicht wie die Zeichenflaeche, sonst wird das Relief auf grossen Bildschirmen vergroessert.
+  var texGrenze = Math.min(4096, gl.getParameter(gl.MAX_TEXTURE_SIZE) || 2048);
   function schreibe(spez) {
-    var breit = Math.min(2600, Math.max(480, Math.round(innerWidth * Math.min(devicePixelRatio || 1, 2))));
-    blatt.width = breit;
-    blatt.height = Math.round((breit * innerHeight) / innerWidth);
+    var breit = Math.max(480, leinwand.width, Math.round(innerWidth * Math.min(devicePixelRatio || 1, 2)));
+    var hoch = Math.round((breit * innerHeight) / innerWidth);
+    var mass0 = Math.min(1, texGrenze / breit, texGrenze / Math.max(1, hoch));
+    blatt.width = Math.max(2, Math.round(breit * mass0));
+    blatt.height = Math.max(2, Math.round(hoch * mass0));
     stift.fillStyle = "#000";
     stift.fillRect(0, 0, blatt.width, blatt.height);
     var zeilen = (spez && spez.zeilen) || [];
@@ -186,7 +214,9 @@ void main(){
     gl.activeTexture(gl.TEXTURE0 + vorn);
     gl.bindTexture(gl.TEXTURE_2D, texturen[vorn]);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, blatt);
+    texGroesse = [blatt.width, blatt.height];
   }
+  var texGroesse = [1, 1];
 
   var ziel = (window.easyScene = window.easyScene || { n: 0, text: null, hoch: 1, A: [0.2, 0.35, 1], B: [0.6, 0.2, 0.9] });
   var stand = { n: -1, hoch: 0, A: ziel.A.slice(), B: ziel.B.slice(), q: 1 };
@@ -206,10 +236,11 @@ void main(){
     naechste = (naechste + 1) % 6;
   }
   function groesse() {
-    // so scharf wie der Bildschirm, hoechstens rund 2,4 Mio. Bildpunkte; `guete` sinkt,
-    // wenn das Geraet dabei nicht fluessig bleibt (siehe bild)
+    // so scharf wie der Bildschirm, hoechstens rund 5 Mio. Bildpunkte (vorher 2,4 Mio.: auf 1440p- und
+    // 4K-Bildschirmen wurde das Bild bis fast aufs Doppelte hochgezogen und wirkte pixelig); `guete`
+    // sinkt, wenn das Geraet dabei nicht fluessig bleibt (siehe bild)
     var dichte = Math.min(devicePixelRatio || 1, 2.5);
-    var faktor = Math.min(dichte, Math.sqrt(2400000 / (innerWidth * innerHeight))) * guete;
+    var faktor = Math.min(dichte, Math.sqrt(5000000 / (innerWidth * innerHeight))) * guete;
     leinwand.width = Math.max(2, Math.round(innerWidth * faktor));
     leinwand.height = Math.max(2, Math.round(innerHeight * faktor));
     gl.viewport(0, 0, leinwand.width, leinwand.height);
@@ -258,6 +289,7 @@ void main(){
     gl.uniform1f(u.Q, weichQ);
     gl.uniform1f(u.H, stand.hoch);
     gl.uniform1f(u.O, ziel.versatz || 0);
+    gl.uniform2f(u.G, texGroesse[0], texGroesse[1]);
     gl.uniform1f(u.S, ruhig.matches ? 0 : ziel.lauf || 0);
     gl.uniform3f(u.A, stand.A[0], stand.A[1], stand.A[2]);
     gl.uniform3f(u.B, stand.B[0], stand.B[1], stand.B[2]);
