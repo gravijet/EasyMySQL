@@ -98,6 +98,24 @@ pub fn show(
         // Zellen ohne Zwischenraum; die Ziehgriffe der Spalten erst beim Darueberfahren zeigen
         ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
         ui.visuals_mut().widgets.noninteractive.bg_stroke = Stroke::NONE;
+        // Breite aus der echten Textbreite (laengster Wert der ersten 100 Zeilen und Ueberschrift):
+        // gleich viel Luft links und rechts, breite Buchstaben werden nicht abgeschnitten
+        let body = egui::TextStyle::Body.resolve(ui.style());
+        let measure = |text: &str| ui.painter().layout_no_wrap(text.to_string(), body.clone(), egui::Color32::WHITE).size().x;
+        let widths: Vec<f32> = columns.iter().enumerate().map(|(ci, c)| {
+            let mut longest = "";
+            for r in rows.iter().take(100) {
+                if let Some(Some(v)) = r.get(ci) {
+                    let first = v.lines().next().unwrap_or("");
+                    if first.chars().count() > longest.chars().count() {
+                        longest = first;
+                    }
+                }
+            }
+            let longest: String = longest.chars().take(40).collect();
+            let text_w = measure(c).max(measure(&longest));
+            (text_w + 2.0 * PAD + 4.0).ceil().clamp(60.0, 340.0)
+        }).collect();
         let mut tb = TableBuilder::new(ui)
             .id_salt(id)
             .striped(true)
@@ -108,15 +126,8 @@ pub fn show(
         if let Some(r) = state.scroll_to.take() {
             tb = tb.scroll_to_row(r, None);
         }
-        for (ci, c) in columns.iter().enumerate() {
-            let mut chars = c.chars().count();
-            for r in rows.iter().take(100) {
-                if let Some(Some(v)) = r.get(ci) {
-                    chars = chars.max(v.lines().next().unwrap_or("").chars().take(40).count());
-                }
-            }
-            let w = (chars as f32 * 7.5 + 2.0 * PAD + 6.0).clamp(60.0, 340.0);
-            tb = tb.column(Column::initial(w).at_least(30.0).clip(true).resizable(true));
+        for w in &widths {
+            tb = tb.column(Column::initial(*w).at_least(30.0).clip(true).resizable(true));
         }
         tb.header(28.0, |mut header| {
             header.col(|ui| {

@@ -393,7 +393,8 @@ impl TabView for UsersTab {
         }
         let pal = style::pal();
         if cx.db.is_none() {
-            ui.label(RichText::new(tr("Keine Verbindung.", "Not connected.")).color(pal.text_weak));
+            ui.add_space(((ui.available_height() - 20.0) / 2.0).max(10.0));
+            ui.vertical_centered(|ui| ui.label(RichText::new(tr("Keine Verbindung.", "Not connected.")).color(pal.text_weak)));
             return;
         }
         if let Some(e) = &self.error {

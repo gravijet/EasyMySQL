@@ -1781,7 +1781,8 @@ impl TabView for BuilderTab {
                     });
                     grid::show(ui, ("bgrid", &self.id), &rs.columns, &rs.rows, grid::Edit::View, &mut self.grid);
                 } else if self.job.is_none() && self.error.is_none() {
-                    ui.add_space(10.0);
+                    // Hinweis mittig in der leeren Karte
+                    ui.add_space(((ui.available_height() - 20.0) / 2.0).max(10.0));
                     ui.vertical_centered(|ui| {
                         ui.label(RichText::new(crate::i18n::text("Noch kein Ergebnis. „Ausführen“ zeigt die Zeilen der Abfrage.")).color(pal.text_weak));
                     });

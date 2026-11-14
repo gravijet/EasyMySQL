@@ -75,6 +75,8 @@ pub struct SqlTab {
     save_error: Option<String>,
     /// Beim ersten Anzeigen zu dieser Zeile springen
     pending_line: Option<usize>,
+    /// Beim ersten Anzeigen den Editor fokussieren (neue Abfrage: sofort lostippen)
+    focus_editor: bool,
 }
 
 fn next_scratch_id() -> usize {
@@ -131,6 +133,7 @@ impl SqlTab {
             history: None,
             save_error: None,
             pending_line: None,
+            focus_editor: false,
         }
     }
 
@@ -141,6 +144,7 @@ impl SqlTab {
         t.editor = SqlEditor::new(egui::Id::new(("sql-scratch", t.scratch_id)));
         t.database = database.unwrap_or_default();
         t.text = text;
+        t.focus_editor = true;
         t.save();
         t
     }
@@ -1059,6 +1063,16 @@ impl TabView for SqlTab {
             None => {}
         }
         let h = (ui.available_height() - 8.0).max(100.0);
+        // Erst fokussieren, wenn der Klick, der den Tab geoeffnet hat, vorbei ist: sonst wertet das Textfeld
+        // ihn als Klick daneben und gibt den Fokus sofort wieder ab
+        if self.focus_editor {
+            if ui.input(|i| i.pointer.any_pressed() || i.pointer.any_released() || i.pointer.any_down()) {
+                ui.ctx().request_repaint();
+            } else {
+                self.focus_editor = false;
+                ui.memory_mut(|m| m.request_focus(self.editor.id));
+            }
+        }
         let out = self.editor.show(ui, &mut self.text, h);
         self.selection = out.selection.clone();
         if out.changed {

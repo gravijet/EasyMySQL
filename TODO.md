@@ -173,3 +173,28 @@ und nicht ausprobiert, **[Idee]** = neue Funktion. Alles lief nur unter Linux.
 8. Liegengebliebene Debug-Ausgabe (`EMDBG`) im Explorer entfernt.
 
 Weiter offen aus Abschnitt 3: vergiftete Sperren (3.1), verschluckte Schreibfehler (3.2), sehr große Tabellen (3.6).
+
+## 11. Gestaltung (in 1.1.19 geprüft und behoben)
+
+Alle Ansichten unter Linux (Xvfb, 1400×900) im dunklen und hellen Design durchgesehen und vergrößert verglichen.
+
+1. **Umschalter (Sprache, Design, Assistent-Modus):** gebrochene Pixelbreiten, der Abstand der gewählten Fläche zum Rand war
+   links 2 px, rechts 1 px und die Kanten unscharf. Jetzt auf ganze Pixel gerundet, ringsum gleich.
+2. **Datenbankbaum:** die Markierung der gewählten Zeile begann mitten im Aufklapp-Pfeil. Jetzt liegt der Pfeil mit Luft
+   innerhalb der Fläche.
+3. **Tabellen (Daten, Ergebnisse):** Spaltenbreite wurde pauschal mit 7,5 px je Zeichen geschätzt, breite Werte stießen rechts
+   an die Linie. Jetzt aus der echten Textbreite, links und rechts gleich viel Luft.
+4. **Verlauf:** lange Anweisungen wurden hart am Rand der Seitenleiste abgeschnitten; jetzt mit „…“ und Randabstand.
+5. **Claude/Codex-Seitenleiste:** als einzige ohne Innenabstand (Inhalt 6 px vom Rand, „…“-Knopf am rechten Rand, als
+   gefüllter Standardknopf). Jetzt gleiche Ränder und Symbolknöpfe wie die anderen Seitenleisten.
+6. **Einstellungen:** „Maus“ hatte einen Pfeil nach oben als Symbol; jetzt ein Maus-Symbol (Lucide).
+7. **Dialoge:** Titel waren uneinheitlich groß (nur der Meldungsdialog hatte 15 px); jetzt überall gleich. „Neue Datenbank“:
+   „Erstellen“ als Hauptknopf, bei leerem Namen gesperrt, Esc schließt.
+8. **Leere Flächen:** Server-Log zeigte bei leerem Log nichts, „Noch kein Ergebnis“ im Assistenten und „Keine Verbindung“ in der
+   Benutzerverwaltung standen oben links bzw. oben; jetzt mittig wie die übrigen Hinweise. „Nicht verbunden“ in der Seitenleiste
+   mit Abstand zum Knopf und bündig zum Titel.
+9. **Neue Abfrage:** der Editor hatte nach „+ Abfrage“/Strg+N keinen Fokus (der öffnende Klick nahm ihn sofort wieder weg),
+   man musste erst hineinklicken. Jetzt kann man sofort tippen.
+
+Geprüft und in Ordnung: Titelleiste, Einstellungen, Query Builder, Daten- und Ergebnistabelle, ER-Diagramm (mittig),
+Sicherungen, Benutzerverwaltung, Git, Suche, Menüs.

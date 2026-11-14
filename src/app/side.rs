@@ -736,9 +736,17 @@ impl EasyApp {
                 let first: String = e.sql.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(120).collect();
                 let color = if e.error { pal.error_text } else { pal.text };
                 let p = ui.painter_at(r);
-                p.text(pos2(r.left() + 10.0, r.top() + 11.0), egui::Align2::LEFT_CENTER, first, egui::FontId::monospace(12.0), color);
+                // Links und rechts gleich viel Abstand; zu lange Zeilen enden mit "…" statt hart am Rand
+                let max_w = (r.width() - 20.0).max(20.0);
+                let line = |text: String, font: egui::FontId, color: Color32, y: f32| {
+                    let mut job = egui::text::LayoutJob::simple_singleline(text, font, color);
+                    job.wrap = egui::text::TextWrapping { max_width: max_w, max_rows: 1, break_anywhere: true, overflow_character: Some('…') };
+                    let g = p.layout_job(job);
+                    p.galley(pos2(r.left() + 10.0, y - g.size().y / 2.0), g, color);
+                };
+                line(first, egui::FontId::monospace(12.0), color, r.top() + 11.0);
                 let meta = format!("{}  ·  {}  ·  {} ms", e.short_time(), if e.db.is_empty() { "–" } else { &e.db }, e.millis);
-                p.text(pos2(r.left() + 10.0, r.top() + 27.0), egui::Align2::LEFT_CENTER, meta, egui::FontId::proportional(12.0), pal.text_weak);
+                line(meta, egui::FontId::proportional(12.0), pal.text_weak, r.top() + 27.0);
                 let resp = resp.on_hover_text(e.sql.chars().take(1500).collect::<String>());
                 if resp.double_clicked() {
                     actions.push(Action::OpenSql { db: Some(e.db.clone()), sql: e.sql.clone() + ";\n", run: false });
@@ -792,10 +800,14 @@ impl EasyApp {
 
     fn db_tree(&mut self, ui: &mut egui::Ui, actions: &mut Vec<Action>) {
         let Some(dbc) = &self.db else {
-            ui.label(RichText::new(crate::i18n::text("Nicht verbunden")).color(style::pal().text_weak));
-            if ui.button(crate::i18n::text("Verbindung …")).clicked() {
-                actions.push(Action::OpenSettings(Some("verbindung".into())));
-            }
+            // Gleiche Einrueckung wie der Titel der Seitenleiste, etwas Luft zwischen Text und Knopf
+            egui::Frame::new().inner_margin(egui::Margin { left: 2, right: 0, top: 2, bottom: 0 }).show(ui, |ui| {
+                ui.label(RichText::new(crate::i18n::text("Nicht verbunden")).color(style::pal().text_weak));
+                ui.add_space(4.0);
+                if ui.button(crate::i18n::text("Verbindung …")).clicked() {
+                    actions.push(Action::OpenSettings(Some("verbindung".into())));
+                }
+            });
             return;
         };
         let show_sys = self.settings.show_system_dbs;
@@ -1154,6 +1166,8 @@ fn tree_node<R>(ui: &mut egui::Ui, id: egui::Id, icon: Icon, tint: Color32, labe
         ui.spacing_mut().item_spacing.x = 4.0;
         // Der Aufklappknopf nimmt sonst die volle Hoehe der Bedienelemente (28 px)
         ui.spacing_mut().interact_size.y = TREE_ROW;
+        // Etwas Luft links: der Aufklapp-Pfeil liegt innerhalb der Auswahlflaeche, nicht auf ihrer Kante
+        ui.add_space(4.0);
         state.show_toggle_button(ui, move |ui, openness, resp| {
             let r = Rect::from_center_size(resp.rect.center(), vec2(14.0, 14.0));
             icons::paint(ui.painter(), r, if openness > 0.5 { Icon::ChevronDown } else { Icon::ChevronRight }, weak);
@@ -1169,7 +1183,7 @@ fn tree_node<R>(ui: &mut egui::Ui, id: egui::Id, icon: Icon, tint: Color32, labe
     }
     // Ausgewaehlte Zeile in der Auswahlfarbe, Zeile unter dem Mauszeiger dezent heller (ueber die ganze Breite)
     // Ueber die ganze Breite der Seitenleiste, auch bei eingerueckten Eintraegen (wie in IntelliJ IDEA)
-    let full = egui::Rect::from_min_max(egui::pos2(ui.clip_rect().left() + 8.0, row.response.rect.top() - 1.0), egui::pos2(ui.clip_rect().right() - 8.0, row.response.rect.bottom() + 1.0));
+    let full = egui::Rect::from_min_max(egui::pos2(ui.clip_rect().left() + 2.0, row.response.rect.top() - 1.0), egui::pos2(ui.clip_rect().right() - 8.0, row.response.rect.bottom() + 1.0));
     if selected || ui.rect_contains_pointer(row.response.rect) {
         let fill = if selected { pal.selection } else { pal.hover };
         ui.painter().set(bg, egui::epaint::RectShape::filled(full, 5.0, fill));

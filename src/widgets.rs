@@ -76,9 +76,11 @@ pub fn segmented<T: PartialEq + Clone>(ui: &mut egui::Ui, value: &mut T, items: 
     let p = style::pal();
     let font = FontId::proportional(13.0);
     let galleys: Vec<_> = items.iter().map(|(_, l)| ui.painter().layout_no_wrap(l.to_string(), font.clone(), p.text)).collect();
-    let widths: Vec<f32> = galleys.iter().map(|g| g.size().x + 24.0).collect();
+    // Ganze Pixel: sonst liegen Kanten zwischen zwei Pixeln, der Abstand zum Rand wirkt links und rechts ungleich
+    let widths: Vec<f32> = galleys.iter().map(|g| (g.size().x + 24.0).round()).collect();
     let total: f32 = widths.iter().sum::<f32>() + 4.0;
     let (rect, _) = ui.allocate_exact_size(vec2(total, 28.0), Sense::hover());
+    let rect = egui::emath::GuiRounding::round_to_pixels(rect, ui.pixels_per_point());
     // Wie die Segmentschalter in IntelliJ: umrandete Leiste, gewaehltes Segment als erhabene Flaeche
     let (back, raised) = if p.dark { (Color32::from_rgb(0x14, 0x16, 0x1A), Color32::from_rgb(0x36, 0x3B, 0x47)) } else { (Color32::from_rgb(0xE6, 0xE9, 0xEF), Color32::WHITE) };
     ui.painter().rect(rect, style::RADIUS as f32 + 1.0, back, Stroke::new(1.0, p.border), StrokeKind::Inside);

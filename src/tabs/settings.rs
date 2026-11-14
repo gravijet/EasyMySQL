@@ -57,7 +57,7 @@ fn section_icon(id: &str) -> crate::icons::Icon {
         "sprachserver" => Icon::Braces,
         "git" => Icon::GitBranch,
         "terminal" => Icon::Terminal,
-        "maus" => Icon::ArrowUp,
+        "maus" => Icon::Mouse,
         "speicherorte" => Icon::Folder,
         "dateien" => Icon::File,
         "verbindung" => Icon::Link,

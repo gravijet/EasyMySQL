@@ -126,7 +126,7 @@ impl EasyApp {
                     });
                 }
                 Dialog::NewDatabase { name, collation } => {
-                    ui.label(RichText::new(crate::i18n::text("Neue Datenbank")).strong());
+                    ui.label(RichText::new(crate::i18n::text("Neue Datenbank")).strong().size(15.0));
                     ui.add_space(4.0);
                     egui::Grid::new("newdb").num_columns(2).show(ui, |ui| {
                         ui.label("Name");
@@ -139,17 +139,19 @@ impl EasyApp {
                     });
                     ui.add_space(6.0);
                     ui.horizontal(|ui| {
-                        if ui.button(crate::i18n::text("Erstellen")).clicked() || (ui.input(|i| i.key_pressed(Key::Enter)) && !name.trim().is_empty()) {
+                        let ok = !name.trim().is_empty();
+                        let create = ui.add_enabled_ui(ok, |ui| crate::icons::primary_button(ui, crate::icons::Icon::Database, crate::i18n::text("Erstellen"))).inner.clicked();
+                        if create || (ok && ui.input(|i| i.key_pressed(Key::Enter))) {
                             create_db = Some((name.trim().to_string(), collation.clone()));
                         }
-                        if ui.button(crate::i18n::text("Abbrechen")).clicked() {
+                        if ui.button(crate::i18n::text("Abbrechen")).clicked() || ui.input(|i| i.key_pressed(Key::Escape)) {
                             close = true;
                         }
                     });
                 }
                 Dialog::TableOp { db, table, copy, with_data, name } => {
                     let t = crate::i18n::tr;
-                    ui.label(RichText::new(if *copy { crate::tr_format!("Tabelle {table} kopieren", "Copy table {table}") } else { crate::tr_format!("Tabelle {table} umbenennen", "Rename table {table}") }).strong());
+                    ui.label(RichText::new(if *copy { crate::tr_format!("Tabelle {table} kopieren", "Copy table {table}") } else { crate::tr_format!("Tabelle {table} umbenennen", "Rename table {table}") }).strong().size(15.0));
                     ui.add_space(4.0);
                     let r = crate::tabs::name_field(ui, egui::Id::new("tableop-name"), name, 240.0, false);
                     let valid = !name.trim().is_empty() && name.trim() != table;
@@ -175,7 +177,7 @@ impl EasyApp {
                 Dialog::Merge { db, a, b, mode, left_col, right_col, keep_all_a, name } => {
                     let t = crate::i18n::tr;
                     let schema = self.db.as_ref().and_then(|d| self.schemas.get_arc(Some(d), db).cloned());
-                    ui.label(RichText::new(crate::tr_format!("Tabellen zusammenfügen", "Merge tables")).strong());
+                    ui.label(RichText::new(crate::tr_format!("Tabellen zusammenfügen", "Merge tables")).strong().size(15.0));
                     ui.add_space(6.0);
                     let tables: Vec<String> = schema.as_ref().map(|s| s.tables.iter().filter(|x| !x.is_view).map(|x| x.name.clone()).collect()).unwrap_or_default();
                     let (ta, tb) = schema.as_ref().map(|s| (s.table(a).cloned(), s.table(b).cloned())).unwrap_or((None, None));
@@ -256,7 +258,7 @@ impl EasyApp {
                     });
                 }
                 Dialog::Myisam(list) => {
-                    ui.label(RichText::new(crate::i18n::text("Nicht absturzsichere Tabellen")).strong());
+                    ui.label(RichText::new(crate::i18n::text("Nicht absturzsichere Tabellen")).strong().size(15.0));
                     ui.add_space(4.0);
                     ui.label(crate::tr_format!("{} Tabelle(n) verwenden MyISAM und können bei einem Absturz beschädigt werden. InnoDB ist absturzsicher.", "{} table(s) use MyISAM and may be damaged by a crash. InnoDB is crash-safe.", list.len()));
                     let names: Vec<String> = list.iter().take(10).map(|(d, t)| format!("{d}.{t}")).collect();
@@ -273,7 +275,7 @@ impl EasyApp {
                     });
                 }
                 Dialog::Unsaved { files, then } => {
-                    ui.label(RichText::new(crate::i18n::text("Ungespeicherte Änderungen")).strong());
+                    ui.label(RichText::new(crate::i18n::text("Ungespeicherte Änderungen")).strong().size(15.0));
                     ui.add_space(4.0);
                     ui.label(crate::i18n::text("Diese Dateien wurden geändert und noch nicht gespeichert:"));
                     for f in files.iter().take(8) {
@@ -298,7 +300,7 @@ impl EasyApp {
                     });
                 }
                 Dialog::ConnectFailed(e) => {
-                    ui.label(RichText::new(crate::i18n::text("Verbindung fehlgeschlagen")).strong());
+                    ui.label(RichText::new(crate::i18n::text("Verbindung fehlgeschlagen")).strong().size(15.0));
                     ui.add_space(4.0);
                     ui.label(RichText::new(e.as_str()).color(pal.error_text));
                     ui.add_space(6.0);

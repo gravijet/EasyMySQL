@@ -96,6 +96,7 @@ pub enum Icon {
     Clipboard,
     FolderInput,
     Power,
+    Mouse,
 }
 
 impl Icon {
@@ -158,6 +159,7 @@ impl Icon {
             Icon::Upload => "upload",
             Icon::Users => "users",
             Icon::ArrowUp => "arrow-up",
+            Icon::Mouse => "mouse",
             Icon::ArrowDown => "arrow-down",
             Icon::Lock => "lock",
             Icon::Edit => "pencil",
@@ -497,7 +499,7 @@ mod tests {
             FileJson, Table, Columns, Key, Link, Settings, Book, Terminal, Shield, Save, Download, Alert, Check, Info,
             Sparkles, Layers, ArrowLeft, ArrowRight, Undo, Redo, Explain, Upload, Users, ArrowUp, ArrowDown, Lock, Edit, Copy, Coffee, Package, Minus,
             Bug, Flask, Braces, StepOver, StepInto, StepOut, Stop, GitBranch, GitCommit, GitPullRequest, Github, CloudUpload, CloudDownload, GitMerge, CircleDot, RotateCcw,
-            Code, Scissors, Clipboard, FolderInput, Power,
+            Code, Scissors, Clipboard, FolderInput, Power, Mouse,
         ] {
             let polys = shapes(icon);
             assert!(!polys.is_empty(), "{icon:?}");

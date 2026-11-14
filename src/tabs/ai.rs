@@ -329,13 +329,20 @@ impl AiTab {
 
     fn kopf(&mut self, ui: &mut egui::Ui, cx: &mut Ctx, installiert: bool) {
         let pal = crate::style::pal();
+        // Gleiche Kopfzeile und Raender wie die anderen Seitenleisten (Titel 12 px vom Rand, Knoepfe als Symbole)
         ui.horizontal(|ui| {
+            ui.set_min_height(30.0);
+            ui.add_space(6.0);
             let (r, _) = ui.allocate_exact_size(egui::vec2(18.0, 18.0), egui::Sense::hover());
             icons::paint(ui.painter(), r, self.icon(), pal.text);
             ui.label(RichText::new(self.ziel.label()).strong());
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.add_space(4.0);
+                ui.spacing_mut().item_spacing.x = 2.0;
                 ui.add_enabled_ui(self.auftrag.is_none(), |ui| {
-                    ui.menu_button("…", |ui| {
+                    let mehr = icons::button(ui, Icon::More, tr("Weitere Aktionen", "More actions"));
+                    egui::Popup::menu(&mehr).show(|ui| {
+                        crate::style::menu_item_look(ui);
                         if ui.button(if installiert { tr("Aktualisieren", "Update") } else { tr("Installieren", "Install") }).clicked() {
                             self.verbindung = None;
                             self.auftrag = Some(Auftrag::installieren(ui.ctx(), self.ziel));
@@ -368,7 +375,12 @@ impl AiTab {
         // Projektordner wie das Arbeitsverzeichnis im Terminal
         let name = self.ordner.as_ref().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().to_string());
         let text = name.as_deref().unwrap_or(tr("Projektordner wählen", "Choose project folder")).to_string();
-        let knopf = ui.add_enabled_ui(!self.laeuft(), |ui| symbol_knopf(ui, Icon::Folder, &text, false)).inner;
+        let knopf = ui
+            .horizontal(|ui| {
+                ui.add_space(6.0);
+                ui.add_enabled_ui(!self.laeuft(), |ui| symbol_knopf(ui, Icon::Folder, &text, false)).inner
+            })
+            .inner;
         if knopf.on_hover_text(self.ordner.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| tr("Projektordner wählen", "Choose project folder").into())).clicked()
             && let Some(p) = rfd::FileDialog::new().pick_folder()
         {
@@ -823,7 +835,8 @@ impl TabView for AiTab {
             ui.add_space(6.0);
             if self.verlauf.is_empty() && !laeuft {
                 ui.add_space(24.0);
-                ui.vertical_centered(|ui| {
+                // Text mit Abstand zu den Raendern der Seitenleiste
+                egui::Frame::new().inner_margin(egui::Margin::symmetric(14, 0)).show(ui, |ui| ui.vertical_centered(|ui| {
                     let (r, _) = ui.allocate_exact_size(egui::vec2(36.0, 36.0), egui::Sense::hover());
                     icons::paint(ui.painter(), r, self.icon(), pal.text);
                     ui.add_space(6.0);
@@ -860,7 +873,7 @@ impl TabView for AiTab {
                         .small()
                         .color(pal.text_weak.gamma_multiply(0.8)),
                     );
-                });
+                }));
                 ui.add_space(12.0);
             }
             for (i, (nutzer, n)) in self.verlauf.iter().enumerate() {

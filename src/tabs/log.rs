@@ -153,6 +153,14 @@ impl TabView for LogTab {
         }
         let row_h = ui.text_style_height(&egui::TextStyle::Monospace);
         style::sunken_frame().show(ui, |ui| {
+            if self.visible_rows.is_empty() {
+                // Leere Flaeche erklaeren statt sie leer zu lassen
+                ui.set_min_size(ui.available_size());
+                ui.add_space(((ui.available_height() - 20.0) / 2.0).max(10.0));
+                let text = if self.cache.len() > start { crate::i18n::tr("Keine passenden Einträge.", "No matching entries.") } else { crate::i18n::tr("Noch keine Einträge.", "No entries yet.") };
+                ui.vertical_centered(|ui| ui.label(RichText::new(text).color(pal.text_weak)));
+                return;
+            }
             ui.spacing_mut().item_spacing.y = 0.0;
             super::page_keys(ui);
             egui::ScrollArea::both().stick_to_bottom(true).auto_shrink([false, false]).show_rows(ui, row_h, self.visible_rows.len(), |ui, range| {
