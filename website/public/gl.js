@@ -28,7 +28,7 @@ uniform vec3 B;          // Spiegelfarbe 2
 uniform vec3 W[6];       // Wellen: x, y, Startzeit
 uniform float O;         // Relief wandert mit seinem Abschnitt (in Bildhoehen)
 uniform float S;         // gescrollte Strecke in Bildhoehen
-uniform vec2 G;          // Groesse der Text-Texturen in Texeln
+uniform vec4 G;          // Massstab der gespeicherten Steigung (Textur vorher: xy, jetzt: zw) je Einheit der Texturkoordinate
 
 float h(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float n(vec2 p){
@@ -41,41 +41,33 @@ float fbm(vec2 p){
   for (int i = 0; i < 3; i++) { s += a * n(p); p = p * 2.03 + vec2(1.7, 9.2); a *= .5; }
   return s;
 }
-// Bikubische Abtastung (B-Spline aus vier bilinearen Abfragen): bilinear gefiltert springt die Steigung
-// an jeder Texelgrenze, und weil das Licht aus der Steigung entsteht, zeigte sich das Texelraster als
-// Treppe an den Kanten. Die B-Spline ist auch in der Steigung stetig und glaettet die 8-Bit-Stufen.
-vec4 kubisch(float v){
-  vec4 m = vec4(1., 2., 3., 4.) - v;
-  vec4 q = m * m * m;
-  float x = q.x, y = q.y - 4. * q.x, z = q.z - 4. * q.y + 6. * q.x;
-  return vec4(x, y, z, 6. - x - y - z) / 6.;
-}
-float glatt(sampler2D t, vec2 st){
-  vec2 tc = st * G - .5;
-  vec2 f = fract(tc);
-  tc -= f;
-  vec4 xc = kubisch(f.x), yc = kubisch(f.y);
-  vec4 c = tc.xxyy + vec2(-.5, 1.5).xyxy;
-  vec4 s = vec4(xc.xz + xc.yw, yc.xz + yc.yw);
-  vec4 o = (c + vec4(xc.yw, yc.yw) / s) / G.xxyy;
-  float a0 = texture2D(t, o.xz).r, a1 = texture2D(t, o.yz).r, a2 = texture2D(t, o.xw).r, a3 = texture2D(t, o.yw).r;
-  float sx = s.x / (s.x + s.y), sy = s.z / (s.z + s.w);
-  return mix(mix(a3, a2, sx), mix(a1, a0, sx), sy);
-}
-// Text: der alte schmilzt fleckig weg, der neue steigt auf
-float schrift(vec2 uv){
+// Text: der alte schmilzt fleckig weg, der neue steigt auf. Die Texturen enthalten in R den weichgezeichneten
+// Text und in G/B die Steigung der Hoehe (smootherstep von .12 bis .7 des Textwerts), einmal in JavaScript mit Gleitkomma-Genauigkeit
+// berechnet (siehe schreibe). Frueher entstand die Steigung hier aus Differenzen benachbarter 8-Bit-Werte;
+// deren Stufen zeigten sich an Rand und Flanken als Treppen und Krumen.
+// f = Textwert, g = Steigung je Einheit von uv
+void schrift(vec2 uv, out float f, out vec2 g){
   vec2 st = vec2(uv.x * R.y / R.x, uv.y) * .5 + .5;
   st.y -= O;
   float fleck = n(st * 7. + T * .15);
   float k = smoothstep(fleck - .3, fleck + .3, Q * 1.6 - .3);
-  // ausserhalb eines Wechsels genuegt der neue Text
-  if (k > .999) return glatt(X1, st);
-  return mix(glatt(X0, st), glatt(X1, st), k);
+  vec4 b = texture2D(X1, st);
+  // 128 steht genau fuer 0: so kippt keine Rundung die ganze Flaeche
+  vec2 gs = (b.gb * 255. - 128.) / 127. * G.zw;
+  f = b.r;
+  if (k < .999) {
+    vec4 a = texture2D(X0, st);
+    f = mix(a.r, f, k);
+    gs = mix((a.gb * 255. - 128.) / 127. * G.xy, gs, k);
+  }
+  // Texturkoordinate -> uv: x mit R.y/R.x * .5, y mit .5
+  g = gs * vec2(.5 * R.y / R.x, .5);
 }
-float hoehe(vec2 uv){
+// Wasseroberflaeche und Wellen (ohne Text): niederfrequent, die Steigung darf numerisch entstehen
+float meer(vec2 uv){
   vec2 ww = uv - vec2(0., S * .6);
   float see = fbm(ww * .7 + vec2(T * .035, -T * .025) + 1.1 * fbm(ww * .9 - T * .04));
-  float hh = see * .42 + smoothstep(.12, .7, schrift(uv)) * .5 * H;
+  float hh = see * .42;
   for (int i = 0; i < 6; i++) {
     float alt = T - W[i].z;
     if (alt > 0. && alt < 3.2) {
@@ -85,11 +77,13 @@ float hoehe(vec2 uv){
   }
   return hh;
 }
-void main(){
-  vec2 uv = (gl_FragCoord.xy * 2. - R) / R.y;
-  float e = 3. / R.y;
-  float c0 = hoehe(uv);
-  vec3 nn = normalize(vec3((c0 - hoehe(uv + vec2(e, 0.))) / e * .42, (c0 - hoehe(uv + vec2(0., e))) / e * .42, 1.));
+// Farbe an einem Punkt: Text-Relief aus der Textur, Wasserflaeche als schon berechnete Steigung
+vec3 farbe(vec2 uv, vec2 meerSteig){
+  float fs;
+  vec2 gt;
+  schrift(uv, fs, gt);
+  vec2 steig = meerSteig + gt * .5 * H;
+  vec3 nn = normalize(vec3(-steig * .42, 1.));
   vec3 r = reflect(vec3(0., 0., -1.), nn);
   float schraeg = 1. - nn.z;
   // was sich spiegelt: zwei Farbflaechen und ein heller Streifen, der der Maus folgt
@@ -104,7 +98,7 @@ void main(){
   // Licht von links oben (wandert mit der Maus): Kanten zum Licht hin leuchten farbig,
   // abgewandte Kanten bleiben dunkel. So wirkt das Relief wirklich erhaben.
   // volle Glanzlichter nur am Relief: die freie Flaeche bleibt ruhig, damit Text darauf lesbar ist
-  float nah = smoothstep(.02, .3, schrift(uv)) * H;
+  float nah = smoothstep(.02, .3, fs) * H;
   float kraft = mix(.46, 1., nah);
   float zum = dot(nn, normalize(vec3(-.5 + M.x * .5, .62 + M.y * .35, .6)));
   float hin = max(zum, 0.);
@@ -113,7 +107,7 @@ void main(){
   c *= 1. - schraeg * (1. - hin) * .75;
   // Die Buchstaben bestehen aus derselben Fluessigkeit: innen etwas heller und nass,
   // ein Lichtstreifen wandert langsam darueber und folgt der Maus.
-  float oben = smoothstep(.5, .7, schrift(uv)) * H;
+  float oben = smoothstep(.5, .7, fs) * H;
   float streif = smoothstep(.2, 0., abs(fract((uv.x + uv.y * .45) * .3 - T * .07 - M.x * .25) - .5) - .06);
   c += oben * (vec3(.055, .06, .085) + (A * .55 + .45) * (.1 + .42 * streif));
   c *= 1. - .38 * dot(uv * .5, uv * .5);
@@ -122,7 +116,26 @@ void main(){
   c = 1. - exp(-max(c, 0.) * 1.5);
   // abseits des Reliefs bleibt die Flaeche dunkel: heller Text hat darauf immer genug Kontrast
   c = mix(.2 * (1. - exp(-c / .2)), c, nah);
-  gl_FragColor = vec4(pow(c, vec3(.92)), 1.);
+  return pow(c, vec3(.92));
+}
+void main(){
+  vec2 uv = (gl_FragCoord.xy * 2. - R) / R.y;
+  float e = 3. / R.y;
+  float c0 = meer(uv);
+  vec2 ms = vec2(meer(uv + vec2(e, 0.)) - c0, meer(uv + vec2(0., e)) - c0) / e;
+  // Am Relief vier Punkte je Pixel (gedrehtes Raster) und mitteln: die Glanzkante zwischen Rand und
+  // Buchstabenflaeche ist schmaler als ein Pixel und wurde sonst treppig. Die freie Flaeche bleibt bei einem.
+  vec2 st = vec2(uv.x * R.y / R.x, uv.y) * .5 + .5;
+  st.y -= O;
+  float t = max(texture2D(X1, st).r, Q < .999 ? texture2D(X0, st).r : 0.);
+  if (t * H < .01) {
+    gl_FragColor = vec4(farbe(uv, ms), 1.);
+    return;
+  }
+  float p = 2. / R.y;
+  vec3 c = farbe(uv + vec2(.125, .375) * p, ms) + farbe(uv + vec2(.375, -.125) * p, ms)
+         + farbe(uv + vec2(-.125, -.375) * p, ms) + farbe(uv + vec2(-.375, .125) * p, ms);
+  gl_FragColor = vec4(c * .25, 1.);
 }`;
 
   function shader(art, quelle) {
@@ -167,56 +180,170 @@ void main(){
   }
   var texturen = [textur(0), textur(1)];
   var vorn = 1; // Index der Textur mit dem aktuellen Text
-  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+  // Zeilen werden von unten nach oben selbst geschrieben (siehe relief)
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
   var blatt = document.createElement("canvas");
-  var stift = blatt.getContext("2d");
+  var stift = blatt.getContext("2d", { willReadFrequently: true });
 
-  // Zeichnet den Text weichgezeichnet (so entsteht die Hoehe) und laedt ihn als neue Textur.
-  // Mindestens so dicht wie die Zeichenflaeche, sonst wird das Relief auf grossen Bildschirmen vergroessert.
-  var texGrenze = Math.min(4096, gl.getParameter(gl.MAX_TEXTURE_SIZE) || 2048);
-  function schreibe(spez) {
-    var breit = Math.max(480, leinwand.width, Math.round(innerWidth * Math.min(devicePixelRatio || 1, 2)));
-    var hoch = Math.round((breit * innerHeight) / innerWidth);
-    var mass0 = Math.min(1, texGrenze / breit, texGrenze / Math.max(1, hoch));
-    blatt.width = Math.max(2, Math.round(breit * mass0));
-    blatt.height = Math.max(2, Math.round(hoch * mass0));
+  var texGrenze = Math.min(2048, gl.getParameter(gl.MAX_TEXTURE_SIZE) || 2048);
+  var massstab = [
+    [0, 0],
+    [0, 0],
+  ]; // Steigungsmassstab je Textur (je Einheit der Texturkoordinate)
+  var vorrat = []; // die letzten berechneten Reliefs: beim Scrollen wechselt der Text hin und her
+
+  // Zeichnet den Text weichgezeichnet (so entsteht die Hoehe) und berechnet daraus in Gleitkomma die Steigung.
+  // Ergebnis: RGBA mit R = Text, G/B = Steigung der Hoehe je Texel (128 = 0).
+  function relief(spez, zeilen, w, h) {
+    blatt.width = w;
+    blatt.height = h;
     stift.fillStyle = "#000";
-    stift.fillRect(0, 0, blatt.width, blatt.height);
-    var zeilen = (spez && spez.zeilen) || [];
-    if (zeilen.length) {
-      var px = spez.h * blatt.height;
-      stift.font = "780 " + px + 'px "Inter Tight", system-ui, sans-serif';
-      if ("letterSpacing" in stift) stift.letterSpacing = -0.03 * px + "px";
-      var laengste = Math.max.apply(
-        null,
-        zeilen.map(function (z) {
-          return stift.measureText(z).width;
-        }),
-      );
-      // passt die laengste Zeile nicht in die Breite, wird alles kleiner
-      var mass = Math.min(1, (spez.breit * blatt.width) / laengste);
-      px *= mass;
-      stift.font = "780 " + px + 'px "Inter Tight", system-ui, sans-serif';
-      if ("letterSpacing" in stift) stift.letterSpacing = -0.03 * px + "px";
-      stift.textBaseline = "middle";
-      stift.fillStyle = "#fff";
-      stift.shadowColor = "#fff";
-      stift.shadowBlur = px * 0.055;
-      zeilen.forEach(function (zeile, i) {
-        var y = spez.y * blatt.height + (i - (zeilen.length - 1) / 2) * px * 0.9;
-        // zweimal: der Schatten macht die Kante weich, die Flaeche bleibt voll
-        stift.fillText(zeile, spez.x * blatt.width, y);
-        stift.fillText(zeile, spez.x * blatt.width, y);
-      });
-      stift.shadowBlur = 0;
+    stift.fillRect(0, 0, w, h);
+    var px = spez.h * h;
+    stift.font = "780 " + px + 'px "Inter Tight", system-ui, sans-serif';
+    if ("letterSpacing" in stift) stift.letterSpacing = -0.03 * px + "px";
+    var laengste = Math.max.apply(
+      null,
+      zeilen.map(function (z) {
+        return stift.measureText(z).width;
+      }),
+    );
+    // passt die laengste Zeile nicht in die Breite, wird alles kleiner
+    px *= Math.min(1, (spez.breit * w) / laengste);
+    stift.font = "780 " + px + 'px "Inter Tight", system-ui, sans-serif';
+    if ("letterSpacing" in stift) stift.letterSpacing = -0.03 * px + "px";
+    stift.textBaseline = "middle";
+    stift.fillStyle = "#fff";
+    stift.shadowColor = "#fff";
+    stift.shadowBlur = px * 0.055;
+    zeilen.forEach(function (zeile, i) {
+      var y = spez.y * h + (i - (zeilen.length - 1) / 2) * px * 0.9;
+      // zweimal: der Schatten macht die Kante weich, die Flaeche bleibt voll
+      stift.fillText(zeile, spez.x * w, y);
+      stift.fillText(zeile, spez.x * w, y);
+    });
+    stift.shadowBlur = 0;
+    var roh = stift.getImageData(0, 0, w, h).data;
+    var n = w * h;
+    var f = new Float32Array(n);
+    var t = new Float32Array(n);
+    for (var i = 0; i < n; i++) f[i] = roh[i * 4] / 255;
+    // Dreimal einen Kastenfilter (ueber laufende Summen) je Richtung, etwa eine Gaussglocke mit 2,5 Texeln
+    // (bei 2048 Texeln Breite; der Radius waechst mit der Textur). Das nimmt die 8-Bit-Stufen heraus und rundet
+    // den Knick an der Buchstabenkante, wo der volle Text auf den weichen Schatten trifft.
+    var r = Math.max(1, Math.round((2 * w) / 2048));
+    var teiler = 1 / (2 * r + 1);
+    // waagrecht: je Zeile eine laufende Summe
+    function waagrecht(von, nach) {
+      for (var y = 0; y < h; y++) {
+        var basis = y * w;
+        var summe = 0;
+        for (var j = -r - 1; j < r; j++) summe += von[basis + Math.min(Math.max(j, 0), w - 1)];
+        for (j = 0; j < w; j++) {
+          var rein = j + r < w ? j + r : w - 1;
+          var raus = j - r - 1 > 0 ? j - r - 1 : 0;
+          summe += von[basis + rein] - von[basis + raus];
+          nach[basis + j] = summe * teiler;
+        }
+      }
     }
+    // senkrecht: laufende Summen aller Spalten zugleich, Zeile fuer Zeile (schonend fuer den Speicher-Cache)
+    var summen = new Float32Array(w);
+    function senkrecht(von, nach) {
+      summen.fill(0);
+      for (var j = -r - 1; j < r; j++) {
+        var zeile = Math.min(Math.max(j, 0), h - 1) * w;
+        for (var x = 0; x < w; x++) summen[x] += von[zeile + x];
+      }
+      for (var y = 0; y < h; y++) {
+        var rein = (y + r < h ? y + r : h - 1) * w;
+        var raus = (y - r - 1 > 0 ? y - r - 1 : 0) * w;
+        var ziel = y * w;
+        for (x = 0; x < w; x++) {
+          summen[x] += von[rein + x] - von[raus + x];
+          nach[ziel + x] = summen[x] * teiler;
+        }
+      }
+    }
+    for (var runde = 0; runde < 3; runde++) {
+      waagrecht(f, t);
+      senkrecht(t, f);
+    }
+    // Steigung der Hoehe je Texel (t: waagrecht, gy: senkrecht; y zeigt in der Textur nach oben).
+    // Hoehe = smootherstep (6v^5 - 15v^4 + 10v^3) von .12 bis .7 des Textwerts: ihre Steigung laeuft oben und
+    // unten quadratisch aus. Mit smoothstep fiel sie linear auf null, und der gesaettigte helle Rand kippte in
+    // weniger als einem Pixel in die Buchstabenflaeche.
+    var gy = new Float32Array(n);
+    var gross = 1e-6;
+    for (var y = 0; y < h; y++) {
+      var oben = y > 0 ? -w : 0,
+        unten = y < h - 1 ? w : 0;
+      for (var x = 0; x < w; x++) {
+        var o = y * w + x;
+        var fo = f[o];
+        if (fo <= 0.12 || fo >= 0.7) {
+          t[o] = 0;
+          gy[o] = 0;
+          continue;
+        }
+        var v = (fo - 0.12) / 0.58;
+        var s = (30 * v * v * (1 - v) * (1 - v)) / 0.58;
+        var ax = (s * (f[o + (x < w - 1 ? 1 : 0)] - f[o - (x > 0 ? 1 : 0)])) / 2;
+        var ay = (-s * (f[o + unten] - f[o + oben])) / 2;
+        t[o] = ax;
+        gy[o] = ay;
+        if (ax > gross) gross = ax;
+        else if (-ax > gross) gross = -ax;
+        if (ay > gross) gross = ay;
+        else if (-ay > gross) gross = -ay;
+      }
+    }
+    var daten = new Uint8Array(n * 4);
+    var teil = 127 / gross;
+    for (y = 0; y < h; y++) {
+      var zeile = (h - 1 - y) * w; // unterste Zeile zuerst
+      for (x = 0; x < w; x++) {
+        o = y * w + x;
+        var z = (zeile + x) * 4;
+        daten[z] = Math.round(f[o] * 255);
+        daten[z + 1] = 128 + Math.round(t[o] * teil);
+        daten[z + 2] = 128 + Math.round(gy[o] * teil);
+        daten[z + 3] = 255;
+      }
+    }
+    return { daten: daten, w: w, h: h, k: gross };
+  }
+
+  // Laedt den Text (oder nichts) als neue Textur; der alte bleibt fuer den Uebergang erhalten.
+  function schreibe(spez) {
+    var zeilen = (spez && spez.zeilen) || [];
     vorn = 1 - vorn;
     gl.activeTexture(gl.TEXTURE0 + vorn);
     gl.bindTexture(gl.TEXTURE_2D, texturen[vorn]);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, blatt);
-    texGroesse = [blatt.width, blatt.height];
+    if (!zeilen.length) {
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0, 128, 128, 255]));
+      massstab[vorn] = [0, 0];
+      return;
+    }
+    // etwa so dicht wie die Zeichenflaeche (hoechstens 2048 breit): Steigung und Text werden zwischen den
+    // Texeln linear gelesen und bleiben dabei glatt, auch wenn die Textur etwas vergroessert wird
+    var breit = Math.max(480, leinwand.width);
+    var hoch = Math.round((breit * innerHeight) / innerWidth);
+    var m = Math.min(1, texGrenze / breit, texGrenze / Math.max(1, hoch));
+    var w = Math.max(2, Math.round(breit * m));
+    var h = Math.max(2, Math.round(hoch * m));
+    var schluessel = JSON.stringify([zeilen, spez.h, spez.x, spez.y, spez.breit, w, h, document.fonts ? document.fonts.status : ""]);
+    var fertig = null;
+    for (var i = 0; i < vorrat.length; i++) if (vorrat[i].schluessel === schluessel) fertig = vorrat[i];
+    if (!fertig) {
+      fertig = relief(spez, zeilen, w, h);
+      fertig.schluessel = schluessel;
+      vorrat.unshift(fertig);
+      vorrat.length = Math.min(vorrat.length, 2);
+    }
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, fertig.w, fertig.h, 0, gl.RGBA, gl.UNSIGNED_BYTE, fertig.daten);
+    massstab[vorn] = [fertig.k * fertig.w, fertig.k * fertig.h];
   }
-  var texGroesse = [1, 1];
 
   var ziel = (window.easyScene = window.easyScene || { n: 0, text: null, hoch: 1, A: [0.2, 0.35, 1], B: [0.6, 0.2, 0.9] });
   var stand = { n: -1, hoch: 0, A: ziel.A.slice(), B: ziel.B.slice(), q: 1 };
@@ -289,7 +416,7 @@ void main(){
     gl.uniform1f(u.Q, weichQ);
     gl.uniform1f(u.H, stand.hoch);
     gl.uniform1f(u.O, ziel.versatz || 0);
-    gl.uniform2f(u.G, texGroesse[0], texGroesse[1]);
+    gl.uniform4f(u.G, massstab[1 - vorn][0], massstab[1 - vorn][1], massstab[vorn][0], massstab[vorn][1]);
     gl.uniform1f(u.S, ruhig.matches ? 0 : ziel.lauf || 0);
     gl.uniform3f(u.A, stand.A[0], stand.A[1], stand.A[2]);
     gl.uniform3f(u.B, stand.B[0], stand.B[1], stand.B[2]);
