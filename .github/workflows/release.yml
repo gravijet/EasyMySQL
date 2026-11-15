@@ -12,6 +12,10 @@ on:
         options:
           - windows
           - all
+  # Ein gepushtes Versions-Tag (v1.1.19) baut ebenfalls alle Pakete; normale Pushes loesen nie ein Release aus.
+  push:
+    tags:
+      - "v*"
 
 permissions:
   contents: write
@@ -39,7 +43,7 @@ jobs:
       - id: tag
         run: |
           v=$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"(.+)".*/\1/')
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || ! git ls-remote --exit-code --tags origin "refs/tags/v$v" >/dev/null 2>&1; then
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "${{ github.event_name }}" = "push" ] || ! git ls-remote --exit-code --tags origin "refs/tags/v$v" >/dev/null 2>&1; then
             echo "new=true" >> "$GITHUB_OUTPUT"
           else
             echo "new=false" >> "$GITHUB_OUTPUT"
@@ -193,7 +197,7 @@ jobs:
   # MariaDB is not bundled there: install.sh installs it with Homebrew or the package manager.
   unix:
     needs: check
-    if: needs.check.outputs.new == 'true' && inputs.platform == 'all'
+    if: needs.check.outputs.new == 'true' && (inputs.platform == 'all' || github.event_name == 'push')
     strategy:
       fail-fast: false
       matrix:
