@@ -12,8 +12,11 @@ on:
         options:
           - windows
           - all
-  # Ein gepushtes Versions-Tag (v1.1.19) baut ebenfalls alle Pakete; normale Pushes loesen nie ein Release aus.
+  # Ein gepushtes Versions-Tag (v1.1.19) oder ein Commit auf main mit "[release]" in der Nachricht baut alle Pakete.
+  # Normale Pushes loesen nie ein Release aus (der Pruefjob wird uebersprungen und kostet keine Minuten).
   push:
+    branches:
+      - main
     tags:
       - "v*"
 
@@ -35,6 +38,7 @@ env:
 jobs:
   # Releases werden ausschliesslich manuell gestartet, um Actions-Minuten zu sparen.
   check:
+    if: github.event_name != 'push' || startsWith(github.ref, 'refs/tags/') || contains(github.event.head_commit.message, '[release]')
     runs-on: ubuntu-latest
     outputs:
       new: ${{ steps.tag.outputs.new }}
@@ -43,7 +47,8 @@ jobs:
       - id: tag
         run: |
           v=$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"(.+)".*/\1/')
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "${{ github.event_name }}" = "push" ] || ! git ls-remote --exit-code --tags origin "refs/tags/v$v" >/dev/null 2>&1; then
+          # Mit "[release]" auf main nur, wenn die Version noch kein Tag hat (kein zweites Release derselben Version)
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "${{ github.ref_type }}" = "tag" ] || ! git ls-remote --exit-code --tags origin "refs/tags/v$v" >/dev/null 2>&1; then
             echo "new=true" >> "$GITHUB_OUTPUT"
           else
             echo "new=false" >> "$GITHUB_OUTPUT"

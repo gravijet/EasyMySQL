@@ -10,7 +10,7 @@ Diese Regeln gelten für jede automatisierte Arbeit an EasyMySQL.
    verwenden, wenn der Nutzer sie ausdrücklich verlangt.
 4. Jeder Push auf `main` startet sofort den Website-Workflow, unabhängig von den geänderten Dateien.
    Die Veröffentlichung braucht die Laufzeit von GitHub Actions und Cloudflare. Die Tests laufen auch auf `main`.
-   App-Releases und Windows-UI-Builds nur auf ausdruecklichen Nutzerwunsch: manuell in GitHub Actions oder durch Push des Versions-Tags (`git tag v1.1.x && git push origin v1.1.x`, baut alle Plattformen); niemals nach einem normalen Push ausloesen.
+   App-Releases und Windows-UI-Builds nur auf ausdruecklichen Nutzerwunsch: manuell in GitHub Actions, per Versions-Tag (`v1.1.x`) oder mit `[release]` in der Commit-Nachricht auf main (baut alle Plattformen); niemals nach einem normalen Push ausloesen.
 5. Im Ergebnis nennen, was geändert und geprüft wurde und was offen ist.
 
 ## Version
