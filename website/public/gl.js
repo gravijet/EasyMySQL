@@ -291,6 +291,7 @@ void main(){
     px *= Math.min(1, (spez.breit * w) / laengste);
     schrift();
     stift.textBaseline = "middle";
+    stift.textAlign = spez.mitte ? "center" : "left";
     stift.fillStyle = "#fff";
     stift.shadowColor = "#fff";
     stift.shadowBlur = px * 0.055;

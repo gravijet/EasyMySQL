@@ -367,8 +367,11 @@
     });
     var spez = relief(art);
     if (spez) {
-      spez.x = Math.min(60, Math.max(20, innerWidth * 0.04)) / innerWidth;
-      spez.breit = (1 - 2 * spez.x) * spez.anteil;
+      // mittig ueber Satz und Download-Bereich
+      var rand = Math.min(60, Math.max(20, innerWidth * 0.04)) / innerWidth;
+      spez.x = 0.5;
+      spez.mitte = true;
+      spez.breit = (1 - 2 * rand) * spez.anteil;
     }
     szene.A = farbe[0];
     szene.B = farbe[1];

@@ -13,6 +13,10 @@
 #
 # The script downloads the newest release from mysql.benjaminberger.at, checks its SHA-256 checksum
 # and runs the regular setup silently. It never clears the terminal, so everything stays in the scrollback.
+# Administrator rights: the script itself never needs them. Only the setup for all users asks via the Windows
+# dialog (UAC); in an administrator terminal it runs without asking. If the dialog is declined or the account
+# has no administrator rights, the script installs for this user only instead. An existing installation for
+# this user only is updated without asking.
 # The file is plain ASCII on purpose: special characters are built at runtime, so no code page can garble them.
 
 & {
@@ -242,6 +246,53 @@
         if ($changed) { [Environment]::SetEnvironmentVariable('Path', ($parts -join ';'), 'User') }
     }
 
+    # Paket des Releases (setup oder portable) samt Pruefsumme
+    function Package-Info([string]$Kind) {
+        $entry = $rel.files.PSObject.Properties[$Kind]
+        $f = if ($entry) { $entry.Value } else { $null }
+        if (-not $f -or -not $f.sha256) { Fail "The current release has no $Kind package with a checksum. Try again in a few minutes." }
+        return $f
+    }
+
+    # Laden und Pruefsumme kontrollieren; liefert den Pfad der Datei
+    function Get-Package([string]$Kind) {
+        $f = Package-Info $Kind
+        $t = Join-Path $tmp $f.name
+        Download "$Site$($f.url)" $t ([double]$f.size) | Out-Null
+        $hash = (Get-FileHash -Algorithm SHA256 -Path $t).Hash.ToLower()
+        if ($hash -ne $f.sha256.ToLower()) {
+            Remove-Item -Force $t -ErrorAction SilentlyContinue
+            Fail "Checksum mismatch - the download was deleted. Expected $($f.sha256), got $hash."
+        }
+        Done 'Checksum' ("SHA-256 verified $Mute$Dot {0}$Ell{1}$Rs" -f $hash.Substring(0, 12), $hash.Substring(52))
+        return $t
+    }
+
+    # Installation nur fuer diesen Benutzer (ohne Adminrechte): entpacken nach %LOCALAPPDATA%\Programs\EasyMySQL
+    function Install-ForUser([string]$Zip) {
+        $dir = Join-Path $env:LOCALAPPDATA 'Programs\EasyMySQL'
+        Get-Process -Name EasyMySQL -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$dir*" } | ForEach-Object {
+            Warn 'Install' 'closing the running EasyMySQL'
+            $_.CloseMainWindow() | Out-Null; Start-Sleep -Seconds 3; if (-not $_.HasExited) { $_.Kill() }
+        }
+        $unpack = Join-Path $tmp 'unpack'
+        # .NET statt Expand-Archive: schneller und ohne Fortschrittsanzeige, die das Layout zerreisst
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        [IO.Compression.ZipFile]::ExtractToDirectory($Zip, $unpack)
+        $src = Join-Path $unpack 'EasyMySQL'
+        if (-not (Test-Path (Join-Path $src 'EasyMySQL.exe'))) { Fail 'The archive does not contain EasyMySQL.exe.' }
+        New-Item -ItemType Directory -Force -Path $dir | Out-Null
+        Copy-Item -Path (Join-Path $src '*') -Destination $dir -Recurse -Force
+        $userApp = Join-Path $dir 'EasyMySQL.exe'
+        Add-UserPath @($dir, (Join-Path $dir 'mariadb\bin'))
+        $menu = Join-Path ([Environment]::GetFolderPath('Programs')) 'EasyMySQL.lnk'
+        $shell = New-Object -ComObject WScript.Shell
+        $lnk = $shell.CreateShortcut($menu); $lnk.TargetPath = $userApp; $lnk.WorkingDirectory = $dir; $lnk.Save()
+        Done 'Install' (Short $dir)
+        Detail "Start menu entry $Dot PATH for this user (easymysql, mysql)"
+        return $userApp
+    }
+
     # Rahmen um die Zusammenfassung
     function Card([string]$Title, [string[][]]$Rows) {
         $w = 56
@@ -273,9 +324,17 @@
         $os = [Environment]::OSVersion.Version
         if ($os.Major -lt 10) { Fail "EasyMySQL needs Windows 10 or 11 (this is $os)." }
         $name = if ($os.Build -ge 22000) { 'Windows 11' } else { 'Windows 10' }
-        $mode = if ($Portable) { 'portable, for this user only' } else { 'installer, for all users' }
+        # Adminrechte nur, wenn sie gebraucht werden: Laeuft schon eine Installation nur fuer diesen Benutzer und keine
+        # fuer alle, wird diese ohne Nachfrage aktualisiert. Sonst fragt Windows (UAC); wer ablehnt oder kein Admin ist,
+        # bekommt automatisch die Installation fuer diesen Benutzer.
+        $IsAdmin = $false
+        try { $IsAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator) } catch {}
+        $userExe = Join-Path $env:LOCALAPPDATA 'Programs\EasyMySQL\EasyMySQL.exe'
+        $allExe = Installed-Exe
+        if (-not $Portable -and -not $IsAdmin -and -not $allExe -and (Test-Path $userExe)) { $Portable = $true }
+        $mode = if ($Portable) { 'for this user only, no administrator rights' } elseif ($IsAdmin) { 'for all users' } else { 'for all users, asks for administrator rights' }
         Done 'System' "$name $Dot 64-bit $Dot build $($os.Build) $Mute$Dot $mode$Rs"
-        $existing = if ($Portable) { Join-Path $env:LOCALAPPDATA 'Programs\EasyMySQL\EasyMySQL.exe' } else { Installed-Exe }
+        $existing = if ($Portable) { $userExe } else { $allExe }
         $old = Exe-Version $existing
 
         # 2. Release ------------------------------------------------------------------------------
@@ -288,66 +347,57 @@
         if ($task.IsFaulted) { Fail ("The release information could not be loaded: " + $task.Exception.GetBaseException().Message) }
         $rel = $task.Result | ConvertFrom-Json
         $kind = if ($Portable) { 'portable' } else { 'setup' }
-        $entry = $rel.files.PSObject.Properties[$kind]
-        $file = if ($entry) { $entry.Value } else { $null }
-        if (-not $file -or -not $file.sha256) { Fail "The current release has no $kind package with a checksum. Try again in a few minutes." }
+        $file = Package-Info $kind
         $mdb = if ($rel.PSObject.Properties['mariadb'] -and $rel.mariadb) { " $Dot MariaDB $($rel.mariadb)" } else { '' }
         $sz = " $Dot $(Size $file.size)"
         if ($old -and $old -ne $rel.version) { Done 'Version' "EasyMySQL $old $Acc$Arrow$Rs $Bo$($rel.version)$Rs$Mute$mdb$sz$Rs" }
         elseif ($old) { Done 'Version' "EasyMySQL $Bo$($rel.version)$Rs$Mute$mdb$sz $Dot reinstalling$Rs" }
         else { Done 'Version' "EasyMySQL $Bo$($rel.version)$Rs$Mute$mdb$sz$Rs" }
 
-        # 3. Download -----------------------------------------------------------------------------
+        # 3. Download und 4. Pruefsumme -----------------------------------------------------------
         $tmp = Join-Path ([IO.Path]::GetTempPath()) ("easymysql-" + [Guid]::NewGuid().ToString('N'))
         New-Item -ItemType Directory -Path $tmp | Out-Null
-        $target = Join-Path $tmp $file.name
-        Download "$Site$($file.url)" $target ([double]$file.size)
-
-        # 4. Verify -------------------------------------------------------------------------------
-        $hash = (Get-FileHash -Algorithm SHA256 -Path $target).Hash.ToLower()
-        if ($hash -ne $file.sha256.ToLower()) {
-            Fail "Checksum mismatch - the download was deleted. Expected $($file.sha256), got $hash."
-        }
-        Done 'Checksum' ("SHA-256 verified $Mute$Dot {0}$Ell{1}$Rs" -f $hash.Substring(0, 12), $hash.Substring(52))
+        $target = Get-Package $kind
 
         # 5. Install ------------------------------------------------------------------------------
         if ($Portable) {
-            $dir = Join-Path $env:LOCALAPPDATA 'Programs\EasyMySQL'
-            Get-Process -Name EasyMySQL -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$dir*" } | ForEach-Object {
-                Warn 'Install' 'closing the running EasyMySQL'
-                $_.CloseMainWindow() | Out-Null; Start-Sleep -Seconds 3; if (-not $_.HasExited) { $_.Kill() }
-            }
-            $unpack = Join-Path $tmp 'unpack'
-            # .NET statt Expand-Archive: schneller und ohne Fortschrittsanzeige, die das Layout zerreisst
-            Add-Type -AssemblyName System.IO.Compression.FileSystem
-            [IO.Compression.ZipFile]::ExtractToDirectory($target, $unpack)
-            $src = Join-Path $unpack 'EasyMySQL'
-            if (-not (Test-Path (Join-Path $src 'EasyMySQL.exe'))) { Fail 'The archive does not contain EasyMySQL.exe.' }
-            New-Item -ItemType Directory -Force -Path $dir | Out-Null
-            Copy-Item -Path (Join-Path $src '*') -Destination $dir -Recurse -Force
-            $exe = Join-Path $dir 'EasyMySQL.exe'
-            Add-UserPath @($dir, (Join-Path $dir 'mariadb\bin'))
-            $menu = Join-Path ([Environment]::GetFolderPath('Programs')) 'EasyMySQL.lnk'
-            $shell = New-Object -ComObject WScript.Shell
-            $lnk = $shell.CreateShortcut($menu); $lnk.TargetPath = $exe; $lnk.WorkingDirectory = $dir; $lnk.Save()
-            Done 'Install' (Short $dir)
-            Detail "Start menu entry $Dot PATH for this user (easymysql, mysql)"
+            $exe = Install-ForUser $target
         } else {
-            Detail 'Windows asks for administrator rights now ...'
-            try {
-                $p = Start-Process -FilePath $target -ArgumentList '/SP- /VERYSILENT /SUPPRESSMSGBOXES /NORESTART' -Verb RunAs -PassThru
-            } catch {
-                Fail 'Administrator rights were not granted. Run again with $env:EASYMYSQL_PORTABLE="1" to install without them.'
+            $setupArgs = '/SP- /VERYSILENT /SUPPRESSMSGBOXES /NORESTART'
+            $p = $null
+            if ($IsAdmin) {
+                $p = Start-Process -FilePath $target -ArgumentList $setupArgs -PassThru
+            } else {
+                Detail 'Windows now asks for administrator rights (MariaDB runtime, Start menu and PATH for all users).'
+                if ($allExe) { Detail 'They are needed because EasyMySQL is already installed for all users.' }
+                else { Detail 'Choose "No" to install for this user only - that needs no administrator rights.' }
+                try {
+                    $p = Start-Process -FilePath $target -ArgumentList $setupArgs -Verb RunAs -PassThru
+                } catch {
+                    $why = $_.Exception.GetBaseException()
+                    $declined = ($why -is [ComponentModel.Win32Exception]) -and $why.NativeErrorCode -eq 1223
+                    $reason = if ($declined) { 'administrator rights were declined' } else { "administrator rights are not available ($($why.Message))" }
+                    if ($allExe) {
+                        # Eine zweite Kopie neben der fuer alle Benutzer wuerde PATH und Dateizuordnung durcheinanderbringen
+                        Fail "EasyMySQL is installed for all users in $(Split-Path $allExe), and updating it needs administrator rights ($reason). Run the command again and choose Yes."
+                    }
+                    Warn 'Install' "$reason $Dot installing for this user only"
+                }
             }
-            Spin 'Install' 'running the setup (MariaDB, drivers, Start menu, PATH)' { -not $p.WaitForExit(0) }
-            $p.WaitForExit()
-            if ($p.ExitCode -ne 0) { Fail "The setup ended with code $($p.ExitCode)." }
-            $exe = Installed-Exe
-            if (-not $exe) { Fail 'The setup finished, but EasyMySQL.exe was not found.' }
-            $dir = Split-Path $exe
-            foreach ($d in @($dir, (Join-Path $dir 'mariadb\bin'))) { if (($env:Path -split ';') -notcontains $d) { $env:Path = "$env:Path;$d" } }
-            Done 'Install' $dir
-            Detail "MariaDB $Dot Start menu entry $Dot PATH (easymysql, mysql)"
+            if ($p) {
+                Spin 'Install' 'running the setup (MariaDB, drivers, Start menu, PATH)' { -not $p.WaitForExit(0) }
+                $p.WaitForExit()
+                if ($p.ExitCode -ne 0) { Fail "The setup ended with code $($p.ExitCode)." }
+                $exe = Installed-Exe
+                if (-not $exe) { Fail 'The setup finished, but EasyMySQL.exe was not found.' }
+                $dir = Split-Path $exe
+                foreach ($d in @($dir, (Join-Path $dir 'mariadb\bin'))) { if (($env:Path -split ';') -notcontains $d) { $env:Path = "$env:Path;$d" } }
+                Done 'Install' $dir
+                Detail "MariaDB $Dot Start menu entry $Dot PATH (easymysql, mysql)"
+            } else {
+                $Portable = $true
+                $exe = Install-ForUser (Get-Package 'portable')
+            }
         }
         Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
         $tmp = $null
