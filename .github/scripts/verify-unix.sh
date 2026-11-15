@@ -10,7 +10,7 @@ if [ "$art" = macos ]; then
   tar -xzf "dist/EasyMySQL-macos-universal-$version.tar.gz" -C "$pruefordner"
   app="$pruefordner/EasyMySQL.app"
   programm="$app/Contents/MacOS/easymysql"
-  lipo -verify_arch arm64 x86_64 "$programm"
+  lipo "$programm" -verify_arch arm64 x86_64
   plutil -lint "$app/Contents/Info.plist"
   test -s "$app/Contents/Resources/EasyMySQL.icns"
   codesign --verify --deep --strict --verbose=2 "$app"
