@@ -29,8 +29,12 @@ const TYPES: &[&str] = &[
 
 /// Datentyp-Name (fuer die Farbgebung im Editor)
 pub fn is_type(word: &str) -> bool {
-    let u = upper(word);
-    u != "COMMENT" && TYPES.binary_search(&u.as_str()).is_ok()
+    is_type_upper(&upper(word))
+}
+
+/// Wie `is_type` fuer ein schon gross geschriebenes Wort
+pub fn is_type_upper(u: &str) -> bool {
+    u != "COMMENT" && TYPES.binary_search(&u).is_ok()
 }
 
 #[derive(Clone, Debug, PartialEq)]

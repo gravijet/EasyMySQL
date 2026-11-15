@@ -808,7 +808,7 @@ impl Server {
         ini.push_str("lower_case_table_names=2\n");
         #[cfg(not(windows))]
         {
-            let sock = if data == paths.data { paths.base.join("mysql.sock") } else { data.with_extension("sock") };
+            let sock = socket_path(if data == paths.data { paths.base.join("mysql.sock") } else { data.with_extension("sock") });
             ini.push_str(&format!("socket={}\n", slash(&sock)));
             if data == paths.data {
                 ini.push_str(&format!("pid-file={}\n", slash(&paths.base.join("mysql.pid"))));
@@ -1198,6 +1198,36 @@ fn push_log(shared: &Arc<Mutex<Shared>>, kind: LogKind, text: String) {
     let n = sh.log.len();
     if n > LOG_MAX {
         sh.log.drain(0..n - LOG_MAX);
+    }
+}
+
+/// Unix-Sockets duerfen nur rund 100 Bytes lang sein (Linux 107, macOS 103). Liegt der Datenordner tief,
+/// bricht mariadbd sonst mit "socket file path is too long" ab; dann kommt der Socket in den Temp-Ordner.
+#[cfg(not(windows))]
+pub(crate) fn socket_path(preferred: PathBuf) -> PathBuf {
+    if preferred.as_os_str().len() <= 100 {
+        return preferred;
+    }
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    preferred.hash(&mut h);
+    let name = format!("easymysql-{:012x}.sock", h.finish() & 0xffff_ffff_ffff);
+    let tmp = std::env::temp_dir().join(&name);
+    if tmp.as_os_str().len() <= 100 { tmp } else { PathBuf::from("/tmp").join(name) }
+}
+
+#[cfg(all(test, not(windows)))]
+mod socket_tests {
+    use super::*;
+
+    #[test]
+    fn langer_datenordner_bekommt_kurzen_socket() {
+        let kurz = PathBuf::from("/home/a/.local/share/EasyMySQL/mysql.sock");
+        assert_eq!(socket_path(kurz.clone()), kurz);
+        let lang = PathBuf::from(format!("/home/{}/.local/share/EasyMySQL/mysql.sock", "x".repeat(120)));
+        let s = socket_path(lang.clone());
+        assert!(s.as_os_str().len() <= 100, "{s:?}");
+        assert_eq!(s, socket_path(lang), "gleicher Ordner, gleicher Socket");
     }
 }
 

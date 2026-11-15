@@ -1,5 +1,6 @@
-// Windows-spezifisches: Infobereich-Symbol (Tray), Fenster verstecken/zeigen,
-// nur eine laufende Instanz. Auf anderen Systemen (Entwicklung) leer.
+// Windows-spezifisches: Infobereich-Symbol (Tray), Fenster verstecken/zeigen.
+// Nur eine laufende Instanz: unter Windows per Mutex und Fensternachricht, unter macOS/Linux per Sperrdatei
+// und Unix-Socket. Sonst startete ein Doppelklick auf eine .sql-Datei eine zweite App mit zweitem Server.
 
 use eframe::egui;
 use std::path::PathBuf;
@@ -311,9 +312,96 @@ pub fn single_instance(files: &[PathBuf]) -> bool {
     {
         imp::single_instance(files)
     }
-    #[cfg(not(windows))]
+    #[cfg(unix)]
+    {
+        unix::single_instance(files)
+    }
+    #[cfg(not(any(windows, unix)))]
     {
         let _ = files;
+        true
+    }
+}
+
+#[cfg(unix)]
+mod unix {
+    use std::io::{Read, Write};
+    use std::os::unix::net::{UnixListener, UnixStream};
+    use std::path::PathBuf;
+    use std::sync::OnceLock;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    static WAKE: AtomicBool = AtomicBool::new(false);
+    static OPEN_HOOK: OnceLock<Box<dyn Fn() + Send + Sync>> = OnceLock::new();
+    /// Sperrdatei der ersten Instanz; bleibt bis zum Prozessende offen und gesperrt
+    static LOCK: OnceLock<std::fs::File> = OnceLock::new();
+
+    fn socket() -> PathBuf {
+        crate::server::socket_path(crate::server::app_data_dir().join("instanz.sock"))
+    }
+
+    pub fn install_open_hook(f: Box<dyn Fn() + Send + Sync>) {
+        let _ = OPEN_HOOK.set(f);
+    }
+
+    pub fn take_opened() -> Option<Vec<PathBuf>> {
+        WAKE.swap(false, Ordering::Relaxed).then(super::take_queue)
+    }
+
+    pub fn wake() {
+        WAKE.store(true, Ordering::Relaxed);
+    }
+
+    /// Laufende Instanz wecken; sie liest die Dateien aus der Warteschlange und holt ihr Fenster nach vorn
+    fn wake_remote() -> bool {
+        // Die laufende Instanz startet evtl. gerade erst: kurz auf ihren Socket warten
+        for _ in 0..25 {
+            if let Ok(mut s) = UnixStream::connect(socket()) {
+                return s.write_all(b"oeffnen\n").is_ok();
+            }
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        }
+        false
+    }
+
+    pub fn single_instance(files: &[PathBuf]) -> bool {
+        let dir = crate::server::app_data_dir();
+        let _ = std::fs::create_dir_all(&dir);
+        let Ok(lock) = std::fs::OpenOptions::new().create(true).truncate(false).write(true).open(dir.join("instanz.lock")) else {
+            return true;
+        };
+        match lock.try_lock() {
+            Ok(()) => {}
+            Err(std::fs::TryLockError::WouldBlock) => {
+                super::enqueue(files);
+                if wake_remote() {
+                    return false;
+                }
+                // Die andere Instanz antwortet nicht (haengt): lieber selbst starten als gar nichts tun
+                eprintln!("EasyMySQL: the running instance does not respond; starting a new one");
+                let _ = std::fs::remove_file(dir.join("oeffnen.txt"));
+                return true;
+            }
+            // Dateisystem ohne Sperren (z. B. manche Netzlaufwerke): wie bisher einfach starten
+            Err(_) => return true,
+        }
+        let _ = LOCK.set(lock);
+        // Wir sind die erste Instanz: ein alter Socket stammt von einem abgestuerzten Lauf
+        let path = socket();
+        let _ = std::fs::remove_file(&path);
+        if let Ok(listener) = UnixListener::bind(&path) {
+            let _ = std::thread::Builder::new().name("einzelinstanz".into()).spawn(move || {
+                for mut conn in listener.incoming().flatten() {
+                    let mut buf = [0u8; 64];
+                    let _ = conn.set_read_timeout(Some(std::time::Duration::from_secs(2)));
+                    let _ = conn.read(&mut buf);
+                    WAKE.store(true, Ordering::Relaxed);
+                    if let Some(f) = OPEN_HOOK.get() {
+                        f();
+                    }
+                }
+            });
+        }
         true
     }
 }
@@ -325,7 +413,7 @@ fn queue_file() -> PathBuf {
     crate::server::app_data_dir().join("oeffnen.txt")
 }
 
-#[cfg_attr(not(windows), allow(dead_code))]
+#[cfg_attr(not(any(windows, unix)), allow(dead_code))]
 fn enqueue(files: &[PathBuf]) {
     use std::io::Write;
     if files.is_empty() {
@@ -342,7 +430,7 @@ fn enqueue(files: &[PathBuf]) {
     }
 }
 
-#[cfg_attr(not(windows), allow(dead_code))]
+#[cfg_attr(not(any(windows, unix)), allow(dead_code))]
 fn take_queue() -> Vec<PathBuf> {
     let path = queue_file();
     let taken = path.with_extension("lesen");
@@ -361,7 +449,11 @@ pub fn take_opened_files() -> Option<Vec<PathBuf>> {
     {
         imp::take_opened()
     }
-    #[cfg(not(windows))]
+    #[cfg(unix)]
+    {
+        unix::take_opened()
+    }
+    #[cfg(not(any(windows, unix)))]
     {
         None
     }
@@ -371,13 +463,17 @@ pub fn take_opened_files() -> Option<Vec<PathBuf>> {
 pub fn check_queue() {
     #[cfg(windows)]
     imp::wake();
+    #[cfg(unix)]
+    unix::wake();
 }
 
 /// `f` aufrufen, sobald Dateien von einer zweiten Instanz eintreffen (fuer ein neues Bild)
 pub fn install_open_hook(f: Box<dyn Fn() + Send + Sync>) {
     #[cfg(windows)]
     imp::install_open_hook(f);
-    #[cfg(not(windows))]
+    #[cfg(unix)]
+    unix::install_open_hook(f);
+    #[cfg(not(any(windows, unix)))]
     let _ = f;
 }
 

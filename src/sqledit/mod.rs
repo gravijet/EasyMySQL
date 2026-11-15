@@ -140,6 +140,86 @@ struct LintState {
     shown: bool,
 }
 
+/// Werte, die nur vom Text bzw. vom Cursor abhaengen. Vorher bei jedem Bild neu berechnet: der ganze Text
+/// als Zeichenliste, alle Treffer des Namens unter dem Cursor und fuer jeden Treffer die Lage durch Ablaufen
+/// aller Zeilen (bei 5000 Treffern in 5000 Zeilen rund 12 Millionen Schritte pro Bild).
+#[derive(Default)]
+struct Deco {
+    /// Text, fuer den die Werte gelten
+    text: String,
+    valid: bool,
+    chars: Vec<char>,
+    /// Zeichenindex des Anfangs jeder Zeile
+    starts: Vec<usize>,
+    /// Cursor und Einstellungen, fuer die `bracket` und `words` gelten
+    key: Option<(usize, bool, bool)>,
+    bracket: Option<(usize, usize)>,
+    /// Gleiche Namen wie unter dem Cursor (Anfang, Ende) und der eigene
+    words: Vec<(usize, usize)>,
+    own: (usize, usize),
+}
+
+impl Deco {
+    fn sync(&mut self, text: &str) {
+        if self.valid && self.text == text {
+            return;
+        }
+        self.text.clear();
+        self.text.push_str(text);
+        self.chars = text.chars().collect();
+        self.starts.clear();
+        self.starts.push(0);
+        self.starts.extend(self.chars.iter().enumerate().filter(|(_, c)| **c == '\n').map(|(i, _)| i + 1));
+        self.valid = true;
+        self.key = None;
+    }
+
+    fn lines(&self) -> usize {
+        self.starts.len()
+    }
+
+    /// Zeile (0-basiert) eines Zeichenindex
+    fn line_of(&self, c: usize) -> usize {
+        self.starts.partition_point(|&s| s <= c).saturating_sub(1)
+    }
+
+    /// Klammerpaar und gleiche Namen fuer den Cursor `c`
+    fn at_cursor(&mut self, c: usize, brackets: bool, words: bool, lang: Lang) {
+        if self.key == Some((c, brackets, words)) {
+            return;
+        }
+        self.key = Some((c, brackets, words));
+        let chars = &self.chars;
+        let at = if !brackets {
+            None
+        } else if c > 0 && matching_bracket(chars, c - 1).is_some() {
+            Some(c - 1)
+        } else if matching_bracket(chars, c).is_some() {
+            Some(c)
+        } else {
+            None
+        };
+        self.bracket = at.and_then(|i| matching_bracket(chars, i).map(|j| (i, j)));
+        self.words.clear();
+        if words
+            && self.text.len() < 400_000
+            && let Some((wa, wb, word)) = hover::word_at(&self.text, c)
+            && word.chars().count() >= 2
+            && !(lang == Lang::Java && crate::dev::java::source::KEYWORDS.contains(&word.as_str()))
+            && !(lang == Lang::Sql && is_keyword(&word.to_uppercase()))
+        {
+            self.words = find_all(&self.text, &word, true)
+                .into_iter()
+                .filter(|&(a, b)| (a == 0 || !is_word_char(chars[a - 1])) && chars.get(b).is_none_or(|c| !is_word_char(*c)))
+                .collect();
+            self.own = (wa, wb);
+            if self.words.len() < 2 {
+                self.words.clear();
+            }
+        }
+    }
+}
+
 pub struct SqlEditor {
     pub id: egui::Id,
     /// Sprache der Datei (SQL, Java, …): Hervorhebung, Pruefung und Vorschlaege richten sich danach
@@ -192,6 +272,8 @@ pub struct SqlEditor {
     caret_screen: egui::Pos2,
     /// Beim ersten Zeichnen den Fokus nehmen (neue Abfrage, geoeffnete Datei)
     focus_next: bool,
+    /// Zwischenergebnisse fuer Klammern, gleiche Namen und Zeilen
+    deco: Deco,
 }
 
 #[derive(Default)]
@@ -249,6 +331,7 @@ impl SqlEditor {
             rename: None,
             caret_screen: egui::Pos2::ZERO,
             focus_next: true,
+            deco: Deco::default(),
         }
     }
 
@@ -925,6 +1008,10 @@ impl SqlEditor {
             let (line, _) = line_col(text, pos);
             self.goto_line(&ctx, text, line, row_h);
             self.set_cursor(&ctx, pos);
+        } else if egui::TextEdit::load_state(&ctx, self.id).is_none() {
+            // Neu geoeffnet: Cursor an den Anfang. Ohne gespeicherten Zustand setzt egui ihn ans Ende und
+            // scrollt beim ersten Fokus dorthin; bei langen Dateien sah man dann nur eine leere Flaeche.
+            self.set_cursor(&ctx, 0);
         }
 
         // Tasten fuer das Vorschlagsfenster abfangen, bevor der Editor sie bekommt
@@ -1038,7 +1125,8 @@ impl SqlEditor {
         self.update_lint(&ctx, text);
         // Hoehe der Leisten vom Editor abziehen
         let height = (height - (ui.cursor().top() - top0)).max(60.0);
-        let lines = text.split('\n').count().max(1);
+        self.deco.sync(text);
+        let lines = self.deco.lines();
         let digits = lines.to_string().len().max(2);
         let prefs = prefs();
         let marks = self.breakpoints_enabled || !self.breakpoints.is_empty();
@@ -1048,10 +1136,11 @@ impl SqlEditor {
         let num_w = if prefs.line_numbers { digits as f32 * digit_w + 4.0 } else { 0.0 };
         let mark_w = 16.0;
         let gutter_w = 6.0 + bp_w + num_w + mark_w;
-        // Wie in VS Code laesst sich ueber die letzte Zeile hinaus scrollen: unter dem Text bleibt Platz
-        // fuer die Hoehe des Fensters abzueglich einer Zeile.
+        // Wie in IntelliJ laesst sich ueber die letzte Zeile hinaus scrollen: unter dem Text bleibt eine halbe
+        // Fensterhoehe frei. Mit fast der ganzen Hoehe (wie zuvor) stand ganz unten nur noch die leere letzte
+        // Zeile im Bild und der Editor wirkte leer.
         let visible_rows = (((height - 8.0) / row_h).floor().max(3.0)) as usize;
-        let total_rows = if prefs.scroll_past_end { lines + visible_rows - 1 } else { lines };
+        let total_rows = if prefs.scroll_past_end { lines + visible_rows / 2 } else { lines };
         self.view.0 = visible_rows;
         self.view.1 = row_h;
 
@@ -1108,7 +1197,13 @@ impl SqlEditor {
                             let r = pos_of(line_start(text, l));
                             bg.push(egui::Shape::rect_filled(egui::Rect::from_x_y_ranges(text_rect.x_range(), r.y_range()), 0.0, pal.exec_bg));
                         }
-                        if let (Some(c), true) = (cur, o.response.response.has_focus()) {
+                        // Sichtbare Zeilen: nur dort Hintergruende berechnen (Lage einer Stelle kostet einen Lauf ueber die Zeilen)
+                        let clip = ui.clip_rect().expand(row_h);
+                        let first = o.galley.rows.partition_point(|row| gp.y + row.max_y() < clip.top());
+                        let last = o.galley.rows.partition_point(|row| gp.y + row.min_y() <= clip.bottom());
+                        let shown = |deco: &Deco, i: usize| (first..last).contains(&deco.line_of(i));
+                        let has_focus = o.response.response.has_focus();
+                        if let (Some(c), true) = (cur, has_focus) {
                             let r = pos_of(c);
                             if prefs.highlight_line {
                                 bg.push(egui::Shape::rect_filled(
@@ -1117,55 +1212,35 @@ impl SqlEditor {
                                     pal.current_line,
                                 ));
                             }
-                            // Klammerpaar
-                            let chars: Vec<char> = text.chars().collect();
-                            let at = if !prefs.match_brackets {
-                                None
-                            } else if c > 0 && matching_bracket(&chars, c - 1).is_some() {
-                                Some(c - 1)
-                            } else if matching_bracket(&chars, c).is_some() {
-                                Some(c)
-                            } else {
-                                None
-                            };
-                            if let Some(i) = at
-                                && let Some(j) = matching_bracket(&chars, i) {
-                                    for k in [i, j] {
-                                        let a = pos_of(k);
-                                        let b = pos_of(k + 1);
-                                        bg.push(egui::Shape::rect_filled(egui::Rect::from_min_max(a.left_top(), egui::pos2(b.left(), a.bottom())), 2.0, pal.bracket));
-                                    }
-                                }
                         }
-                        // Gleiche Namen wie unter dem Cursor dezent hinterlegen (wie in IntelliJ), nur ohne Auswahl und Suche
-                        if find_q.is_none()
-                            && let Some(r) = o.cursor_range.filter(|r| r.primary.index == r.secondary.index)
-                            && text.len() < 400_000
-                            && let Some((wa, wb, word)) = hover::word_at(text, r.primary.index.0)
-                            && word.chars().count() >= 2
-                            && !(self.lang == Lang::Java && crate::dev::java::source::KEYWORDS.contains(&word.as_str()))
-                            && !(self.lang == Lang::Sql && is_keyword(&word.to_uppercase()))
-                        {
-                            let chars: Vec<char> = text.chars().collect();
-                            let hits: Vec<(usize, usize)> = find_all(text, &word, true)
-                                .into_iter()
-                                .filter(|&(a, b)| (a == 0 || !is_word_char(chars[a - 1])) && chars.get(b).is_none_or(|c| !is_word_char(*c)))
-                                .collect();
-                            if hits.len() > 1 {
-                                let clip = ui.clip_rect();
-                                for (a, b) in hits {
-                                    let ra = pos_of(a);
-                                    if ra.bottom() < clip.top() || ra.top() > clip.bottom() {
+                        // Klammerpaar; gleiche Namen wie unter dem Cursor dezent hinterlegen (wie in IntelliJ), nur ohne Auswahl und Suche
+                        let single = o.cursor_range.filter(|r| r.primary.index == r.secondary.index).map(|r| r.primary.index.0);
+                        if let Some(c) = cur {
+                            self.deco.at_cursor(c, prefs.match_brackets && has_focus, find_q.is_none() && single == Some(c), self.lang);
+                            if let Some((i, j)) = self.deco.bracket {
+                                for k in [i, j] {
+                                    if !shown(&self.deco, k) {
                                         continue;
                                     }
-                                    let rb = pos_of(b);
-                                    let mine = a == wa && b == wb;
-                                    bg.push(egui::Shape::rect_filled(egui::Rect::from_min_max(ra.left_top(), egui::pos2(rb.left(), ra.bottom())), 2.0, pal.find_match.gamma_multiply(if mine { 0.35 } else { 0.55 })));
+                                    let a = pos_of(k);
+                                    let b = pos_of(k + 1);
+                                    bg.push(egui::Shape::rect_filled(egui::Rect::from_min_max(a.left_top(), egui::pos2(b.left(), a.bottom())), 2.0, pal.bracket));
                                 }
+                            }
+                            for &(a, b) in &self.deco.words {
+                                if !shown(&self.deco, a) {
+                                    continue;
+                                }
+                                let (ra, rb) = (pos_of(a), pos_of(b));
+                                let mine = (a, b) == self.deco.own;
+                                bg.push(egui::Shape::rect_filled(egui::Rect::from_min_max(ra.left_top(), egui::pos2(rb.left(), ra.bottom())), 2.0, pal.find_match.gamma_multiply(if mine { 0.35 } else { 0.55 })));
                             }
                         }
                         if let Some((q, case)) = &find_q {
                             for (a, b) in find_all(text, q, *case) {
+                                if !shown(&self.deco, a) {
+                                    continue;
+                                }
                                 let ra = pos_of(a);
                                 let rb = pos_of(b);
                                 if (ra.top() - rb.top()).abs() < 1.0 {
@@ -1210,12 +1285,9 @@ impl SqlEditor {
                         // Zeilennummern
                         let p = ui.painter();
                         p.rect_filled(gutter, 0.0, pal.bg);
-                        let cur_line = cur.map(|c| line_col(text, c).0);
+                        let cur_line = cur.map(|c| self.deco.line_of(c));
                         // Text never wraps: each galley row is one source line.
-                        // Only emit line-number shapes inside the visible viewport.
-                        let clip = ui.clip_rect().expand(row_h);
-                        let first = o.galley.rows.partition_point(|row| gp.y + row.max_y() < clip.top());
-                        let last = o.galley.rows.partition_point(|row| gp.y + row.min_y() <= clip.bottom());
+                        // Only emit line-number shapes inside the visible viewport (first/last from above).
                         // Haltepunkt setzen: Klick auf den Rand; die Zeile kommt aus der echten Lage der Zeilen
                         if gutter_resp.clicked()
                             && let Some(pos) = gutter_resp.interact_pointer_pos()
@@ -1360,7 +1432,8 @@ impl SqlEditor {
         }
         if let Some(c) = cursor {
             self.cursor = c;
-            let (l, col) = line_col(text, c);
+            // Zeile ueber die Zeilenanfaenge (der Text kann sich in diesem Bild noch geaendert haben)
+            let (l, col) = if self.deco.text == *text { let l = self.deco.line_of(c); (l, c - self.deco.starts[l]) } else { line_col(text, c) };
             self.line_col = (l + 1, col + 1);
         }
 
@@ -1684,6 +1757,31 @@ mod performance_tests {
         let start = std::time::Instant::now();
         for _ in 0..10 { render(); }
         println!("5,000 SQL lines: {:.3} ms/frame", start.elapsed().as_secs_f64() * 1000.0 / 10.0);
+        // Mit Fokus und Cursor auf einem Namen (Klammerpaar, gleiche Namen, aktuelle Zeile)
+        ctx.memory_mut(|m| m.request_focus(editor.id));
+        let at = text.len() / 2 + text[text.len() / 2..].find("customers").unwrap() + 3;
+        editor.set_cursor(&ctx, at);
+        let mut render = || {
+            let _ = ctx.run_ui(egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 760.0))),
+                ..Default::default()
+            }, |ui| { editor.show(ui, &mut text, 700.0); });
+        };
+        for _ in 0..3 { render(); }
+        let start = std::time::Instant::now();
+        for _ in 0..10 { render(); }
+        println!("5,000 SQL lines, focused: {:.3} ms/frame", start.elapsed().as_secs_f64() * 1000.0 / 10.0);
+        // Tippen: jedes Bild ein Zeichen
+        let start = std::time::Instant::now();
+        let rounds: usize = std::env::var("EM_ROUNDS").ok().and_then(|v| v.parse().ok()).unwrap_or(10);
+        for _ in 0..rounds {
+            let _ = ctx.run_ui(egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 760.0))),
+                events: vec![egui::Event::Text("x".into())],
+                ..Default::default()
+            }, |ui| { editor.show(ui, &mut text, 700.0); });
+        }
+        println!("5,000 SQL lines, typing: {:.3} ms/frame", start.elapsed().as_secs_f64() * 1000.0 / rounds as f64);
     }
 }
 
@@ -1731,3 +1829,4 @@ mod indent_tests {
         assert_eq!(ed.fix_all(&mut text), 0);
     }
 }
+

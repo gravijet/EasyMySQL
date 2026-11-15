@@ -11,6 +11,8 @@ pub struct GridState {
     /// Zeile, zu der beim naechsten Zeichnen gescrollt wird
     pub scroll_to: Option<usize>,
     editing: Option<(usize, usize, String, bool)>,
+    /// Anfangsbreiten der Spalten mit Schluessel der Daten, aus denen sie gemessen wurden
+    widths: Option<(u64, Vec<f32>)>,
 }
 
 impl GridState {
@@ -100,22 +102,33 @@ pub fn show(
         ui.visuals_mut().widgets.noninteractive.bg_stroke = Stroke::NONE;
         // Breite aus der echten Textbreite (laengster Wert der ersten 100 Zeilen und Ueberschrift):
         // gleich viel Luft links und rechts, breite Buchstaben werden nicht abgeschnitten
-        let body = egui::TextStyle::Body.resolve(ui.style());
-        let measure = |text: &str| ui.painter().layout_no_wrap(text.to_string(), body.clone(), egui::Color32::WHITE).size().x;
-        let widths: Vec<f32> = columns.iter().enumerate().map(|(ci, c)| {
-            let mut longest = "";
-            for r in rows.iter().take(100) {
-                if let Some(Some(v)) = r.get(ci) {
-                    let first = v.lines().next().unwrap_or("");
-                    if first.chars().count() > longest.chars().count() {
-                        longest = first;
+        // Nur neu messen, wenn sich Spalten oder Zeilen geaendert haben (vorher bei jedem Bild: bei 200 Spalten
+        // 20 000 Werte und 400 Textlayouts pro Bild, obwohl die Tabelle die Anfangsbreite nur einmal braucht)
+        let key = data_key(columns, rows, ui.ctx().pixels_per_point());
+        if state.widths.as_ref().is_none_or(|(k, _)| *k != key) {
+            let body = egui::TextStyle::Body.resolve(ui.style());
+            let measure = |text: &str| ui.painter().layout_no_wrap(text.to_string(), body.clone(), egui::Color32::WHITE).size().x;
+            let widths = columns.iter().enumerate().map(|(ci, c)| {
+                let mut longest = "";
+                let mut longest_n = 0;
+                for r in rows.iter().take(100) {
+                    if let Some(Some(v)) = r.get(ci) {
+                        let first = v.lines().next().unwrap_or("");
+                        // Laenge nur bis 41 Zeichen zaehlen: mehr wird ohnehin abgeschnitten
+                        let n = first.chars().take(41).count();
+                        if n > longest_n {
+                            longest = first;
+                            longest_n = n;
+                        }
                     }
                 }
-            }
-            let longest: String = longest.chars().take(40).collect();
-            let text_w = measure(c).max(measure(&longest));
-            (text_w + 2.0 * PAD + 4.0).ceil().clamp(60.0, 340.0)
-        }).collect();
+                let longest: String = longest.chars().take(40).collect();
+                let text_w = measure(c).max(measure(&longest));
+                (text_w + 2.0 * PAD + 4.0).ceil().clamp(60.0, 340.0)
+            }).collect();
+            state.widths = Some((key, widths));
+        }
+        let widths = state.widths.as_ref().map(|(_, w)| w.clone()).unwrap_or_default();
         let mut tb = TableBuilder::new(ui)
             .id_salt(id)
             .striped(true)
@@ -191,6 +204,9 @@ pub fn show(
                 row.set_selected(state.selected == Some(r));
                 row.col(|ui| {
                     cell_frame(ui, false);
+                    if !ui.is_rect_visible(ui.max_rect()) {
+                        return;
+                    }
                     ui.add_space(PAD);
                     let resp = ui.add(
                         egui::Label::new(RichText::new((r + 1).to_string()).color(style::pal().text_weak))
@@ -202,6 +218,11 @@ pub fn show(
                 });
                 for (c, val) in data.iter().enumerate() {
                     row.col(|ui| {
+                        // Zellen ausserhalb des sichtbaren Bereichs (breite Tabellen) nicht aufbauen
+                        let editing_here = state.editing.as_ref().is_some_and(|(er, ec, ..)| *er == r && *ec == c);
+                        if !editing_here && !ui.is_rect_visible(ui.max_rect()) {
+                            return;
+                        }
                         cell_frame(ui, false);
                         ui.add_space(PAD);
                         if let Some((er, ec, text, focused)) = state.editing.as_mut()
@@ -246,9 +267,12 @@ pub fn show(
                                 events.push(GridEvent::Activate);
                             }
                         }
+                        // Den Text fuer den Tooltip erst bauen, wenn er wirklich gezeigt wird
                         if let Some(v) = val
                             && (v.len() > 40 || v.contains('\n')) {
-                                resp.clone().on_hover_text(v.chars().take(2000).collect::<String>());
+                                resp.clone().on_hover_ui(|ui| {
+                                    ui.label(v.chars().take(2000).collect::<String>());
+                                });
                             }
                         resp.context_menu(|ui| {
                             crate::style::menu_item_look(ui);
@@ -298,6 +322,18 @@ pub fn show(
         }
     }
     events
+}
+
+/// Schluessel fuer die gemessenen Spaltenbreiten: Spaltennamen, Zeilenzahl, Lage der Zeilen im Speicher
+/// (neu geladene Daten liegen woanders) und Bildschirmskalierung
+fn data_key(columns: &[String], rows: &[Row], ppp: f32) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    columns.hash(&mut h);
+    rows.len().hash(&mut h);
+    (rows.as_ptr() as usize).hash(&mut h);
+    ppp.to_bits().hash(&mut h);
+    h.finish()
 }
 
 /// Kopiert eine Ergebnismenge als Tab-getrennten Text (fuer Excel).

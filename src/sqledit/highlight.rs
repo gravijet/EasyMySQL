@@ -44,9 +44,12 @@ pub fn is_word_char(c: char) -> bool {
 }
 
 pub fn is_keyword(w: &str) -> bool {
-    let u = w.to_ascii_uppercase();
-    KEYWORDS.binary_search(&u.as_str()).is_ok()
-        || matches!(u.as_str(), "SCHEMA" | "PROCEDURE" | "FUNCTION" | "RETURNS" | "DECLARE" | "WHILE" | "LOOP" | "DO")
+    is_keyword_upper(&w.to_ascii_uppercase())
+}
+
+/// Wie `is_keyword` fuer ein schon gross geschriebenes Wort
+pub fn is_keyword_upper(u: &str) -> bool {
+    KEYWORDS.binary_search(&u).is_ok() || matches!(u, "SCHEMA" | "PROCEDURE" | "FUNCTION" | "RETURNS" | "DECLARE" | "WHILE" | "LOOP" | "DO")
 }
 
 /// Farbige Darstellung eines SQL-Textes.
@@ -62,6 +65,284 @@ pub fn font_size() -> f32 {
 }
 
 pub fn highlight(text: &str, font: FontId) -> LayoutJob {
+    highlight_cached(text, font, &mut LineCache::default())
+}
+
+/// Zustand am Zeilenanfang: mitten in einem Blockkommentar, einer Zeichenkette oder einem `Bezeichner`
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+enum HlState {
+    Normal,
+    Block,
+    Str(char),
+    Tick,
+}
+
+/// Farbige Bereiche einer Zeile (Bytes relativ zum Zeilenanfang) und Zustand am Zeilenende
+type LineSpans = (Vec<(u32, u32, Color32)>, HlState);
+
+/// Faerbung je Zeile, damit beim Tippen nur geaenderte Zeilen neu bestimmt werden
+#[derive(Default)]
+pub(super) struct LineCache {
+    map: std::collections::HashMap<(u64, HlState), LineSpans>,
+    dark: bool,
+}
+
+/// Wie `highlight`, aber Zeilen, die sich seit dem letzten Aufruf nicht geaendert haben, kommen aus `cache`.
+/// Vorher wurde bei jedem Tastendruck der ganze Text neu eingefaerbt (bei 5000 Zeilen rund 17 ms).
+pub(super) fn highlight_cached(text: &str, font: FontId, cache: &mut LineCache) -> LayoutJob {
+    use std::hash::{Hash, Hasher};
+    let pal = crate::style::pal();
+    if cache.dark != pal.dark {
+        cache.map.clear();
+        cache.dark = pal.dark;
+    }
+    let mut old = std::mem::take(&mut cache.map);
+    let mut job = LayoutJob { text: text.to_owned(), ..Default::default() };
+    let mut st = HlState::Normal;
+    let mut offset = 0usize;
+    for line in text.split_inclusive('\n') {
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        line.hash(&mut h);
+        let key = (h.finish(), st);
+        let entry = match old.remove(&key).or_else(|| cache.map.get(&key).cloned()) {
+            Some(e) => e,
+            None => highlight_line(line, st, &pal),
+        };
+        for &(a, b, color) in &entry.0 {
+            job.sections.push(egui::text::LayoutSection {
+                leading_space: 0.0,
+                byte_range: egui::text::ByteIndex(offset + a as usize)..egui::text::ByteIndex(offset + b as usize),
+                format: TextFormat::simple(font.clone(), color),
+            });
+        }
+        st = entry.1;
+        offset += line.len();
+        cache.map.insert(key, entry);
+    }
+    job
+}
+
+/// Faerbt eine Zeile (mit ihrem Zeilenumbruch) ab dem Zustand `st`.
+fn highlight_line(line: &str, mut st: HlState, pal: &crate::style::Pal) -> LineSpans {
+    let mut out: Vec<(u32, u32, Color32)> = Vec::new();
+    let chars: Vec<(usize, char)> = line.char_indices().collect();
+    let n = chars.len();
+    let byte = |i: usize| if i < n { chars[i].0 } else { line.len() };
+    let mut push = |a: usize, b: usize, color: Color32| {
+        if b > a {
+            out.push((byte(a) as u32, byte(b) as u32, color));
+        }
+    };
+    let mut i = 0;
+    // Fortsetzung aus der vorigen Zeile
+    match st {
+        HlState::Normal => {}
+        HlState::Block => {
+            while i < n && !(chars[i].1 == '*' && i + 1 < n && chars[i + 1].1 == '/') {
+                i += 1;
+            }
+            if i < n {
+                i = (i + 2).min(n);
+                st = HlState::Normal;
+            }
+            push(0, i, pal.syn_comment);
+        }
+        HlState::Str(q) => {
+            while i < n && chars[i].1 != q {
+                if chars[i].1 == '\\' {
+                    i += 1;
+                }
+                i += 1;
+            }
+            if i < n {
+                i += 1;
+                st = HlState::Normal;
+            }
+            i = i.min(n);
+            push(0, i, pal.syn_string);
+        }
+        HlState::Tick => {
+            while i < n && chars[i].1 != '`' {
+                i += 1;
+            }
+            if i < n {
+                i += 1;
+                st = HlState::Normal;
+            }
+            push(0, i, pal.syn_ident);
+        }
+    }
+    let mut upper = String::new();
+    while i < n {
+        let c = chars[i].1;
+        let next = if i + 1 < n { chars[i + 1].1 } else { '\0' };
+        let start = i;
+        if (c == '-' && next == '-') || c == '#' {
+            while i < n && chars[i].1 != '\n' {
+                i += 1;
+            }
+            push(start, i, pal.syn_comment);
+        } else if c == '/' && next == '*' {
+            i += 2;
+            while i < n && !(chars[i].1 == '*' && i + 1 < n && chars[i + 1].1 == '/') {
+                i += 1;
+            }
+            if i < n {
+                i = (i + 2).min(n);
+            } else {
+                i = n;
+                st = HlState::Block;
+            }
+            push(start, i, pal.syn_comment);
+        } else if c == '\'' || c == '"' {
+            i += 1;
+            while i < n && chars[i].1 != c {
+                if chars[i].1 == '\\' {
+                    i += 1;
+                }
+                i += 1;
+            }
+            if i < n {
+                i += 1;
+            } else {
+                i = n;
+                st = HlState::Str(c);
+            }
+            push(start, i, pal.syn_string);
+        } else if c == '`' {
+            i += 1;
+            while i < n && chars[i].1 != '`' {
+                i += 1;
+            }
+            if i < n {
+                i += 1;
+            } else {
+                st = HlState::Tick;
+            }
+            push(start, i, pal.syn_ident);
+        } else if c.is_ascii_digit() {
+            while i < n && (chars[i].1.is_ascii_alphanumeric() || chars[i].1 == '.') {
+                i += 1;
+            }
+            push(start, i, pal.syn_number);
+        } else if c == '@' {
+            // @Variable, @@system_variable, @`name`
+            while i < n && chars[i].1 == '@' {
+                i += 1;
+            }
+            while i < n && (is_word_char(chars[i].1) || chars[i].1 == '.') {
+                i += 1;
+            }
+            push(start, i, pal.syn_variable);
+        } else if is_word_char(c) {
+            while i < n && is_word_char(chars[i].1) {
+                i += 1;
+            }
+            let word = &line[byte(start)..byte(i)];
+            let qualified = start > 0 && chars[start - 1].1 == '.';
+            let qualifier = i < n && chars[i].1 == '.';
+            let mut j = i;
+            while j < n && chars[j].1 == ' ' {
+                j += 1;
+            }
+            let call = j < n && chars[j].1 == '(';
+            // Grossschreibung einmal je Wort statt dreimal (Funktion, Typ, Schluesselwort)
+            upper.clear();
+            upper.extend(word.chars().map(|c| c.to_ascii_uppercase()));
+            let u = upper.as_str();
+            let color = if qualified {
+                pal.syn_text
+            } else if qualifier {
+                pal.syn_ident
+            } else if call && FUNCTIONS.contains(&u) {
+                pal.syn_function
+            } else if matches!(u, "NULL" | "TRUE" | "FALSE" | "UNKNOWN") {
+                pal.syn_const
+            } else if crate::sqlfmt::is_type_upper(u) {
+                pal.syn_type
+            } else if is_keyword_upper(u) {
+                pal.syn_keyword
+            } else {
+                pal.syn_text
+            };
+            push(start, i, color);
+        } else {
+            // Operatoren abgesetzt, Klammern, Kommas und Leerraum in Textfarbe
+            let op = |c: char| matches!(c, '=' | '<' | '>' | '!' | '+' | '-' | '*' | '/' | '%' | '&' | '|' | '^' | '~' | ':');
+            let is_op = op(c);
+            while i < n {
+                let c = chars[i].1;
+                let nx = if i + 1 < n { chars[i + 1].1 } else { '\0' };
+                if is_word_char(c)
+                    || c == '\''
+                    || c == '"'
+                    || c == '`'
+                    || c == '#'
+                    || c == '@'
+                    || (c == '-' && nx == '-')
+                    || (c == '/' && nx == '*')
+                    || (i > start && op(c) != is_op)
+                {
+                    break;
+                }
+                i += 1;
+            }
+            if i == start {
+                i += 1;
+            }
+            push(start, i, if is_op { pal.syn_op } else { pal.syn_text });
+        }
+    }
+    (out, st)
+}
+
+/// Reuse tokenization and glyph layout until text, font, theme or display scale changes.
+#[derive(Default)]
+pub struct SqlLayoutCache {
+    entry: Option<SqlLayout>,
+    /// Faerbung je Zeile (nur SQL)
+    lines: LineCache,
+    #[cfg(test)]
+    pub(super) builds: usize,
+}
+
+pub(super) struct SqlLayout {
+    pub(super) lang: super::Lang,
+    pub(super) text: String,
+    pub(super) font: FontId,
+    pub(super) dark: bool,
+    pub(super) scale: f32,
+    pub(super) galley: Arc<egui::Galley>,
+}
+
+impl SqlLayoutCache {
+    pub fn layout(&mut self, ui: &egui::Ui, text: &str, font: &FontId) -> Arc<egui::Galley> {
+        self.layout_lang(ui, text, font, super::Lang::Sql)
+    }
+
+    pub fn layout_lang(&mut self, ui: &egui::Ui, text: &str, font: &FontId, lang: super::Lang) -> Arc<egui::Galley> {
+        let dark = crate::style::pal().dark;
+        let scale = ui.ctx().pixels_per_point();
+        if let Some(entry) = &self.entry
+            && entry.lang == lang && entry.text == text && entry.font == *font && entry.dark == dark && entry.scale == scale {
+                return Arc::clone(&entry.galley);
+            }
+        let mut job = if lang == super::Lang::Sql { highlight_cached(text, font.clone(), &mut self.lines) } else { super::lang::highlight_lang(text, font.clone(), lang) };
+        job.wrap.max_width = f32::INFINITY;
+        let galley = ui.fonts_mut(|fonts| fonts.layout_job(job));
+        self.entry = Some(SqlLayout { lang, text: text.to_owned(), font: font.clone(), dark, scale, galley: Arc::clone(&galley) });
+        #[cfg(test)] { self.builds += 1; }
+        galley
+    }
+}
+
+/// SQL formatieren (siehe sqlfmt)
+pub fn format_sql(sql: &str) -> String {
+    crate::sqlfmt::format_sql(sql)
+}
+
+#[cfg(test)]
+pub(super) fn highlight_reference(text: &str, font: FontId) -> LayoutJob {
     let mut job = LayoutJob::default();
     let chars: Vec<(usize, char)> = text.char_indices().collect();
     let n = chars.len();
@@ -179,45 +460,80 @@ pub fn highlight(text: &str, font: FontId) -> LayoutJob {
     job
 }
 
-/// Reuse tokenization and glyph layout until text, font, theme or display scale changes.
-#[derive(Default)]
-pub struct SqlLayoutCache {
-    entry: Option<SqlLayout>,
-    #[cfg(test)]
-    pub(super) builds: usize,
-}
 
-pub(super) struct SqlLayout {
-    pub(super) lang: super::Lang,
-    pub(super) text: String,
-    pub(super) font: FontId,
-    pub(super) dark: bool,
-    pub(super) scale: f32,
-    pub(super) galley: Arc<egui::Galley>,
-}
+#[cfg(test)]
+mod line_cache_tests {
+    use super::*;
 
-impl SqlLayoutCache {
-    pub fn layout(&mut self, ui: &egui::Ui, text: &str, font: &FontId) -> Arc<egui::Galley> {
-        self.layout_lang(ui, text, font, super::Lang::Sql)
-    }
-
-    pub fn layout_lang(&mut self, ui: &egui::Ui, text: &str, font: &FontId, lang: super::Lang) -> Arc<egui::Galley> {
-        let dark = crate::style::pal().dark;
-        let scale = ui.ctx().pixels_per_point();
-        if let Some(entry) = &self.entry
-            && entry.lang == lang && entry.text == text && entry.font == *font && entry.dark == dark && entry.scale == scale {
-                return Arc::clone(&entry.galley);
+    /// Farbe je Byte, damit unterschiedliche Aufteilung in Abschnitte keine Rolle spielt
+    fn colors(job: &LayoutJob) -> Vec<Color32> {
+        let mut out = vec![Color32::TRANSPARENT; job.text.len()];
+        for s in &job.sections {
+            for b in s.byte_range.start.0..s.byte_range.end.0 {
+                out[b] = s.format.color;
             }
-        let mut job = super::lang::highlight_lang(text, font.clone(), lang);
-        job.wrap.max_width = f32::INFINITY;
-        let galley = ui.fonts_mut(|fonts| fonts.layout_job(job));
-        self.entry = Some(SqlLayout { lang, text: text.to_owned(), font: font.clone(), dark, scale, galley: Arc::clone(&galley) });
-        #[cfg(test)] { self.builds += 1; }
-        galley
+        }
+        out
+    }
+
+    #[test]
+    fn zeilenweise_faerbung_gleicht_der_bisherigen() {
+        let font = FontId::monospace(13.0);
+        let mut cases: Vec<String> = vec![
+            "SELECT a, b.c FROM t WHERE x = 'it''s' AND y > 3.5e2 -- Ende\nORDER BY COUNT(*) DESC;".into(),
+            "/* mehr-\nzeiliger\nKommentar */ SELECT 1;\n# Hash\nSELECT `a\nb` FROM t;".into(),
+            "SELECT 'Zeile 1\nZeile 2 \\' noch' , \"x\\\ny\" FROM café;\n@var := @@global.x;".into(),
+            "SELECT 1 /* offen".into(),
+            "SELECT 'offen\n\nbis zum Ende".into(),
+            "a.\nb (\n)  != <> <=>\n\n\n".into(),
+        ];
+        // Zufaellige Texte aus den heiklen Zeichen
+        let alphabet: Vec<char> = "ab9_$é '\"`\\/*-#@.()=<>\n \nSELECTnull".chars().collect();
+        let mut seed = 12345u64;
+        for _ in 0..3000 {
+            let mut t = String::new();
+            seed ^= seed << 13; seed ^= seed >> 7; seed ^= seed << 17;
+            let len = (seed % 120) as usize;
+            for _ in 0..len {
+                seed ^= seed << 13; seed ^= seed >> 7; seed ^= seed << 17;
+                t.push(alphabet[(seed % alphabet.len() as u64) as usize]);
+            }
+            cases.push(t);
+        }
+        let mut cache = LineCache::default();
+        for t in &cases {
+            assert_eq!(colors(&highlight(t, font.clone())), colors(&highlight_reference(t, font.clone())), "{t:?}");
+            // Mit gefuelltem Zwischenspeicher aus anderen Texten kommt dasselbe heraus
+            assert_eq!(colors(&highlight_cached(t, font.clone(), &mut cache)), colors(&highlight_reference(t, font.clone())), "{t:?}");
+        }
+        // Tippen: ein Zeichen nach dem anderen in einen langen Text
+        let mut t = "SELECT 1;\n".repeat(50);
+        for (k, c) in "/* x */ 'a\nb' -- c\n".chars().enumerate() {
+            t.insert(200 + k, c);
+            assert_eq!(colors(&highlight_cached(&t, font.clone(), &mut cache)), colors(&highlight_reference(&t, font.clone())), "{t:?}");
+        }
     }
 }
 
-/// SQL formatieren (siehe sqlfmt)
-pub fn format_sql(sql: &str) -> String {
-    crate::sqlfmt::format_sql(sql)
+#[cfg(test)]
+mod probe_timing {
+    #[test]
+    #[ignore = "probe"]
+    fn probe_highlight_vs_layout() {
+        let ctx = eframe::egui::Context::default();
+        let mut text = "SELECT b.id, b.name FROM perf.big b WHERE b.id > 100 AND b.name LIKE '%x%';\n".repeat(5000);
+        let font = eframe::egui::FontId::monospace(13.0);
+        let _ = ctx.run_ui(Default::default(), |ui| {
+            for i in 0..5 {
+                text.insert(text.len() / 2, 'x');
+                let t = std::time::Instant::now();
+                let mut job = super::super::lang::highlight_lang(&text, font.clone(), super::super::Lang::Sql);
+                let h = t.elapsed();
+                job.wrap.max_width = f32::INFINITY;
+                let t = std::time::Instant::now();
+                let _g = ui.fonts_mut(|f| f.layout_job(job));
+                println!("round {i}: highlight {:?}, layout {:?}", h, t.elapsed());
+            }
+        });
+    }
 }
