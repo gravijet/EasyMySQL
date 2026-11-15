@@ -82,6 +82,8 @@ pub struct Stand {
     pub kontext: Option<u64>,
     pub modell: Option<String>,
     pub komprimiert: bool,
+    /// Zaehlt jede Aenderung: die Oberflaeche kopiert den Stand nur, wenn sich etwas getan hat
+    pub rev: u64,
 }
 
 impl Stand {
@@ -423,6 +425,7 @@ impl Sitzung {
                         Protokoll::Claude => ereignis(&zeile, &mut s),
                         Protokoll::Codex(c) => c.ereignis(&zeile, &mut s, &mut leitung.lock().unwrap()),
                     }
+                    s.rev += 1;
                     drop((s, p));
                     ctx.request_repaint();
                 }
@@ -445,6 +448,7 @@ impl Sitzung {
                 if s.laeuft {
                     s.zug_ende();
                 }
+                s.rev += 1;
                 ctx.request_repaint();
             }));
         }
@@ -463,6 +467,7 @@ impl Sitzung {
             s.laeuft = true;
             s.zug_fertig = false;
             s.komprimiert = false;
+            s.rev += 1;
         }
         let ergebnis = match &mut *p {
             Protokoll::Claude => {
@@ -478,6 +483,7 @@ impl Sitzung {
             let mut s = self.stand.lock().unwrap();
             s.fehler = Some(e.clone());
             s.laeuft = false;
+            s.rev += 1;
         }
         ergebnis
     }
@@ -496,7 +502,88 @@ impl Sitzung {
         }
         s.zug_ende();
         s.nachrichten.push(Nachricht { id: "stop".into(), rolle: Rolle::Status, titel: String::new(), text: crate::i18n::tr("Abgebrochen", "Interrupted").into(), fertig: true });
+        s.rev += 1;
     }
+}
+
+/// Anmeldestand beim Anbieter
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Konto {
+    /// `None`: unbekannt (Programm fehlt oder kennt die Abfrage nicht)
+    pub angemeldet: Option<bool>,
+    /// Kurzbeschreibung, z. B. "Claude-Konto" oder "ChatGPT"
+    pub art: String,
+}
+
+/// Liest den Anmeldestand (`claude auth status`, `codex login status`); laeuft im Hintergrund.
+pub fn konto_lesen(ziel: Target) -> Konto {
+    let Some(programm) = ziel.program() else { return Konto::default() };
+    let args: &[&str] = match ziel {
+        Target::Claude => &["auth", "status"],
+        Target::Codex => &["login", "status"],
+    };
+    let mut cmd = Command::new(programm);
+    cmd.args(args).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    if let Some(path) = crate::dev::process::tool_path(&crate::dev::tools()) {
+        cmd.env("PATH", path);
+    }
+    crate::server::hidden(&mut cmd);
+    let Ok(mut kind) = cmd.spawn() else { return Konto::default() };
+    // Haengt das Programm (z. B. wartet auf Netz), nach 15 s aufgeben
+    let start = std::time::Instant::now();
+    loop {
+        match kind.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) if start.elapsed() < Duration::from_secs(15) => std::thread::sleep(Duration::from_millis(50)),
+            _ => {
+                let _ = kind.kill();
+                let _ = kind.wait();
+                return Konto::default();
+            }
+        }
+    }
+    let Ok(out) = kind.wait_with_output() else { return Konto::default() };
+    let text = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+    konto_auswerten(ziel, out.status.success(), &text)
+}
+
+fn konto_auswerten(ziel: Target, ok: bool, text: &str) -> Konto {
+    match ziel {
+        Target::Claude => {
+            let Ok(v) = serde_json::from_str::<Value>(text.trim()) else { return Konto::default() };
+            let Some(an) = v["loggedIn"].as_bool() else { return Konto::default() };
+            let art = v["email"].as_str().or(v["account"]["email"].as_str()).map(String::from).unwrap_or_else(|| match v["authMethod"].as_str().unwrap_or("") {
+                m if m.contains("api") => crate::i18n::tr("API-Schlüssel", "API key").into(),
+                _ => crate::i18n::tr("Claude-Konto", "Claude account").into(),
+            });
+            Konto { angemeldet: Some(an), art: if an { art } else { String::new() } }
+        }
+        Target::Codex => {
+            let l = text.to_lowercase();
+            if l.contains("not logged in") {
+                Konto { angemeldet: Some(false), art: String::new() }
+            } else if ok && l.contains("logged in") {
+                let art = if l.contains("api key") { crate::i18n::tr("API-Schlüssel", "API key").to_string() } else { "ChatGPT".to_string() };
+                Konto { angemeldet: Some(true), art }
+            } else {
+                Konto::default()
+            }
+        }
+    }
+}
+
+/// Abmelden beim Anbieter (`claude auth logout`, `codex logout`)
+pub fn abmelden(ziel: Target) -> Result<(), String> {
+    let programm = ziel.program().ok_or_else(|| crate::i18n::tr("Programm nicht gefunden.", "Program not found.").to_string())?;
+    let args: &[&str] = match ziel {
+        Target::Claude => &["auth", "logout"],
+        Target::Codex => &["logout"],
+    };
+    let mut cmd = Command::new(programm);
+    cmd.args(args).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    crate::server::hidden(&mut cmd);
+    let out = cmd.output().map_err(|e| e.to_string())?;
+    if out.status.success() { Ok(()) } else { Err(String::from_utf8_lossy(&out.stderr).trim().to_string()) }
 }
 
 /// Einmaliger Auftrag: Installieren oder Anmelden
@@ -557,6 +644,17 @@ mod tests {
             assert!(!s.modelle.is_empty() && !s.befehle.is_empty());
             eprintln!("{}: {} Modelle, {} Befehle", ziel.label(), s.modelle.len(), s.befehle.len());
         }
+    }
+
+    #[test]
+    fn anmeldestand_wird_gelesen() {
+        let an = konto_auswerten(Target::Claude, true, r#"{"loggedIn": true, "authMethod": "oauth_token"}"#);
+        assert_eq!(an.angemeldet, Some(true));
+        assert!(!an.art.is_empty());
+        assert_eq!(konto_auswerten(Target::Claude, false, r#"{"loggedIn": false}"#).angemeldet, Some(false));
+        assert_eq!(konto_auswerten(Target::Claude, false, "unknown command").angemeldet, None);
+        assert_eq!(konto_auswerten(Target::Codex, true, "Logged in using ChatGPT\n"), Konto { angemeldet: Some(true), art: "ChatGPT".into() });
+        assert_eq!(konto_auswerten(Target::Codex, false, "Not logged in\n").angemeldet, Some(false));
     }
 
     #[test]

@@ -106,7 +106,7 @@ pub(super) fn highlight_cached(text: &str, font: FontId, cache: &mut LineCache) 
         let key = (h.finish(), st);
         let entry = match old.remove(&key).or_else(|| cache.map.get(&key).cloned()) {
             Some(e) => e,
-            None => highlight_line(line, st, &pal),
+            None => highlight_line(line, st, pal),
         };
         for &(a, b, color) in &entry.0 {
             job.sections.push(egui::text::LayoutSection {

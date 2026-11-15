@@ -219,3 +219,27 @@ Sicherungen, Benutzerverwaltung, Git, Suche, Menüs.
    je nach Zeitpunkt eines Sprachwechsels konnte die alte Schreibweise stehen bleiben).
 7. **Ohne WebGL** klebte die Überschrift am Satz darunter.
 
+
+## 13. Dritte Runde (2026-11-15): Tempo, KI-Bereiche, Installer
+
+**Erledigt:**
+- KI-Bereiche (Claude, Codex) neu gestaltet:
+  - Konto-Knopf mit Anmeldestand (`claude auth status`, `codex login status`), Anmelden und Abmelden.
+  - Chatverlauf als eigene Ansicht: Suche, Gruppen nach Datum, Löschen; wird im Hintergrund gelesen.
+  - Eigene Nachrichten als Blase, Werkzeuge als kompakte Zeilen, Codeblöcke mit Kopf.
+  - Eingabekarte mit Ordner, Berechtigung (nur lesen / Dateien bearbeiten), Modell und Denkaufwand, Kontext-Ring.
+  - Vorschläge im leeren Chat.
+  - Tempo: 400 Nachrichten 0,14 ms je Bild, weil Nachrichten außerhalb des Bildes übersprungen werden. Der Antwortstand wird nur bei Änderungen kopiert, Animationen laufen mit 30 statt 60 Bildern je Sekunde.
+- Editor:
+  - Klammern, gleiche Namen und Suchtreffer werden nur noch für sichtbare Zeilen berechnet (5000 Zeilen: 1,9 → 0,5 ms je Bild).
+  - SQL-Färbung zeilenweise mit Zwischenspeicher.
+  - Geöffnete Datei startet oben statt mit leerer Fläche am Ende.
+- Tabellen: Spaltenbreiten werden nur bei neuen Daten gemessen, unsichtbare Zellen nicht aufgebaut (Scrollen in 200 Spalten: Oberflächen-CPU −30 %).
+- Linux/macOS: Ein zweiter Start reicht die Dateien an das laufende Fenster weiter (vorher zweiter Server auf denselben Daten).
+- MariaDB brach bei langem Datenpfad ab („socket file path is too long“); der Socket liegt dann im Temp-Ordner.
+- `install.sh` und `install.ps1` neu gestaltet: Logo mit Farbverlauf, Spinner, eigener Fortschrittsbalken, Zusammenfassung. Die Anzeige „alt → neu“ erscheint bei Updates.
+
+**Offen:**
+- Tippen in sehr großen Dateien: Jede Taste setzt den ganzen Text neu (egui-Galley, 5000 Zeilen ≈ 13 ms).
+- Vergiftete Sperren (3.1) und verschluckte Schreibfehler (3.2).
+- `install.ps1` ist nur unter PowerShell 7 (Linux) getestet, nicht unter Windows PowerShell 5.1.
