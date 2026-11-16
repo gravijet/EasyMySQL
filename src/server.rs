@@ -1,6 +1,7 @@
 // Verwaltung des mitgelieferten MariaDB-Servers: einrichten, starten, stoppen.
 // Der Server laeuft nur, solange EasyMySQL geoeffnet ist.
 
+use crate::sperre::{Sperre, LeseSperre};
 use crate::db::ConnInfo;
 use mysql::prelude::*;
 use std::io::{BufRead, BufReader};
@@ -319,7 +320,7 @@ fn follow_query_log(shared: Arc<Mutex<Shared>>) {
         offset += end as u64 + 1;
         let text = String::from_utf8_lossy(&buf[..end]);
         let time = now_text();
-        let mut sh = shared.lock().unwrap();
+        let mut sh = shared.lock_ok();
         for l in text.lines() {
             if let Some(t) = parse_query_log(l) {
                 sh.log.push(LogLine { time: time.clone(), kind: LogKind::Query, text: t, old: false });
@@ -563,35 +564,35 @@ impl Server {
     }
 
     pub fn config(&self) -> Config {
-        self.config.read().unwrap().clone()
+        self.config.read_ok().clone()
     }
 
     /// Neue Einstellungen; sie gelten ab dem naechsten Start des Servers.
     pub fn configure(&self, config: Config) {
-        *self.config.write().unwrap() = config;
+        *self.config.write_ok() = config;
     }
 
     /// Port, auf dem der Server laeuft bzw. starten wird. Nimmt keine Sperre auf den Zustand (wird auch
     /// waehrend des Beendens aufgerufen, wenn diese gehalten wird).
     pub fn port(&self) -> u16 {
-        match &*self.applied.lock().unwrap() {
+        match &*self.applied.lock_ok() {
             Some(a) => a.port,
-            None => self.config.read().unwrap().port,
+            None => self.config.read_ok().port,
         }
     }
 
     /// Laeuft der eigene Server mit anderen Einstellungen als den aktuellen? (dann Neustart noetig)
     pub fn needs_restart(&self) -> bool {
-        matches!(self.state(), State::Running { own: true }) && self.applied.lock().unwrap().as_ref().is_some_and(|a| *a != self.config())
+        matches!(self.state(), State::Running { own: true }) && self.applied.lock_ok().as_ref().is_some_and(|a| *a != self.config())
     }
 
     /// Ordner des Servers (Programme, Daten, Konfiguration); None, wenn MariaDB fehlt
     pub fn paths(&self) -> Option<Paths> {
         // Nach einem MariaDB-Update laufen die Programme aus dem Programmdatenordner
-        let own = self.config.read().unwrap().bin_dir.clone().filter(|b| b.join(format!("mariadbd{EXE}")).is_file());
+        let own = self.config.read_ok().bin_dir.clone().filter(|b| b.join(format!("mariadbd{EXE}")).is_file());
         let bin = own.or_else(|| self.bin.clone())?;
         let base = app_data_dir();
-        let data = self.config.read().unwrap().data_dir.clone().unwrap_or_else(|| base.join("data"));
+        let data = self.config.read_ok().data_dir.clone().unwrap_or_else(|| base.join("data"));
         Some(Paths { bin, data, ini: base.join("my.ini"), base })
     }
 
@@ -628,7 +629,7 @@ impl Server {
     }
 
     pub fn state(&self) -> State {
-        let mut sh = self.shared.lock().unwrap();
+        let mut sh = self.shared.lock_ok();
         // Unerwartet beendet?
         if matches!(sh.state, State::Running { own: true })
             && let Some(child) = sh.child.as_mut()
@@ -640,12 +641,12 @@ impl Server {
     }
 
     pub fn log_lines(&self) -> Vec<LogLine> {
-        self.shared.lock().unwrap().log.clone()
+        self.shared.lock_ok().log.clone()
     }
 
     /// Anzahl aller bisher angefuegten Zeilen (aendert sich bei neuen Zeilen)
     pub fn log_count(&self) -> usize {
-        self.shared.lock().unwrap().log_total
+        self.shared.lock_ok().log_total
     }
 
     pub fn log(&self, line: impl Into<String>) {
@@ -653,7 +654,7 @@ impl Server {
     }
 
     fn set_state(&self, st: State) {
-        self.shared.lock().unwrap().state = st;
+        self.shared.lock_ok().state = st;
     }
 
     /// Startet den Server im Hintergrund (nicht blockierend).
@@ -682,13 +683,13 @@ impl Server {
                 self.log(crate::tr_format!("Der EasyMySQL-Server läuft noch aus einer früheren Sitzung (Port {}) – wird übernommen.", "The EasyMySQL server is still running from a previous session (port {}) — reconnecting.",
                     port
                 ));
-                *self.applied.lock().unwrap() = Some(cfg);
+                *self.applied.lock_ok() = Some(cfg);
                 self.set_state(State::Running { own: true });
             } else {
                 self.log(crate::tr_format!("Auf Port {} läuft bereits ein anderer Datenbankserver – dieser wird verwendet.", "Another database server is already running on port {} — using it.",
                     port
                 ));
-                *self.applied.lock().unwrap() = Some(cfg);
+                *self.applied.lock_ok() = Some(cfg);
                 self.set_state(State::Running { own: false });
             }
             return Ok(());
@@ -717,14 +718,14 @@ impl Server {
         // Lief der Server beim letzten Mal noch, als EasyMySQL/der PC beendet wurde?
         if paths.session_flag().exists() {
             self.log(crate::i18n::text("Hinweis: Der Server wurde beim letzten Mal nicht sauber beendet (Absturz, Stromausfall oder hartes Beenden). MariaDB stellt die Daten jetzt automatisch wieder her, danach werden alle Tabellen geprüft."));
-            self.shared.lock().unwrap().unclean = true;
+            self.shared.lock_ok().unclean = true;
         }
 
         // 3. Server starten
         self.set_state(State::Starting);
         on_change();
         let child = self.spawn_mariadbd(&paths, &paths.ini, &[])?;
-        self.shared.lock().unwrap().child = Some(child);
+        self.shared.lock_ok().child = Some(child);
 
         // 4. Warten, bis der Port erreichbar ist
         self.wait_ready(port, Duration::from_secs(600))?;
@@ -732,7 +733,7 @@ impl Server {
         if cfg.network {
             self.log(crate::i18n::tr("Der Server ist auch von anderen Rechnern im Netzwerk erreichbar.", "The server can also be reached from other computers on the network."));
         }
-        *self.applied.lock().unwrap() = Some(cfg);
+        *self.applied.lock_ok() = Some(cfg);
         let _ = std::fs::write(paths.session_flag(), timestamp());
         self.upgrade_if_needed(&paths);
         self.set_state(State::Running { own: true });
@@ -873,7 +874,7 @@ impl Server {
         let start = Instant::now();
         loop {
             {
-                let mut sh = self.shared.lock().unwrap();
+                let mut sh = self.shared.lock_ok();
                 if let Some(c) = sh.child.as_mut()
                     && let Ok(Some(status)) = c.try_wait() {
                         sh.child = None;
@@ -1051,7 +1052,7 @@ impl Server {
 
     /// Wurde der Server beim letzten Mal nicht sauber beendet? (einmalig abfragen)
     pub fn take_unclean(&self) -> bool {
-        std::mem::take(&mut self.shared.lock().unwrap().unclean)
+        std::mem::take(&mut self.shared.lock_ok().unclean)
     }
 
     /// Nach einem Update auf eine neuere MariaDB-Version die Systemtabellen
@@ -1092,14 +1093,14 @@ impl Server {
         let st = self.state();
         if !matches!(st, State::Running { own: true } | State::Starting | State::Failed(_)) {
             if matches!(st, State::Running { own: false }) {
-                *self.applied.lock().unwrap() = None;
+                *self.applied.lock_ok() = None;
                 self.set_state(State::Stopped);
             }
             return;
         }
-        let orphan = self.shared.lock().unwrap().child.is_none();
+        let orphan = self.shared.lock_ok().child.is_none();
         if orphan && !matches!(st, State::Running { own: true }) {
-            *self.applied.lock().unwrap() = None;
+            *self.applied.lock_ok() = None;
             self.set_state(State::Stopped);
             return;
         }
@@ -1114,7 +1115,7 @@ impl Server {
             .is_ok();
         if !sql_ok {
             // Ohne Anmeldung: Signal an den Serverprozess (ebenfalls sauberes Herunterfahren)
-            let pid = self.shared.lock().unwrap().child.as_ref().map(|c| c.id()).or_else(|| self.paths().and_then(|p| p.read_pid()));
+            let pid = self.shared.lock_ok().child.as_ref().map(|c| c.id()).or_else(|| self.paths().and_then(|p| p.read_pid()));
             if let Some(pid) = pid {
                 self.log(crate::tr_format!("Sende Beenden-Signal an Prozess {pid} ...", "Sending shutdown signal to process {pid} ..."));
                 signal_shutdown(pid);
@@ -1123,7 +1124,7 @@ impl Server {
         let mut killed = false;
         let start = Instant::now();
         loop {
-            let mut sh = self.shared.lock().unwrap();
+            let mut sh = self.shared.lock_ok();
             let done = match sh.child.as_mut() {
                 Some(c) => matches!(c.try_wait(), Ok(Some(_))),
                 None => !orphan || !port_open(port),
@@ -1150,7 +1151,7 @@ impl Server {
         if let (Some(p), false) = (&self.paths(), killed) {
             let _ = std::fs::remove_file(p.session_flag());
         }
-        *self.applied.lock().unwrap() = None;
+        *self.applied.lock_ok() = None;
         self.set_state(State::Stopped);
     }
 
@@ -1192,7 +1193,7 @@ fn push_log(shared: &Arc<Mutex<Shared>>, kind: LogKind, text: String) {
     if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
         let _ = writeln!(f, "{time}\t{tag}\t{}", text.replace(['\n', '\r'], " "));
     }
-    let mut sh = shared.lock().unwrap();
+    let mut sh = shared.lock_ok();
     sh.log.push(LogLine { time, kind, text, old: false });
     sh.log_total += 1;
     let n = sh.log.len();

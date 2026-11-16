@@ -1,6 +1,7 @@
 // Debugger fuer Java: Das Programm laeuft im Terminal (mit JDWP, wartet beim Start), jdb verbindet sich im
 // Hintergrund. Haltepunkte, Schritt fuer Schritt, Variablen, Aufrufliste und Ausdruecke auswerten.
 
+use crate::sperre::Sperre;
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -12,13 +13,13 @@ use std::time::{Duration, Instant};
 static BREAKPOINTS: Mutex<Option<HashMap<PathBuf, Vec<usize>>>> = Mutex::new(None);
 
 pub fn breakpoints(file: &Path) -> Vec<usize> {
-    BREAKPOINTS.lock().unwrap().as_ref().and_then(|m| m.get(file).cloned()).unwrap_or_default()
+    BREAKPOINTS.lock_ok().as_ref().and_then(|m| m.get(file).cloned()).unwrap_or_default()
 }
 
 /// Haltepunkt an- bzw. ausschalten; laeuft eine Sitzung, gilt er sofort
 pub fn toggle_breakpoint(file: &Path, line: usize, class: Option<&str>) {
     let on = {
-        let mut g = BREAKPOINTS.lock().unwrap();
+        let mut g = BREAKPOINTS.lock_ok();
         let list = g.get_or_insert_with(HashMap::new).entry(file.to_path_buf()).or_default();
         if let Some(i) = list.iter().position(|l| *l == line) {
             list.remove(i);
@@ -36,7 +37,7 @@ pub fn toggle_breakpoint(file: &Path, line: usize, class: Option<&str>) {
 
 /// Alle Haltepunkte: (Datei, Zeile)
 fn all_breakpoints() -> Vec<(PathBuf, usize)> {
-    BREAKPOINTS.lock().unwrap().as_ref().map(|m| m.iter().flat_map(|(f, ls)| ls.iter().map(move |l| (f.clone(), *l))).collect()).unwrap_or_default()
+    BREAKPOINTS.lock_ok().as_ref().map(|m| m.iter().flat_map(|(f, ls)| ls.iter().map(move |l| (f.clone(), *l))).collect()).unwrap_or_default()
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -81,12 +82,12 @@ pub struct Session {
 static SESSION: Mutex<Option<Arc<Session>>> = Mutex::new(None);
 
 pub fn session() -> Option<Arc<Session>> {
-    SESSION.lock().unwrap().clone()
+    SESSION.lock_ok().clone()
 }
 
 /// Laeuft gerade eine Sitzung (nicht beendet)?
 pub fn active() -> bool {
-    session().is_some_and(|s| s.state.lock().unwrap().status != Status::Ended)
+    session().is_some_and(|s| s.state.lock_ok().status != Status::Ended)
 }
 
 /// Klassenname fuer eine Datei: Paket + Dateiname
@@ -113,7 +114,7 @@ pub fn start(jdb: &Path, port: u16, roots: Vec<PathBuf>, ctx: &eframe::egui::Con
         roots,
         started: Instant::now(),
     });
-    *SESSION.lock().unwrap() = Some(Arc::clone(&session));
+    *SESSION.lock_ok() = Some(Arc::clone(&session));
     let jdb = jdb.to_path_buf();
     let ctx = ctx.clone();
     std::thread::spawn(move || {
@@ -122,7 +123,7 @@ pub fn start(jdb: &Path, port: u16, roots: Vec<PathBuf>, ctx: &eframe::egui::Con
         let sourcepath = std::env::join_paths(&session.roots).map(|p| p.to_string_lossy().into_owned()).unwrap_or_default();
         let deadline = Instant::now() + Duration::from_secs(60);
         loop {
-            if session.state.lock().unwrap().status == Status::Ended {
+            if session.state.lock_ok().status == Status::Ended {
                 return;
             }
             if Instant::now() > deadline {
@@ -131,7 +132,10 @@ pub fn start(jdb: &Path, port: u16, roots: Vec<PathBuf>, ctx: &eframe::egui::Con
                 return;
             }
             let mut cmd = Command::new(&jdb);
-            cmd.arg("-attach").arg(format!("127.0.0.1:{port}"));
+            // Englische Meldungen (die Auswertung liest sie), und ausdruecklich per Socket: `-attach host:port`
+            // nimmt unter Windows Shared Memory und erreicht das Programm nie
+            cmd.args(["-J-Duser.language=en", "-J-Duser.country=US", "-connect"]);
+            cmd.arg(format!("com.sun.jdi.SocketAttach:hostname=127.0.0.1,port={port}"));
             if !sourcepath.is_empty() {
                 cmd.arg("-sourcepath").arg(&sourcepath);
             }
@@ -178,7 +182,7 @@ pub fn start(jdb: &Path, port: u16, roots: Vec<PathBuf>, ctx: &eframe::egui::Con
                 // Was jdb gemeldet hat, steht in der Konsole (hilft bei der Fehlersuche)
                 let note = seen.trim();
                 if !note.is_empty() {
-                    session.state.lock().unwrap().console.push(format!("jdb: {}", note.lines().last().unwrap_or(note)));
+                    session.state.lock_ok().console.push(format!("jdb: {}", note.lines().last().unwrap_or(note)));
                 }
                 let _ = child.kill();
                 let _ = child.wait();
@@ -189,8 +193,8 @@ pub fn start(jdb: &Path, port: u16, roots: Vec<PathBuf>, ctx: &eframe::egui::Con
                 continue;
             }
             let err = child.stderr.take();
-            *session.stdin.lock().unwrap() = child.stdin.take();
-            *session.child.lock().unwrap() = Some(child);
+            *session.stdin.lock_ok() = child.stdin.take();
+            *session.child.lock_ok() = Some(child);
             // Haltepunkte setzen, dann starten
             for (file, line) in all_breakpoints() {
                 let text = std::fs::read_to_string(&file).unwrap_or_default();
@@ -199,7 +203,7 @@ pub fn start(jdb: &Path, port: u16, roots: Vec<PathBuf>, ctx: &eframe::egui::Con
                 }
             }
             session.send("run");
-            session.state.lock().unwrap().status = Status::Running;
+            session.state.lock_ok().status = Status::Running;
             // Weiter lesen: was schon kam und alles Folgende
             {
                 let s = Arc::clone(&session);
@@ -218,7 +222,7 @@ pub fn start(jdb: &Path, port: u16, roots: Vec<PathBuf>, ctx: &eframe::egui::Con
                     let mut r = std::io::BufReader::new(e);
                     let mut line = String::new();
                     while std::io::BufRead::read_line(&mut r, &mut line).is_ok_and(|n| n > 0) {
-                        s.state.lock().unwrap().console.push(line.trim_end().to_string());
+                        s.state.lock_ok().console.push(line.trim_end().to_string());
                         line.clear();
                         ctx.request_repaint();
                     }
@@ -256,14 +260,14 @@ impl Read for ChannelReader {
 
 /// Sitzung beenden (jdb und das Programm)
 pub fn stop() {
-    if let Some(s) = SESSION.lock().unwrap().take() {
+    if let Some(s) = SESSION.lock_ok().take() {
         s.send("exit");
         std::thread::sleep(Duration::from_millis(50));
-        if let Some(mut c) = s.child.lock().unwrap().take() {
+        if let Some(mut c) = s.child.lock_ok().take() {
             let _ = c.kill();
             let _ = c.wait();
         }
-        s.state.lock().unwrap().status = Status::Ended;
+        s.state.lock_ok().status = Status::Ended;
     }
 }
 
@@ -309,15 +313,15 @@ fn parse_frame(line: &str) -> Option<(String, String, Option<usize>)> {
 
 impl Session {
     pub fn send(&self, cmd: &str) {
-        if let Some(stdin) = self.stdin.lock().unwrap().as_mut() {
+        if let Some(stdin) = self.stdin.lock_ok().as_mut() {
             let _ = stdin.write_all(format!("{cmd}\n").as_bytes());
             let _ = stdin.flush();
         }
-        self.state.lock().unwrap().console.push(format!("> {cmd}"));
+        self.state.lock_ok().console.push(format!("> {cmd}"));
     }
 
     fn fail(&self, msg: impl Into<String>) {
-        let mut st = self.state.lock().unwrap();
+        let mut st = self.state.lock_ok();
         st.error = Some(msg.into());
         st.status = Status::Ended;
     }
@@ -360,7 +364,7 @@ impl Session {
     }
 
     fn running(&self) {
-        let mut st = self.state.lock().unwrap();
+        let mut st = self.state.lock_ok();
         if matches!(st.status, Status::Paused { .. }) {
             st.status = Status::Running;
         }
@@ -388,13 +392,13 @@ impl Session {
             }
             ctx.request_repaint();
         }
-        let mut st = self.state.lock().unwrap();
+        let mut st = self.state.lock_ok();
         st.status = Status::Ended;
         ctx.request_repaint();
     }
 
     fn handle_line(&self, line: &str, section: &mut u8) {
-        let mut st = self.state.lock().unwrap();
+        let mut st = self.state.lock_ok();
         if !line.trim().is_empty() {
             st.console.push(line.to_string());
             let n = st.console.len();
@@ -484,7 +488,14 @@ mod tests {
         let out = dir.join("out");
         assert!(Command::new(jdk.javac()).arg("-g").arg("-d").arg(&out).arg(&file).status().unwrap().success());
         let port = free_port();
-        let mut prog = Command::new(jdk.java())
+        // Beendet das wartende Programm auch, wenn der Test scheitert (sonst haelt es die Ausgabe offen)
+        struct Weg(std::process::Child);
+        impl Drop for Weg {
+            fn drop(&mut self) {
+                let _ = self.0.kill();
+            }
+        }
+        let mut prog = Weg(Command::new(jdk.java())
             .arg(format!("-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=127.0.0.1:{port}"))
             .arg("-cp")
             .arg(&out)
@@ -492,14 +503,14 @@ mod tests {
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()
-            .unwrap();
+            .unwrap());
         toggle_breakpoint(&file, 5, None);
         start(&jdk.jdb(), port, vec![dir.join("src")], &eframe::egui::Context::default());
         let wait = |f: &dyn Fn(&State) -> bool| {
             let t = Instant::now();
             while t.elapsed() < Duration::from_secs(30) {
                 if let Some(s) = session()
-                    && f(&s.state.lock().unwrap())
+                    && f(&s.state.lock_ok())
                 {
                     return true;
                 }
@@ -507,12 +518,12 @@ mod tests {
             }
             false
         };
-        assert!(wait(&|s| matches!(&s.status, Status::Paused { line: 5, file: Some(f), .. } if f.ends_with("Main.java"))), "{:?}", session().map(|s| s.state.lock().unwrap().clone()));
+        assert!(wait(&|s| matches!(&s.status, Status::Paused { line: 5, file: Some(f), .. } if f.ends_with("Main.java"))), "{:?}", session().map(|s| s.state.lock_ok().clone()));
         assert!(wait(&|s| s.locals.iter().any(|(n, v)| n == "x" && v == "41") && !s.stack.is_empty()));
         session().unwrap().resume();
         assert!(wait(&|s| s.status == Status::Ended));
         stop();
-        let _ = prog.wait();
+        let _ = prog.0.wait();
         toggle_breakpoint(&file, 5, None);
         let _ = std::fs::remove_dir_all(&dir);
     }

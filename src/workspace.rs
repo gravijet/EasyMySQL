@@ -1,11 +1,48 @@
 // Projekte, Dateien, Dateiverlauf und Sitzung (wie in Visual Studio Code).
 
+use crate::sperre::LeseSperre;
 use std::path::{Path, PathBuf};
 
 // ---------------------------------------------------------------------------
 // Speicherorte
 
 static ROOT: std::sync::RwLock<Option<PathBuf>> = std::sync::RwLock::new(None);
+
+/// Noch nicht gezeigte Schreibfehler und wann welcher zuletzt gemeldet wurde
+type Fehlerliste = (Vec<String>, Vec<(String, std::time::Instant)>);
+static SCHREIBFEHLER: std::sync::Mutex<Fehlerliste> = std::sync::Mutex::new((Vec::new(), Vec::new()));
+
+/// Ein Schreibfehler soll sichtbar werden, statt Daten still zu verlieren. Die App zeigt ihn als Meldung;
+/// derselbe Fehler erscheint hoechstens einmal pro Minute.
+pub fn schreibfehler(was: &str, pfad: &Path, e: &dyn std::fmt::Display) {
+    use crate::sperre::Sperre;
+    let text = crate::tr_format!("{} konnte nicht gespeichert werden: {} ({})", "{} could not be saved: {} ({})", was, e, pfad.display());
+    let mut g = SCHREIBFEHLER.lock_ok();
+    let (offen, zuletzt) = &mut *g;
+    zuletzt.retain(|(_, t)| t.elapsed().as_secs() < 60);
+    if zuletzt.iter().any(|(t, _)| *t == text) || offen.len() >= 20 {
+        return;
+    }
+    zuletzt.push((text.clone(), std::time::Instant::now()));
+    offen.push(text);
+}
+
+/// Schreiben und einen Fehler melden; liefert, ob es geklappt hat
+pub fn melden(was: &str, pfad: &Path, r: std::io::Result<()>) -> bool {
+    match r {
+        Ok(()) => true,
+        Err(e) => {
+            schreibfehler(was, pfad, &e);
+            false
+        }
+    }
+}
+
+/// Noch nicht gezeigte Schreibfehler (fuer die Oberflaeche)
+pub fn schreibfehler_abholen() -> Vec<String> {
+    use crate::sperre::Sperre;
+    std::mem::take(&mut SCHREIBFEHLER.lock_ok().0)
+}
 
 /// Standard-Speicherordner: Dokumente\EasyMySQL
 pub fn default_root() -> PathBuf {
@@ -21,12 +58,12 @@ pub fn default_root() -> PathBuf {
 /// Speicherordner aus den Einstellungen setzen (leer = Standard).
 pub fn set_storage_root(dir: &str) {
     let p = if dir.trim().is_empty() { None } else { Some(PathBuf::from(dir.trim())) };
-    *ROOT.write().unwrap() = p;
+    *ROOT.write_ok() = p;
 }
 
 /// Ordner, in dem EasyMySQL alles speichert: neue Projekte, unbenannte Abfragen, Verlauf, ...
 pub fn storage_root() -> PathBuf {
-    ROOT.read().unwrap().clone().unwrap_or_else(default_root)
+    ROOT.read_ok().clone().unwrap_or_else(default_root)
 }
 
 /// Interne Dateien (unbenannte Abfragen, fruehere Fassungen, Diagramm-Layouts, Assistent)
@@ -410,9 +447,13 @@ fn snapshot_with(path: &Path, old_content: &str, force: bool) {
             return;
         }
     }
-    let _ = std::fs::create_dir_all(&dir);
-    let _ = std::fs::write(dir.join("pfad.txt"), path.to_string_lossy().as_bytes());
-    let _ = atomic_write(&dir.join(format!("{}.sql", crate::server::timestamp())), old_content);
+    let was = crate::i18n::tr("Die frühere Fassung", "The earlier version");
+    if !melden(was, &dir, std::fs::create_dir_all(&dir)) {
+        return;
+    }
+    melden(was, &dir.join("pfad.txt"), std::fs::write(dir.join("pfad.txt"), path.to_string_lossy().as_bytes()));
+    let ziel = dir.join(format!("{}.sql", crate::server::timestamp()));
+    melden(was, &ziel, atomic_write(&ziel, old_content));
     list = history(path);
     for (_, p) in list.iter().skip(50) {
         let _ = std::fs::remove_file(p);
@@ -625,7 +666,7 @@ impl Session {
         for tab in &self.tabs {
             t.push_str(&format!("tab={tab}\n"));
         }
-        let _ = atomic_write(&session_file(), &t);
+        melden(crate::i18n::tr("Die Sitzung", "The session"), &session_file(), atomic_write(&session_file(), &t));
     }
 }
 
@@ -727,5 +768,18 @@ mod tests {
         let moved = move_into(&g, &b).unwrap().unwrap();
         assert!(moved.exists() && !g.exists());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod schreibfehler_tests {
+    #[test]
+    fn schreibfehler_werden_einmal_gemeldet() {
+        let p = std::path::Path::new("/gibt/es/nicht/x.txt");
+        assert!(!super::melden("Test-Datei", p, std::fs::write(p, "x")));
+        assert!(!super::melden("Test-Datei", p, std::fs::write(p, "x")));
+        let f: Vec<String> = super::schreibfehler_abholen().into_iter().filter(|t| t.contains("Test-Datei")).collect();
+        assert_eq!(f.len(), 1, "{f:?}");
+        assert!(f[0].contains("x.txt"));
     }
 }

@@ -1,5 +1,6 @@
 // Terminal-Bereich unter dem Editor (wie in Visual Studio Code): mehrere Terminals in Registerkarten.
 
+use crate::sperre::Sperre;
 use super::*;
 use crate::icons::{self, Icon};
 use crate::terminal::{self, Profile, Session};
@@ -18,11 +19,14 @@ struct TermTab {
     applied: Vec<usize>,
     /// Die originalen Fehlerzeilen zu den Erklaerungen
     original: String,
+    /// Automatisches Einrichten nach einem Datenbankfehler: schon geprueft (je Lauf) und Zahl der Neustarts
+    auto_geprueft: bool,
+    auto_neustarts: u8,
 }
 
 impl TermTab {
     fn new(uid: usize, title: String, session: Session, program: bool) -> Self {
-        TermTab { uid, title, session, program, fixes: Vec::new(), analyzed: (0, None), applied: Vec::new(), original: String::new() }
+        TermTab { uid, title, session, program, fixes: Vec::new(), analyzed: (0, None), applied: Vec::new(), original: String::new(), auto_geprueft: false, auto_neustarts: 0 }
     }
 }
 
@@ -132,6 +136,8 @@ impl EasyApp {
         let mut close: Option<usize> = None;
         let mut hide = false;
         let mut fixes: Vec<crate::dev::autofix::Fix> = Vec::new();
+        // Einrichten (Knopf oder automatisch) und danach diesen Lauf neu starten: (uid, Fix, automatisch)
+        let mut einrichten: Option<(usize, crate::dev::autofix::Fix, bool)> = None;
         let mut link: Option<(String, usize, String, PathBuf)> = None;
         let frame = egui::Frame::new().fill(pal.bg);
         egui::Panel::bottom("terminal-dock").resizable(true).show_separator_line(true).default_size(280.0).min_size(110.0).frame(frame).show(ui, |ui| {
@@ -218,10 +224,25 @@ impl EasyApp {
                 } else if len != t.analyzed.0 {
                     ctx.request_repaint_after(Duration::from_millis(500));
                 }
+                // Datenbankfehler auf dem eigenen Server: einmal je Lauf von selbst einrichten und neu starten
+                if t.session.exited() && !t.auto_geprueft && len == t.analyzed.0 {
+                    t.auto_geprueft = true;
+                    if local
+                        && crate::dev::config().auto_setup
+                        && t.auto_neustarts < 2
+                        && let Some(f) = t.fixes.iter().find_map(|s| s.fix.clone().filter(|f| matches!(f, crate::dev::autofix::Fix::Einrichten { .. })))
+                    {
+                        einrichten = Some((t.uid, f, true));
+                    }
+                }
                 if !t.fixes.is_empty() {
                     let (apply, rerun) = fix_bar(ui, &t.fixes, &t.applied, &t.original, t.session.exited());
                     for i in apply {
                         if let Some(f) = t.fixes[i].fix.clone() {
+                            if matches!(f, crate::dev::autofix::Fix::Einrichten { .. }) {
+                                einrichten = Some((t.uid, f, false));
+                                continue;
+                            }
                             if !matches!(f, crate::dev::autofix::Fix::Schema { .. } | crate::dev::autofix::Fix::DeklarierteStruktur { .. }) {
                                 t.applied.push(i);
                             }
@@ -232,6 +253,7 @@ impl EasyApp {
                         t.session.restart(&ctx);
                         t.fixes.clear();
                         t.analyzed = (0, None);
+                        t.auto_geprueft = false;
                     }
                 }
             }
@@ -263,6 +285,22 @@ impl EasyApp {
         for f in fixes {
             self.apply_fix(f);
         }
+        if let Some((uid, crate::dev::autofix::Fix::Einrichten { root, datenbank }, auto)) = einrichten
+            && self.projekt_einrichten(&root, datenbank.as_deref(), auto)
+            && let Some(t) = self.terminal.tabs.iter_mut().find(|t| t.uid == uid)
+        {
+            // Behoben: das Programm laeuft gleich noch einmal
+            if t.session.exited() {
+                t.session.restart(&ctx);
+                t.fixes.clear();
+                t.applied.clear();
+                t.analyzed = (0, None);
+                t.auto_geprueft = false;
+                if auto {
+                    t.auto_neustarts += 1;
+                }
+            }
+        }
         if let Some((file, line, text, cwd)) = link {
             match crate::dev::autofix::resolve(self.project.as_deref(), Some(&cwd), &text, &file) {
                 Some(path) => self.handle_actions(vec![Action::OpenFileAt { path, line }]),
@@ -271,10 +309,90 @@ impl EasyApp {
         }
     }
 
+    /// Alles einrichten, was das Projekt in `root` an der Datenbank braucht. `auto`: ohne Rueckfragen und ohne
+    /// Meldung, wenn nichts zu tun ist (vor dem Start, nach einem Fehler); nur auf dem eigenen Server.
+    /// Liefert true, wenn etwas angelegt wurde.
+    pub(super) fn projekt_einrichten(&mut self, root: &Path, db: Option<&str>, auto: bool) -> bool {
+        let local = self.is_local();
+        if auto && !local {
+            return false;
+        }
+        let Some(dbc) = &self.db else {
+            if !auto {
+                self.error(crate::i18n::text("Nicht verbunden").to_string());
+            }
+            return false;
+        };
+        // Automatisch nur in die Datenbank, die das Projekt selbst nennt, nie in die gerade gewaehlte
+        let aktuell = if auto { String::new() } else { self.current_db.clone() };
+        let plan = match crate::dev::einrichten::planen(dbc, root, db, &aktuell, !auto) {
+            Ok(Some(p)) => p,
+            Ok(None) => {
+                if !auto {
+                    self.toast(crate::i18n::tr("Alles, was der Code braucht, ist schon da.", "Everything the code needs is already there."));
+                }
+                return false;
+            }
+            Err(e) => {
+                if !auto {
+                    self.error(e);
+                }
+                return false;
+            }
+        };
+        let ziel = plan.datenbank.clone();
+        if !local {
+            // Fremder Server: erst ansehen, dann ausfuehren
+            let (host, port) = (dbc.info.host.clone(), dbc.info.port);
+            let zusammenfassung = plan.zusammenfassung();
+            self.dialogs.push(super::dialogs::Dialog::ConfirmProject {
+                text: crate::tr_format!("Auf {host}:{port} einrichten: {zusammenfassung}? Es wird nur ergänzt, nichts gelöscht.", "Set up on {host}:{port}: {zusammenfassung}? Only additions, nothing is deleted."),
+                db: ziel,
+                sql: if plan.sql.is_empty() { "DO 0".into() } else { plan.sql },
+            });
+            return false;
+        }
+        let ergebnis = crate::dev::einrichten::ausfuehren(dbc, &plan);
+        self.refresh_all();
+        self.handle_actions(vec![Action::SchemaChanged(ziel.clone())]);
+        match ergebnis {
+            Ok(()) => {
+                let zusammenfassung = plan.zusammenfassung();
+                self.toast(if auto {
+                    crate::tr_format!("Automatisch eingerichtet in {ziel}: {zusammenfassung}", "Set up automatically in {ziel}: {zusammenfassung}")
+                } else {
+                    crate::tr_format!("Eingerichtet in {ziel}: {zusammenfassung}", "Set up in {ziel}: {zusammenfassung}")
+                });
+                for h in &plan.hinweise {
+                    self.toast(h.clone());
+                }
+                if self.current_db.is_empty() {
+                    self.current_db = ziel;
+                }
+                // Erledigte Datenbank-Vorschlaege abhaken
+                for t in &mut self.terminal.tabs {
+                    for (i, s) in t.fixes.iter().enumerate() {
+                        if matches!(s.fix, Some(crate::dev::autofix::Fix::Einrichten { .. } | crate::dev::autofix::Fix::ProjektSql { .. } | crate::dev::autofix::Fix::CreateDatabase(_))) && !t.applied.contains(&i) {
+                            t.applied.push(i);
+                        }
+                    }
+                }
+                true
+            }
+            Err(e) => {
+                self.error(crate::tr_format!("Einrichten in {ziel} ist nicht ganz gelungen. Bereits Angelegtes bleibt bestehen.\n{e}", "Setting up {ziel} did not fully work. What was already created stays.\n{e}"));
+                false
+            }
+        }
+    }
+
     /// Erkannten Fehler beheben (aus dem Terminal oder der Ausgabe eines Editors)
     pub(super) fn apply_fix(&mut self, fix: crate::dev::autofix::Fix) {
         use crate::dev::autofix::Fix;
         match fix {
+            Fix::Einrichten { root, datenbank } => {
+                self.projekt_einrichten(&root, datenbank.as_deref(), false);
+            }
             Fix::Edit(edit) => {
                 let n = self.write_edit(&edit);
                 self.toast(crate::tr_format!("Behoben in {n} Datei(en).", "Fixed in {n} file(s)."));
@@ -372,13 +490,13 @@ impl EasyApp {
                 });
             }
             Fix::StartServer => {
-                if let Some(ctx) = CTX.lock().unwrap().clone() {
+                if let Some(ctx) = CTX.lock_ok().clone() {
                     self.start_server(&ctx);
                 }
             }
             Fix::ConnectionSettings => self.handle_actions(vec![Action::OpenSettings(Some("verbindung".into()))]),
             Fix::Install(tool) => {
-                if let Some(ctx) = CTX.lock().unwrap().clone() {
+                if let Some(ctx) = CTX.lock_ok().clone() {
                     crate::dev::install::install(&[tool], &ctx);
                 }
             }
@@ -462,7 +580,7 @@ mod tests {
         dbc.exec(&format!("CREATE DATABASE {}", crate::db::q(&db)), ()).unwrap();
         let ergebnis = (|| {
             let fixes = crate::dev::autofix::analyze_output(&format!("Table '{db}.auftrag' doesn't exist"), Some(&root), None, true);
-            let Some(crate::dev::autofix::Fix::DeklarierteStruktur { plaene, .. }) = &fixes[0].fix else { panic!("{fixes:?}") };
+            let Some(crate::dev::autofix::Fix::DeklarierteStruktur { plaene, .. }) = fixes.iter().find_map(|f| f.fix.as_ref().filter(|x| matches!(x, crate::dev::autofix::Fix::DeklarierteStruktur { .. }))) else { panic!("{fixes:?}") };
             let schema = dbc.schema(&db)?;
             assert!(datenbank_festgelegt(plaene, &schema));
             let sql = crate::sqledit::plan_sql(plaene, &schema, &[]).unwrap();

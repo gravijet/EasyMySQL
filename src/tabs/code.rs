@@ -3,6 +3,7 @@
 // Definition, Umbenennen), SQL-Pruefung in Zeichenketten und Vorlagen fuer Tabellen.
 // Dazu Gradle-Skripte, XML, JSON, .properties und Text.
 
+use crate::sperre::Sperre;
 use super::{Action, Ctx, TabView};
 use crate::dev::java::{self, run as jrun, source};
 use crate::dev::process::{Failure, Launch};
@@ -446,7 +447,7 @@ impl CodeTab {
             if !tools.has(tool) {
                 // Einmal pro Programmstart im Hintergrund laden (wenn erlaubt)
                 static ASKED: Mutex<Vec<Tool>> = Mutex::new(Vec::new());
-                let mut asked = ASKED.lock().unwrap();
+                let mut asked = ASKED.lock_ok();
                 if !asked.contains(&tool) && dev::config().auto_download && !install::status().busy {
                     asked.push(tool);
                     install::install(&[tool], ctx);
@@ -461,11 +462,11 @@ impl CodeTab {
             }
         }
         let Some(server) = self.lsp.clone() else { return };
-        self.lsp_note = match &*server.phase.lock().unwrap() {
+        self.lsp_note = match &*server.phase.lock_ok() {
             lsp::Phase::Starting => Some(crate::tr_format!("{} startet …", "{} is starting …", lsp::tool_for(self.lang).map(|t| t.label()).unwrap_or(""))),
             lsp::Phase::Failed(e) => Some(e.clone()),
             lsp::Phase::Ready => {
-                let p = server.progress.lock().unwrap().clone();
+                let p = server.progress.lock_ok().clone();
                 (!p.is_empty()).then_some(p)
             }
         };
@@ -882,7 +883,7 @@ impl CodeTab {
                 ui.label(RichText::new(self.lang.label()).small().color(pal.text_weak));
                 // Sprachserver: nur ein ruhiges Symbol (kein wechselnder Text); Einzelheiten beim Zeigen
                 if let Some(note) = &self.lsp_note {
-                    let failed = self.lsp.as_ref().is_some_and(|s| matches!(*s.phase.lock().unwrap(), lsp::Phase::Failed(_)));
+                    let failed = self.lsp.as_ref().is_some_and(|s| matches!(*s.phase.lock_ok(), lsp::Phase::Failed(_)));
                     let (r, resp) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
                     icons::paint(ui.painter(), r, if failed { Icon::Alert } else { Icon::Braces }, if failed { pal.warn_text } else { pal.text_weak.gamma_multiply(0.7) });
                     resp.on_hover_text(note);
@@ -950,7 +951,7 @@ impl CodeTab {
             }
             RunState::Preparing(_, live, goal) => {
                 ui.spinner();
-                let line = live.lock().unwrap().clone();
+                let line = live.lock_ok().clone();
                 let text = if !line.is_empty() {
                     line
                 } else {
@@ -1220,7 +1221,7 @@ impl CodeTab {
             if let Some((_, live)) = &d.adding {
                 ui.horizontal(|ui| {
                     ui.spinner();
-                    let t = live.lock().unwrap().clone();
+                    let t = live.lock_ok().clone();
                     ui.add(egui::Label::new(RichText::new(if t.is_empty() { crate::i18n::tr("Wird eingebunden …", "Adding …").to_string() } else { t }).small().color(pal.text_weak)).truncate());
                 });
             }
@@ -1325,14 +1326,14 @@ impl CodeTab {
             self.editor.exec_line = None;
             return;
         };
-        let st = session.state.lock().unwrap().clone();
+        let st = session.state.lock_ok().clone();
         self.editor.exec_line = match &st.status {
             debug::Status::Paused { file: Some(f), line, .. } if same_file(f, &self.file) => Some(*line),
             _ => None,
         };
         // Beim Anhalten zur Stelle springen (auch in eine andere Datei), aber nur einmal je Stelle
         if let debug::Status::Paused { file: Some(f), line, .. } = &st.status {
-            let mut last = LAST_EXEC.lock().unwrap();
+            let mut last = LAST_EXEC.lock_ok();
             if last.as_ref() != Some(&(f.clone(), *line)) {
                 *last = Some((f.clone(), *line));
                 if same_file(f, &self.file) {
@@ -1605,7 +1606,7 @@ static LAST_EXEC: Mutex<Option<(PathBuf, usize)>> = Mutex::new(None);
 /// Der Nutzer hat die Anzeige einer beendeten Sitzung geschlossen
 fn debug_closed() -> std::sync::MutexGuard<'static, bool> {
     static CLOSED: Mutex<bool> = Mutex::new(false);
-    CLOSED.lock().unwrap()
+    CLOSED.lock_ok()
 }
 
 fn pos(v: &serde_json::Value) -> (usize, usize) {

@@ -60,10 +60,10 @@ und nicht ausprobiert, **[Idee]** = neue Funktion. Alles lief nur unter Linux.
 
 ## 3. Stabilität
 
-1. **[bestätigt] Rund 830 `unwrap()`/`expect()` außerhalb von Tests.** Der Großteil sind Mutex-Sperren (`src/server.rs` 40,
+1. **[erledigt 1.1.21] Rund 830 `unwrap()`/`expect()` außerhalb von Tests.** Alle Sperren laufen jetzt über `src/sperre.rs` (`lock_ok`, `read_ok`, `write_ok`), das vergiftete Sperren übernimmt. Der Großteil sind Mutex-Sperren (`src/server.rs` 40,
    `src/updates.rs` 34, `src/dev/lsp.rs` 29, `src/dev/debug.rs` 28). Stürzt ein Hintergrundthread ab, ist die Sperre
    vergiftet und die Oberfläche stürzt mit. Ein Hilfsaufruf, der vergiftete Sperren übergeht, würde das abfangen.
-2. **[bestätigt] Rund 320 `let _ = …`** verschlucken Fehler, vor allem in `src/server.rs` (30), `src/workspace.rs` (22),
+2. **[erledigt 1.1.21 für Schreibvorgänge] Rund 320 `let _ = …`** Einstellungen, Profile, Sitzung, frühere Fassungen, Export und Diagramm-Anordnung melden Fehler jetzt per Hinweis (`workspace::melden`). verschlucken Fehler, vor allem in `src/server.rs` (30), `src/workspace.rs` (22),
    `src/tabs/er/svg.rs` (16), `src/updates.rs` (15). Bei Schreibvorgängen (Einstellungen, Sitzung, Backups) sollte ein
    Fehler sichtbar werden, statt dass Daten still verloren gehen.
 3. **[erledigt 1.1.19] `unreachable!` in Laufzeitcode** (jetzt Fehlermeldungen; das in `export.rs` ist wirklich unerreichbar): `src/tabs/code.rs:332` („nur Java ist ausführbar“) und
@@ -239,7 +239,35 @@ Sicherungen, Benutzerverwaltung, Git, Suche, Menüs.
 - MariaDB brach bei langem Datenpfad ab („socket file path is too long“); der Socket liegt dann im Temp-Ordner.
 - `install.sh` und `install.ps1` neu gestaltet: Logo mit Farbverlauf, Spinner, eigener Fortschrittsbalken, Zusammenfassung. Die Anzeige „alt → neu“ erscheint bei Updates.
 
+**Offen (in 1.1.21 erledigt, siehe Abschnitt 14):**
+- ~~Tippen in sehr großen Dateien~~, ~~vergiftete Sperren und Schreibfehler~~, ~~`install.ps1` unter Windows PowerShell 5.1~~.
+
+## 14. Vierte Runde (2026-11-16): Autofix, Editor-Tempo, Hover, Tab
+
+**Erledigt:**
+- Autofix „Alles automatisch einrichten“ (`src/dev/einrichten.rs`, `src/sqledit/schema_bedarf.rs`):
+  - Liest SQL-Dateien, JPA-Modelle und die Abfragen im Code (Java, Python, JS, PHP) und leitet daraus Datenbank,
+    Tabellen, Spalten, Typen, Schlüssel und Beziehungen ab.
+  - Legt nur an (`CREATE … IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`, `INSERT IGNORE` für Beispieldaten in leeren
+    Tabellen), löscht nie. Auf dem eigenen Server automatisch vor dem Start und nach einem Datenbankfehler (höchstens zwei
+    Neustarts); auf fremden Servern erst nach Bestätigung. Abschaltbar unter Einstellungen → Ausführen.
+- Tippen in großen Dateien: Layout nur noch für geänderte Zeilen (5000 Zeilen: 14,5 → 4 ms je Bild); Prüfung 420 → 26 ms.
+- Vergiftete Sperren (3.1) und Schreibfehler (3.2), siehe oben.
+- Hover: Karten für Tabellen und Spalten (PK/FK/UNI), rund 90 Funktionen und die Schlüsselwörter mit Beispiel.
+- Tab-Vervollständigung: eindeutiger Treffer wird übernommen, sonst gemeinsamer Anfang; unscharfe Suche, JOIN mit
+  ON-Bedingung aus Fremdschlüsseln, Spaltenliste bei INSERT, Beschreibung neben der Liste.
+- `install.ps1` unter Windows PowerShell 5.1 getestet; Adminrechte nur noch bei Bedarf (UAC, sonst Installation für
+  diesen Benutzer).
+- Website: Download-Bereich mittig (Issue #18), Tabellenkopf als Kästen.
+- Debugger unter Windows: `jdb -attach host:port` nahm Shared Memory statt Socket und erreichte das Programm nie;
+  außerdem las die App englische jdb-Meldungen, die auf deutschem Windows übersetzt sind. Jetzt
+  `-connect com.sun.jdi.SocketAttach` und `-J-Duser.language=en`.
+
+**Beobachtet:**
+- Microsoft Defender hat am 15.11. den Befehl `powershell -c "irm https://mysql.benjaminberger.at/install | iex"` aus cmd
+  mehrmals als `Trojan:Win32/Commando.C!ml` (Cloud-ML) blockiert; cmd zeigt dann nur „Zugriff verweigert“. Nach dem
+  Signatur-Update am Abend läuft derselbe Befehl wieder. Bei erneutem Auftreten an Microsoft als Fehlalarm melden.
+
 **Offen:**
-- Tippen in sehr großen Dateien: Jede Taste setzt den ganzen Text neu (egui-Galley, 5000 Zeilen ≈ 13 ms).
-- Vergiftete Sperren (3.1) und verschluckte Schreibfehler (3.2).
-- `install.ps1` ist nur unter PowerShell 7 (Linux) getestet, nicht unter Windows PowerShell 5.1.
+- Keine echten Bildschirmfotos der App für die neuen Hover-Karten und die Tab-Vervollständigung.
+- Eine echte Claude-Antwort im KI-Bereich ist weiter ungetestet.

@@ -110,6 +110,23 @@ fn rank(label: &str, word: &str) -> Option<u8> {
     }
 }
 
+/// Unscharf: die Buchstaben kommen in dieser Reihenfolge vor und der erste passt (`kid` -> `kunde_id`,
+/// `bpos` -> `bestell_position`). Nur fuer Namen, nicht fuer Schluesselwoerter.
+fn fuzzy(label: &str, word: &str) -> bool {
+    let l: Vec<char> = label.to_lowercase().chars().filter(|c| *c != '`').collect();
+    let w: Vec<char> = word.to_lowercase().chars().collect();
+    if w.len() < 2 || l.first() != w.first() {
+        return false;
+    }
+    let mut i = 0;
+    for c in &l {
+        if i < w.len() && *c == w[i] {
+            i += 1;
+        }
+    }
+    i == w.len()
+}
+
 struct Scope<'a> {
     /// (Anzeigename = Alias oder Tabellenname, Tabelle)
     entries: Vec<(String, &'a TableInfo)>,
@@ -218,17 +235,81 @@ fn column_items(table: &TableInfo, qualifier: Option<&str>, out: &mut Vec<(u8, I
             Some(q) => format!("{q}.{}", quote_name(&c.name)),
             None => quote_name(&c.name),
         };
+        let key = if c.is_pk() { " · PK" } else if c.key == "UNI" { " · UNI" } else if c.key == "MUL" { " · idx" } else { "" };
         out.push((
             prio,
             Item {
                 label: name.clone(),
                 insert: name,
                 kind: crate::i18n::text("Spalte"),
-                detail: if qualifier.is_some() { c.col_type.clone() } else { format!("{}  {}", c.col_type, table.name) },
+                detail: if qualifier.is_some() { format!("{}{key}", c.col_type) } else { format!("{}{key}  {}", c.col_type, table.name) },
                 back: 0,
             },
         ));
     }
+}
+
+/// Kurzer Alias fuer eine Tabelle, der in der Anweisung noch frei ist (kunde -> k, kategorie -> ka)
+fn free_alias(table: &str, used: &[String]) -> String {
+    let lower = table.to_lowercase();
+    let letters: Vec<char> = lower.chars().filter(|c| c.is_ascii_alphanumeric()).collect();
+    let taken = |a: &str| used.iter().any(|u| u.eq_ignore_ascii_case(a)) || KEYWORDS.contains(&a.to_ascii_uppercase().as_str());
+    // Anfangsbuchstaben der Wortteile (bestell_position -> bp), dann 1, 2, 3 Buchstaben
+    let initials: String = lower.split(['_', '-']).filter_map(|p| p.chars().next()).collect();
+    let mut tries: Vec<String> = Vec::new();
+    if initials.chars().count() > 1 {
+        tries.push(initials);
+    }
+    for n in 1..=3.min(letters.len()) {
+        tries.push(letters[..n].iter().collect());
+    }
+    tries.into_iter().find(|a| !a.is_empty() && !taken(a)).unwrap_or_else(|| lower.clone())
+}
+
+/// Erklaerung zum gewaehlten Vorschlag: (Titel, Text) fuer das Feld unter der Liste
+pub fn doc(item: &Item, schema: Option<&crate::db::Schema>) -> Option<(String, String)> {
+    use crate::i18n::{text, tr};
+    if item.kind == text("Funktion") {
+        let name = item.label.trim_end_matches("()").to_uppercase();
+        let (sig, de, en) = super::hover::function_doc(&name)?;
+        return Some((sig.to_string(), tr(de, en).to_string()));
+    }
+    if item.kind == "SQL" {
+        let (de, en, ex) = super::hover::keyword_doc(&item.label.to_uppercase())?;
+        return Some((tr(de, en).to_string(), ex.to_string()));
+    }
+    let schema = schema?;
+    if item.kind == text("Tabelle") {
+        let t = schema.tables.iter().find(|t| t.name == item.label)?;
+        let cols: Vec<&str> = t.columns.iter().take(12).map(|c| c.name.as_str()).collect();
+        let more = if t.columns.len() > 12 { ", …" } else { "" };
+        let rows = t.rows.map(|r| crate::tr_format!("  · ≈ {} Zeilen", "  · ≈ {} rows", r)).unwrap_or_default();
+        return Some((format!("{} ({}){rows}", t.name, t.columns.len()), format!("{}{more}", cols.join(", "))));
+    }
+    if item.kind == text("Spalte") {
+        let name = item.label.rsplit('.').next().unwrap_or(&item.label).trim_matches('`');
+        let table = item.detail.split_whitespace().last().unwrap_or("");
+        let (t, c) = schema.tables.iter().filter_map(|t| t.columns.iter().find(|c| c.name == name).map(|c| (t, c)))
+            .max_by_key(|(t, _)| t.name == table)?;
+        let mut body = Vec::new();
+        if c.is_pk() {
+            body.push(tr("Primärschlüssel", "Primary key").to_string());
+        }
+        if let Some(fk) = schema.fks.iter().find(|f| f.table == t.name && f.columns.iter().any(|x| x == name)) {
+            body.push(crate::tr_format!("Verweist auf {}.{}", "References {}.{}", fk.ref_table, fk.ref_columns.join(", ")));
+        }
+        if let Some(d) = &c.default {
+            body.push(format!("DEFAULT {d}"));
+        }
+        if !c.comment.is_empty() {
+            body.push(c.comment.clone());
+        }
+        return Some((format!("{}.{} {}{}", t.name, c.name, c.col_type, if c.nullable { "" } else { " NOT NULL" }), body.join(" · ")));
+    }
+    if item.kind == text("Join") {
+        return Some((item.label.clone(), crate::tr_format!("Verknüpfung über den Fremdschlüssel {}", "Join via the foreign key {}", item.detail)));
+    }
+    None
 }
 
 /// Name, bei Bedarf in Backticks
@@ -314,7 +395,14 @@ pub fn suggest(text: &str, cursor: usize, env: &Env, force: bool) -> Option<Sugg
         };
         let first = toks.first().filter(|t| t.kind == Kind::Word).map(|t| t.upper()).unwrap_or_default();
         let complete = operand_complete(&before);
-        let want = if before.is_empty() {
+        // INSERT INTO t (| …): Spalten der Zieltabelle
+        let insert_cols = matches!(first.as_str(), "INSERT" | "REPLACE")
+            && clause.as_deref() == Some("INTO")
+            && unmatched_open(&before)
+            && !before.iter().any(|t| t.is_word("VALUES") || t.is_word("SELECT"));
+        let want = if insert_cols {
+            Want::Column
+        } else if before.is_empty() {
             Want::Statement
         } else if matches!(first.as_str(), "CREATE" | "ALTER")
             && unmatched_open(&before)
@@ -335,7 +423,8 @@ pub fn suggest(text: &str, cursor: usize, env: &Env, force: bool) -> Option<Sugg
         };
         // Ohne getipptes Wort nur an Stellen, an denen sicher etwas folgt
         let last_is_space = cursor > 0 && chars[cursor - 1].is_whitespace();
-        if word.is_empty() && !force && !(last_is_space && matches!(want, Want::Table | Want::Database)) {
+        let after_open = cursor > 0 && chars[cursor - 1] == '(';
+        if word.is_empty() && !force && !(last_is_space && matches!(want, Want::Table | Want::Database)) && !(insert_cols && after_open) {
             return None;
         }
         if word.chars().count() < 2 && !force && !matches!(want, Want::Table | Want::Column | Want::Database | Want::Type | Want::AfterTable) {
@@ -354,7 +443,11 @@ pub fn suggest(text: &str, cursor: usize, env: &Env, force: bool) -> Option<Sugg
         };
         let tables = |prio: u8, items: &mut Vec<(u8, Item)>| {
             for t in schema.iter().flat_map(|s| &s.tables) {
-                let detail = if t.is_view { crate::i18n::text("Sicht").to_string() } else { String::new() };
+                let detail = if t.is_view {
+                    crate::i18n::text("Sicht").to_string()
+                } else {
+                    crate::tr_format!("{} Spalten", "{} columns", t.columns.len())
+                };
                 items.push((prio, Item { label: t.name.clone(), insert: quote_name(&t.name), kind: crate::i18n::text("Tabelle"), detail, back: 0 }));
             }
         };
@@ -367,7 +460,26 @@ pub fn suggest(text: &str, cursor: usize, env: &Env, force: bool) -> Option<Sugg
                 kw(&["IF", "WHILE"], 3, &mut items);
             }
             Want::Table => {
-                tables(0, &mut items);
+                // Nach JOIN: verwandte Tabellen samt ON-Bedingung aus den Fremdschluesseln zuerst
+                if clause.as_deref() == Some("JOIN")
+                    && let Some(sch) = schema
+                {
+                    let used: Vec<String> = scope.entries.iter().map(|(a, _)| a.clone()).collect();
+                    for fk in &sch.fks {
+                        for (von, nach, eigene, fremde) in [(&fk.table, &fk.ref_table, &fk.columns, &fk.ref_columns), (&fk.ref_table, &fk.table, &fk.ref_columns, &fk.columns)] {
+                            // `von` steht schon in der Anweisung, `nach` wird angehaengt
+                            let Some((al, _)) = scope.entries.iter().find(|(_, t)| t.name.eq_ignore_ascii_case(von)) else { continue };
+                            if scope.entries.iter().filter(|(_, t)| t.name.eq_ignore_ascii_case(nach)).count() > usize::from(nach.eq_ignore_ascii_case(von)) {
+                                continue;
+                            }
+                            let neu = free_alias(nach, &used);
+                            let cond = eigene.iter().zip(fremde).map(|(e, f)| format!("{neu}.{} = {al}.{}", quote_name(f), quote_name(e))).collect::<Vec<_>>().join(" AND ");
+                            let text = format!("{} {neu} ON {cond}", quote_name(nach));
+                            items.push((0, Item { label: text.clone(), insert: text, kind: crate::i18n::text("Join"), detail: fk.name.clone(), back: 0 }));
+                        }
+                    }
+                }
+                tables(if items.is_empty() { 0 } else { 1 }, &mut items);
             }
             Want::AfterTable => {
                 kw(AFTER_TABLE, 0, &mut items);
@@ -384,6 +496,18 @@ pub fn suggest(text: &str, cursor: usize, env: &Env, force: bool) -> Option<Sugg
             Want::Type => {
                 kw(TYPES, 0, &mut items);
                 kw(CONSTRAINTS, 1, &mut items);
+            }
+            Want::Column if insert_cols => {
+                if let Some((_, t)) = scope.entries.first() {
+                    let cols: Vec<String> = t.columns.iter().filter(|c| !c.extra.to_ascii_lowercase().contains("auto_increment") && !c.extra.to_ascii_lowercase().contains("generated")).map(|c| quote_name(&c.name)).collect();
+                    if before.last().is_some_and(|l| l.kind == Kind::Open) && cols.len() > 1 {
+                        let all = cols.join(", ");
+                        items.push((0, Item { label: all.clone(), insert: all, kind: crate::i18n::text("Vorlage"), detail: crate::i18n::tr("alle Spalten", "all columns").into(), back: 0 }));
+                    }
+                    let mut cs = Vec::new();
+                    column_items(t, None, &mut cs, 1);
+                    items.extend(cs);
+                }
             }
             Want::Column => {
                 // Join-Bedingungen aus Fremdschluesseln, wenn nach ON gefragt wird
@@ -472,7 +596,9 @@ fn rank_items(items: Vec<(u8, Item)>, word: &str, qualified: bool, force: bool) 
     let mut ranked: Vec<(u8, u8, u8, String, Item)> = items
         .into_iter()
         .filter_map(|(prio, item)| {
-            let r = rank(&item.label, word).or_else(|| (!qualified).then(|| rank(&item.label.replace('`', ""), word)).flatten())?;
+            let r = rank(&item.label, word)
+                .or_else(|| (!qualified).then(|| rank(&item.label.replace('`', ""), word)).flatten())
+                .or_else(|| (name_like(item.kind) && fuzzy(&item.label, word)).then_some(3))?;
             let order = if name_like(item.kind) { item.label.to_lowercase() } else { String::new() };
             // Genau das getippte Wort (ohne Beachtung der Schreibweise) steht ganz oben
             let exact = u8::from(word.is_empty() || !item.insert.trim_end_matches("()").eq_ignore_ascii_case(word));
@@ -635,5 +761,39 @@ mod tests {
         assert!(labels("SELECT 'sch", false).is_empty());
         assert!(labels("s", false).is_empty());
         assert!(!labels("SELECT 'a' FROM sch", false).is_empty());
+    }
+
+    #[test]
+    fn unscharf_join_und_insert_spalten() {
+        // unscharf: kid -> klasse_id
+        let l = labels("SELECT kid FROM Schueler", false);
+        let s = schema();
+        let env = Env { schema: Some(&s), databases: &[] };
+        let p = suggest("SELECT kid FROM Schueler", 10, &env, false).unwrap();
+        assert_eq!(p.items[0].label, "klasse_id", "{l:?}");
+        // nach JOIN: verwandte Tabelle mit fertiger Bedingung
+        let l = labels("SELECT * FROM Schueler s JOIN ", false);
+        assert_eq!(l[0], "Klasse k ON k.id = s.klasse_id", "{l:?}");
+        let l = labels("SELECT * FROM Klasse k JOIN ", false);
+        assert_eq!(l[0], "Schueler s ON s.klasse_id = k.id", "{l:?}");
+        // INSERT: alle Spalten auf einmal, dann einzelne
+        let l = labels("INSERT INTO Klasse (", false);
+        assert_eq!(l[0], "id, name", "{l:?}");
+        let l = labels("INSERT INTO Klasse (id, na", false);
+        assert_eq!(l[0], "name", "{l:?}");
+        // Erklaerung zum gewaehlten Eintrag
+        let f = Item { label: "COUNT()".into(), insert: "COUNT()".into(), kind: crate::i18n::text("Funktion"), detail: String::new(), back: 1 };
+        assert_eq!(doc(&f, None).unwrap().0, "COUNT(expr)");
+        let k = keyword_item("LEFT JOIN", "SQL", false);
+        assert!(doc(&k, None).is_some());
+    }
+
+    #[test]
+    fn freie_aliasse() {
+        assert_eq!(free_alias("kunde", &[]), "k");
+        assert_eq!(free_alias("kategorie", &["k".into()]), "ka");
+        assert_eq!(free_alias("bestell_position", &[]), "bp");
+        // "as" und "on" sind Schluesselwoerter
+        assert_eq!(free_alias("ort", &["o".into()]), "ort");
     }
 }

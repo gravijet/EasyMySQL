@@ -24,6 +24,9 @@ pub enum Fix {
     DeklarierteStruktur { datenbank: Option<String>, plaene: Vec<crate::sqledit::TabellenPlan>, quelle: String },
     /// Datenbank anlegen und das SQL des Projekts darin ausfuehren (Tabellen samt Zeilen), mit Vorschau
     ProjektSql { datenbank: String, sql: String, tabellen: usize, zeilen: usize },
+    /// Alles, was der Code braucht: Datenbank, alle benutzten Tabellen, fehlende Spalten und Startdaten
+    /// (siehe `dev::einrichten`). `datenbank`: Ziel aus der Fehlermeldung.
+    Einrichten { root: PathBuf, datenbank: Option<String> },
     StartServer,
     ConnectionSettings,
     Install(Tool),
@@ -118,7 +121,7 @@ fn replace_edits(text: &str, from: &str, to: &str) -> Vec<TextEdit> {
 }
 
 /// Quelltexte des Projekts (ohne Build-Ordner und Abhaengigkeiten)
-fn source_files(root: &Path, out: &mut Vec<PathBuf>, depth: usize) {
+pub(crate) fn source_files(root: &Path, out: &mut Vec<PathBuf>, depth: usize) {
     if depth > 12 || out.len() > 3000 {
         return;
     }
@@ -130,7 +133,7 @@ fn source_files(root: &Path, out: &mut Vec<PathBuf>, depth: usize) {
             if !name.starts_with('.') && !matches!(name.as_str(), "node_modules" | "target" | "build" | "bin" | "out" | "dist" | "__pycache__" | "lib") {
                 source_files(&p, out, depth + 1);
             }
-        } else if matches!(p.extension().and_then(|e| e.to_str()), Some("java" | "py" | "js" | "mjs" | "cjs" | "ts" | "properties" | "ini" | "json" | "env")) {
+        } else if matches!(p.extension().and_then(|e| e.to_str()), Some("java" | "py" | "js" | "mjs" | "cjs" | "ts" | "php" | "properties" | "ini" | "json" | "env" | "yml" | "yaml")) {
             out.push(p);
         }
     }
@@ -442,6 +445,20 @@ pub fn analyze_output(raw: &str, project: Option<&Path>, file: Option<&Path>, lo
 
     // --- Datenbank ---------------------------------------------------------
     let root = project.or_else(|| file.and_then(Path::parent));
+    // Fehlt Datenbank, Tabelle oder Spalte, richtet ein Klick alles ein, was der Code braucht
+    let db_fehler = between(text, "Unknown database '", '\'').map(str::to_string)
+        .or_else(|| between(text, "Table '", '\'').filter(|_| text.contains("doesn't exist")).and_then(|t| t.split_once('.')).map(|(d, _)| d.to_string()));
+    let struktur_fehler = text.contains("Unknown database '") || text.contains("doesn't exist") && text.contains("Table '") || text.contains("Unknown column '");
+    if struktur_fehler
+        && let Some(r) = root
+        && super::einrichten::hat_bedarf(r)
+    {
+        v.push(Suggestion {
+            problem: tr("Datenbank und Code passen nicht zusammen.", "The database does not match the code.").into(),
+            label: tr("Alles automatisch einrichten", "Set up everything automatically").into(),
+            fix: Some(Fix::Einrichten { root: r.to_path_buf(), datenbank: db_fehler }),
+        });
+    }
     if let Some(db) = between(text, "Unknown database '", '\'').or_else(|| between(text, "Unknown database \\'", '\\')) {
         let p = crate::tr_format!("Die Datenbank „{db}“ gibt es nicht.", "The database “{db}” does not exist.");
         // Mit allen Tabellen und Daten, die das Projekt in SQL-Dateien und JDBC-Texten anlegt
@@ -654,7 +671,7 @@ fn java_struktur_fix(
     crate::sqledit::java_struktur_projekt(&texts, db, table, column).map(|(db, table, columns)| Fix::Schema { db, table, columns })
 }
 
-fn migrations_dateien(root: &Path, out: &mut Vec<PathBuf>, depth: usize) {
+pub(crate) fn migrations_dateien(root: &Path, out: &mut Vec<PathBuf>, depth: usize) {
     if depth > 12 || out.len() >= 3000 { return; }
     let Ok(rd) = std::fs::read_dir(root) else { return };
     for entry in rd.flatten() {
@@ -1111,10 +1128,8 @@ fn verweise(sql: &str) -> Vec<String> {
     out
 }
 
-/// SQL, das die Datenbank `db` (oder nur `table` mit seinen Fremdschluessel-Zielen) samt Zeilen anlegt: aus den
-/// .sql-Dateien und den festen SQL-Texten im Java-Code. Liefert (SQL, Tabellen, Zeilen-Anweisungen), None ohne
-/// passende CREATE TABLE. Loeschende Anweisungen werden nie uebernommen; INSERT wird zu INSERT IGNORE.
-pub fn projekt_sql(root: &Path, db: &str, table: Option<&str>) -> Option<(String, usize, usize)> {
+/// Alle SQL-Texte eines Projekts: .sql-Dateien (Struktur vor Daten) und feste SQL-Texte im Java-Code (ohne `?`)
+pub(crate) fn sql_quellen(root: &Path) -> Vec<String> {
     let mut sql_files = Vec::new();
     migrations_dateien(root, &mut sql_files, 0);
     sql_files.sort_by_cached_key(|p| natuerlich(p));
@@ -1137,11 +1152,23 @@ pub fn projekt_sql(root: &Path, db: &str, table: Option<&str>) -> Option<(String
             }
         }
     }
-    // (Tabelle, CREATE), (Tabelle, Anweisung danach: Index/ALTER), (Tabelle, INSERT), Sichten
+    quellen
+}
+
+/// Im Projekt deklarierte Struktur einer Datenbank: (Tabelle, CREATE), (Tabelle, Index/ALTER/Sicht), (Tabelle, INSERT)
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Deklariert {
+    pub tabellen: Vec<(String, String)>,
+    pub extra: Vec<(String, String)>,
+    pub zeilen: Vec<(String, String)>,
+}
+
+/// Loeschende Anweisungen werden nie uebernommen; CREATE wird zu IF NOT EXISTS, INSERT zu INSERT IGNORE.
+pub(crate) fn deklarationen(quellen: &[String], db: &str) -> Deklariert {
     let mut tabellen: Vec<(String, String)> = Vec::new();
     let mut extra: Vec<(String, String)> = Vec::new();
     let mut zeilen: Vec<(String, String)> = Vec::new();
-    for text in &quellen {
+    for text in quellen {
         // Gehoert der Teil zu dieser Datenbank? USE andere -> bis zum naechsten USE ueberspringen
         let mut passt = true;
         for st in crate::db::split_statements(text) {
@@ -1178,44 +1205,59 @@ pub fn projekt_sql(root: &Path, db: &str, table: Option<&str>) -> Option<(String
             }
         }
     }
+    Deklariert { tabellen, extra, zeilen }
+}
+
+/// Tabellen so ordnen, dass Ziele von Fremdschluesseln zuerst kommen (Zyklen in der Reihenfolge der Dateien)
+pub(crate) fn fk_reihenfolge(tabellen: &[(String, String)], mut gewaehlt: Vec<String>) -> Vec<String> {
+    let mut geordnet: Vec<String> = Vec::new();
+    let mut runden = 0;
+    while !gewaehlt.is_empty() && runden < 10_000 {
+        runden += 1;
+        let pos = gewaehlt.iter().position(|t| {
+            let c = tabellen.iter().find(|(n, _)| n == t).map(|(_, c)| c.as_str()).unwrap_or("");
+            verweise(c).iter().all(|r| r.eq_ignore_ascii_case(t) || geordnet.iter().any(|g| g.eq_ignore_ascii_case(r)) || !gewaehlt.iter().any(|g| g.eq_ignore_ascii_case(r)))
+        });
+        let i = pos.unwrap_or(0);
+        geordnet.push(gewaehlt.remove(i));
+    }
+    geordnet
+}
+
+/// Die Tabellen `start` und alles, worauf sie per REFERENCES verweisen (nur deklarierte Tabellen)
+pub(crate) fn mit_verweisen(tabellen: &[(String, String)], start: Vec<String>) -> Vec<String> {
+    let mut sel = start;
+    let mut i = 0;
+    while i < sel.len() {
+        if let Some((_, c)) = tabellen.iter().find(|(n, _)| n.eq_ignore_ascii_case(&sel[i])) {
+            for r in verweise(c) {
+                if let Some((n, _)) = tabellen.iter().find(|(n, _)| n.eq_ignore_ascii_case(&r))
+                    && !sel.iter().any(|s| s.eq_ignore_ascii_case(n))
+                {
+                    sel.push(n.clone());
+                }
+            }
+        }
+        i += 1;
+    }
+    sel
+}
+
+/// SQL, das die Datenbank `db` (oder nur `table` mit seinen Fremdschluessel-Zielen) samt Zeilen anlegt: aus den
+/// .sql-Dateien und den festen SQL-Texten im Java-Code. Liefert (SQL, Tabellen, Zeilen-Anweisungen), None ohne
+/// passende CREATE TABLE. Loeschende Anweisungen werden nie uebernommen; INSERT wird zu INSERT IGNORE.
+pub fn projekt_sql(root: &Path, db: &str, table: Option<&str>) -> Option<(String, usize, usize)> {
+    let quellen = sql_quellen(root);
+    let Deklariert { tabellen, extra, zeilen } = deklarationen(&quellen, db);
     if tabellen.is_empty() {
         return None;
     }
     // Auswahl: alle bzw. die Tabelle mit allem, worauf sie verweist
-    let mut gewaehlt: Vec<String> = match table {
+    let gewaehlt: Vec<String> = match table {
         None => tabellen.iter().map(|(t, _)| t.clone()).collect(),
-        Some(t) => {
-            let start = tabellen.iter().find(|(n, _)| n.eq_ignore_ascii_case(t))?.0.clone();
-            let mut sel = vec![start];
-            let mut i = 0;
-            while i < sel.len() {
-                if let Some((_, c)) = tabellen.iter().find(|(n, _)| *n == sel[i]) {
-                    for r in verweise(c) {
-                        if let Some((n, _)) = tabellen.iter().find(|(n, _)| n.eq_ignore_ascii_case(&r))
-                            && !sel.contains(n)
-                        {
-                            sel.push(n.clone());
-                        }
-                    }
-                }
-                i += 1;
-            }
-            sel
-        }
+        Some(t) => mit_verweisen(&tabellen, vec![tabellen.iter().find(|(n, _)| n.eq_ignore_ascii_case(t))?.0.clone()]),
     };
-    // Reihenfolge: Ziele von Fremdschluesseln zuerst
-    let mut geordnet: Vec<String> = Vec::new();
-    let mut runden = 0;
-    while !gewaehlt.is_empty() && runden < 1000 {
-        runden += 1;
-        let pos = gewaehlt.iter().position(|t| {
-            let c = &tabellen.iter().find(|(n, _)| n == t).unwrap().1;
-            verweise(c).iter().all(|r| r.eq_ignore_ascii_case(t) || geordnet.iter().any(|g| g.eq_ignore_ascii_case(r)) || !gewaehlt.iter().any(|g| g.eq_ignore_ascii_case(r)))
-        });
-        // Zyklus: in der Reihenfolge der Dateien weiter
-        let i = pos.unwrap_or(0);
-        geordnet.push(gewaehlt.remove(i));
-    }
+    let geordnet = fk_reihenfolge(&tabellen, gewaehlt);
     let mut out: Vec<String> = Vec::new();
     for t in &geordnet {
         out.push(tabellen.iter().find(|(n, _)| n == t).unwrap().1.clone());
@@ -1277,8 +1319,9 @@ Caused by: java.sql.SQLSyntaxErrorException: Unknown database 'schule1'\n\
         assert!(projekt_sql(&d, "shop", Some("gibtsnicht")).is_none());
         // Vorschlaege fuer die Fehlermeldungen
         let s = analyze_output("java.sql.SQLSyntaxErrorException: Unknown database 'shop'", Some(&d), None, true);
-        assert!(matches!(&s[0].fix, Some(Fix::ProjektSql { tabellen: 3, .. })), "{s:?}");
-        assert_eq!(s[1].fix, Some(Fix::CreateDatabase("shop".into())));
+        assert!(matches!(&s[0].fix, Some(Fix::Einrichten { datenbank: Some(db), .. }) if db == "shop"), "{s:?}");
+        assert!(matches!(&s[1].fix, Some(Fix::ProjektSql { tabellen: 3, .. })), "{s:?}");
+        assert_eq!(s[2].fix, Some(Fix::CreateDatabase("shop".into())));
         let s = analyze_output("Table 'shop.kunde' doesn't exist", Some(&d), None, true);
         assert!(s.iter().any(|x| matches!(&x.fix, Some(Fix::ProjektSql { tabellen: 1, zeilen: 1, .. }))), "{s:?}");
         let _ = std::fs::remove_dir_all(&d);
@@ -1352,14 +1395,19 @@ Caused by: java.sql.SQLSyntaxErrorException: Unknown database 'schule1'\n\
         assert!(java_probleme("System.out.println(\n  \"mehrzeilig\"\n);\n").is_empty());
     }
 
+    /// Vorschlaege ohne „Alles automatisch einrichten“ (steht sonst vorne)
+    fn ohne_einrichten(v: Vec<Suggestion>) -> Vec<Suggestion> {
+        v.into_iter().filter(|f| !matches!(f.fix, Some(Fix::Einrichten { .. }))).collect()
+    }
+
     #[test]
     fn sql_fehler_liefern_struktur_statt_leerer_tabelle() {
         let dir = tmp("struktur");
         let file = dir.join("Main.java");
         std::fs::write(&file, "q = \"INSERT INTO kunde (id, name) VALUES (1, 'Ada')\";").unwrap();
-        let fixes = analyze_output("Table 'schule.kunde' doesn't exist", Some(&dir), Some(&file), false);
+        let fixes = ohne_einrichten(analyze_output("Table 'schule.kunde' doesn't exist", Some(&dir), Some(&file), false));
         assert!(matches!(&fixes[0].fix, Some(Fix::Schema { db: Some(db), table, columns }) if db == "schule" && table == "kunde" && columns.len() == 2));
-        let fixes = analyze_output("Unknown column 'name' in 'field list'", Some(&dir), Some(&file), false);
+        let fixes = ohne_einrichten(analyze_output("Unknown column 'name' in 'field list'", Some(&dir), Some(&file), false));
         assert!(matches!(&fixes[0].fix, Some(Fix::Schema { columns, .. }) if columns == &vec![("name".into(), "TEXT".into())]));
         std::fs::remove_dir_all(dir).unwrap();
     }
@@ -1406,7 +1454,7 @@ Caused by: java.sql.SQLSyntaxErrorException: Unknown database 'schule1'\n\
             static final String AUFTRAG = "CREATE TABLE auftrag (id BIGINT PRIMARY KEY AUTO_INCREMENT, kunde_id BIGINT NOT NULL, status VARCHAR(20) DEFAULT 'offen', FOREIGN KEY(kunde_id) REFERENCES kunde(id))";
             void laden() { c.prepareStatement("SELECT * FROM auftrag"); }
         "#).unwrap();
-        let fixes = analyze_output("Table 'shop.auftrag' doesn't exist", Some(&root), None, true);
+        let fixes = ohne_einrichten(analyze_output("Table 'shop.auftrag' doesn't exist", Some(&root), None, true));
         assert_eq!(fixes[0].label, tr("Tabelle samt Struktur erstellen", "Create table with structure"));
         let Some(Fix::DeklarierteStruktur { plaene, .. }) = &fixes[0].fix else { panic!("{fixes:?}") };
         assert_eq!(plaene.len(), 2);

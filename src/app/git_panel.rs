@@ -1,6 +1,7 @@
 // Seitenleiste "Quellcodeverwaltung": Git fuer den Projektordner und GitHub (Anmeldung, Repository
 // veroeffentlichen, klonen, Pull Requests, Issues, Actions). Alles, was dauert, laeuft im Hintergrund.
 
+use crate::sperre::Sperre;
 use super::*;
 use crate::git::{self, Change, FileStatus, github};
 use crate::icons::{self, Icon};
@@ -67,7 +68,7 @@ fn spawn<T: Send + 'static>(ctx: &egui::Context, f: impl FnOnce() -> Result<T, S
 }
 
 fn ctx() -> egui::Context {
-    CTX.lock().unwrap().clone().unwrap_or_default()
+    CTX.lock_ok().clone().unwrap_or_default()
 }
 
 impl EasyApp {

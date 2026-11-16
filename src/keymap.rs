@@ -1,5 +1,6 @@
 // Tastenkuerzel: alle Befehle mit Standardbelegung, frei aenderbar (Datei tastenkuerzel.txt).
 
+use crate::sperre::LeseSperre;
 use eframe::egui::{self, Event, Key, Modifiers};
 use std::sync::RwLock;
 
@@ -585,21 +586,21 @@ impl Keymap {
 static KEYMAP: RwLock<Option<Keymap>> = RwLock::new(None);
 
 pub fn current() -> Keymap {
-    KEYMAP.read().unwrap().clone().unwrap_or_default()
+    KEYMAP.read_ok().clone().unwrap_or_default()
 }
 
 pub fn install(km: Keymap) {
-    *KEYMAP.write().unwrap() = Some(km);
+    *KEYMAP.write_ok() = Some(km);
 }
 
 /// Erste Belegung eines Befehls als Text
 pub fn text(cmd: Cmd) -> String {
-    KEYMAP.read().unwrap().as_ref().map(|k| k.text(cmd)).unwrap_or_else(|| cmd.defaults().first().map(|b| b.text()).unwrap_or_default())
+    KEYMAP.read_ok().as_ref().map(|k| k.text(cmd)).unwrap_or_else(|| cmd.defaults().first().map(|b| b.text()).unwrap_or_default())
 }
 
 /// Wurde das Kuerzel fuer `cmd` gedrueckt? Das Tastenereignis wird dabei verbraucht.
 pub fn pressed(input: &mut egui::InputState, cmd: Cmd) -> bool {
-    let guard = KEYMAP.read().unwrap();
+    let guard = KEYMAP.read_ok();
     let defaults;
     let bindings = match guard.as_ref() {
         Some(k) => k.get(cmd),
@@ -637,7 +638,7 @@ pub fn pressed(input: &mut egui::InputState, cmd: Cmd) -> bool {
 /// schickt das System oft auch den Buchstaben als Text. Der darf nicht im Editor landen, auch wenn das Kuerzel
 /// erst spaeter im Bild ausgewertet wird.
 pub fn filter_raw(raw: &mut egui::RawInput) {
-    let guard = KEYMAP.read().unwrap();
+    let guard = KEYMAP.read_ok();
     let mut letters: Vec<&'static str> = Vec::new();
     for e in &raw.events {
         if let Event::Key { key, pressed: true, modifiers, .. } = e

@@ -3,6 +3,7 @@
 // Mit EASYMYSQL_E2E_PORT=<port> laufen die erzeugten Programme gegen den MariaDB-Server auf diesem Port
 // (Benutzer root ohne Passwort, Datenbank e2e mit der Tabelle kunde).
 
+use crate::sperre::Sperre;
 use super::process::Launch;
 use super::{Config, Tool, install, lsp, tools};
 use crate::db::{ColumnInfo, TableInfo};
@@ -86,7 +87,7 @@ fn lsp_roundtrip(lang: crate::sqledit::Lang, root: &Path, file: &Path, broken: &
     let start = Instant::now();
     let server = lsp::get(lang, root, &ctx).unwrap_or_else(|| panic!("{lang:?}: kein Server"));
     while !server.ready() {
-        assert!(start.elapsed() < Duration::from_secs(180), "{lang:?}: {:?}", server.phase.lock().unwrap());
+        assert!(start.elapsed() < Duration::from_secs(180), "{lang:?}: {:?}", server.phase.lock_ok());
         std::thread::sleep(Duration::from_millis(200));
     }
     server.sync(file, lang, broken);

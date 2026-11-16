@@ -1,5 +1,6 @@
 // Rahmen des Hauptfensters: Menue, Aktivitaetsleiste, Registerkarten, leere Flaeche, Meldungen, Sitzung.
 
+use crate::sperre::Sperre;
 use super::*;
 use crate::icons::{self, Icon};
 use crate::workspace::{self, Session};
@@ -21,7 +22,7 @@ impl EasyApp {
                 let p = Path::new(path);
                 let mut head = [0u8; 8192];
                 let n = std::fs::File::open(p).and_then(|mut f| std::io::Read::read(&mut f, &mut head)).ok()?;
-                let ctx = crate::app::CTX.lock().unwrap().clone()?;
+                let ctx = crate::app::CTX.lock_ok().clone()?;
                 Box::new(crate::tabs::preview::PreviewTab::open(&ctx, p, crate::tabs::preview::detect(p, &head[..n])).ok()?)
             }
             ["sql", path] => Box::new(SqlTab::open_file(Path::new(path), "", self.project.as_deref()).ok()?),

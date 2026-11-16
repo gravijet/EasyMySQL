@@ -3,6 +3,7 @@
 // (Sicherung aller Datenbanken und eine Kopie des Datenordners); klappt der Start nicht, kehrt EasyMySQL
 // zur bisherigen Version und zum gesicherten Datenordner zurueck.
 
+use crate::sperre::Sperre;
 use crate::dev::install::{Checksum, Progress, download, extract, get_json};
 use crate::server::{Server, app_data_dir, find_tool};
 use std::path::{Path, PathBuf};
@@ -98,7 +99,7 @@ static STATE: Mutex<Option<Status>> = Mutex::new(None);
 static APPLIED: Mutex<Option<Option<PathBuf>>> = Mutex::new(None);
 
 pub fn take_applied() -> Option<Option<PathBuf>> {
-    APPLIED.lock().unwrap().take()
+    APPLIED.lock_ok().take()
 }
 
 fn stamp() -> PathBuf {
@@ -120,8 +121,8 @@ pub fn daily_check(server: &Server, mode: &str, track: Track, ctx: &eframe::egui
 static PROGRESS: Mutex<Option<Arc<Progress>>> = Mutex::new(None);
 
 pub fn status() -> Status {
-    let mut st = STATE.lock().unwrap().clone().unwrap_or_default();
-    if let Some(p) = PROGRESS.lock().unwrap().as_ref() {
+    let mut st = STATE.lock_ok().clone().unwrap_or_default();
+    if let Some(p) = PROGRESS.lock_ok().as_ref() {
         let total = p.total.load(std::sync::atomic::Ordering::Relaxed);
         let done = p.done.load(std::sync::atomic::Ordering::Relaxed);
         if total > 0 && st.busy {
@@ -132,7 +133,7 @@ pub fn status() -> Status {
 }
 
 fn set(f: impl FnOnce(&mut Status)) {
-    let mut g = STATE.lock().unwrap();
+    let mut g = STATE.lock_ok();
     f(g.get_or_insert_with(Status::default));
 }
 
@@ -168,9 +169,9 @@ pub fn check(server: &Server, track: Track, ctx: &eframe::egui::Context) {
 /// `apply_bin` wird mit dem neuen Programmordner (bzw. bei Fehlern dem alten) aufgerufen, damit die
 /// Einstellungen ihn speichern.
 pub fn run(server: Server, conn: crate::db::ConnInfo, rel: Release, copy_data: bool, ctx: &eframe::egui::Context) {
-    let apply_bin = |b: Option<PathBuf>| *APPLIED.lock().unwrap() = Some(b);
+    let apply_bin = |b: Option<PathBuf>| *APPLIED.lock_ok() = Some(b);
     let progress = Arc::new(Progress::default());
-    *PROGRESS.lock().unwrap() = Some(Arc::clone(&progress));
+    *PROGRESS.lock_ok() = Some(Arc::clone(&progress));
     set(|s| {
         s.busy = true;
         s.error = None;
@@ -280,7 +281,7 @@ pub fn run(server: Server, conn: crate::db::ConnInfo, rel: Release, copy_data: b
                 }
             }
         })();
-        *PROGRESS.lock().unwrap() = None;
+        *PROGRESS.lock_ok() = None;
         set(|s| {
             s.busy = false;
             s.stage.clear();

@@ -225,10 +225,10 @@ mod imp {
                     DefSubclassProc(hwnd, msg, wparam, lparam)
                 }
                 WM_ENDSESSION => {
-                    if wparam != 0 {
-                        if let Some(f) = SHUTDOWN_HOOK.get() {
-                            f();
-                        }
+                    if wparam != 0
+                        && let Some(f) = SHUTDOWN_HOOK.get()
+                    {
+                        f();
                     }
                     ShutdownBlockReasonDestroy(hwnd);
                     0

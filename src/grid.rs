@@ -420,7 +420,7 @@ pub fn to_markdown(columns: &[String], rows: &[Row]) -> String {
 pub fn export_menu(ui: &mut egui::Ui, name: &str, columns: &[String], rows: &[Row]) {
     let save = |ext: &str, filter: &str, content: String| {
         if let Some(p) = rfd::FileDialog::new().add_filter(filter, &[ext]).set_file_name(format!("{name}.{ext}")).save_file() {
-            let _ = std::fs::write(p, content);
+            crate::workspace::melden(crate::i18n::tr("Der Export", "The export"), &p, std::fs::write(&p, content));
         }
     };
     let button = crate::icons::text_button(ui, crate::icons::Icon::Download, "Export");

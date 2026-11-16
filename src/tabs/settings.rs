@@ -1,5 +1,6 @@
 // Registerkarte "Einstellungen": alle Einstellungen an einem Ort, inkl. Tastenkuerzel.
 
+use crate::sperre::Sperre;
 use super::{Action, Ctx, TabView};
 use crate::db::ConnInfo;
 use crate::keymap::{self, Binding, Cmd, Keymap};
@@ -882,7 +883,7 @@ impl TabView for SettingsTab {
 /// Ist der Port schon belegt? Das Ergebnis gilt, bis ein anderer Port eingetragen wird (nicht in jedem Bild pruefen).
 fn port_taken(port: u16) -> bool {
     static LAST: std::sync::Mutex<Option<(u16, bool)>> = std::sync::Mutex::new(None);
-    let mut last = LAST.lock().unwrap();
+    let mut last = LAST.lock_ok();
     match *last {
         Some((p, taken)) if p == port => taken,
         _ => {
@@ -1309,6 +1310,9 @@ fn run_settings(ui: &mut egui::Ui, ctx: &egui::Context, s: &mut crate::settings:
     });
     crate::widgets::row(ui, crate::i18n::tr("Arbeitsordner", "Working folder"), |ui| {
         crate::widgets::segmented(ui, &mut d.cwd_project, &[(true, crate::i18n::tr("Projekt", "Project")), (false, crate::i18n::tr("Ordner der Datei", "Folder of the file"))]);
+    });
+    crate::widgets::row(ui, crate::i18n::tr("Datenbank einrichten", "Set up database"), |ui| {
+        crate::widgets::switch(ui, &mut d.auto_setup, crate::i18n::tr("Fehlende Datenbank, Tabellen und Spalten vor dem Start automatisch anlegen und nach einem Datenbankfehler neu starten (nur eigener Server)", "Create a missing database, tables and columns before each run and restart after a database error (own server only)"));
     });
     crate::widgets::row(ui, "Terminal", |ui| {
         crate::widgets::switch(ui, &mut d.reuse_terminal, crate::i18n::tr("Ein neuer Start ersetzt den vorigen desselben Programms", "A new run replaces the previous one of the same program"));

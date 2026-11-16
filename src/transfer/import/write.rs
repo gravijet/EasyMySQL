@@ -1,5 +1,6 @@
 // Importierte Tabellen in MariaDB anlegen und fuellen.
 
+use crate::sperre::Sperre;
 use super::*;
 use crate::db::{Db, err_text, q};
 use mysql::prelude::*;
@@ -28,7 +29,7 @@ pub struct Progress {
 
 impl Progress {
     fn note(&self, error: bool, text: String) {
-        self.log.lock().unwrap().push((error, text));
+        self.log.lock_ok().push((error, text));
     }
 }
 
@@ -92,7 +93,7 @@ fn flush(conn: &mut mysql::Conn, t: &TableScan, target: &str, batch: &mut Vec<Va
 
 /// Zeilen von `t` in die Tabelle `target` schreiben
 fn import_table(conn: &mut mysql::Conn, src: &Source, t: &TableScan, target: &str, p: &Progress) -> Result<u64, String> {
-    *p.table.lock().unwrap() = t.name.clone();
+    *p.table.lock_ok() = t.name.clone();
     let cols = t.columns.len().max(1);
     let per_stmt = (60_000 / cols).clamp(1, 1000);
     let types: Vec<ColType> = t.columns.iter().map(|c| c.ty).collect();
@@ -261,7 +262,7 @@ mod tests {
         let opts = Options { database: "imp_replace".into(), create_db: false, replace: true };
         assert_eq!(run(&dbc, &src, &tables, &opts, &p).unwrap(), 0);
         let count = |sql: &str| dbc.rows(sql, ()).unwrap()[0][0].clone().unwrap();
-        assert_eq!(count("SELECT COUNT(*) FROM imp_replace.lager"), "2", "{:?}", p.log.lock().unwrap());
+        assert_eq!(count("SELECT COUNT(*) FROM imp_replace.lager"), "2", "{:?}", p.log.lock_ok());
         assert_eq!(count("SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA = 'imp_replace'"), "1", "keine Hilfstabelle uebrig");
         // Gueltige Datei: ersetzt die Tabelle
         std::fs::write(&csv, "artikel;menge\nC;3\nD;4\nE;5\n").unwrap();
@@ -297,13 +298,13 @@ mod tests {
         .unwrap();
         drop(sq);
         let (tables, p, n) = go(&dbc, &Source::Sqlite(path), "imp_sqlite");
-        assert_eq!(n, 4, "{:?}", p.log.lock().unwrap());
+        assert_eq!(n, 4, "{:?}", p.log.lock_ok());
         assert_eq!(tables.len(), 2);
         let rows = dbc.rows("SELECT name, ok, preis, seit, HEX(bild) FROM imp_sqlite.kunde ORDER BY id", ()).unwrap();
         assert_eq!(rows[0], vec![Some("Müller".into()), Some("1".into()), Some("9.5".into()), Some("2024-01-02 03:04:05".into()), Some("FF00".into())]);
         assert_eq!(rows[1][2], None);
         let schema = dbc.schema("imp_sqlite").unwrap();
-        assert_eq!(schema.fks.len(), 1, "{:?}", p.log.lock().unwrap());
+        assert_eq!(schema.fks.len(), 1, "{:?}", p.log.lock_ok());
         assert_eq!(schema.table("kunde").unwrap().pk_columns(), vec!["id"]);
         assert!(schema.table("kunde").unwrap().columns[0].extra.contains("auto_increment"));
 
@@ -313,7 +314,7 @@ mod tests {
         let multi = dir.join("alles.json");
         std::fs::write(&multi, "{\"a\":[{\"x\":1}],\"b\":[{\"y\":\"t\"},{\"y\":\"u\"}]}").unwrap();
         let (tables, p, n) = go(&dbc, &Source::Docs(vec![nd, multi]), "imp_json");
-        assert_eq!(n, 5, "{:?}", p.log.lock().unwrap());
+        assert_eq!(n, 5, "{:?}", p.log.lock_ok());
         assert_eq!(tables.iter().map(|t| t.name.as_str()).collect::<Vec<_>>(), vec!["kunden", "a", "b"]);
         let rows = dbc.rows("SELECT `_id`, name, `alter`, adresse, tags, seit FROM imp_json.kunden ORDER BY name", ()).unwrap();
         assert_eq!(rows[0][0].as_deref(), Some("507f1f77bcf86cd799439011"));
@@ -330,7 +331,7 @@ mod tests {
         bytes.extend(b"hle;19,90;3;2024-01-02\r\n\"Tisch; gro\xDF\";120,5;;2024-02-03\r\n");
         std::fs::write(&csv, bytes).unwrap();
         let (_, p, n) = go(&dbc, &Source::Csv(vec![csv]), "imp_csv");
-        assert_eq!(n, 2, "{:?}", p.log.lock().unwrap());
+        assert_eq!(n, 2, "{:?}", p.log.lock_ok());
         let rows = dbc.rows("SELECT artikel, preis, menge, datum FROM imp_csv.preise ORDER BY preis", ()).unwrap();
         assert_eq!(rows[0], vec![Some("Stühle".into()), Some("19.9".into()), Some("3".into()), Some("2024-01-02".into())]);
         assert_eq!(rows[1][0].as_deref(), Some("Tisch; groß"));
@@ -348,7 +349,7 @@ mod tests {
         r(&["ZADD", "z", "1.5", "p", "2", "r"]);
         let (tables, p, n) = go(&dbc, &Source::Redis(conf), "imp_redis");
         assert_eq!(tables.len(), 5);
-        assert_eq!(n, 2 + 2 + 3 + 2 + 2, "{:?}", p.log.lock().unwrap());
+        assert_eq!(n, 2 + 2 + 3 + 2 + 2, "{:?}", p.log.lock_ok());
         let rows = dbc.rows("SELECT `key`, value, ttl IS NOT NULL FROM imp_redis.redis_strings ORDER BY `key`", ()).unwrap();
         assert_eq!(rows[0], vec![Some("name".into()), Some("Müller".into()), Some("0".into())]);
         assert_eq!(rows[1][2].as_deref(), Some("1"));

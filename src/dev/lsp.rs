@@ -2,6 +2,7 @@
 // das ganze Projekt und Hinweise beim Zeigen. Java: Eclipse JDT LS.
 // Je Sprache und Projektordner laeuft ein Server.
 
+use crate::sperre::Sperre;
 use super::Tools;
 use crate::sqledit::Lang;
 use serde_json::{Value, json};
@@ -290,7 +291,7 @@ pub fn get(lang: Lang, root: &Path, ctx: &eframe::egui::Context) -> Option<Arc<S
         return None;
     }
     {
-        let mut list = SERVERS.lock().unwrap();
+        let mut list = SERVERS.lock_ok();
         // Beendete Server entfernen
         list.retain(|s| !s.exited());
         if let Some(s) = list.iter().find(|s| s.lang == lang && s.root == root) {
@@ -369,14 +370,14 @@ pub fn get(lang: Lang, root: &Path, ctx: &eframe::egui::Context) -> Option<Arc<S
                     if !s.settings.is_null() {
                         s.notify("workspace/didChangeConfiguration", json!({ "settings": s.settings }));
                     }
-                    *s.phase.lock().unwrap() = Phase::Ready;
+                    *s.phase.lock_ok() = Phase::Ready;
                 }
-                Err(e) => *s.phase.lock().unwrap() = Phase::Failed(e),
+                Err(e) => *s.phase.lock_ok() = Phase::Failed(e),
             }
             s.ctx.request_repaint();
         });
     }
-    SERVERS.lock().unwrap().push(Arc::clone(&server));
+    SERVERS.lock_ok().push(Arc::clone(&server));
     Some(server)
 }
 
@@ -384,7 +385,7 @@ pub fn get(lang: Lang, root: &Path, ctx: &eframe::egui::Context) -> Option<Arc<S
 /// und Formatieren sofort bereit sind, wenn die erste Datei aufgeht. Billig genug fuer jedes Bild.
 pub fn prewarm(project: Option<&Path>, ctx: &eframe::egui::Context) {
     static LAST: Mutex<Option<PathBuf>> = Mutex::new(None);
-    let mut last = LAST.lock().unwrap();
+    let mut last = LAST.lock_ok();
     if last.as_deref() == project {
         return;
     }
@@ -404,7 +405,7 @@ pub fn prewarm(project: Option<&Path>, ctx: &eframe::egui::Context) {
 
 /// Alle Server beenden (beim Schliessen oder nach neuen Einstellungen)
 pub fn shutdown_all() {
-    let list: Vec<Arc<Server>> = std::mem::take(&mut *SERVERS.lock().unwrap());
+    let list: Vec<Arc<Server>> = std::mem::take(&mut *SERVERS.lock_ok());
     for s in list {
         s.shutdown();
     }
@@ -412,7 +413,7 @@ pub fn shutdown_all() {
 
 /// Server einer Sprache beenden (z. B. nach dem Ausschalten)
 pub fn shutdown_lang(lang: Lang) {
-    let mut list = SERVERS.lock().unwrap();
+    let mut list = SERVERS.lock_ok();
     let (stop, keep): (Vec<_>, Vec<_>) = list.drain(..).partition(|s| s.lang == lang);
     *list = keep;
     drop(list);
@@ -423,13 +424,13 @@ pub fn shutdown_lang(lang: Lang) {
 
 /// Anzahl der laufenden Server (fuer die Einstellungen)
 pub fn running() -> Vec<(Lang, PathBuf, Phase)> {
-    SERVERS.lock().unwrap().iter().map(|s| (s.lang, s.root.clone(), s.phase.lock().unwrap().clone())).collect()
+    SERVERS.lock_ok().iter().map(|s| (s.lang, s.root.clone(), s.phase.lock_ok().clone())).collect()
 }
 
 impl Server {
     fn write(&self, msg: &Value) {
         let body = msg.to_string();
-        let mut w = self.stdin.lock().unwrap();
+        let mut w = self.stdin.lock_ok();
         let _ = write!(w, "Content-Length: {}\r\n\r\n{body}", body.len());
         let _ = w.flush();
     }
@@ -441,7 +442,7 @@ impl Server {
     pub fn request(&self, method: &str, params: Value) -> Reply {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let (tx, rx) = channel();
-        self.pending.lock().unwrap().insert(id, tx);
+        self.pending.lock_ok().insert(id, tx);
         self.write(&json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params }));
         rx
     }
@@ -451,11 +452,11 @@ impl Server {
     }
 
     pub fn ready(&self) -> bool {
-        *self.phase.lock().unwrap() == Phase::Ready
+        *self.phase.lock_ok() == Phase::Ready
     }
 
     pub fn exited(&self) -> bool {
-        self.child.lock().unwrap().try_wait().ok().flatten().is_some()
+        self.child.lock_ok().try_wait().ok().flatten().is_some()
     }
 
     fn shutdown(&self) {
@@ -464,13 +465,13 @@ impl Server {
             self.notify("exit", Value::Null);
         }
         std::thread::sleep(std::time::Duration::from_millis(100));
-        let _ = self.child.lock().unwrap().kill();
+        let _ = self.child.lock_ok().kill();
     }
 
     /// Datei oeffnen bzw. neuen Text melden (der ganze Text; Server mit Teilaenderungen nehmen das auch)
     pub fn sync(&self, path: &Path, lang: Lang, text: &str) {
         let u = uri(path);
-        let mut versions = self.versions.lock().unwrap();
+        let mut versions = self.versions.lock_ok();
         match versions.get_mut(&u) {
             Some(v) => {
                 *v += 1;
@@ -499,7 +500,7 @@ impl Server {
                 && v["kind"].as_str() != Some("unchanged")
             {
                 let list = parse_diagnostics(&v["items"]);
-                store.lock().unwrap().insert(u, (counter, list));
+                store.lock_ok().insert(u, (counter, list));
                 ctx.request_repaint();
             }
         });
@@ -510,20 +511,20 @@ impl Server {
     }
 
     pub fn saved(&self, path: &Path) {
-        if self.versions.lock().unwrap().contains_key(&uri(path)) {
+        if self.versions.lock_ok().contains_key(&uri(path)) {
             self.notify("textDocument/didSave", json!({ "textDocument": { "uri": uri(path) } }));
         }
     }
 
     pub fn close(&self, path: &Path) {
-        if self.versions.lock().unwrap().remove(&uri(path)).is_some() {
+        if self.versions.lock_ok().remove(&uri(path)).is_some() {
             self.notify("textDocument/didClose", json!({ "textDocument": { "uri": uri(path) } }));
         }
     }
 
     /// Meldungen zur Datei mit Zaehler (aendert sich bei jeder neuen Meldung)
     pub fn diagnostics(&self, path: &Path) -> Option<(u64, Vec<Diagnostic>)> {
-        self.diags.lock().unwrap().get(&uri(path)).cloned()
+        self.diags.lock_ok().get(&uri(path)).cloned()
     }
 
     fn doc_pos(path: &Path, text: &str, index: usize) -> Value {
@@ -598,11 +599,11 @@ impl Server {
     }
 
     fn ended(&self) {
-        let mut ph = self.phase.lock().unwrap();
+        let mut ph = self.phase.lock_ok();
         if *ph != Phase::Ready {
             *ph = Phase::Failed(crate::i18n::tr("Der Sprachserver wurde beendet.", "The language server stopped.").into());
         }
-        for (_, tx) in self.pending.lock().unwrap().drain() {
+        for (_, tx) in self.pending.lock_ok().drain() {
             let _ = tx.send(Err(crate::i18n::tr("Der Sprachserver wurde beendet.", "The language server stopped.").into()));
         }
         self.ctx.request_repaint();
@@ -614,7 +615,7 @@ impl Server {
             // Antwort auf eine Anfrage
             (Some(id), None) => {
                 if let Some(id) = id.as_i64()
-                    && let Some(tx) = self.pending.lock().unwrap().remove(&id)
+                    && let Some(tx) = self.pending.lock_ok().remove(&id)
                 {
                     let r = match msg.get("error") {
                         Some(e) => Err(e["message"].as_str().unwrap_or("Fehler").to_string()),
@@ -652,7 +653,7 @@ impl Server {
                     let u = p["uri"].as_str().unwrap_or("").to_string();
                     let list = parse_diagnostics(&p["diagnostics"]);
                     let n = self.counter.fetch_add(1, Ordering::Relaxed) as u64 + 1;
-                    self.diags.lock().unwrap().insert(u, (n, list));
+                    self.diags.lock_ok().insert(u, (n, list));
                     self.ctx.request_repaint();
                 }
                 "$/progress" => {
@@ -661,12 +662,12 @@ impl Server {
                         Some("end") => String::new(),
                         _ => [v["title"].as_str(), v["message"].as_str()].into_iter().flatten().collect::<Vec<_>>().join(" "),
                     };
-                    *self.progress.lock().unwrap() = text;
+                    *self.progress.lock_ok() = text;
                     self.ctx.request_repaint();
                 }
                 "language/status" => {
                     let t = msg["params"]["message"].as_str().unwrap_or("").to_string();
-                    *self.progress.lock().unwrap() = if msg["params"]["type"].as_str() == Some("ServiceReady") { String::new() } else { t };
+                    *self.progress.lock_ok() = if msg["params"]["type"].as_str() == Some("ServiceReady") { String::new() } else { t };
                     self.ctx.request_repaint();
                 }
                 _ => {}

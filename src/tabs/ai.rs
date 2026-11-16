@@ -1,6 +1,7 @@
 // Native Chat-Fenster fuer Claude und Codex, aufgebaut wie die Chat-Apps der Anbieter:
 // Kopfzeile mit Konto, Verlauf als eigene Ansicht, Nachrichten als Blasen bzw. Fliesstext,
 // Eingabekarte mit Projektordner, Berechtigung und Modellwahl.
+use crate::sperre::Sperre;
 use super::{Action, Ctx, TabView};
 use crate::ai::{Anfrage, Auftrag, Auswahl, Befehl, Konfig, Konto, Modell, Nachricht, Rolle, Sitzung, Stand};
 use crate::i18n::tr;
@@ -320,7 +321,7 @@ impl AiTab {
     /// Hintergrundstand uebernehmen; fertige Antworten wandern in den Verlauf.
     fn abholen(&mut self, cx: &mut Ctx) {
         if let Some(a) = &self.auftrag {
-            let s = a.stand.lock().unwrap().clone();
+            let s = a.stand.lock_ok().clone();
             if s.fertig {
                 self.auftrag = None;
                 self.meldung = Some(match s.fehler {
@@ -336,7 +337,7 @@ impl AiTab {
             }
         }
         let Some(v) = &self.verbindung else { return };
-        let mut s = v.stand.lock().unwrap();
+        let mut s = v.stand.lock_ok();
         // Nichts Neues: nichts kopieren (vorher wurde der ganze Antwortstand in jedem Bild kopiert)
         if s.rev == self.live_rev && !s.zug_fertig {
             return;
@@ -399,7 +400,7 @@ impl AiTab {
         if self.auftrag.is_some() || self.ziel.program().is_none() || self.laeuft() || self.angemeldet() == Some(false) {
             return;
         }
-        let veraltet = self.verbindung.as_ref().is_some_and(|v| v.konfig != konfig || (erzwingen && v.stand.lock().unwrap().beendet));
+        let veraltet = self.verbindung.as_ref().is_some_and(|v| v.konfig != konfig || (erzwingen && v.stand.lock_ok().beendet));
         if veraltet {
             self.verbindung = None;
             self.start_versucht = false;

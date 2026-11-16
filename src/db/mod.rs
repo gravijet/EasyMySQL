@@ -1,5 +1,6 @@
 // Datenbankzugriff: Verbindung, Abfragen, Metadaten (Reverse Engineering).
 
+use crate::sperre::LeseSperre;
 use mysql::prelude::*;
 use mysql::{Conn, Opts, OptsBuilder, Params, Pool, PoolConstraints, PoolOpts, Value};
 use std::collections::{HashMap, HashSet};
@@ -50,12 +51,12 @@ pub fn kill_query(info: &ConnInfo, connection_id: u32) {
 static LOCAL_TLS: std::sync::RwLock<Option<(u16, std::path::PathBuf)>> = std::sync::RwLock::new(None);
 
 pub fn set_local_tls(v: Option<(u16, std::path::PathBuf)>) {
-    *LOCAL_TLS.write().unwrap() = v;
+    *LOCAL_TLS.write_ok() = v;
 }
 
 /// CA-Datei, wenn Verbindungen zu `host:port` mit dem eigenen Zertifikat verschluesselt werden
 pub fn local_tls_ca(host: &str, port: u16) -> Option<std::path::PathBuf> {
-    let g = LOCAL_TLS.read().unwrap();
+    let g = LOCAL_TLS.read_ok();
     let (p, ca) = g.as_ref()?;
     (*p == port && crate::dev::is_local(host)).then(|| ca.clone())
 }

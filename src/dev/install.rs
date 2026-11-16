@@ -2,6 +2,7 @@
 // Quellen: Adoptium (Temurin-JDK), Maven Central (Treiber, Maven, JUnit), services.gradle.org (Gradle),
 // download.eclipse.org (JDT LS), GitHub-Releases (MinGit, GitHub CLI, Codex), Claude Code.
 
+use crate::sperre::Sperre;
 use super::java::{Driver, java_dir, lib_dir};
 use super::{Tool, is_stable, newest_stable, tool_root, tools};
 use eframe::egui;
@@ -554,7 +555,7 @@ struct State {
 static STATE: Mutex<Option<State>> = Mutex::new(None);
 
 fn with_state<R>(f: impl FnOnce(&mut State) -> R) -> R {
-    let mut g = STATE.lock().unwrap();
+    let mut g = STATE.lock_ok();
     f(g.get_or_insert_with(State::default))
 }
 

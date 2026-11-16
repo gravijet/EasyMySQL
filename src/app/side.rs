@@ -1,5 +1,6 @@
 // Seitenleisten: Explorer (Projektordner), Suchen in Dateien, Datenbanken, Verlauf.
 
+use crate::sperre::Sperre;
 use super::*;
 use crate::db::q;
 use crate::icons::{self, Icon};
@@ -327,7 +328,7 @@ impl EasyApp {
         if self.tree_job.is_none() && (self.tree.is_none() || focused) && self.tree_scan.is_none_or(|t| t.elapsed().as_secs() >= 3) {
             let project = p.clone();
             let (tx, rx) = std::sync::mpsc::channel();
-            let ctx = CTX.lock().unwrap().clone();
+            let ctx = CTX.lock_ok().clone();
             std::thread::spawn(move || {
                 let tree = workspace::scan(&project);
                 let _ = tx.send((project, tree));

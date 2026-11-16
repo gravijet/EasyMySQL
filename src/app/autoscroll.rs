@@ -1,5 +1,6 @@
 // Autoscroll mit der mittleren Maustaste.
 
+use crate::sperre::Sperre;
 use crate::style;
 use eframe::egui::{self, Pos2, Rect};
 use std::sync::Mutex;
@@ -18,18 +19,18 @@ pub(super) struct Autoscroll {
 static NO_AUTOSCROLL: Mutex<Vec<Rect>> = Mutex::new(Vec::new());
 
 pub fn block_autoscroll(r: Rect) {
-    NO_AUTOSCROLL.lock().unwrap().push(r);
+    NO_AUTOSCROLL.lock_ok().push(r);
 }
 
 /// Vor jedem Bild: die gesperrten Bereiche des letzten Bildes verwerfen.
 pub(super) fn begin_frame() {
-    NO_AUTOSCROLL.lock().unwrap().clear();
+    NO_AUTOSCROLL.lock_ok().clear();
 }
 
 impl Autoscroll {
     pub(super) fn hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
         let mut consumed = false;
-        let blocked_rects = NO_AUTOSCROLL.lock().unwrap().clone();
+        let blocked_rects = NO_AUTOSCROLL.lock_ok().clone();
         raw.events.retain(|e| match e {
             egui::Event::PointerMoved(p) => {
                 self.pos = *p;

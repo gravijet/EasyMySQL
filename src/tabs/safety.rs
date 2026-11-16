@@ -1,5 +1,6 @@
 // Registerkarte "Sicherungen & Reparatur".
 
+use crate::sperre::Sperre;
 use super::{Action, Ctx, TabView};
 use crate::backup::{self, BackupInfo, Config};
 use crate::db::ConnInfo;
@@ -80,7 +81,7 @@ impl SafetyTab {
         let ctx2 = ctx.clone();
         std::thread::spawn(move || {
             let logger = |m: String| {
-                l2.lock().unwrap().push(m);
+                l2.lock_ok().push(m);
                 ctx2.request_repaint();
             };
             let r = f(&logger);
@@ -94,7 +95,7 @@ impl SafetyTab {
 
     fn poll(&mut self, cx: &mut Ctx) {
         let Some(job) = &self.job else { return };
-        self.log = job.log.lock().unwrap().clone();
+        self.log = job.log.lock_ok().clone();
         if let Ok(r) = job.rx.try_recv() {
             let reconnect = job.reconnect;
             let title = job.title.clone();

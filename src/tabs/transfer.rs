@@ -3,6 +3,7 @@
 // Jede Quelle und jedes Ziel gibt es als Datei und, wo es passt, ueber eine Verbindung zu einem anderen
 // Rechner (Web-Adresse, SSH, Server mit TLS und SSH-Tunnel).
 
+use crate::sperre::Sperre;
 use super::{Action, Ctx, TabView};
 use crate::icons::{self, Icon};
 use crate::ssh::SshConfig;
@@ -342,7 +343,7 @@ impl TransferTab {
         if let Some(job) = &self.job
             && let Ok(r) = job.rx.try_recv()
         {
-            self.log = job.progress.log.lock().unwrap().clone();
+            self.log = job.progress.log.lock_ok().clone();
             self.job = None;
             match r {
                 Ok(n) => {
@@ -356,7 +357,7 @@ impl TransferTab {
         if let Some(job) = &self.exporting
             && let Ok(r) = job.rx.try_recv()
         {
-            self.log = job.progress.log.lock().unwrap().clone();
+            self.log = job.progress.log.lock_ok().clone();
             self.exporting = None;
             if let Ok(msg) = &r {
                 cx.status(crate::tr_format!("Exportiert: {msg}", "Exported: {msg}"));
@@ -711,9 +712,9 @@ impl TransferTab {
         if let Some(job) = &self.job {
             let total = job.progress.total.load(Ordering::Relaxed).max(1);
             let done = job.progress.done.load(Ordering::Relaxed);
-            let table = job.progress.table.lock().unwrap().clone();
+            let table = job.progress.table.lock_ok().clone();
             progress_ui(ui, &table, done, total, &job.progress);
-            self.log = job.progress.log.lock().unwrap().clone();
+            self.log = job.progress.log.lock_ok().clone();
         }
         if let Some(n) = self.done {
             ui.add_space(8.0);
@@ -882,7 +883,7 @@ impl TransferTab {
         if let Some(job) = &self.exporting {
             let total = job.progress.total.load(Ordering::Relaxed).max(1);
             let done = job.progress.done.load(Ordering::Relaxed);
-            let table = job.progress.table.lock().unwrap().clone();
+            let table = job.progress.table.lock_ok().clone();
             progress_ui(ui, &table, done, total, &job.progress);
         }
         match &self.exp_result {

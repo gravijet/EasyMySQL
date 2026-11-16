@@ -23,6 +23,7 @@ mod profiles;
 mod qhistory;
 mod server;
 mod settings;
+mod sperre;
 mod ssh;
 mod sqledit;
 mod sqlfmt;

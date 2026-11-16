@@ -258,7 +258,7 @@ impl Settings {
     }
 
     pub fn save(&self) {
-        let _ = crate::workspace::atomic_write_private(&path(), &self.to_text());
+        crate::workspace::melden(crate::i18n::tr("Die Einstellungen", "The settings"), &path(), crate::workspace::atomic_write_private(&path(), &self.to_text()));
     }
 
     fn to_text(&self) -> String {

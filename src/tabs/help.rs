@@ -1,6 +1,7 @@
 // Registerkarte "Hilfe": Handbuch mit Inhaltsverzeichnis, Suche, aktuellen Tastenkuerzeln und
 // Knoepfen, die das Beschriebene direkt oeffnen.
 
+use crate::sperre::Sperre;
 use super::help_content::{B, CHAPTERS, Section, Target};
 use super::{Action, Ctx, TabView};
 use crate::keymap;
@@ -283,7 +284,7 @@ fn highlighted(code: &'static str) -> egui::text::LayoutJob {
     use std::sync::Mutex;
     static CACHE: Mutex<Option<HashMap<(usize, bool), egui::text::LayoutJob>>> = Mutex::new(None);
     let key = (code.as_ptr() as usize, style::pal().dark);
-    let mut c = CACHE.lock().unwrap();
+    let mut c = CACHE.lock_ok();
     c.get_or_insert_with(HashMap::new).entry(key).or_insert_with(|| crate::sqledit::highlight(code, egui::FontId::monospace(13.0))).clone()
 }
 

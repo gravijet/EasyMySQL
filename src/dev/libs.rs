@@ -1,6 +1,7 @@
 // Bibliotheken einbinden, ohne pom.xml oder build.gradle von Hand zu
 // bearbeiten: suchen (Maven Central), die neueste stabile Version eintragen bzw. laden.
 
+use crate::sperre::Sperre;
 use super::install::{central_checksum, download, get_json, latest_maven, Progress};
 use crate::sqledit::Lang;
 use std::path::{Path, PathBuf};
@@ -228,7 +229,7 @@ fn download_jars(lib: &Path, group: &str, artifact: &str, version: &str, live: &
         }
         let base = format!("https://repo1.maven.org/maven2/{}/{a}/{v}/{a}-{v}", g.replace('.', "/"));
         let file = format!("{a}-{v}.jar");
-        *live.lock().unwrap() = crate::tr_format!("{file} wird geladen …", "Downloading {file} …");
+        *live.lock_ok() = crate::tr_format!("{file} wird geladen …", "Downloading {file} …");
         let target = lib.join(&file);
         if !target.is_file() {
             let url = format!("{base}.jar");

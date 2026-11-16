@@ -296,12 +296,125 @@ fn highlight_line(line: &str, mut st: HlState, pal: &crate::style::Pal) -> LineS
     (out, st)
 }
 
+/// Ein Absatz (Zeile ohne `\n`, wie egui Text in Absaetze teilt) mit Faerbungszustand und fertigem Layout
+struct Absatz {
+    text: String,
+    st_in: HlState,
+    st_out: HlState,
+    galley: Arc<egui::Galley>,
+}
+
+/// Layout je Zeile: Beim Tippen werden nur geaenderte Zeilen neu gesetzt und die uebrigen mit
+/// `Galley::concat` angehaengt. Vorher hat egui bei jedem Tastendruck den ganzen Text samt aller Abschnitte
+/// gehasht und in Absaetze zerlegt (5000 Zeilen: rund 11 ms fuer Faerbung und Layout).
+#[derive(Default)]
+struct Absaetze {
+    liste: Vec<Absatz>,
+    key: Option<(FontId, bool, u32)>,
+    /// Fuellstand des Schrift-Atlas: sinkt er, hat egui die Schriften neu angelegt und alte Layouts sind ungueltig
+    atlas: f32,
+}
+
+/// Text so in Absaetze teilen wie egui (`layout_each_paragraph_individually`): ohne `\n`, ein `\n` am Textende
+/// gehoert zum letzten Absatz.
+fn absatz_grenzen(text: &str) -> Vec<(usize, usize)> {
+    let mut out = Vec::new();
+    let mut start = 0;
+    while start < text.len() {
+        let mut end = text[start..].find('\n').map_or(text.len(), |i| start + i);
+        if end == text.len() - 1 && text.ends_with('\n') {
+            end += 1;
+        }
+        out.push((start, end));
+        start = end + 1;
+    }
+    out
+}
+
+impl Absaetze {
+    fn layout(&mut self, ui: &egui::Ui, text: &str, font: &FontId, dark: bool, scale: f32) -> Arc<egui::Galley> {
+        let pal = crate::style::pal();
+        let atlas = ui.fonts_mut(|f| f.font_atlas_fill_ratio());
+        let key = (font.clone(), dark, scale.to_bits());
+        if self.key.as_ref() != Some(&key) || atlas + 1e-6 < self.atlas {
+            self.liste.clear();
+            self.key = Some(key);
+        }
+        self.atlas = atlas;
+        let grenzen = absatz_grenzen(text);
+        let teile: Vec<&str> = grenzen.iter().map(|&(a, b)| &text[a..b]).collect();
+        let alt = std::mem::take(&mut self.liste);
+        // gleicher Anfang und gleiches Ende
+        let mut p = 0;
+        while p < alt.len() && p < teile.len() && alt[p].text == teile[p] {
+            p += 1;
+        }
+        let mut e = 0;
+        while e < alt.len() - p && e < teile.len() - p && alt[alt.len() - 1 - e].text == teile[teile.len() - 1 - e] {
+            e += 1;
+        }
+        let n_alt = alt.len();
+        let mut alt: Vec<Option<Absatz>> = alt.into_iter().map(Some).collect();
+        let mut neu: Vec<Absatz> = Vec::with_capacity(teile.len());
+        let mut st = HlState::Normal;
+        let setzen = |ui: &egui::Ui, teil: &str, st: HlState, letzter: bool| -> Absatz {
+            // Faerben mit Zeilenumbruch (fuer den Zustand danach), Layout ohne ihn (wie egui)
+            let spans = if letzter { highlight_line(teil, st, pal) } else { highlight_line(&format!("{teil}\n"), st, pal) };
+            let mut job = LayoutJob { text: teil.to_owned(), ..Default::default() };
+            job.wrap.max_width = f32::INFINITY;
+            let len = teil.len() as u32;
+            for &(a, b, color) in &spans.0 {
+                if a <= len {
+                    job.sections.push(egui::text::LayoutSection {
+                        leading_space: 0.0,
+                        byte_range: egui::text::ByteIndex(a as usize)..egui::text::ByteIndex(b.min(len) as usize),
+                        format: TextFormat::simple(font.clone(), color),
+                    });
+                }
+            }
+            if job.sections.is_empty() {
+                job.sections.push(egui::text::LayoutSection { leading_space: 0.0, byte_range: egui::text::ByteIndex(0)..egui::text::ByteIndex(0), format: TextFormat::simple(font.clone(), pal.syn_text) });
+            }
+            let galley = ui.fonts_mut(|f| f.layout_job(job));
+            Absatz { text: teil.to_owned(), st_in: st, st_out: spans.1, galley }
+        };
+        let letzter = teile.len().saturating_sub(1);
+        for (i, slot) in alt.iter_mut().enumerate().take(p) {
+            let a = slot.take().expect("Absatz");
+            st = a.st_out;
+            neu.push(a);
+            let _ = i;
+        }
+        for (i, teil) in teile.iter().enumerate().take(teile.len() - e).skip(p) {
+            let a = setzen(ui, teil, st, i == letzter);
+            st = a.st_out;
+            neu.push(a);
+        }
+        for k in 0..e {
+            let i = teile.len() - e + k;
+            let a = alt[n_alt - e + k].take().expect("Absatz");
+            // Aendert sich der Zustand davor (z. B. Kommentar geoeffnet), neu faerben, bis er wieder passt
+            let a = if a.st_in == st { a } else { setzen(ui, teile[i], st, i == letzter) };
+            st = a.st_out;
+            neu.push(a);
+        }
+        let galleys: Vec<Arc<egui::Galley>> = neu.iter().map(|a| Arc::clone(&a.galley)).collect();
+        self.liste = neu;
+        let mut job = LayoutJob { text: text.to_owned(), ..Default::default() };
+        job.wrap.max_width = f32::INFINITY;
+        job.sections.push(egui::text::LayoutSection { leading_space: 0.0, byte_range: egui::text::ByteIndex(0)..egui::text::ByteIndex(text.len()), format: TextFormat::simple(font.clone(), pal.syn_text) });
+        Arc::new(egui::Galley::concat(Arc::new(job), &galleys, scale))
+    }
+}
+
 /// Reuse tokenization and glyph layout until text, font, theme or display scale changes.
 #[derive(Default)]
 pub struct SqlLayoutCache {
     entry: Option<SqlLayout>,
     /// Faerbung je Zeile (nur SQL)
     lines: LineCache,
+    /// Layout je Zeile (nur SQL, mehrzeilig)
+    absaetze: Absaetze,
     #[cfg(test)]
     pub(super) builds: usize,
 }
@@ -327,9 +440,13 @@ impl SqlLayoutCache {
             && entry.lang == lang && entry.text == text && entry.font == *font && entry.dark == dark && entry.scale == scale {
                 return Arc::clone(&entry.galley);
             }
-        let mut job = if lang == super::Lang::Sql { highlight_cached(text, font.clone(), &mut self.lines) } else { super::lang::highlight_lang(text, font.clone(), lang) };
-        job.wrap.max_width = f32::INFINITY;
-        let galley = ui.fonts_mut(|fonts| fonts.layout_job(job));
+        let galley = if lang == super::Lang::Sql && text.contains('\n') {
+            self.absaetze.layout(ui, text, font, dark, scale)
+        } else {
+            let mut job = if lang == super::Lang::Sql { highlight_cached(text, font.clone(), &mut self.lines) } else { super::lang::highlight_lang(text, font.clone(), lang) };
+            job.wrap.max_width = f32::INFINITY;
+            ui.fonts_mut(|fonts| fonts.layout_job(job))
+        };
         self.entry = Some(SqlLayout { lang, text: text.to_owned(), font: font.clone(), dark, scale, galley: Arc::clone(&galley) });
         #[cfg(test)] { self.builds += 1; }
         galley
@@ -469,9 +586,7 @@ mod line_cache_tests {
     fn colors(job: &LayoutJob) -> Vec<Color32> {
         let mut out = vec![Color32::TRANSPARENT; job.text.len()];
         for s in &job.sections {
-            for b in s.byte_range.start.0..s.byte_range.end.0 {
-                out[b] = s.format.color;
-            }
+            out[s.byte_range.start.0..s.byte_range.end.0].fill(s.format.color);
         }
         out
     }
@@ -535,5 +650,63 @@ mod probe_timing {
                 println!("round {i}: highlight {:?}, layout {:?}", h, t.elapsed());
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod absatz_tests {
+    use super::*;
+
+    /// Das zeilenweise Layout muss genau dem von egui fuer den ganzen Text entsprechen (Zeilen, Zeichen, Lage),
+    /// auch nach Einfuegen, Loeschen, Blockkommentaren und Zeilenumbruechen am Ende.
+    #[test]
+    fn zeilenweises_layout_gleicht_dem_ganzen() {
+        let ctx = egui::Context::default();
+        let font = FontId::monospace(13.0);
+        let mut cache = SqlLayoutCache::default();
+        let mut texte: Vec<String> = vec![
+            "SELECT 1;\nSELECT 'a';\n".into(),
+            "SELECT 1;\n/* offen\nSELECT 'a';\n".into(),
+            "SELECT 1;\n/* offen */\nSELECT 'a';\n\n".into(),
+            "\n\nx".into(),
+            "SELECT `ä`, \"ü\"\n-- Kommentar\nFROM t\n".into(),
+            "a\n".into(),
+            "\n".into(),
+        ];
+        let mut lang = "SELECT id, name FROM kunde WHERE id > 100;\n".repeat(50);
+        texte.push(lang.clone());
+        lang.insert_str(400, "/* x\n");
+        texte.push(lang.clone());
+        lang.insert_str(800, "\n*/");
+        texte.push(lang);
+        for t in &texte {
+            let _ = ctx.run_ui(Default::default(), |ui| {
+                let mine = cache.layout(ui, t, &font);
+                let mut job = highlight(t, font.clone());
+                job.wrap.max_width = f32::INFINITY;
+                let theirs = ui.fonts_mut(|f| f.layout_job(job));
+                assert_eq!(mine.rows.len(), theirs.rows.len(), "{t:?}");
+                assert_eq!(mine.job.text, *t);
+                for (a, b) in mine.rows.iter().zip(theirs.rows.iter()) {
+                    assert_eq!(a.pos, b.pos, "{t:?}");
+                    assert_eq!(a.ends_with_newline, b.ends_with_newline, "{t:?}");
+                    assert_eq!(a.char_count_excluding_newline(), b.char_count_excluding_newline(), "{t:?}");
+                    let fa: Vec<_> = a.glyphs.iter().map(|g| (g.chr, g.pos)).collect();
+                    let fb: Vec<_> = b.glyphs.iter().map(|g| (g.chr, g.pos)).collect();
+                    assert_eq!(fa, fb, "{t:?}");
+                }
+                // Farben gleich
+                for (a, b) in mine.rows.iter().zip(theirs.rows.iter()) {
+                    let fa: Vec<Color32> = a.visuals.mesh.vertices.iter().map(|v| v.color).collect();
+                    let fb: Vec<Color32> = b.visuals.mesh.vertices.iter().map(|v| v.color).collect();
+                    assert_eq!(fa, fb, "{t:?}");
+                }
+                assert_eq!(mine.rect, theirs.rect, "{t:?}");
+                for i in [0, t.chars().count() / 2, t.chars().count()] {
+                    let c = egui::text::CCursor::new(i);
+                    assert_eq!(mine.pos_from_cursor(c), theirs.pos_from_cursor(c), "{t:?} @ {i}");
+                }
+            });
+        }
     }
 }

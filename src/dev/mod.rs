@@ -6,8 +6,10 @@
 //   sprachserver/  jdtls-1.52.0/ (Eclipse JDT LS)
 //   git/           git-2.51.0/ (MinGit, nur Windows), gh_2.83.0_…/ (GitHub CLI)
 
+use crate::sperre::LeseSperre;
 pub mod autofix;
 pub mod debug;
+pub mod einrichten;
 #[cfg(test)]
 mod e2e;
 pub mod install;
@@ -158,6 +160,9 @@ pub struct Config {
     pub cwd_project: bool,
     /// Verbindungsdaten der gewaehlten Datenbank als EASYMYSQL_DB_* an Programme geben
     pub pass_connection: bool,
+    /// Eigener Server: vor dem Start fehlende Datenbank/Tabellen/Spalten anlegen, nach einem Datenbankfehler
+    /// beheben und neu starten
+    pub auto_setup: bool,
 
     pub updates: UpdatePolicy,
     /// Fehlende Werkzeuge ohne Nachfrage laden
@@ -189,6 +194,7 @@ impl Default for Config {
             reuse_terminal: true,
             cwd_project: true,
             pass_connection: true,
+            auto_setup: true,
             updates: UpdatePolicy::Weekly,
             auto_download: true,
             lsp_java: true,
@@ -221,6 +227,7 @@ impl Config {
         kv("reuse_terminal", b(self.reuse_terminal).into());
         kv("cwd_project", b(self.cwd_project).into());
         kv("pass_connection", b(self.pass_connection).into());
+        kv("auto_setup", b(self.auto_setup).into());
         kv("updates", self.updates.id().into());
         kv("auto_download", b(self.auto_download).into());
         kv("lsp_java", b(self.lsp_java).into());
@@ -250,6 +257,7 @@ impl Config {
             "reuse_terminal" => self.reuse_terminal = on,
             "cwd_project" => self.cwd_project = on,
             "pass_connection" => self.pass_connection = on,
+            "auto_setup" => self.auto_setup = on,
             "updates" => self.updates = UpdatePolicy::from_id(v),
             "auto_download" => self.auto_download = on,
             "lsp_java" => self.lsp_java = on,
@@ -280,14 +288,14 @@ impl Config {
 static CONFIG: RwLock<Option<Config>> = RwLock::new(None);
 
 pub fn config() -> Config {
-    CONFIG.read().unwrap().clone().unwrap_or_default()
+    CONFIG.read_ok().clone().unwrap_or_default()
 }
 
 /// Neue Einstellungen; bei anderer Werkzeugwahl wird neu gesucht
 pub fn set_config(c: Config) {
     let old = config();
     let changed_tools = old.jdk != c.jdk;
-    *CONFIG.write().unwrap() = Some(c);
+    *CONFIG.write_ok() = Some(c);
     if changed_tools {
         refresh();
     }
@@ -433,17 +441,17 @@ static TOOLS: RwLock<Option<Arc<Tools>>> = RwLock::new(None);
 
 /// Gefundene Werkzeuge (einmal gesucht, nach Installationen und neuen Einstellungen neu)
 pub fn tools() -> Arc<Tools> {
-    if let Some(t) = TOOLS.read().unwrap().as_ref() {
+    if let Some(t) = TOOLS.read_ok().as_ref() {
         return Arc::clone(t);
     }
     let t = Arc::new(detect(&tool_root(), &config()));
-    *TOOLS.write().unwrap() = Some(Arc::clone(&t));
+    *TOOLS.write_ok() = Some(Arc::clone(&t));
     t
 }
 
 /// Nach einer Installation neu suchen
 pub fn refresh() {
-    *TOOLS.write().unwrap() = None;
+    *TOOLS.write_ok() = None;
 }
 
 // ---------------------------------------------------------------------------
@@ -610,7 +618,7 @@ mod tests {
 
     #[test]
     fn config_roundtrip_and_env_lines() {
-        let c = Config { jvm_args: "-Xmx1g\n-ea".into(), use_wrapper: false, updates: UpdatePolicy::Monthly, program_env: "# x\nA=1\nexport B = zwei\n=leer\n".into(), ..Default::default() };
+        let c = Config { jvm_args: "-Xmx1g\n-ea".into(), use_wrapper: false, auto_setup: false, updates: UpdatePolicy::Monthly, program_env: "# x\nA=1\nexport B = zwei\n=leer\n".into(), ..Default::default() };
         let mut back = Config::default();
         for line in c.to_lines().lines() {
             let (k, v) = line.split_once('=').unwrap();

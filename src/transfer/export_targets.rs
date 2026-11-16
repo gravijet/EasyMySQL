@@ -1,6 +1,7 @@
 // Weitere Ziele fuer den Export: PostgreSQL (Skript oder Server), MongoDB-Dateien, Redis (Datei oder Server)
 // und eine Kopie auf einen anderen MariaDB- oder MySQL-Server.
 
+use crate::sperre::Sperre;
 use super::export::{Job, is_number, rows_of, text, valid_number};
 use super::import::RedisConf;
 use super::rdb;
@@ -142,7 +143,7 @@ pub fn pg_finish(schema: &Schema, tables: &[&TableInfo]) -> Vec<String> {
 /// Gemeinsamer Ablauf fuer PostgreSQL-Skript und -Server: `emit` bekommt jede Anweisung.
 fn pg_run(dbc: &Db, job: &Job, tables: &[&TableInfo], schema: &Schema, drop_first: bool, emit: &mut dyn FnMut(&str) -> Res<()>) -> Res<()> {
     for t in tables {
-        *job.progress.table.lock().unwrap() = t.name.clone();
+        *job.progress.table.lock_ok() = t.name.clone();
         let (create, kinds) = pg_create(t, schema);
         if drop_first {
             emit(&format!("DROP TABLE IF EXISTS {} CASCADE", pg_ident(&t.name)))?;
@@ -206,7 +207,7 @@ fn mongo_value(t: T, v: &Value) -> String {
 }
 
 pub fn mongo_lines(dbc: &Db, job: &Job, t: &TableInfo, w: &mut dyn Write) -> Res<()> {
-    *job.progress.table.lock().unwrap() = t.name.clone();
+    *job.progress.table.lock_ok() = t.name.clone();
     rows_of(dbc, &job.db, &t.name, &job.progress, &mut |cols, vals| {
         let fields: Vec<String> = cols.iter().zip(vals).filter(|(_, v)| !matches!(v, Value::NULL)).map(|(c, v)| format!("{}:{}", serde_json::Value::String(c.name_str().into_owned()), mongo_value(c.column_type(), v))).collect();
         writeln!(w, "{{{}}}", fields.join(",")).map_err(io)
@@ -259,7 +260,7 @@ pub fn redis_rdb(dbc: &Db, job: &Job, tables: &[&TableInfo], target: &std::path:
     let file = std::fs::File::create(target).map_err(io)?;
     let mut w = rdb::Writer::new(std::io::BufWriter::new(file)).map_err(io)?;
     for t in tables {
-        *job.progress.table.lock().unwrap() = t.name.clone();
+        *job.progress.table.lock_ok() = t.name.clone();
         let mut n = 0u64;
         rows_of(dbc, &job.db, &t.name, &job.progress, &mut |cols, vals| {
             n += 1;
@@ -273,7 +274,7 @@ pub fn redis_rdb(dbc: &Db, job: &Job, tables: &[&TableInfo], target: &std::path:
 
 pub fn redis_commands(dbc: &Db, job: &Job, tables: &[&TableInfo], w: &mut dyn Write) -> Res<()> {
     for t in tables {
-        *job.progress.table.lock().unwrap() = t.name.clone();
+        *job.progress.table.lock_ok() = t.name.clone();
         let mut n = 0u64;
         rows_of(dbc, &job.db, &t.name, &job.progress, &mut |cols, vals| {
             n += 1;
@@ -293,7 +294,7 @@ pub fn redis_server(dbc: &Db, job: &Job, tables: &[&TableInfo], conf: &RedisConf
     let mut push = super::import::RedisPush::connect(conf)?;
     let mut cmds: Vec<Vec<Vec<u8>>> = Vec::new();
     for t in tables {
-        *job.progress.table.lock().unwrap() = t.name.clone();
+        *job.progress.table.lock_ok() = t.name.clone();
         let mut n = 0u64;
         rows_of(dbc, &job.db, &t.name, &job.progress, &mut |cols, vals| {
             n += 1;
@@ -331,10 +332,10 @@ pub fn mysql_server(dbc: &Db, job: &Job, tables: &[&TableInfo], link: &Link) -> 
     c.query_drop("SET SESSION foreign_key_checks = 0, unique_checks = 0").map_err(err_text)?;
     let existing: Vec<String> = c.query::<String, _>("SHOW TABLES").map_err(err_text)?.into_iter().map(|t| t.to_lowercase()).collect();
     for t in tables {
-        *job.progress.table.lock().unwrap() = t.name.clone();
+        *job.progress.table.lock_ok() = t.name.clone();
         if existing.contains(&t.name.to_lowercase()) {
             if !job.replace {
-                job.progress.log.lock().unwrap().push((true, crate::tr_format!("{}: gibt es schon – übersprungen.", "{}: already exists — skipped.", t.name)));
+                job.progress.log.lock_ok().push((true, crate::tr_format!("{}: gibt es schon – übersprungen.", "{}: already exists — skipped.", t.name)));
                 continue;
             }
             c.query_drop(format!("DROP TABLE {}", q(&t.name))).map_err(err_text)?;
@@ -500,9 +501,9 @@ mod live_tests {
         let tables = import::scan(&src, &AtomicBool::new(false)).unwrap();
         assert_eq!(tables.len(), 2, "{tables:?}");
         let n = write::run(&dbc, &src, &tables, &Options { database: "xt_back".into(), create_db: true, replace: true }, &p).unwrap();
-        assert_eq!(n, 4, "{:?}", p.log.lock().unwrap());
+        assert_eq!(n, 4, "{:?}", p.log.lock_ok());
         let rows = dbc.rows("SELECT name, preis, seit, HEX(bild), notiz FROM xt_back.kunde ORDER BY id", ()).unwrap();
-        assert_eq!(rows[0], vec![Some("Müller; O'Neil".into()), Some("9.50".into()), Some("2024-01-02 03:04:05".into()), Some("FF00".into()), Some("a\nb".into())], "{:?}", p.log.lock().unwrap());
+        assert_eq!(rows[0], vec![Some("Müller; O'Neil".into()), Some("9.50".into()), Some("2024-01-02 03:04:05".into()), Some("FF00".into()), Some("a\nb".into())], "{:?}", p.log.lock_ok());
         assert_eq!(dbc.schema("xt_back").unwrap().fks.len(), 1);
 
         // --- PostgreSQL-Skript und MongoDB-Zeilen

@@ -229,6 +229,7 @@ impl Protokoll {
 mod tests {
     use super::*;
 
+    #[cfg(unix)]
     fn anfragen(prozess: Child) -> Vec<Value> {
         let ausgabe = prozess.wait_with_output().unwrap();
         String::from_utf8(ausgabe.stdout).unwrap().lines().map(|l| serde_json::from_str::<Value>(l).unwrap()).collect()

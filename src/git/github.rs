@@ -2,6 +2,7 @@
 // Pull Requests, Issues und Actions-Laeufe. Das Token liegt in einer eigenen Datei im Programmdatenordner
 // (unter Linux/macOS nur fuer den Benutzer lesbar), nicht in einstellungen.txt.
 
+use crate::sperre::LeseSperre;
 use serde_json::{Value, json};
 use std::path::PathBuf;
 use std::sync::RwLock;
@@ -20,11 +21,11 @@ static TOKEN: RwLock<Option<Option<String>>> = RwLock::new(None);
 
 /// Gespeichertes Token, sonst das der GitHub CLI (falls dort angemeldet)
 pub fn token() -> Option<String> {
-    if let Some(t) = TOKEN.read().unwrap().clone() {
+    if let Some(t) = TOKEN.read_ok().clone() {
         return t;
     }
     let t = std::fs::read_to_string(token_file()).ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).or_else(gh_token);
-    *TOKEN.write().unwrap() = Some(t.clone());
+    *TOKEN.write_ok() = Some(t.clone());
     t
 }
 
@@ -43,13 +44,13 @@ pub fn set_token(t: &str) -> Result<(), String> {
     } else {
         crate::workspace::atomic_write_private(&f, t).map_err(|e| e.to_string())?;
     }
-    *TOKEN.write().unwrap() = None;
+    *TOKEN.write_ok() = None;
     Ok(())
 }
 
 /// Nach einer Anmeldung ueber die GitHub CLI neu nachsehen
 pub fn reload() {
-    *TOKEN.write().unwrap() = None;
+    *TOKEN.write_ok() = None;
 }
 
 fn agent() -> ureq::Agent {

@@ -1,5 +1,6 @@
 // SQL-Code-Editor: Syntax-Hervorhebung, Zeilennummern, Autovervollstaendigung, Formatierung.
 
+use crate::sperre::LeseSperre;
 use eframe::egui::{
     self, Color32, FontId, Key, Modifiers, RichText, TextFormat,
     text::{CCursor, CCursorRange, LayoutJob},
@@ -19,6 +20,8 @@ mod schema_fix;
 mod schema_decl;
 mod schema_jpa;
 mod schema_java;
+mod schema_bedarf;
+pub(crate) use schema_bedarf::{Nutzung, breiter, nutzung};
 pub(crate) use schema_decl::{TabellenPlan, migrationen, plan_sql, pruefe_daten, bestehender_plan};
 pub(crate) use schema_jpa::jpa_modelle;
 pub(crate) use schema_fix::java_struktur_projekt;
@@ -67,11 +70,11 @@ impl Default for Prefs {
 static PREFS: std::sync::RwLock<Option<Prefs>> = std::sync::RwLock::new(None);
 
 pub fn prefs() -> Prefs {
-    PREFS.read().unwrap().clone().unwrap_or_default()
+    PREFS.read_ok().clone().unwrap_or_default()
 }
 
 pub fn set_prefs(p: Prefs) {
-    *PREFS.write().unwrap() = Some(p);
+    *PREFS.write_ok() = Some(p);
 }
 
 fn lint_delay() -> Duration {
@@ -395,6 +398,51 @@ impl SqlEditor {
             self.popup = self.suggest(text, end, true).map(|s| Popup { items: s.items, selected: 0, word_start: s.word_start, cursor: end, imports: Vec::new() });
         }
         import
+    }
+
+    /// Tab-Vervollstaendigung an `c`. Liefert true, wenn der Text geaendert wurde.
+    fn tab_complete(&mut self, ctx: &egui::Context, text: &mut String, c: usize, out: &mut EditorOutput) -> bool {
+        let Some(s) = self.suggest(text, c, true) else {
+            // Nichts zu ergaenzen: Tab bleibt ein Einruecken an der Stelle
+            let step = self.indent_step();
+            let at = byte_of(text, c);
+            text.insert_str(at, &step);
+            self.set_cursor(ctx, c + step.chars().count());
+            self.prev_text = text.clone();
+            return true;
+        };
+        let typed: String = text.chars().skip(s.word_start).take(c - s.word_start).collect();
+        let lower = typed.to_lowercase();
+        // Vorschlaege, die mit dem Getippten beginnen; unscharfe Treffer nur, wenn es keine solchen gibt
+        let passend: Vec<usize> = s.items.iter().enumerate().filter(|(_, i)| i.insert.to_lowercase().starts_with(&lower)).map(|(k, _)| k).collect();
+        let popup = |items: Vec<complete::Item>, selected: usize| Popup { items, selected, word_start: s.word_start, cursor: c, imports: Vec::new() };
+        if passend.len() == 1 || s.items.len() == 1 {
+            let k = passend.first().copied().unwrap_or(0);
+            self.popup = Some(popup(s.items, k));
+            out.add_import = self.accept(ctx, text);
+            return true;
+        }
+        if passend.len() > 1 {
+            // gemeinsamer Anfang (Schreibweise des ersten Treffers)
+            let first: Vec<char> = s.items[passend[0]].insert.chars().collect();
+            let mut n = first.len();
+            for &k in &passend[1..] {
+                let other: Vec<char> = s.items[k].insert.chars().collect();
+                n = n.min(first.iter().zip(&other).take_while(|(x, y)| x.to_lowercase().eq(y.to_lowercase())).count());
+            }
+            if n > typed.chars().count() {
+                let prefix: String = first[..n].iter().collect();
+                let (ba, bb) = (byte_of(text, s.word_start), byte_of(text, c));
+                text.replace_range(ba..bb, &prefix);
+                let end = s.word_start + n;
+                self.set_cursor(ctx, end);
+                self.prev_text = text.clone();
+                self.popup = self.suggest(text, end, true).map(|s| Popup { items: s.items, selected: 0, word_start: s.word_start, cursor: end, imports: Vec::new() });
+                return true;
+            }
+        }
+        self.popup = Some(popup(s.items, passend.first().copied().unwrap_or(0)));
+        false
     }
 
     /// Cursorstelle laut Editor (auch direkt nach einer Eingabe im selben Bild)
@@ -1060,6 +1108,23 @@ impl SqlEditor {
                 self.popup = None;
             }
         }
+        // Tab direkt hinter einem Wort (ohne offenes Fenster): eindeutig -> einsetzen, sonst bis zum gemeinsamen
+        // Anfang ergaenzen und die Liste zeigen. Am Zeilenanfang und nach Leerzeichen bleibt Tab Einruecken.
+        if focused
+            && self.popup.is_none()
+            && self.picker.is_none()
+            && self.rename.is_none()
+            && matches!(self.lang, Lang::Sql | Lang::Java)
+            && let Some((a, b)) = self.selection(&ctx)
+            && a == b
+            && a > 0
+            && text.chars().nth(a - 1).is_some_and(is_word_char)
+            && text.chars().nth(a).is_none_or(|c| !is_word_char(c))
+            && ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Tab))
+            && self.tab_complete(&ctx, text, a, &mut out)
+        {
+            out.changed = true;
+        }
         // Auswahlliste (Generieren, Umgeben mit) und Umbenennen bekommen die Tasten vor dem Editor
         if self.picker.is_some() {
             let pos = self.caret_screen;
@@ -1407,8 +1472,8 @@ impl SqlEditor {
             match self.hover_at {
                 Some((at, since)) if at == a => {
                     if since.elapsed() >= Duration::from_millis(350) {
-                        if let Some((title, body)) = hover::sql_info(text, i, self.schema.as_deref()) {
-                            hover::card(&ctx, ui.layer_id(), self.id.with("sql-hover"), &title, &body, Lang::Sql);
+                        if let Some(info) = hover::sql_hover(text, i, self.schema.as_deref()) {
+                            hover::card_info(&ctx, ui.layer_id(), self.id.with("sql-hover"), &info, Lang::Sql);
                         }
                     } else {
                         ctx.request_repaint_after(Duration::from_millis(360) - since.elapsed());
@@ -1508,6 +1573,10 @@ impl SqlEditor {
             };
             let mono = FontId::monospace(font_size());
             let small = FontId::proportional((font_size() - 1.0).max(11.0));
+            // Erklaerung zum gewaehlten Eintrag (Signatur, Typ, Schluessel, Beispiel)
+            let doc = if self.lang == Lang::Sql { p.items.get(p.selected).and_then(|it| complete::doc(it, self.schema.as_deref())) } else { None };
+            let doc_h = if doc.is_some() { 3.0 * row + 10.0 } else { 0.0 };
+            let pos = if pos.y < below.y { pos - egui::vec2(0.0, doc_h) } else { pos };
             let area = egui::Area::new(self.id.with("popup"))
                 .order(egui::Order::Foreground)
                 .fixed_pos(pos)
@@ -1547,6 +1616,29 @@ impl SqlEditor {
                                 }
                             }
                         });
+                        if let Some((title, body)) = &doc {
+                            ui.add_space(3.0);
+                            ui.separator();
+                            egui::Frame::new().inner_margin(egui::Margin::symmetric(8, 4)).show(ui, |ui| {
+                                ui.set_max_width(width - 22.0);
+                                ui.spacing_mut().item_spacing.y = 3.0;
+                                let mut job = lang::highlight_lang(title, mono.clone(), Lang::Sql);
+                                job.wrap.max_width = width - 22.0;
+                                job.wrap.max_rows = 2;
+                                ui.label(job);
+                                if !body.is_empty() {
+                                    let looks_sql = body.split_whitespace().next().is_some_and(|w| w.chars().all(|c| c.is_ascii_uppercase() || c == '_') && w.len() > 2);
+                                    if looks_sql {
+                                        let mut job = lang::highlight_lang(body, small.clone(), Lang::Sql);
+                                        job.wrap.max_width = width - 22.0;
+                                        job.wrap.max_rows = 3;
+                                        ui.label(job);
+                                    } else {
+                                        ui.add(egui::Label::new(egui::RichText::new(body).font(small.clone()).color(pal.text_weak)).wrap());
+                                    }
+                                }
+                            });
+                        }
                     });
                 });
             self.popup_rect = Some(area.response.rect);
@@ -1829,4 +1921,3 @@ mod indent_tests {
         assert_eq!(ed.fix_all(&mut text), 0);
     }
 }
-

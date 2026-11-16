@@ -388,7 +388,7 @@ impl ErTab {
             let p: Vec<String> = pts.iter().map(|p| format!("{},{}", p.x, p.y)).collect();
             let _ = writeln!(s, "R\t{k}\t{}", p.join(";"));
         }
-        let _ = std::fs::write(path, s);
+        crate::workspace::melden(crate::i18n::tr("Die Anordnung des Diagramms", "The diagram layout"), &path, std::fs::write(&path, s));
     }
 
     /// Automatische Anordnung (siehe layout): Eltern links, Kinder rechts, wenig Kreuzungen.

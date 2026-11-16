@@ -1,6 +1,7 @@
 // Gespeicherte Server (Datei server.txt im Programmdatenordner) und die Zuordnung Datei -> Server.
 // Der globale Server steht in den Einstellungen; hier stehen die weiteren, die eine Datei statt dessen wählen kann.
 
+use crate::sperre::Sperre;
 use crate::db::ConnInfo;
 use crate::ssh::SshConfig;
 use std::sync::{Mutex, OnceLock};
@@ -79,18 +80,18 @@ fn store() -> &'static Mutex<Vec<Profile>> {
 
 /// Alle gespeicherten Server
 pub fn all() -> Vec<Profile> {
-    store().lock().unwrap().clone()
+    store().lock_ok().clone()
 }
 
 pub fn find(name: &str) -> Option<Profile> {
-    store().lock().unwrap().iter().find(|p| p.name == name).cloned()
+    store().lock_ok().iter().find(|p| p.name == name).cloned()
 }
 
 /// Liste ersetzen und speichern. Passwoerter werden nur gespeichert, wenn `save_passwords` gilt
 /// (wie beim globalen Server); bis zum Neustart bleiben sie im Speicher.
 pub fn set(list: Vec<Profile>, save_passwords: bool) {
-    let _ = crate::workspace::atomic_write_private(&path(), &to_text(&list, save_passwords));
-    *store().lock().unwrap() = list;
+    crate::workspace::melden(crate::i18n::tr("Die Verbindungsprofile", "The connection profiles"), &path(), crate::workspace::atomic_write_private(&path(), &to_text(&list, save_passwords)));
+    *store().lock_ok() = list;
 }
 
 #[cfg(test)]

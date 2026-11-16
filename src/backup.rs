@@ -3,6 +3,7 @@
 // Aufbau:  <Backup-Ordner>/<JJJJ-MM-TT_hh-mm-ss>_<anlass>/<datenbank>.sql.gz  + info.txt
 // Erstellt mit mariadb-dump --single-transaction (konsistent, ohne die Arbeit zu blockieren).
 
+use crate::sperre::Sperre;
 use crate::db::{ConnInfo, SYSTEM_DATABASES, q};
 use crate::server::{Paths, timestamp};
 use flate2::Compression;
@@ -28,11 +29,11 @@ pub struct Env {
 static ENV: OnceLock<Mutex<Option<Env>>> = OnceLock::new();
 
 pub fn set_env(env: Option<Env>) {
-    *ENV.get_or_init(|| Mutex::new(None)).lock().unwrap() = env;
+    *ENV.get_or_init(|| Mutex::new(None)).lock_ok() = env;
 }
 
 pub fn env() -> Option<Env> {
-    ENV.get_or_init(|| Mutex::new(None)).lock().unwrap().clone()
+    ENV.get_or_init(|| Mutex::new(None)).lock_ok().clone()
 }
 
 /// Vor DROP/TRUNCATE/DELETE ohne WHERE automatisch sichern (Einstellung)
@@ -85,7 +86,7 @@ impl Config {
 
     pub fn save(&self) {
         let _ = std::fs::create_dir_all(crate::server::app_data_dir());
-        let _ = std::fs::write(
+        let r = std::fs::write(
             config_path(),
             format!(
                 "auto={}\ndir={}\ninterval_hours={}\nkeep_count={}\nkeep_days={}\n",
@@ -96,6 +97,7 @@ impl Config {
                 self.keep_days
             ),
         );
+        crate::workspace::melden(crate::i18n::tr("Die Sicherungs-Einstellungen", "The backup settings"), &config_path(), r);
     }
 
     pub fn dir(&self) -> PathBuf {

@@ -1,6 +1,7 @@
 // Native KI-Chats: die offiziellen Programme laufen pro Chat dauerhaft im Hintergrund und liefern
 // JSON; die App zeichnet den Verlauf. So antwortet jede weitere Nachricht ohne Neustart.
 
+use crate::sperre::Sperre;
 use crate::mcp::setup::Target;
 use eframe::egui;
 use serde_json::{Value, json};
@@ -362,7 +363,7 @@ pub struct Sitzung {
 impl Drop for Sitzung {
     fn drop(&mut self) {
         self.gestoppt.store(true, Ordering::Relaxed);
-        self.leitung.lock().unwrap().0 = None;
+        self.leitung.lock_ok().0 = None;
         beenden(&mut self.prozess);
         for leser in self.leser.drain(..) {
             let _ = leser.join();
@@ -392,7 +393,7 @@ impl Sitzung {
             Protokoll::Claude => json!({"type":"control_request","request_id":"init","request":{"subtype":"initialize"}}),
             Protokoll::Codex(_) => codex::Protokoll::initialisieren(),
         };
-        if let Err(e) = leitung.lock().unwrap().senden(&start) {
+        if let Err(e) = leitung.lock_ok().senden(&start) {
             beenden(&mut prozess);
             return Err(e);
         }
@@ -405,7 +406,7 @@ impl Sitzung {
             let fehlerausgabe = fehlerausgabe.clone();
             leser.push(std::thread::spawn(move || {
                 for zeile in std::io::BufReader::new(stderr).lines().map_while(Result::ok) {
-                    let mut f = fehlerausgabe.lock().unwrap();
+                    let mut f = fehlerausgabe.lock_ok();
                     // Nur das Ende ist fuer Fehlermeldungen interessant.
                     if f.len() > 16 * 1024 {
                         f.clear();
@@ -419,22 +420,22 @@ impl Sitzung {
             let (stand, protokoll, leitung, gestoppt, ctx) = (stand.clone(), protokoll.clone(), leitung.clone(), gestoppt.clone(), ctx.clone());
             leser.push(std::thread::spawn(move || {
                 for zeile in std::io::BufReader::new(stdout).lines().map_while(Result::ok) {
-                    let mut p = protokoll.lock().unwrap();
-                    let mut s = stand.lock().unwrap();
+                    let mut p = protokoll.lock_ok();
+                    let mut s = stand.lock_ok();
                     match &mut *p {
                         Protokoll::Claude => ereignis(&zeile, &mut s),
-                        Protokoll::Codex(c) => c.ereignis(&zeile, &mut s, &mut leitung.lock().unwrap()),
+                        Protokoll::Codex(c) => c.ereignis(&zeile, &mut s, &mut leitung.lock_ok()),
                     }
                     s.rev += 1;
                     drop((s, p));
                     ctx.request_repaint();
                 }
-                let mut s = stand.lock().unwrap();
+                let mut s = stand.lock_ok();
                 s.beendet = true;
                 if !gestoppt.load(Ordering::Relaxed) && s.fehler.is_none() {
                     // stderr kurz nachlaufen lassen, damit die Meldung vollstaendig ist
                     std::thread::sleep(Duration::from_millis(100));
-                    let err = fehlerausgabe.lock().unwrap();
+                    let err = fehlerausgabe.lock_ok();
                     s.fehler = Some(if err.trim().is_empty() {
                         crate::i18n::tr(
                             "Der Assistent wurde beendet. Bitte Anmeldung prüfen und erneut senden.",
@@ -456,10 +457,10 @@ impl Sitzung {
     }
 
     pub fn senden(&self, anfrage: Anfrage, befehle: &[Befehl]) -> Result<(), String> {
-        let mut p = self.protokoll.lock().unwrap();
-        let mut leitung = self.leitung.lock().unwrap();
+        let mut p = self.protokoll.lock_ok();
+        let mut leitung = self.leitung.lock_ok();
         {
-            let mut s = self.stand.lock().unwrap();
+            let mut s = self.stand.lock_ok();
             if s.beendet {
                 return Err(s.fehler.clone().unwrap_or_else(|| crate::i18n::tr("Der Assistent wurde beendet.", "The assistant exited.").into()));
             }
@@ -480,7 +481,7 @@ impl Sitzung {
             Protokoll::Codex(c) => c.senden(anfrage, befehle, &mut leitung),
         };
         if let Err(e) = &ergebnis {
-            let mut s = self.stand.lock().unwrap();
+            let mut s = self.stand.lock_ok();
             s.fehler = Some(e.clone());
             s.laeuft = false;
             s.rev += 1;
@@ -490,13 +491,13 @@ impl Sitzung {
 
     /// Bricht die laufende Antwort ab, die Sitzung bleibt bestehen.
     pub fn unterbrechen(&self) {
-        let mut p = self.protokoll.lock().unwrap();
-        let mut leitung = self.leitung.lock().unwrap();
+        let mut p = self.protokoll.lock_ok();
+        let mut leitung = self.leitung.lock_ok();
         let ergebnis = match &mut *p {
             Protokoll::Claude => leitung.senden(&json!({"type":"control_request","request_id":"stop","request":{"subtype":"interrupt"}})),
             Protokoll::Codex(c) => c.unterbrechen(&mut leitung),
         };
-        let mut s = self.stand.lock().unwrap();
+        let mut s = self.stand.lock_ok();
         if let Err(e) = ergebnis {
             s.fehler = Some(e);
         }
@@ -608,7 +609,7 @@ impl Auftrag {
         let (stand, abbruch, ctx) = (auftrag.stand.clone(), auftrag.abbruch.clone(), ctx.clone());
         std::thread::spawn(move || {
             let ergebnis = crate::dev::install::install_ai(ziel, &abbruch);
-            let mut s = stand.lock().unwrap();
+            let mut s = stand.lock_ok();
             match ergebnis {
                 Ok(_) => s.text = crate::tr_format!("{} ist bereit.", "{} is ready.", ziel.label()),
                 Err(e) => s.fehler = Some(e),
@@ -626,7 +627,7 @@ mod tests {
 
     fn warte(stand: &Arc<Mutex<Stand>>, bis: impl Fn(&Stand) -> bool) {
         let start = std::time::Instant::now();
-        while !bis(&stand.lock().unwrap()) {
+        while !bis(&stand.lock_ok()) {
             assert!(start.elapsed() < Duration::from_secs(60), "Zeitlimit");
             std::thread::sleep(Duration::from_millis(20));
         }
@@ -639,7 +640,7 @@ mod tests {
             let konfig = Konfig { ordner: std::env::temp_dir(), schreiben: false, auswahl: Auswahl::default() };
             let s = Sitzung::starten(&egui::Context::default(), ziel, konfig, None).unwrap();
             warte(&s.stand, |s| s.bereit || s.beendet);
-            let s = s.stand.lock().unwrap();
+            let s = s.stand.lock_ok();
             assert!(s.fehler.is_none(), "{:?}", s.fehler);
             assert!(!s.modelle.is_empty() && !s.befehle.is_empty());
             eprintln!("{}: {} Modelle, {} Befehle", ziel.label(), s.modelle.len(), s.befehle.len());
@@ -719,7 +720,7 @@ mod tests {
         for n in 1..=2 {
             s.senden(Anfrage::Text("Hallo $(exit 9)".into()), &[]).unwrap();
             warte(&s.stand, |s| s.zug_fertig);
-            let mut st = s.stand.lock().unwrap();
+            let mut st = s.stand.lock_ok();
             assert_eq!(st.nachrichten.pop().unwrap().text, format!("Antwort {n}"));
             assert!(!st.beendet && st.fehler.is_none());
         }
@@ -727,7 +728,7 @@ mod tests {
         let start = std::time::Instant::now();
         drop(s);
         assert!(start.elapsed() < Duration::from_secs(10));
-        assert!(stand.lock().unwrap().beendet);
+        assert!(stand.lock_ok().beendet);
     }
 
     #[test]

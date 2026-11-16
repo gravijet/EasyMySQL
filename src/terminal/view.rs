@@ -1,5 +1,6 @@
 // Zeichnet den Bildschirm einer Terminal-Sitzung und uebersetzt Tastatur und Maus.
 
+use crate::sperre::Sperre;
 use super::{Session, set_focused};
 use crate::dev::autofix::LineKind;
 use eframe::egui::{self, Color32, Event, EventFilter, FontId, Key, Modifiers, Rect, Sense, Stroke, StrokeKind, pos2, vec2};
@@ -176,7 +177,7 @@ pub fn show(ui: &mut egui::Ui, id: egui::Id, s: &mut Session, want_focus: bool) 
     if focused {
         let events = ui.input(|i| i.events.clone());
         let (app_cursor, bracketed) = {
-            let p = s.parser.lock().unwrap();
+            let p = s.parser.lock_ok();
             (p.screen().application_cursor(), p.screen().bracketed_paste())
         };
         let mut typed = false;
@@ -246,7 +247,7 @@ pub fn show(ui: &mut egui::Ui, id: egui::Id, s: &mut Session, want_focus: bool) 
     let painter = ui.painter_at(rect);
     let (default_fg, default_bg) = if pal.dark { (Color32::from_rgb(0xCC, 0xCC, 0xCC), pal.bg) } else { (Color32::from_rgb(0x33, 0x33, 0x33), pal.bg) };
     painter.rect_filled(rect, 0.0, default_bg);
-    let guard = s.parser.lock().unwrap();
+    let guard = s.parser.lock_ok();
     let screen = guard.screen();
     let sel = s.selection.map(ordered);
     // Fehler, Warnungen und Stacktraces einfaerben (nur Text ohne eigene Farbe); Dateiverweise sind Links

@@ -2,6 +2,7 @@
 // Klonen. Arbeitet mit dem git-Programm (eigenes MinGit unter Windows oder das des Systems). Fuer GitHub
 // wird das Token nur fuer den einen Aufruf mitgegeben und nirgends in der Git-Konfiguration gespeichert.
 
+use crate::sperre::LeseSperre;
 pub mod github;
 
 use std::path::{Path, PathBuf};
@@ -105,11 +106,11 @@ impl Default for Config {
 static CONFIG: std::sync::RwLock<Option<Config>> = std::sync::RwLock::new(None);
 
 pub fn config() -> Config {
-    CONFIG.read().unwrap().clone().unwrap_or_default()
+    CONFIG.read_ok().clone().unwrap_or_default()
 }
 
 pub fn set_config(c: Config) {
-    *CONFIG.write().unwrap() = Some(c);
+    *CONFIG.write_ok() = Some(c);
 }
 
 /// Git-Befehl im Ordner `dir` vorbereiten: ohne Rueckfragen im Terminal, mit Name/E-Mail aus den Einstellungen

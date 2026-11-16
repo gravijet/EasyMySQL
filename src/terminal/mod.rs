@@ -1,6 +1,7 @@
 // Integriertes Terminal: Jede Sitzung ist eine Shell in einer Pseudokonsole (ConPTY unter Windows). Die Ausgabe
 // wird von vt100 zu einem Bildschirm zusammengesetzt, den `view` zeichnet.
 
+use crate::sperre::{Sperre, LeseSperre};
 mod view;
 
 pub use view::show;
@@ -45,11 +46,11 @@ impl Default for Prefs {
 static PREFS: std::sync::RwLock<Option<Prefs>> = std::sync::RwLock::new(None);
 
 pub fn prefs() -> Prefs {
-    PREFS.read().unwrap().clone().unwrap_or_default()
+    PREFS.read_ok().clone().unwrap_or_default()
 }
 
 pub fn set_prefs(p: Prefs) {
-    *PREFS.write().unwrap() = Some(p);
+    *PREFS.write_ok() = Some(p);
 }
 
 /// Schriftgroesse im Terminal
@@ -163,9 +164,9 @@ impl Session {
         self.error = None;
         self.exited.store(false, Ordering::Relaxed);
         self.selection = None;
-        self.log.lock().unwrap().clear();
+        self.log.lock_ok().clear();
         let (rows, cols) = self.size;
-        *self.parser.lock().unwrap() = vt100::Parser::new(rows, cols, prefs().scrollback.clamp(100, 200_000));
+        *self.parser.lock_ok() = vt100::Parser::new(rows, cols, prefs().scrollback.clamp(100, 200_000));
         match self.open(ctx, rows, cols) {
             Ok(()) => {}
             Err(e) => {
@@ -220,7 +221,7 @@ impl Session {
                                 }
                             }
                             let answer = {
-                                let mut p = parser.lock().unwrap();
+                                let mut p = parser.lock_ok();
                                 p.process(chunk);
                                 answers(chunk, p.screen().cursor_position())
                             };
@@ -268,7 +269,7 @@ impl Session {
             return;
         }
         self.size = (rows, cols);
-        self.parser.lock().unwrap().screen_mut().set_size(rows, cols);
+        self.parser.lock_ok().screen_mut().set_size(rows, cols);
         if let Some(m) = &self.master {
             let _ = m.resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 });
         }
@@ -342,12 +343,12 @@ mod tests {
         let mut seen = false;
         for _ in 0..100 {
             std::thread::sleep(std::time::Duration::from_millis(50));
-            if s.parser.lock().unwrap().screen().contents().contains("EASY42") {
+            if s.parser.lock_ok().screen().contents().contains("EASY42") {
                 seen = true;
                 break;
             }
         }
-        assert!(seen, "{}", s.parser.lock().unwrap().screen().contents());
+        assert!(seen, "{}", s.parser.lock_ok().screen().contents());
         s.write(b"exit\r");
         for _ in 0..100 {
             if s.exited() {

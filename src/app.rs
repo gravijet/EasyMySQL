@@ -1,5 +1,6 @@
 // Hauptfenster von EasyMySQL.
 
+use crate::sperre::Sperre;
 mod autoscroll;
 mod create;
 mod git_panel;
@@ -157,7 +158,7 @@ pub const COLLATIONS: &[&str] = &[
 
 impl EasyApp {
     pub fn new(cc: &eframe::CreationContext, startup_files: Vec<PathBuf>) -> Self {
-        *CTX.lock().unwrap() = Some(cc.egui_ctx.clone());
+        *CTX.lock_ok() = Some(cc.egui_ctx.clone());
         let mut settings = Settings::load();
         crate::workspace::set_storage_root(&settings.storage_dir);
         for p in crate::workspace::migrate_legacy() {
@@ -320,7 +321,7 @@ impl EasyApp {
         }
         // Der Tunnel braucht einige Sekunden: im Hintergrund aufbauen, die Oberflaeche bleibt bedienbar
         let (ssh, conn) = (self.settings.ssh.clone(), self.settings.conn.clone());
-        let ctx = CTX.lock().unwrap().clone();
+        let ctx = CTX.lock_ok().clone();
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
             let r = crate::ssh::open(&ssh, &conn.host, conn.port).and_then(|t| {
@@ -719,22 +720,22 @@ impl EasyApp {
                 Action::OpenLog => self.open_tab(Box::new(LogTab::new())),
                 Action::OpenAi(target) => self.show_side(match target { crate::mcp::setup::Target::Claude => SideView::Claude, crate::mcp::setup::Target::Codex => SideView::Codex }),
                 Action::UpdateInstall => {
-                    if let Some(ctx) = CTX.lock().unwrap().clone() {
+                    if let Some(ctx) = CTX.lock_ok().clone() {
                         self.updater.install_now(&ctx);
                     }
                 }
                 Action::UpdateRestart => {
-                    if let Some(ctx) = CTX.lock().unwrap().clone() {
+                    if let Some(ctx) = CTX.lock_ok().clone() {
                         self.restart_app(&ctx);
                     }
                 }
                 Action::CopyText(text) => {
-                    if let Some(ctx) = CTX.lock().unwrap().as_ref() {
+                    if let Some(ctx) = CTX.lock_ok().as_ref() {
                         ctx.copy_text(text);
                     }
                 }
                 Action::Run(cmd) => {
-                    let ctx = CTX.lock().unwrap().clone();
+                    let ctx = CTX.lock_ok().clone();
                     if let Some(ctx) = ctx {
                         self.run_cmd(&ctx, cmd);
                     }
@@ -758,13 +759,13 @@ impl EasyApp {
                     self.settings.save();
                 }
                 Action::RestartServer => {
-                    let ctx = CTX.lock().unwrap().clone();
+                    let ctx = CTX.lock_ok().clone();
                     if let Some(ctx) = ctx {
                         self.restart_server(&ctx);
                     }
                 }
                 Action::ServerDataDir { dir, copy } => {
-                    let ctx = CTX.lock().unwrap().clone();
+                    let ctx = CTX.lock_ok().clone();
                     self.settings.server.data_dir = dir.clone();
                     self.settings.save();
                     self.db = None;
@@ -776,14 +777,19 @@ impl EasyApp {
                     }
                 }
                 Action::RunProgram { launch, env } => {
-                    let ctx = CTX.lock().unwrap().clone();
+                    let ctx = CTX.lock_ok().clone();
+                    // Fehlende Datenbank, Tabellen und Spalten vor dem Start anlegen (eigener Server)
+                    if crate::dev::config().auto_setup && self.db.is_some() {
+                        let root = self.project.clone().unwrap_or_else(|| launch.cwd.clone());
+                        self.projekt_einrichten(&root, None, true);
+                    }
                     if let Some(ctx) = ctx {
                         self.run_program(&ctx, launch, env);
                     }
                 }
                 Action::ApplyEdit(edit) => self.apply_workspace_edit(edit),
                 Action::MariaDbUpdate(rel) => {
-                    let ctx = CTX.lock().unwrap().clone().unwrap_or_default();
+                    let ctx = CTX.lock_ok().clone().unwrap_or_default();
                     self.db = None;
                     self.auto_connect = true;
                     crate::mariadb_update::run(self.server.clone(), self.settings.conn.clone(), rel, self.settings.mariadb_copy_data, &ctx);
@@ -801,13 +807,13 @@ impl EasyApp {
     /// Geaenderte Einstellungen anwenden und speichern
     fn apply_settings(&mut self) {
         crate::i18n::install(self.settings.language);
-        if let Some(ctx) = CTX.lock().unwrap().as_ref() {
+        if let Some(ctx) = CTX.lock_ok().as_ref() {
             style::set_theme(ctx, self.settings.dark);
         }
         // Infobereich-Symbol nur, wenn das Programm im Hintergrund weiterlaufen soll;
         // bei neuer Sprache neu anlegen (Menütexte)
         if self.applied_language != self.settings.language || self.tray.is_some() != self.settings.background {
-            self.tray = match CTX.lock().unwrap().as_ref() {
+            self.tray = match CTX.lock_ok().as_ref() {
                 Some(ctx) if self.settings.background => platform::create_tray(ctx, self.hwnd),
                 _ => None,
             };
@@ -1177,7 +1183,7 @@ impl EasyApp {
         let n = std::fs::File::open(p).and_then(|mut f| std::io::Read::read(&mut f, &mut head)).unwrap_or(0);
         let kind = crate::tabs::preview::detect(p, &head[..n]);
         if kind != crate::tabs::preview::Kind::Text {
-            match crate::tabs::preview::PreviewTab::open(&CTX.lock().unwrap().clone().unwrap_or_default(), p, kind) {
+            match crate::tabs::preview::PreviewTab::open(&CTX.lock_ok().clone().unwrap_or_default(), p, kind) {
                 Ok(tab) => self.open_tab(Box::new(tab)),
                 Err(e) => self.error(e),
             }
@@ -1290,7 +1296,11 @@ pub fn open_path(p: &Path) {
 
 impl eframe::App for EasyApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        *CTX.lock().unwrap() = Some(ctx.clone());
+        *CTX.lock_ok() = Some(ctx.clone());
+        // Fehlgeschlagenes Speichern (Einstellungen, Sitzung, Export …) sichtbar machen
+        for f in crate::workspace::schreibfehler_abholen() {
+            self.toast_error(f);
+        }
         // MariaDB-Update: neuen Programmordner uebernehmen, nach Updates sehen (taeglich, je nach Einstellung)
         if let Some(bin) = crate::mariadb_update::take_applied() {
             self.settings.server.bin_dir = bin;

@@ -1,6 +1,7 @@
 // Gemeinsames fuer das Starten von Programmen: was im Terminal laeuft, Fehlermeldungen mit Datei und Zeile,
 // Ausgabe von Hilfsprogrammen (Compiler, pip, npm) einsammeln.
 
+use crate::sperre::Sperre;
 use std::io::{BufRead, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -60,7 +61,7 @@ pub fn capture(mut cmd: Command, live: &Mutex<String>) -> Result<(bool, String),
         let out = Arc::clone(&out);
         readers.push(std::thread::spawn(move || {
             for line in std::io::BufReader::new(stream).lines().map_while(Result::ok) {
-                out.lock().unwrap().push_str(&format!("{line}\n"));
+                out.lock_ok().push_str(&format!("{line}\n"));
             }
         }));
     }
@@ -70,11 +71,11 @@ pub fn capture(mut cmd: Command, live: &Mutex<String>) -> Result<(bool, String),
             for r in readers {
                 let _ = r.join();
             }
-            let text = out.lock().unwrap().clone();
+            let text = out.lock_ok().clone();
             return Ok((status.success(), text));
         }
-        if let Some(last) = out.lock().unwrap().lines().rev().find(|l| !l.trim().is_empty()) {
-            *live.lock().unwrap() = last.chars().take(160).collect();
+        if let Some(last) = out.lock_ok().lines().rev().find(|l| !l.trim().is_empty()) {
+            *live.lock_ok() = last.chars().take(160).collect();
         }
         std::thread::sleep(std::time::Duration::from_millis(100));
     }

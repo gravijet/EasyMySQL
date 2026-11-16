@@ -250,6 +250,20 @@ pub(super) fn known_word(upper: &str) -> bool {
 
 /// Editierabstand mit Vertauschung benachbarter Buchstaben (ohne Beachtung der Gross-/Kleinschreibung)
 fn distance(a: &str, b: &str) -> usize {
+    distance_max(a, b, usize::MAX)
+}
+
+/// Wie `distance`, aber sobald sicher mehr als `max` herauskommt, nur noch `max + 1` (ohne zu rechnen).
+/// Die Laengen allein verraten das meist schon; das spart bei grossen Dateien fast die ganze Pruefzeit.
+fn distance_max(a: &str, b: &str, max: usize) -> usize {
+    let (la, lb) = (a.chars().count(), b.chars().count());
+    if la.abs_diff(lb) > max {
+        return max.saturating_add(1);
+    }
+    distance_full(a, b)
+}
+
+fn distance_full(a: &str, b: &str) -> usize {
     let a: Vec<char> = a.chars().flat_map(|c| c.to_lowercase()).collect();
     let b: Vec<char> = b.chars().flat_map(|c| c.to_lowercase()).collect();
     let mut d = vec![vec![0usize; b.len() + 1]; a.len() + 1];
@@ -283,7 +297,7 @@ fn nearest<'a>(word: &str, names: impl IntoIterator<Item = &'a str>) -> Option<&
         if n.eq_ignore_ascii_case(word) {
             continue;
         }
-        let d = distance(word, n);
+        let d = distance_max(word, n, max);
         if d <= max && best.is_none_or(|(bd, _)| d < bd) {
             best = Some((d, n));
         }
@@ -296,9 +310,29 @@ fn keyword_typo(word: &str, strict_names_known: bool) -> Option<&'static str> {
     if word.chars().count() < 3 || !word.chars().all(|c| c.is_ascii_alphabetic() || c == '_') {
         return None;
     }
+    // Namen wiederholen sich in einer Datei staendig: Ergebnis je Wort merken
+    thread_local! {
+        static MERK: std::cell::RefCell<HashMap<(String, bool), Option<&'static str>>> = std::cell::RefCell::new(HashMap::new());
+    }
+    let key = (word.to_ascii_lowercase(), strict_names_known);
+    if let Some(r) = MERK.with(|m| m.borrow().get(&key).copied()) {
+        return r;
+    }
+    let r = keyword_typo_neu(word, strict_names_known);
+    MERK.with(|m| {
+        let mut m = m.borrow_mut();
+        if m.len() > 50_000 {
+            m.clear();
+        }
+        m.insert(key, r);
+    });
+    r
+}
+
+fn keyword_typo_neu(word: &str, strict_names_known: bool) -> Option<&'static str> {
     let mut best: Option<(usize, &'static str)> = None;
     for k in TYPO_TARGETS {
-        let d = distance(word, k);
+        let d = distance_max(word, k, 2);
         let len = k.len();
         // Bei kurzen Woertern nur sicher erkennbar, wenn bekannt ist, dass es kein Name ist
         let ok = d == 1 && (len >= 5 || strict_names_known) || d == 2 && len >= 7 && strict_names_known;
@@ -1062,5 +1096,22 @@ mod tests {
         let q = "SELECT 'äöü', vornam FROM schueler";
         assert_eq!(fixed(q), "SELECT 'äöü', vorname FROM schueler");
         assert_eq!(apply_fixes("a", &[]).1, 0);
+    }
+}
+
+#[cfg(test)]
+mod abstand_tests {
+    #[test]
+    fn begrenzter_abstand_stimmt_mit_dem_vollen_ueberein() {
+        let w = ["SELECT", "SELCET", "slect", "FORM", "from", "customers", "kunde_id", "WHERE", "wehre", "a", "", "ÄÖÜ", "äöü"];
+        for a in w {
+            for b in w {
+                let d = super::distance_full(a, b);
+                for max in 0..4 {
+                    let m = super::distance_max(a, b, max);
+                    assert!(if d <= max { m == d } else { m > max }, "{a} {b} {max}: {d} vs {m}");
+                }
+            }
+        }
     }
 }
