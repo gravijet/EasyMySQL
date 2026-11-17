@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
+  <url>
+    <loc>https://mysql.benjaminberger.at/</loc>
+    <xhtml:link rel="alternate" hreflang="de" href="https://mysql.benjaminberger.at/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mysql.benjaminberger.at/en/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mysql.benjaminberger.at/en/"/>
+    <image:image><image:loc>https://mysql.benjaminberger.at/og.jpg</image:loc></image:image>
+    <image:image><image:loc>https://mysql.benjaminberger.at/shots/sql-2000.webp</image:loc></image:image>
+    <image:image><image:loc>https://mysql.benjaminberger.at/shots/er-2000.webp</image:loc></image:image>
+  </url>
+  <url>
+    <loc>https://mysql.benjaminberger.at/en/</loc>
+    <xhtml:link rel="alternate" hreflang="de" href="https://mysql.benjaminberger.at/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mysql.benjaminberger.at/en/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mysql.benjaminberger.at/en/"/>
+  </url>
+</urlset>

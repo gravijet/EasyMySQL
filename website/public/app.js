@@ -12,16 +12,17 @@
     return sprache === "de" ? de : en;
   };
   var texte = $$("[data-en]").map(function (el) {
-    return [el, el.textContent];
+    // auf /en/ steht Englisch im Text und das deutsche Original in data-de (scripts/en.mjs)
+    return [el, el.hasAttribute("data-de") ? el.getAttribute("data-de") : el.textContent];
   });
-  var attribute = ["alt", "label"]
+  var attribute = ["alt", "label", "content"]
     .map(function (art) {
       return $$("[data-en-" + art + "]").map(function (el) {
         var name = art === "label" ? "aria-label" : art;
         return [
           el,
           name,
-          el.getAttribute(name),
+          el.getAttribute(el.hasAttribute("data-de-" + art) ? "data-de-" + art : name),
           el.getAttribute("data-en-" + art),
         ];
       });
@@ -200,14 +201,9 @@
       el.tabIndex = el.dataset.lang === neu ? 0 : -1;
     });
     gleiteAlle();
-    document.title = text(
-      "EasyMySQL – Datenbank, SQL & Java",
-      "EasyMySQL – Database, SQL & Java",
-    );
-    $('meta[name="description"]').content = text(
-      "Datenbank, SQL-Editor, ER-Diagramme und Java in einer App. Für Windows, macOS und Linux.",
-      "Database, SQL editor, ER diagrams and Java in one app. For Windows, macOS and Linux.",
-    );
+    // Jede Sprache hat ihre eigene Adresse (/ und /en/), damit Links und Suchmaschinen sie treffen
+    if (/^\/(en\/?)?$/.test(location.pathname))
+      history.replaceState(history.state, "", (neu === "en" ? "/en/" : "/") + location.search + location.hash);
     if (bereit) stelle();
     zeigeBefehl();
     zeigeRelease();

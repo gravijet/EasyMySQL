@@ -2,3 +2,5 @@ User-agent: *
 Allow: /
 Disallow: /download/
 Disallow: /api/
+
+Sitemap: https://mysql.benjaminberger.at/sitemap.xml
