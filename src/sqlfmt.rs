@@ -303,7 +303,12 @@ impl Fmt {
 
     /// Anweisung bzw. Unterabfrage in Klauseln zerlegen und mehrzeilig ausgeben.
     fn block(&self, nodes: &[Node], indent: usize) -> String {
-        let clauses = split_clauses(nodes);
+        let mut clauses = split_clauses(nodes);
+        // "DELETE" ohne Inhalt gehoert mit FROM in eine Zeile
+        if clauses.len() > 1 && clauses[0].0.is_empty() && matches!(clauses[0].1, [n] if word_of(n).as_deref() == Some("DELETE")) && clauses[1].0 == "FROM" {
+            clauses[1].0 = "DELETE FROM".into();
+            clauses.remove(0);
+        }
         let pad = " ".repeat(indent);
         let mut lines: Vec<String> = Vec::new();
         for (kw, body) in clauses {
@@ -316,11 +321,14 @@ impl Fmt {
     fn clause(&self, kw: &str, body: &[Node], indent: usize) -> String {
         let head = if kw.is_empty() { String::new() } else { format!("{kw} ") };
         let one = format!("{head}{}", self.inline(body, indent + 2)).trim_end().to_string();
-        if indent + one.chars().count() <= WIDTH && !one.contains('\n') && !has_block_subquery(body) {
+        let rows = if matches!(kw, "VALUES" | "VALUE") { split_commas(body).len() } else { 0 };
+        if indent + one.chars().count() <= WIDTH && !one.contains('\n') && !has_block_subquery(body) && rows < 2 {
             return one;
         }
         let pad = " ".repeat(indent);
         let cont = format!("\n{pad}  ");
+        // Folgezeilen einer Liste stehen unter ihrem ersten Eintrag
+        let aligned = format!("\n{pad}{}", " ".repeat(head.chars().count()));
         match kw {
             "WHERE" | "HAVING" | "ON" => {
                 let parts = split_logic(body);
@@ -341,8 +349,9 @@ impl Fmt {
             }
             "VALUES" | "VALUE" => {
                 let parts = split_commas(body);
-                let items: Vec<String> = parts.iter().enumerate().map(|(i, p)| self.list_item(p, indent + 2, i + 1 < parts.len()).0).collect();
-                return format!("{head}{}", items.join(&cont));
+                let w = indent + head.chars().count();
+                let items: Vec<String> = parts.iter().enumerate().map(|(i, p)| self.list_item(p, w, i + 1 < parts.len()).0).collect();
+                return format!("{head}{}", items.join(&aligned));
             }
             _ => {}
         }
@@ -366,12 +375,13 @@ impl Fmt {
             let mut out = head.clone();
             let mut col = indent + out.chars().count();
             let mut after_comment = false;
+            let start = indent + head.chars().count();
             for (i, it) in items.iter().enumerate() {
-                let (t, comment) = self.list_item(it, indent + 2, i + 1 < items.len());
+                let (t, comment) = self.list_item(it, start, i + 1 < items.len());
                 let w = t.lines().next().unwrap_or("").chars().count();
                 if i > 0 && (after_comment || col + 1 + w > WIDTH || t.contains('\n')) {
-                    out.push_str(&cont);
-                    col = indent + 2;
+                    out.push_str(&aligned);
+                    col = start;
                 } else if i > 0 {
                     out.push(' ');
                     col += 1;
@@ -446,7 +456,7 @@ impl Fmt {
                     }
                 }
                 Node::G(g) if self.ddl && split_commas(g).len() > 1 => {
-                    let items: Vec<String> = split_commas(g).iter().map(|p| format!("{pad}  {}", self.inline(p, indent + 2))).collect();
+                    let items: Vec<String> = split_commas(g).iter().map(|p| format!("{pad}  {}", self.inline(p, indent))).collect();
                     out.push_str(&format!("(\n{}\n{pad})", items.join(",\n")));
                 }
                 Node::G(g) => out.push_str(&format!("({})", self.inline(g, indent + 2))),
@@ -697,8 +707,71 @@ fn same_code(a: &str, b: &str) -> bool {
     key(a) == key(b)
 }
 
+/// "--Kommentar" am Zeilenanfang (ausserhalb von Texten und Blockkommentaren) bekommt das Leerzeichen,
+/// das MariaDB nach "--" verlangt; sonst waere es Code und das Formatieren zoege die Zeilen zusammen.
+fn dash_comments(text: &str) -> String {
+    let ch: Vec<char> = text.chars().collect();
+    let mut out = String::with_capacity(text.len() + 8);
+    let mut i = 0;
+    let mut quote: Option<char> = None;
+    let mut block = false;
+    let mut line_start = true;
+    while i < ch.len() {
+        let c = ch[i];
+        let next = ch.get(i + 1).copied();
+        if block {
+            if c == '*' && next == Some('/') {
+                block = false;
+                out.push_str("*/");
+                i += 2;
+                continue;
+            }
+        } else if let Some(q) = quote {
+            if c == '\\' && q != '`' {
+                out.push(c);
+                if let Some(n) = next {
+                    out.push(n);
+                }
+                i += 2;
+                continue;
+            }
+            if c == q {
+                quote = None;
+            }
+        } else if c == '-' && next == Some('-') && (line_start || ch.get(i + 2).is_none_or(|c| c.is_whitespace())) || c == '#' {
+            let end = ch[i..].iter().position(|c| *c == '\n').map_or(ch.len(), |p| i + p);
+            let line: String = ch[i..end].iter().collect();
+            if c == '-' && ch.get(i + 2).is_some_and(|c| !c.is_whitespace()) {
+                out.push_str("-- ");
+                out.push_str(&line[2..]);
+            } else {
+                out.push_str(&line);
+            }
+            i = end;
+            continue;
+        } else if c == '/' && next == Some('*') {
+            block = true;
+            out.push_str("/*");
+            i += 2;
+            line_start = false;
+            continue;
+        } else if matches!(c, '\'' | '"' | '`') {
+            quote = Some(c);
+        }
+        out.push(c);
+        if c == '\n' {
+            line_start = true;
+        } else if !c.is_whitespace() {
+            line_start = false;
+        }
+        i += 1;
+    }
+    out
+}
+
 /// Ganzes Skript formatieren.
 pub fn format_sql(text: &str) -> String {
+    let text = &dash_comments(text);
     let stmts = crate::db::split_statements(text);
     let chars: Vec<char> = text.chars().collect();
     let mut out = String::new();
@@ -799,6 +872,29 @@ mod tests {
     }
 
     #[test]
+    fn school_scripts_look_right() {
+        assert_eq!(format_sql("--distinct zaehlt\nselect a from b;"), "-- distinct zaehlt\nSELECT a\nFROM b;\n");
+        assert_eq!(format_sql("select 5--3"), "SELECT 5 - -3\n");
+        assert_eq!(format_sql("select '--x' from t"), "SELECT '--x'\nFROM t\n");
+        assert_eq!(format_sql("delete from email where pid = 3"), "DELETE FROM email\nWHERE pid = 3\n");
+        assert_eq!(
+            format_sql("insert into personen (vorname, nachname) values ('Max','Muster'),('Anna','Huber')"),
+            "INSERT INTO personen (vorname, nachname)\nVALUES ('Max', 'Muster'),\n       ('Anna', 'Huber')\n"
+        );
+        assert_eq!(format_sql("insert into t (a) values (1)"), "INSERT INTO t (a)\nVALUES (1)\n");
+        assert_eq!(
+            format_sql("create table t (\n  id int primary key,\n  -- Hinweis\n  name varchar(20)\n);"),
+            "CREATE TABLE t (\n  id INT PRIMARY KEY,\n  -- Hinweis\n  name VARCHAR(20)\n);\n"
+        );
+        let f = format_sql("select case when punkte > 10 then 'gut' when punkte > 5 then 'mittel' else 'schlecht' end as bewertung, name, klasse from spieler");
+        assert!(f.starts_with("SELECT "), "{f}");
+        for l in f.lines().skip(1).take_while(|l| !l.starts_with("FROM")) {
+            assert!(l.starts_with("       ") || l.starts_with("  "), "{f}");
+        }
+        assert_eq!(format_sql(&f), f);
+    }
+
+    #[test]
     fn long_where_breaks_at_and() {
         let f = format_sql(
             "select * from bestellung where datum between '2024-01-01' and '2024-12-31' and status = 'offen' and kunde_id in (1,2,3) and betrag > 1000",
@@ -871,9 +967,9 @@ mod tests {
 
     #[test]
     fn insert_update_delete() {
-        assert_eq!(format_sql("insert into t (a,b) values (1,'x'),(2,'y')"), "INSERT INTO t (a, b)\nVALUES (1, 'x'), (2, 'y')\n");
+        assert_eq!(format_sql("insert into t (a,b) values (1,'x'),(2,'y')"), "INSERT INTO t (a, b)\nVALUES (1, 'x'),\n       (2, 'y')\n");
         assert_eq!(format_sql("update t set a=1, b='x' where id=5"), "UPDATE t\nSET a = 1, b = 'x'\nWHERE id = 5\n");
-        assert_eq!(format_sql("delete from t where id=-1"), "DELETE\nFROM t\nWHERE id = -1\n");
+        assert_eq!(format_sql("delete from t where id=-1"), "DELETE FROM t\nWHERE id = -1\n");
     }
 
     #[test]
@@ -888,8 +984,8 @@ mod tests {
     /// Ein Zeilenkommentar am Ende eines Listeneintrags darf das Komma und den Rest nicht verschlucken
     #[test]
     fn line_comments_never_swallow_code() {
-        assert_eq!(format_sql("SELECT a -- kommentar\n, b FROM t"), "SELECT a, -- kommentar\n  b\nFROM t\n");
-        assert_eq!(format_sql("INSERT INTO t VALUES (1) -- eins\n, (2)"), "INSERT INTO t\nVALUES (1), -- eins\n  (2)\n");
+        assert_eq!(format_sql("SELECT a -- kommentar\n, b FROM t"), "SELECT a, -- kommentar\n       b\nFROM t\n");
+        assert_eq!(format_sql("INSERT INTO t VALUES (1) -- eins\n, (2)"), "INSERT INTO t\nVALUES (1), -- eins\n       (2)\n");
         for sql in [
             "SELECT a, -- erste\nb, -- zweite\nc FROM t",
             "SELECT very_long_column_name_number_one -- c\n, (SELECT MAX(x) FROM other_table WHERE other_table.id = t.id) AS m, z FROM t",
@@ -914,4 +1010,5 @@ mod tests {
         assert_eq!(format_sql("select 'a,b  from' , \"x\"\"y\" from t"), "SELECT 'a,b  from', \"x\"\"y\"\nFROM t\n");
     }
 }
+
 
