@@ -271,3 +271,31 @@ Sicherungen, Benutzerverwaltung, Git, Suche, Menüs.
 **Offen:**
 - Keine echten Bildschirmfotos der App für die neuen Hover-Karten und die Tab-Vervollständigung.
 - Eine echte Claude-Antwort im KI-Bereich ist weiter ungetestet.
+
+## 15. Fünfte Runde (2026-11-17, Version 1.1.22): MySQL-Autofix, Formatieren, Neue Datei, Andocken
+
+**Erledigt** (je Punkt ein Commit, alle mit Tests; 335 Tests, Clippy ohne Warnungen):
+- Vorschläge öffnen sich nur noch beim Tippen eines Worts oder nach einem Punkt; Tab/Enter setzen nach Leerzeichen
+  oder Zeilenumbruch nichts mehr ungefragt ein (`sqledit::typing_word`).
+- MySQL-Autofix (`src/sqledit/dialect.rs`): `--Kommentar`, Schreibweisen anderer Datenbanken, Text ohne
+  Anführungszeichen in VALUES, fehlende Kommas, deutsches Datum, Dezimalkomma, Anzahl der Werte, REFERENCES ohne
+  Spalte. An allen SQL-Dateien unter `Schule/INFI` geprüft: nur echte Fehler gemeldet.
+- Serverfehler (`src/sqledit/errfix.rs`): Ein-Klick-Korrekturen im SQL-Reiter, die die Anweisung ersetzen und ab
+  dort weiter ausführen. Fehlertexte von MariaDB 11 echt geprüft (Wegwerf-Datenbank, danach gelöscht), die
+  korrigierten Anweisungen laufen auf dem Server.
+- Strg+Alt+L: SQL (`--`, DELETE FROM, VALUES-Zeilen, ausgerichtete Listen, Kommentare in CREATE TABLE) und Java
+  ohne Sprachserver (Zeilen trennen, Leerzeilen, throws, Lambdas). Alle 18 Java-Dateien unter INFI: nur Leerraum
+  geändert, zweimal formatieren = einmal.
+- Neue Datei: `/`, `\` und `.` legen Ordner bzw. Pakete an; Java-Vorlage aus dem Namen (Tabellenname → Modell,
+  DBManager → CRUD für alle Tabellen samt fehlender Modelle, Main → main). Stil wie in den INFI-Projekten
+  (`javagen::school_*`).
+- SQL-Vorlagen: nach INSERT INTO/UPDATE/DELETE FROM die ganze Anweisung mit Spalten bzw. WHERE über den Primärschlüssel.
+- Werkzeugfenster ziehen wie in VS Code (`src/app/dock.rs`): links, rechts, unten, eigenes Fenster und zurück.
+  Unter Windows mit echten Mausereignissen geprüft (Symbol → rechts, Kopfzeile → eigenes Fenster, Fenster → unten,
+  → links).
+
+**Offen / nicht geprüft:**
+- Andocken unter macOS/Linux nicht ausprobiert (eigene Fenster nutzen egui-Viewports).
+- Neue-Datei-Dialog und SQL-Fehlerknöpfe nur per Test geprüft, nicht per Bildschirmfoto.
+- Java-Formatierung mit laufendem Sprachserver (jdtls) unverändert; nur der eigene Formatierer wurde verbessert.
+- SQL in Java-Zeichenketten: Serverfehler aus einem Java-Programm nutzen `errfix` noch nicht.
