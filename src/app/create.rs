@@ -75,128 +75,172 @@ impl FileKind {
     }
 }
 
-/// Art der neuen Java-Datei
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum JavaKind {
-    Class,
+/// Bekannte Endungen: alles andere nach einem Punkt ist ein Ordner bzw. Paket ("model.Person")
+const KNOWN_EXT: &[&str] = &[
+    "sql", "java", "md", "txt", "json", "csv", "xml", "properties", "html", "htm", "css", "js", "mjs", "ts", "py", "yml", "yaml", "sh", "bat",
+    "ps1", "kt", "kts", "gradle", "gz", "zip", "tar", "png", "jpg", "svg", "ini", "cfg", "toml", "log", "php", "c", "h", "cpp", "rs", "go",
+];
+
+/// Was eine neue Java-Datei enthaelt (ergibt sich aus dem Namen und der gewaehlten Datenbank)
+#[derive(Clone, Debug, PartialEq)]
+pub enum JavaTemplate {
+    /// Modellklasse einer gleichnamigen Tabelle
+    Model(String),
+    /// DBManager mit Methoden fuer alle Tabellen; fehlende Modellklassen entstehen mit
+    Manager { tables: usize, new_models: Vec<String> },
+    /// main mit dem DBManager im selben Ordner
+    MainWithManager(String),
+    /// main mit Verbindung (Database.java im Projekt oder Adresse im Code)
+    MainWithDatabase,
     Main,
-    Database,
-    Record,
-    Interface,
-    Enum,
-}
-
-impl JavaKind {
-    const ALL: [JavaKind; 6] = [JavaKind::Database, JavaKind::Class, JavaKind::Main, JavaKind::Record, JavaKind::Interface, JavaKind::Enum];
-
-    fn label(self) -> &'static str {
-        match self {
-            JavaKind::Class => crate::i18n::tr("Klasse", "Class"),
-            JavaKind::Main => crate::i18n::tr("Mit main", "With main"),
-            JavaKind::Database => crate::i18n::tr("Mit Datenbank", "With database"),
-            JavaKind::Record => "Record",
-            JavaKind::Interface => "Interface",
-            JavaKind::Enum => "Enum",
-        }
-    }
+    Class,
 }
 
 pub struct NewFile {
     pub dir: PathBuf,
-    /// Was getippt wurde: der ganze Dateiname, meist mit Endung ("Main.java", "notizen.md", ".gitignore")
+    /// Was getippt wurde: Dateiname, auch mit Ordnern ("sql/abfrage", "model/Person.java") oder Paket ("model.Person")
     pub name: String,
     /// Art, wenn keine Endung getippt wurde (passend zum Ordner oder zuletzt benutzt)
     pub fallback: FileKind,
-    pub java: JavaKind,
     /// Erstes Bild: Art vorschlagen
     ready: bool,
 }
 
+/// Aufgeloester Name: Zielordner, Dateiname, Art, Name ohne Endung und die neuen Ordner (relativ)
+#[derive(Clone, Debug, PartialEq)]
+pub struct Target {
+    pub dir: PathBuf,
+    pub file: String,
+    pub kind: FileKind,
+    pub stem: String,
+    pub folders: Vec<String>,
+    /// Endung selbst getippt (oder Name mit Punkt am Anfang wie .gitignore)
+    pub typed_ext: bool,
+}
+
 impl NewFile {
     pub fn new(dir: PathBuf) -> Self {
-        Self { dir, name: String::new(), fallback: FileKind::Sql, java: JavaKind::Database, ready: false }
+        Self { dir, name: String::new(), fallback: FileKind::Sql, ready: false }
     }
 
     /// Mit fester Art (aus dem Menue "Neu"): ohne Endung wird diese ergaenzt
     pub fn of_kind(dir: PathBuf, kind: FileKind) -> Self {
-        Self { fallback: kind, ready: true, java: if kind == FileKind::Java { JavaKind::Class } else { JavaKind::Database }, ..Self::new(dir) }
+        Self { fallback: kind, ready: true, ..Self::new(dir) }
     }
 
-    /// Getippte Endung (ohne Punkt) und der Name davor. Eine Endung braucht einen Namen davor und Zeichen danach;
-    /// ".gitignore" ist ein ganzer Name.
-    fn typed_ext(&self) -> Option<(&str, &str)> {
-        let (stem, ext) = self.name.trim().rsplit_once('.')?;
-        (!stem.is_empty() && !ext.is_empty()).then_some((stem, ext))
-    }
-
-    /// Name ohne die getippte Endung
-    pub fn stem(&self) -> &str {
-        let n = self.name.trim();
-        match self.typed_ext() {
-            Some((stem, _)) => stem,
-            // "Main." beim Tippen: der Punkt gehoert noch nicht zum Namen
-            None if n.starts_with('.') => n,
-            None => n.trim_end_matches('.'),
-        }
-    }
-
-    /// Art der Datei: nach der getippten Endung, ohne Endung nach `fallback`
-    pub fn kind(&self) -> FileKind {
-        match (self.typed_ext(), self.name.trim().starts_with('.')) {
-            (Some((_, e)), _) => FileKind::from_ext(e).unwrap_or(FileKind::Other),
+    /// Den getippten Namen aufloesen: "/" und "\" trennen Ordner; Punkte vor einer unbekannten Endung (und in
+    /// Java-Namen) ebenfalls, so wird "model.Person" zu model/Person.java im Quellordner.
+    pub fn target(&self) -> Target {
+        let n = self.name.trim().replace('\\', "/");
+        let mut parts: Vec<&str> = n.split('/').map(str::trim).collect();
+        let last = parts.pop().unwrap_or("");
+        let mut folders: Vec<String> = parts.into_iter().filter(|p| !p.is_empty()).map(String::from).collect();
+        let dotfile = last.starts_with('.');
+        let (mut stem, ext): (String, Option<String>) = match last.rsplit_once('.') {
+            _ if dotfile => (last.to_string(), None),
+            Some((s, e)) if !s.is_empty() && KNOWN_EXT.contains(&e.to_ascii_lowercase().as_str()) => (s.to_string(), Some(e.to_string())),
+            _ => (last.trim_end_matches('.').to_string(), None),
+        };
+        let kind = match (&ext, dotfile) {
+            (Some(e), _) => FileKind::from_ext(e).unwrap_or(FileKind::Other),
             (None, true) => FileKind::Other,
             (None, false) => self.fallback,
+        };
+        // Punkte im Namen: Pakete (Java) bzw. Ordner (ohne Endung)
+        if !dotfile && stem.contains('.') && (kind == FileKind::Java || ext.is_none()) {
+            let segs: Vec<String> = stem.split('.').map(|s| s.trim().to_string()).collect();
+            if segs.iter().all(|s| !s.is_empty()) {
+                stem = segs.last().cloned().unwrap_or_default();
+                folders.extend(segs[..segs.len() - 1].iter().cloned());
+            }
         }
+        let file = match (&ext, dotfile) {
+            (Some(e), _) => format!("{stem}.{e}"),
+            (None, true) => stem.clone(),
+            (None, false) if kind.ext().is_empty() => stem.clone(),
+            (None, false) => format!("{stem}.{}", kind.ext()),
+        };
+        let base = if kind == FileKind::Java { java_source_dir(&self.dir) } else { self.dir.clone() };
+        let dir = folders.iter().fold(base, |d, f| d.join(f));
+        Target { dir, file, kind, stem, folders, typed_ext: ext.is_some() || dotfile }
     }
 
-    /// Hat der Nutzer die Endung selbst getippt?
-    pub fn has_typed_ext(&self) -> bool {
-        self.typed_ext().is_some() || self.name.trim().starts_with('.')
+    #[cfg(test)]
+    /// Name ohne Endung und Ordner
+    pub fn stem(&self) -> String {
+        self.target().stem
     }
 
-    /// Vollstaendiger Dateiname: getippt, sonst mit der Endung der Fallback-Art
+    #[cfg(test)]
+    /// Art der Datei: nach der getippten Endung, ohne Endung nach `fallback`
+    pub fn kind(&self) -> FileKind {
+        self.target().kind
+    }
+
+    /// Dateiname ohne Ordner
     pub fn file_name(&self) -> String {
-        if self.has_typed_ext() {
-            return self.name.trim().to_string();
-        }
-        let ext = self.fallback.ext();
-        if ext.is_empty() { self.stem().to_string() } else { format!("{}.{ext}", self.stem()) }
+        self.target().file
     }
 
     /// Fehler im Namen (oder None)
     fn problem(&self) -> Option<String> {
-        let name = self.stem();
-        if name.is_empty() {
+        let t = self.target();
+        if t.stem.is_empty() {
             return Some(crate::i18n::tr("Bitte einen Namen eingeben.", "Please enter a name.").into());
         }
-        if !workspace::valid_name(&self.file_name()) {
-            return Some(crate::i18n::tr("Der Name darf / \\ : * ? \" < > | nicht enthalten.", "The name must not contain / \\ : * ? \" < > |.").into());
+        if !workspace::valid_name(&t.file) || t.folders.iter().any(|f| !workspace::valid_name(f)) {
+            return Some(crate::i18n::tr("Namen dürfen : * ? \" < > | nicht enthalten und nicht mit einem Punkt beginnen.", "Names must not contain : * ? \" < > | or start with a dot.").into());
         }
-        if self.kind() == FileKind::Java && !java::source::is_identifier(name) {
+        if t.kind == FileKind::Java && !java::source::is_identifier(&t.stem) {
             return Some(crate::i18n::tr(
                 "Java-Klassen brauchen einen Namen aus Buchstaben, Ziffern und _ – ohne Leerzeichen, nicht mit einer Ziffer am Anfang.",
                 "Java classes need a name made of letters, digits and _ – no spaces, not starting with a digit.",
             ).into());
         }
-        if self.dir.join(self.file_name()).exists() {
-            return Some(crate::tr_format!("„{}“ gibt es hier schon.", "“{}” already exists here.", self.file_name()));
+        if t.kind == FileKind::Java && t.folders.iter().any(|f| !java::source::is_identifier(f)) {
+            return Some(crate::i18n::tr("Paketnamen bestehen aus Buchstaben, Ziffern und _ (z. B. model.Person).", "Package names consist of letters, digits and _ (e.g. model.Person).").into());
+        }
+        if t.dir.join(&t.file).exists() {
+            return Some(crate::tr_format!("„{}“ gibt es hier schon.", "“{}” already exists here.", t.file));
         }
         None
     }
 
-    /// Inhalt der neuen Datei und Zeile (0-basiert), in der der Cursor stehen soll
-    pub fn content(&self, conn: &crate::db::ConnInfo, database: &str) -> (String, usize) {
-        let name = self.stem();
-        match self.kind() {
-            FileKind::Java => java_template(name, self.java, package_for(&self.dir).as_deref(), self.dir.join("Database.java").is_file(), conn, database),
+    /// Welche Java-Vorlage der Name ergibt
+    pub fn java_template(&self, schema: Option<&crate::db::Schema>) -> JavaTemplate {
+        let t = self.target();
+        java_template_for(&t.stem, &t.dir, schema)
+    }
+
+    /// Inhalt der neuen Datei, Zeile (0-basiert) fuer den Cursor und weitere Dateien, die mit entstehen
+    pub fn content(&self, conn: &crate::db::ConnInfo, database: &str, schema: Option<&crate::db::Schema>) -> (String, usize, Vec<(PathBuf, String)>) {
+        let t = self.target();
+        let name = t.stem.as_str();
+        match t.kind {
+            FileKind::Java => java_content(name, &t.dir, conn, database, schema),
             // Wie in einem Skript fuer die Schule: die Datenbank wird gleich zu Beginn gewaehlt
-            FileKind::Sql if !database.is_empty() => (format!("USE {};\n\n", crate::db::q(database)), 2),
-            FileKind::Markdown => (format!("# {name}\n\n"), 2),
-            FileKind::Json => ("{\n  \n}\n".into(), 1),
-            FileKind::Xml => ("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n".into(), 1),
-            _ => (String::new(), 0),
+            FileKind::Sql if !database.is_empty() => (format!("USE {};\n\n", crate::db::q(database)), 2, Vec::new()),
+            FileKind::Markdown => (format!("# {name}\n\n"), 2, Vec::new()),
+            FileKind::Json => ("{\n  \n}\n".into(), 1, Vec::new()),
+            FileKind::Xml => ("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n".into(), 1, Vec::new()),
+            _ => (String::new(), 0, Vec::new()),
         }
     }
+}
+
+/// Quellordner fuer Java-Dateien: liegt `dir` schon darin, bleibt es; sonst src/main/java bzw. src, wenn vorhanden
+fn java_source_dir(dir: &Path) -> PathBuf {
+    let name = dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    if package_for(dir).is_some() || name == "src" || name == "java" && dir.parent().and_then(|p| p.file_name()).is_some_and(|p| p == "main" || p == "test") {
+        return dir.to_path_buf();
+    }
+    for sub in ["src/main/java", "src"] {
+        let p = dir.join(sub);
+        if p.is_dir() {
+            return p;
+        }
+    }
+    dir.to_path_buf()
 }
 
 /// Paket fuer eine Datei in `dir`: Ordner unterhalb von src/main/java, src/test/java oder src
@@ -222,36 +266,116 @@ fn context_kind(dir: &Path) -> Option<FileKind> {
     names.iter().any(|n| n.ends_with(".java")).then_some(FileKind::Java)
 }
 
-fn java_template(name: &str, kind: JavaKind, package: Option<&str>, has_database: bool, conn: &crate::db::ConnInfo, database: &str) -> (String, usize) {
-    let mut head = package.map(|p| format!("package {p};\n\n")).unwrap_or_default();
-    let (body, line) = match kind {
-        JavaKind::Class => (format!("public class {name} {{\n    \n}}\n"), 1),
-        JavaKind::Main => (format!("public class {name} {{\n    public static void main(String[] args) {{\n        \n    }}\n}}\n"), 2),
-        JavaKind::Record => (format!("public record {name}() {{\n}}\n"), 0),
-        JavaKind::Interface => (format!("public interface {name} {{\n    \n}}\n"), 1),
-        JavaKind::Enum => (format!("public enum {name} {{\n    \n}}\n"), 1),
-        JavaKind::Database => {
-            head.push_str("import java.sql.*;\n\n");
-            let connected = crate::i18n::tr("Verbunden mit ", "Connected to ");
-            // Wie im Unterricht: Adresse, Benutzer und Passwort stehen direkt im Code (kein Treiber-Laden, keine Umgebungsvariablen)
-            let (open, method) = if has_database {
-                ("Database.connect()", String::new())
-            } else {
-                (
-                    "getConnection()",
-                    format!(
-                        "\n    public static Connection getConnection() throws SQLException {{\n        return DriverManager.getConnection(\n                \"{}\",  // DB\n                \"{}\",  // User\n                \"\"  // Passwort\n        );\n    }}\n",
-                        java::jdbc_url(java::driver(), &conn.host, conn.port, database),
-                        conn.user.replace('\\', "\\\\").replace('"', "\\\"")
-                    ),
-                )
-            };
-            let body = format!(
-                "public class {name} {{\n    public static void main(String[] args) {{\n        try (Connection con = {open}) {{\n            System.out.println(\"{connected}\" + con.getMetaData().getURL());\n            \n        }} catch (SQLException e) {{\n            System.err.println(e.getMessage());\n        }}\n    }}\n{method}}}\n"
-            );
-            let line = body.lines().position(|l| l.trim().is_empty() && l.len() > 8).unwrap_or(3);
-            (body, line)
+/// Tabelle, zu der eine Klasse dieses Namens gehoert ("Personen" -> Personen, "SchuelerKlasse" -> schueler_klasse)
+fn table_for_class<'a>(name: &str, schema: &'a crate::db::Schema) -> Option<&'a crate::db::TableInfo> {
+    schema.tables.iter().filter(|t| !t.is_view).find(|t| t.name.eq_ignore_ascii_case(name) || crate::javagen::class_name(&t.name) == name)
+}
+
+fn is_manager_name(name: &str) -> bool {
+    let l = name.to_ascii_lowercase();
+    matches!(l.as_str(), "dbmanager" | "datenbank" | "db" | "dbconnection" | "databasemanager" | "datenbankmanager") || l.ends_with("dbmanager")
+}
+
+/// Vorlage nach Name und Umgebung: Tabellenname -> Modell, DBManager -> alle Tabellen, Main -> main
+fn java_template_for(name: &str, dir: &Path, schema: Option<&crate::db::Schema>) -> JavaTemplate {
+    let tables: Vec<&crate::db::TableInfo> = schema.map(|s| s.tables.iter().filter(|t| !t.is_view).collect()).unwrap_or_default();
+    if let Some(t) = schema.and_then(|s| table_for_class(name, s)) {
+        return JavaTemplate::Model(t.name.clone());
+    }
+    if is_manager_name(name) && !tables.is_empty() {
+        let new_models = tables.iter().map(|t| crate::javagen::class_name(&t.name)).filter(|c| !dir.join(format!("{c}.java")).exists()).collect();
+        return JavaTemplate::Manager { tables: tables.len(), new_models };
+    }
+    if matches!(name, "Main" | "App") {
+        if let Some(m) = existing_manager(dir) {
+            return JavaTemplate::MainWithManager(m);
         }
+        return if schema.is_some() || dir.join("Database.java").is_file() { JavaTemplate::MainWithDatabase } else { JavaTemplate::Main };
+    }
+    JavaTemplate::Class
+}
+
+/// Vorhandene DBManager-Klasse im Ordner
+fn existing_manager(dir: &Path) -> Option<String> {
+    std::fs::read_dir(dir).ok()?.flatten().filter_map(|e| e.file_name().to_string_lossy().strip_suffix(".java").map(String::from)).find(|n| is_manager_name(n))
+}
+
+/// Zeile nach der Klassen-Deklaration (fuer den Cursor)
+fn line_after_class(text: &str) -> usize {
+    text.lines().position(|l| l.starts_with("public class") || l.starts_with("public final class")).map_or(0, |l| l + 1)
+}
+
+fn java_content(name: &str, dir: &Path, conn: &crate::db::ConnInfo, database: &str, schema: Option<&crate::db::Schema>) -> (String, usize, Vec<(PathBuf, String)>) {
+    let package = package_for(dir);
+    let pkg = package.as_deref();
+    let target = crate::javagen::Target::new(conn, database);
+    match java_template_for(name, dir, schema) {
+        JavaTemplate::Model(table) => {
+            let t = schema.and_then(|s| s.tables.iter().find(|x| x.name == table)).expect("Tabelle aus der Vorlage");
+            let text = crate::javagen::school_model(t, name, pkg);
+            let line = line_after_class(&text);
+            (text, line, Vec::new())
+        }
+        JavaTemplate::Manager { .. } => {
+            let s = schema.expect("Schema aus der Vorlage");
+            let models: Vec<(&crate::db::TableInfo, String)> = s.tables.iter().filter(|t| !t.is_view).map(|t| (t, crate::javagen::class_name(&t.name))).collect();
+            let text = crate::javagen::school_manager(name, &models, &target, pkg);
+            let extra = models
+                .iter()
+                .filter(|(_, c)| !dir.join(format!("{c}.java")).exists())
+                .map(|(t, c)| (dir.join(format!("{c}.java")), crate::javagen::school_model(t, c, pkg)))
+                .collect();
+            let line = line_after_class(&text);
+            (text, line, extra)
+        }
+        JavaTemplate::MainWithManager(m) => {
+            let first = schema.and_then(|s| s.tables.iter().find(|t| !t.is_view && dir.join(format!("{}.java", crate::javagen::class_name(&t.name))).exists())).map(|t| crate::javagen::class_name(&t.name));
+            let text = crate::javagen::school_main(name, &m, first.as_deref(), pkg);
+            let line = text.lines().position(|l| l.contains("try (Connection con")).map_or(0, |l| l + 1);
+            (text, line, Vec::new())
+        }
+        JavaTemplate::MainWithDatabase => {
+            let (t, l) = java_template(name, true, pkg, dir.join("Database.java").is_file(), conn, database);
+            (t, l, Vec::new())
+        }
+        JavaTemplate::Main => {
+            let (t, l) = java_template(name, false, pkg, false, conn, database);
+            (t, l, Vec::new())
+        }
+        JavaTemplate::Class => {
+            let head = package.map(|p| format!("package {p};\n\n")).unwrap_or_default();
+            let lines = head.matches('\n').count();
+            (format!("{head}public class {name} {{\n    \n}}\n"), lines + 1, Vec::new())
+        }
+    }
+}
+
+/// main-Klasse; `database`: mit Verbindung (Database.connect() bzw. Adresse im Code)
+fn java_template(name: &str, with_db: bool, package: Option<&str>, has_database: bool, conn: &crate::db::ConnInfo, database: &str) -> (String, usize) {
+    let mut head = package.map(|p| format!("package {p};\n\n")).unwrap_or_default();
+    let (body, line) = if !with_db {
+        (format!("public class {name} {{\n    public static void main(String[] args) {{\n        \n    }}\n}}\n"), 2)
+    } else {
+        head.push_str("import java.sql.*;\n\n");
+        let connected = crate::i18n::tr("Verbunden mit ", "Connected to ");
+        // Wie im Unterricht: Adresse, Benutzer und Passwort stehen direkt im Code (kein Treiber-Laden, keine Umgebungsvariablen)
+        let (open, method) = if has_database {
+            ("Database.connect()", String::new())
+        } else {
+            (
+                "getConnection()",
+                format!(
+                    "\n    public static Connection getConnection() throws SQLException {{\n        return DriverManager.getConnection(\n                \"{}\", // DB\n                \"{}\", // User\n                \"\"); // Passwort\n    }}\n",
+                    java::jdbc_url(java::driver(), &conn.host, conn.port, database),
+                    conn.user.replace('\\', "\\\\").replace('"', "\\\"")
+                ),
+            )
+        };
+        let body = format!(
+            "public class {name} {{\n    public static void main(String[] args) {{\n        try (Connection con = {open}) {{\n            System.out.println(\"{connected}\" + con.getMetaData().getURL());\n            \n        }} catch (SQLException e) {{\n            System.err.println(e.getMessage());\n        }}\n    }}\n{method}}}\n"
+        );
+        let line = body.lines().position(|l| l.trim().is_empty() && l.len() > 8).unwrap_or(3);
+        (body, line)
     };
     let head_lines = head.matches('\n').count();
     (format!("{head}{body}"), head_lines + line)
@@ -266,6 +390,8 @@ impl EasyApp {
             dlg.ready = true;
             dlg.fallback = context_kind(&dlg.dir).unwrap_or_else(|| FileKind::from_ext(&self.settings.new_file_ext).unwrap_or(FileKind::Sql));
         }
+        let schema = if self.current_db.is_empty() { None } else { self.schemas.get_arc(self.db.as_ref(), &self.current_db).cloned() };
+        let Some(side::ExplorerDlg::NewFile(dlg)) = self.explorer_dlg.as_mut() else { return };
         let pal = style::pal();
         let mut ok = false;
         let mut cancel = false;
@@ -297,37 +423,45 @@ impl EasyApp {
                     let _ = r;
                 });
             });
-            let kind = dlg.kind();
-            if kind == FileKind::Java {
-                ui.add_space(8.0);
-                let items: Vec<(JavaKind, &str)> = JavaKind::ALL.iter().map(|k| (*k, k.label())).collect();
-                crate::widgets::segmented(ui, &mut dlg.java, &items);
-            }
+            let target = dlg.target();
+            let kind = target.kind;
             ui.add_space(8.0);
             // Hinweis: was entsteht und wo, bzw. was nicht stimmt
             let problem = dlg.problem();
             match &problem {
                 Some(p) if !dlg.name.trim().is_empty() => {
                     ui.label(RichText::new(p).small().color(pal.error_text));
-                    if kind == FileKind::Java && !java::source::is_identifier(dlg.stem()) {
-                        let s = java::source::class_name_from(dlg.stem());
+                    if kind == FileKind::Java && !java::source::is_identifier(&target.stem) {
+                        let s = java::source::class_name_from(&target.stem);
                         if java::source::is_identifier(&s) && ui.link(crate::tr_format!("Stattdessen „{s}“ verwenden", "Use “{s}” instead")).clicked() {
-                            dlg.name = format!("{s}.java");
+                            let mut path = target.folders.join(if kind == FileKind::Java { "." } else { "/" });
+                            if !path.is_empty() {
+                                path.push('.');
+                            }
+                            dlg.name = format!("{path}{s}");
                         }
                     }
                 }
                 _ => {
-                    let mut info = if dlg.name.trim().is_empty() {
-                        crate::tr_format!("Dateiname mit Endung tippen, z. B. {} oder notizen.md", "Type the file name with its extension, e.g. {} or notes.md", hint_example(dlg.fallback))
+                    let info = if dlg.name.trim().is_empty() {
+                        crate::tr_format!(
+                            "Name tippen, z. B. {} – mit / oder . auch in Unterordnern bzw. Paketen ({})",
+                            "Type a name, e.g. {} – with / or . also in subfolders or packages ({})",
+                            hint_example(dlg.fallback),
+                            if dlg.fallback == FileKind::Java { "model.Person" } else { "abfragen/top10" }
+                        )
                     } else {
-                        crate::tr_format!("Wird angelegt: {} in {}", "Will be created: {} in {}", dlg.file_name(), workspace::dir_name(&dlg.dir))
+                        let rel = target.dir.strip_prefix(&dlg.dir).map(|r| r.join(&target.file)).unwrap_or_else(|_| target.dir.join(&target.file));
+                        let mut i = crate::tr_format!("Wird angelegt: {} in {}", "Will be created: {} in {}", rel.display().to_string().replace('\\', "/"), workspace::dir_name(&dlg.dir));
+                        if kind == FileKind::Java {
+                            if let Some(p) = package_for(&target.dir) {
+                                i.push_str(&crate::tr_format!(" · Paket {p}", " · package {p}"));
+                            }
+                            i.push_str(" · ");
+                            i.push_str(&template_label(&dlg.java_template(schema.as_deref())));
+                        }
+                        i
                     };
-                    if kind == FileKind::Java
-                        && !dlg.name.trim().is_empty()
-                        && let Some(p) = package_for(&dlg.dir)
-                    {
-                        info.push_str(&crate::tr_format!(" · Paket {p}", " · package {p}"));
-                    }
                     ui.label(RichText::new(info).small().color(pal.text_weak));
                 }
             }
@@ -357,18 +491,35 @@ impl EasyApp {
         }
         let Some(side::ExplorerDlg::NewFile(dlg)) = self.explorer_dlg.take() else { return };
         let conn = self.db.as_ref().map(|d| d.info.clone()).unwrap_or_else(|| self.settings.conn.clone());
-        let (content, line) = dlg.content(&conn, &self.current_db);
+        let (content, line, extra) = dlg.content(&conn, &self.current_db, schema.as_deref());
+        let target = dlg.target();
         // Die zuletzt getippte bekannte Endung merken: sie wird ergaenzt, wenn man keine tippt
-        if dlg.has_typed_ext() && dlg.kind() != FileKind::Other && self.settings.new_file_ext != dlg.kind().ext() {
-            self.settings.new_file_ext = dlg.kind().ext().to_string();
+        if target.typed_ext && target.kind != FileKind::Other && self.settings.new_file_ext != target.kind.ext() {
+            self.settings.new_file_ext = target.kind.ext().to_string();
             self.settings.save();
         }
         self.tree_scan = None;
-        match workspace::create_file(&dlg.dir, &dlg.file_name(), &content) {
+        if let Err(e) = std::fs::create_dir_all(&target.dir) {
+            self.error(crate::tr_format!("Ordner {} konnte nicht angelegt werden: {e}", "Could not create folder {}: {e}", target.dir.display()));
+            return;
+        }
+        // Mit entstehende Dateien (z. B. Modellklassen zum DBManager); vorhandene bleiben unangetastet
+        for (path, text) in &extra {
+            if !path.exists()
+                && let Err(e) = workspace::create_file(path.parent().unwrap_or(&target.dir), &path.file_name().unwrap_or_default().to_string_lossy(), text)
+            {
+                self.error(e);
+            }
+        }
+        match workspace::create_file(&target.dir, &target.file, &content) {
             Ok(p) => {
                 self.open_file(&p);
                 if let Some(t) = self.tabs.get_mut(self.active) {
                     t.goto_line(line);
+                }
+                if !extra.is_empty() {
+                    let names: Vec<String> = extra.iter().filter_map(|(p, _)| p.file_stem().map(|n| n.to_string_lossy().into_owned())).collect();
+                    self.toast(crate::tr_format!("Mit angelegt: {}", "Also created: {}", names.join(", ")));
                 }
             }
             Err(e) => self.error(e),
@@ -624,6 +775,23 @@ impl EasyApp {
     }
 }
 
+/// Kurzbeschreibung der Java-Vorlage fuer den Hinweis im Dialog
+fn template_label(t: &JavaTemplate) -> String {
+    match t {
+        JavaTemplate::Model(table) => crate::tr_format!("Klasse mit den Spalten von {table}", "class with the columns of {table}"),
+        JavaTemplate::Manager { tables, new_models } if new_models.is_empty() => crate::tr_format!("Verbindung und Methoden für {tables} Tabelle(n)", "connection and methods for {tables} table(s)"),
+        JavaTemplate::Manager { tables, new_models } => crate::tr_format!(
+            "Verbindung und Methoden für {tables} Tabelle(n), dazu {}",
+            "connection and methods for {tables} table(s), plus {}",
+            new_models.join(", ")
+        ),
+        JavaTemplate::MainWithManager(m) => crate::tr_format!("main mit {m}", "main using {m}"),
+        JavaTemplate::MainWithDatabase => crate::i18n::tr("main mit Datenbankverbindung", "main with database connection").into(),
+        JavaTemplate::Main => crate::i18n::tr("Klasse mit main", "class with main").into(),
+        JavaTemplate::Class => crate::i18n::tr("leere Klasse – Tabellenname, DBManager oder Main füllen sie selbst", "empty class – a table name, DBManager or Main fill it in").into(),
+    }
+}
+
 /// Freier Vorschlag fuer den Namen je nach Art
 /// Beispiel fuer die Eingabezeile, passend zum Ordner
 fn hint_example(kind: FileKind) -> &'static str {
@@ -727,46 +895,99 @@ mod tests {
             ("DATEN.SQL", "DATEN.SQL", FileKind::Sql, "DATEN"),
         ] {
             f.name = typed.into();
-            assert_eq!((f.file_name().as_str(), f.kind(), f.stem()), (file, kind, stem), "{typed:?}");
+            assert_eq!((f.file_name().as_str(), f.kind(), f.stem().as_str()), (file, kind, stem), "{typed:?}");
         }
-        // Java-Pruefung gilt dem Namen ohne Endung
         f.name = "Main.java".into();
         assert!(f.problem().is_none());
         f.name = "1x.java".into();
         assert!(f.problem().is_some());
         f.name = "mein Text.md".into();
         assert!(f.problem().is_none());
-        // der Inhalt der Vorlage nutzt den Namen ohne Endung
         f.name = "Kunde.java".into();
-        assert!(f.content(&crate::db::ConnInfo::default(), "").0.contains("public class Kunde {"));
+        assert!(f.content(&crate::db::ConnInfo::default(), "", None).0.contains("public class Kunde {"));
     }
 
     #[test]
-    fn java_templates_put_the_cursor_into_the_body() {
+    fn slashes_and_dots_make_folders_and_packages() {
+        let root = std::env::temp_dir().join(format!("emt-newfile-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        let mut f = NewFile::new(root.clone());
+        f.fallback = FileKind::Java;
+        // Paket: im Quellordner, Paketzeile passt
+        f.name = "model.Person".into();
+        let t = f.target();
+        assert_eq!((t.dir.clone(), t.file.as_str(), t.folders.clone()), (root.join("src").join("model"), "Person.java", vec!["model".to_string()]));
+        assert!(f.content(&crate::db::ConnInfo::default(), "", None).0.starts_with("package model;\n\npublic class Person {"));
+        f.name = "model/dao\\Person.java".into();
+        assert_eq!(f.target().dir, root.join("src").join("model").join("dao"));
+        f.name = "model.1x".into();
+        assert!(f.problem().is_some());
+        // SQL: Ordner per / oder per Punkt vor einer unbekannten Endung; bekannte Endungen bleiben im Namen
+        f.fallback = FileKind::Sql;
+        f.name = "abfragen/top10".into();
+        assert_eq!((f.target().dir, f.file_name()), (root.join("abfragen"), "top10.sql".to_string()));
+        f.name = "abfragen.top10".into();
+        assert_eq!((f.target().dir, f.file_name()), (root.join("abfragen"), "top10.sql".to_string()));
+        f.name = "jquery.min.js".into();
+        assert_eq!((f.target().dir, f.file_name()), (root.clone(), "jquery.min.js".to_string()));
+        f.name = "../raus".into();
+        assert!(f.problem().is_some());
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn the_name_picks_the_java_template() {
+        use crate::db::{ColumnInfo, Schema, TableInfo};
+        let col = |n: &str, t: &str, k: &str, e: &str| ColumnInfo { name: n.into(), col_type: t.into(), key: k.into(), extra: e.into(), ..Default::default() };
+        let schema = Schema {
+            name: "person".into(),
+            tables: vec![
+                TableInfo { name: "Personen".into(), columns: vec![col("pid", "int(11)", "PRI", "auto_increment"), col("vorname", "varchar(100)", "", "")], ..Default::default() },
+                TableInfo { name: "Email".into(), columns: vec![col("pid", "int(11)", "", ""), col("email", "varchar(200)", "PRI", "")], ..Default::default() },
+            ],
+            ..Default::default()
+        };
+        let root = std::env::temp_dir().join(format!("emt-tpl-{}", std::process::id()));
+        let dir = root.join("src").join("model");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("Email.java"), "package model;\n").unwrap();
         let conn = crate::db::ConnInfo::default();
-        let (t, line) = java_template("Kunde", JavaKind::Main, Some("app"), false, &conn, "shop");
-        assert!(t.starts_with("package app;\n\npublic class Kunde {"));
+        let mut f = NewFile::new(dir.clone());
+        f.fallback = FileKind::Java;
+        f.name = "Personen".into();
+        assert_eq!(f.java_template(Some(&schema)), JavaTemplate::Model("Personen".into()));
+        assert!(f.content(&conn, "person", Some(&schema)).0.contains("public void setVorname(String vorname)"));
+        f.name = "DBManager".into();
+        assert_eq!(f.java_template(Some(&schema)), JavaTemplate::Manager { tables: 2, new_models: vec!["Personen".into()] });
+        let (text, _, extra) = f.content(&conn, "person", Some(&schema));
+        assert!(text.contains("public Personen getPersonenByPid(int pid, Connection con)") && text.contains("public List<Email> getEmails(Connection con)"), "{text}");
+        assert_eq!(extra.len(), 1);
+        assert_eq!(extra[0].0, dir.join("Personen.java"));
+        std::fs::write(dir.join("DBManager.java"), text).unwrap();
+        f.name = "Main".into();
+        assert_eq!(f.java_template(Some(&schema)), JavaTemplate::MainWithManager("DBManager".into()));
+        assert!(f.content(&conn, "person", Some(&schema)).0.contains("DBManager db = new DBManager();"));
+        f.name = "Rechner".into();
+        assert_eq!(f.java_template(Some(&schema)), JavaTemplate::Class);
+        f.name = "Main".into();
+        let mut g = NewFile::new(root.join("leer"));
+        g.fallback = FileKind::Java;
+        g.name = "Main".into();
+        assert_eq!(g.java_template(None), JavaTemplate::Main);
+        assert_eq!(g.java_template(Some(&schema)), JavaTemplate::MainWithDatabase);
+        let (t, line, _) = g.content(&conn, "shop", Some(&schema));
+        assert!(t.contains("jdbc:mariadb://127.0.0.1:3306/shop?sslMode=disable") && t.contains("// Passwort") && !t.contains("forName"));
         assert_eq!(t.lines().nth(line).map(str::trim), Some(""));
-        assert_eq!(line, 4);
-        let (t, line) = java_template("Start", JavaKind::Database, None, true, &conn, "shop");
-        assert!(t.contains("Database.connect()") && t.contains("import java.sql.*;"));
-        assert_eq!(t.lines().nth(line).map(str::trim), Some(""));
-        let (t, line) = java_template("Start", JavaKind::Database, None, false, &conn, "shop");
-        assert!(t.contains("jdbc:mariadb://127.0.0.1:3306/shop?sslMode=disable"));
-        // Adresse, Benutzer und Passwort stehen im Code; kein Treiber-Laden, keine Umgebungsvariablen
-        assert!(t.contains("getConnection()") && t.contains("// User") && t.contains("// Passwort"));
-        assert!(!t.contains("forName") && !t.contains("getenv"));
-        assert_eq!(t.lines().nth(line).map(str::trim), Some(""));
+        std::fs::remove_dir_all(&root).ok();
     }
 
     #[test]
-    fn sql_files_start_with_use_and_new_java_files_default_to_the_database_class() {
+    fn sql_files_start_with_use() {
         let mut f = NewFile::new(PathBuf::from("/tmp"));
         f.name = "abfrage.sql".into();
         let conn = crate::db::ConnInfo::default();
-        assert_eq!(f.content(&conn, "schule"), ("USE `schule`;\n\n".to_string(), 2));
-        assert_eq!(f.content(&conn, "").0, "");
-        assert_eq!(f.java, JavaKind::Database);
-        assert_eq!(JavaKind::ALL[0], JavaKind::Database);
+        let (t, line, _) = f.content(&conn, "schule", None);
+        assert_eq!((t.as_str(), line), ("USE `schule`;\n\n", 2));
+        assert_eq!(f.content(&conn, "", None).0, "");
     }
 }

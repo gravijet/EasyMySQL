@@ -427,3 +427,273 @@ mod tests {
         assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
     }
 }
+
+// ---------------------------------------------------------------------------
+// Stil wie im Unterricht (HTL): Modellklasse mit Gettern/Settern und eine DBManager-Klasse, deren
+// Methoden die Verbindung als Parameter bekommen (getConnection, getXByY, getXe, insertX, updateX,
+// deleteX, releaseConnection).
+
+/// Mehrzahl fuer Methodennamen: Abteilung -> Abteilungen, Personen bleibt, Email -> Emails
+pub fn plural(name: &str) -> String {
+    let l = name.to_lowercase();
+    if ["ung", "heit", "keit", "schaft", "ion", "tät"].iter().any(|e| l.ends_with(e)) {
+        format!("{name}en")
+    } else if l.ends_with('e') {
+        format!("{name}n")
+    } else if ["en", "er", "el", "s", "x"].iter().any(|e| l.ends_with(e)) {
+        name.to_string()
+    } else {
+        format!("{name}s")
+    }
+}
+
+/// (Lesen aus dem ResultSet, Setzen im PreparedStatement) fuer einen Java-Typ; None = getObject/setObject
+fn jdbc_access(ty: &str) -> Option<(&'static str, &'static str)> {
+    Some(match ty {
+        "int" => ("getInt", "setInt"),
+        "long" => ("getLong", "setLong"),
+        "double" => ("getDouble", "setDouble"),
+        "float" => ("getFloat", "setFloat"),
+        "boolean" => ("getBoolean", "setBoolean"),
+        "String" => ("getString", "setString"),
+        "BigDecimal" => ("getBigDecimal", "setBigDecimal"),
+        "byte[]" => ("getBytes", "setBytes"),
+        _ => return None,
+    })
+}
+
+fn read_col(ty: &str, boxed: &str, index: usize) -> String {
+    match jdbc_access(ty) {
+        Some((get, _)) => format!("rs.{get}({index})"),
+        None => format!("rs.getObject({index}, {boxed}.class)"),
+    }
+}
+
+fn school_imports(cols: &[&ColumnInfo]) -> String {
+    let mut out = String::new();
+    let types: Vec<&str> = cols.iter().map(|c| java_type(c).0).collect();
+    if types.contains(&"BigDecimal") {
+        out.push_str("import java.math.BigDecimal;\n");
+    }
+    if types.contains(&"BigInteger") {
+        out.push_str("import java.math.BigInteger;\n");
+    }
+    for t in ["LocalDate", "LocalDateTime", "LocalTime"] {
+        if types.contains(&t) {
+            out.push_str(&format!("import java.time.{t};\n"));
+        }
+    }
+    out
+}
+
+/// Modellklasse einer Tabelle: private Felder, Konstruktor mit allen Feldern, Getter, Setter, toString
+pub fn school_model(table: &TableInfo, class: &str, package: Option<&str>) -> String {
+    let cols: Vec<&ColumnInfo> = table.columns.iter().collect();
+    let mut o = package_line(package);
+    let imp = school_imports(&cols);
+    if !imp.is_empty() {
+        o.push_str(&imp);
+        o.push('\n');
+    }
+    o.push_str(&format!("public class {class} {{\n"));
+    for c in &cols {
+        o.push_str(&format!("    private {} {};\n", java_type(c).0, camel(&c.name, false)));
+    }
+    let params = cols.iter().map(|c| format!("{} {}", java_type(c).0, camel(&c.name, false))).collect::<Vec<_>>().join(", ");
+    o.push_str(&format!("\n    public {class}({params}) {{\n"));
+    for c in &cols {
+        let f = camel(&c.name, false);
+        o.push_str(&format!("        this.{f} = {f};\n"));
+    }
+    o.push_str("    }\n");
+    for c in &cols {
+        let (ty, f, up) = (java_type(c).0, camel(&c.name, false), camel(&c.name, true));
+        let get = if ty == "boolean" { "is" } else { "get" };
+        o.push_str(&format!("\n    public {ty} {get}{up}() {{\n        return {f};\n    }}\n\n    public void set{up}({ty} {f}) {{\n        this.{f} = {f};\n    }}\n"));
+    }
+    let fields = cols
+        .iter()
+        .map(|c| {
+            let f = camel(&c.name, false);
+            format!("{f}=\" + {f}")
+        })
+        .collect::<Vec<_>>()
+        .join(" + \", ");
+    o.push_str(&format!("\n    @Override\n    public String toString() {{\n        return \"{class} [{fields} + \"]\";\n    }}\n}}\n"));
+    o
+}
+
+/// DBManager mit Verbindung und Lesen/Einfuegen/Aendern/Loeschen fuer jede Tabelle
+/// (`models`: Tabelle und Name ihrer Modellklasse)
+pub fn school_manager(class: &str, models: &[(&TableInfo, String)], target: &Target, package: Option<&str>) -> String {
+    let en = english();
+    let mut o = package_line(package);
+    o.push_str("import java.sql.*;\nimport java.util.ArrayList;\nimport java.util.List;\n");
+    let all: Vec<&ColumnInfo> = models.iter().flat_map(|(t, _)| t.columns.iter()).collect();
+    o.push_str(&school_imports(&all));
+    let (db, user, pw) = if en { ("database", "user", "password") } else { ("DB", "User", "Passwort") };
+    o.push_str(&format!(
+        "\npublic class {class} {{\n    public Connection getConnection() throws SQLException {{\n        return DriverManager.getConnection(\n                \"{}\", // {db}\n                \"{}\", // {user}\n                \"\"); // {pw}\n    }}\n",
+        java_text(&target.url()),
+        java_text(&target.user)
+    ));
+    for (t, model) in models {
+        if !t.is_view {
+            o.push_str(&school_methods(t, model));
+        }
+    }
+    o.push_str("\n    public void releaseConnection(Connection con) throws SQLException {\n        if (con != null) {\n            con.close();\n        }\n    }\n}\n");
+    o
+}
+
+fn school_methods(table: &TableInfo, model: &str) -> String {
+    let cols: Vec<&ColumnInfo> = table.columns.iter().collect();
+    let names = cols.iter().map(|c| sql_name(&c.name)).collect::<Vec<_>>().join(", ");
+    let sql_table = sql_name(&table.name);
+    let var = camel(model, false);
+    let reads = cols
+        .iter()
+        .enumerate()
+        .map(|(i, c)| {
+            let (t, b) = java_type(c);
+            read_col(t, b, i + 1)
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    let new_row = format!("new {model}({reads})");
+    let getter = |c: &ColumnInfo| format!("{var}.{}{}()", if java_type(c).0 == "boolean" { "is" } else { "get" }, camel(&c.name, true));
+    let set = |n: usize, c: &ColumnInfo, value: String| {
+        let setter = jdbc_access(java_type(c).0).map_or("setObject", |a| a.1);
+        format!("            stm.{setter}({n}, {value});\n")
+    };
+    let pk: Vec<&ColumnInfo> = cols.iter().copied().filter(|c| c.is_pk()).collect();
+    let auto = cols.iter().copied().find(|c| c.extra.to_ascii_lowercase().contains("auto_increment"));
+    let mut o = String::new();
+    // Alle lesen
+    o.push_str(&format!(
+        "\n    public List<{model}> get{}(Connection con) throws SQLException {{\n        List<{model}> result = new ArrayList<>();\n        try (Statement stm = con.createStatement();\n                ResultSet rs = stm.executeQuery(\"SELECT {names} FROM {sql_table}\")) {{\n            while (rs.next()) {{\n                result.add({new_row});\n            }}\n        }}\n        return result;\n    }}\n",
+        plural(model)
+    ));
+    if pk.is_empty() {
+        return o;
+    }
+    let by = pk.iter().map(|c| camel(&c.name, true)).collect::<Vec<_>>().join("And");
+    let params = pk.iter().map(|c| format!("{} {}", java_type(c).0, camel(&c.name, false))).collect::<Vec<_>>().join(", ");
+    let where_sql = pk.iter().map(|c| format!("{} = ?", sql_name(&c.name))).collect::<Vec<_>>().join(" AND ");
+    let pk_sets: String = pk.iter().enumerate().map(|(n, c)| set(n + 1, c, camel(&c.name, false))).collect();
+    o.push_str(&format!(
+        "\n    public {model} get{model}By{by}({params}, Connection con) throws SQLException {{\n        String sql = \"SELECT {names} FROM {sql_table} WHERE {where_sql}\";\n        try (PreparedStatement stm = con.prepareStatement(sql)) {{\n{pk_sets}            try (ResultSet rs = stm.executeQuery()) {{\n                if (rs.next()) {{\n                    return {new_row};\n                }}\n                return null;\n            }}\n        }}\n    }}\n"
+    ));
+    // Einfuegen: eine automatisch vergebene ID wird danach ins Objekt geschrieben
+    let ins: Vec<&ColumnInfo> = cols.iter().copied().filter(|c| auto.is_none_or(|a| a.name != c.name) && !c.is_generated()).collect();
+    let ins_sql = format!("INSERT INTO {sql_table} ({}) VALUES ({})", ins.iter().map(|c| sql_name(&c.name)).collect::<Vec<_>>().join(", "), vec!["?"; ins.len()].join(", "));
+    let ins_sets: String = ins.iter().enumerate().map(|(n, c)| set(n + 1, c, getter(c))).collect();
+    match auto {
+        Some(a) => {
+            let key = if matches!(java_type(a).0, "long" | "Long") { "getLong" } else { "getInt" };
+            let msg = if english() { format!("No {} for the new row.", a.name) } else { format!("Keine {} für den neuen Datensatz erhalten.", a.name) };
+            o.push_str(&format!(
+                "\n    public void insert{model}({model} {var}, Connection con) throws SQLException {{\n        String sql = \"{ins_sql}\";\n        try (PreparedStatement stm = con.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {{\n{ins_sets}            stm.executeUpdate();\n            try (ResultSet rs = stm.getGeneratedKeys()) {{\n                if (!rs.next()) {{\n                    throw new SQLException(\"{}\");\n                }}\n                {var}.set{}(rs.{key}(1));\n            }}\n        }}\n    }}\n",
+                java_text(&msg),
+                camel(&a.name, true)
+            ));
+        }
+        None => o.push_str(&format!(
+            "\n    public void insert{model}({model} {var}, Connection con) throws SQLException {{\n        String sql = \"{ins_sql}\";\n        try (PreparedStatement stm = con.prepareStatement(sql)) {{\n{ins_sets}            stm.executeUpdate();\n        }}\n    }}\n"
+        )),
+    }
+    // Aendern
+    let upd: Vec<&ColumnInfo> = cols.iter().copied().filter(|c| !c.is_pk() && !c.is_generated()).collect();
+    if !upd.is_empty() {
+        let set_sql = upd.iter().map(|c| format!("{} = ?", sql_name(&c.name))).collect::<Vec<_>>().join(", ");
+        let mut sets: String = upd.iter().enumerate().map(|(n, c)| set(n + 1, c, getter(c))).collect();
+        for (n, c) in pk.iter().enumerate() {
+            sets.push_str(&set(upd.len() + n + 1, c, getter(c)));
+        }
+        o.push_str(&format!(
+            "\n    public void update{model}({model} {var}, Connection con) throws SQLException {{\n        String sql = \"UPDATE {sql_table} SET {set_sql} WHERE {where_sql}\";\n        try (PreparedStatement stm = con.prepareStatement(sql)) {{\n{sets}            stm.executeUpdate();\n        }}\n    }}\n"
+        ));
+    }
+    // Loeschen
+    let del_sets: String = pk.iter().enumerate().map(|(n, c)| set(n + 1, c, getter(c))).collect();
+    o.push_str(&format!(
+        "\n    public void delete{model}({model} {var}, Connection con) throws SQLException {{\n        String sql = \"DELETE FROM {sql_table} WHERE {where_sql}\";\n        try (PreparedStatement stm = con.prepareStatement(sql)) {{\n{del_sets}            stm.executeUpdate();\n        }}\n    }}\n"
+    ));
+    o
+}
+
+/// Main, die den DBManager benutzt und die Zeilen der ersten Tabelle ausgibt
+pub fn school_main(class: &str, manager: &str, first: Option<&str>, package: Option<&str>) -> String {
+    let mut o = package_line(package);
+    o.push_str("import java.sql.Connection;\nimport java.sql.SQLException;\n\n");
+    let body = match first {
+        Some(model) => format!("            for ({model} x : db.get{}(con)) {{\n                System.out.println(x);\n            }}\n", plural(model)),
+        None => format!("            System.out.println(\"{}\" + con.getMetaData().getURL());\n", if english() { "Connected to " } else { "Verbunden mit " }),
+    };
+    o.push_str(&format!(
+        "public class {class} {{\n    public static void main(String[] args) {{\n        {manager} db = new {manager}();\n        try (Connection con = db.getConnection()) {{\n{body}        }} catch (SQLException e) {{\n            System.err.println(e.getMessage());\n        }}\n    }}\n}}\n"
+    ));
+    o
+}
+
+#[cfg(test)]
+mod school_tests {
+    use super::*;
+
+    fn col(name: &str, t: &str, nullable: bool, key: &str, extra: &str) -> ColumnInfo {
+        ColumnInfo { name: name.into(), col_type: t.into(), nullable, key: key.into(), extra: extra.into(), ..Default::default() }
+    }
+
+    fn personen() -> TableInfo {
+        TableInfo {
+            name: "Personen".into(),
+            columns: vec![col("pid", "int(11)", false, "PRI", "auto_increment"), col("vorname", "varchar(100)", false, "", ""), col("geboren", "date", true, "", "")],
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn plurals() {
+        assert_eq!(plural("Abteilung"), "Abteilungen");
+        assert_eq!(plural("Personen"), "Personen");
+        assert_eq!(plural("Email"), "Emails");
+        assert_eq!(plural("Klasse"), "Klassen");
+    }
+
+    #[test]
+    fn model_like_in_class() {
+        let m = school_model(&personen(), "Personen", Some("model"));
+        assert!(m.starts_with("package model;\n\nimport java.time.LocalDate;\n\npublic class Personen {\n    private int pid;\n    private String vorname;\n    private LocalDate geboren;\n"), "{m}");
+        assert!(m.contains("    public Personen(int pid, String vorname, LocalDate geboren) {\n        this.pid = pid;"), "{m}");
+        assert!(m.contains("    public void setVorname(String vorname) {\n        this.vorname = vorname;\n    }"), "{m}");
+        assert!(m.contains("return \"Personen [pid=\" + pid + \", vorname=\" + vorname + \", geboren=\" + geboren + \"]\";"), "{m}");
+        // Der Formatierer aendert daran nichts
+        assert_eq!(crate::dev::java::format::format(&m, "    "), m);
+    }
+
+    #[test]
+    fn manager_like_in_class() {
+        let t = personen();
+        let target = Target { host: "127.0.0.1".into(), port: 3306, user: "root".into(), database: "person".into() };
+        let m = school_manager("DBManager", &[(&t, "Personen".into())], &target, Some("model"));
+        for want in [
+            "public List<Personen> getPersonen(Connection con) throws SQLException {",
+            "result.add(new Personen(rs.getInt(1), rs.getString(2), rs.getObject(3, LocalDate.class)));",
+            "public Personen getPersonenByPid(int pid, Connection con) throws SQLException {",
+            "String sql = \"INSERT INTO Personen (vorname, geboren) VALUES (?, ?)\";",
+            "stm.setString(1, personen.getVorname());",
+            "stm.setObject(2, personen.getGeboren());",
+            "personen.setPid(rs.getInt(1));",
+            "String sql = \"UPDATE Personen SET vorname = ?, geboren = ? WHERE pid = ?\";",
+            "stm.setInt(3, personen.getPid());",
+            "public void deletePersonen(Personen personen, Connection con) throws SQLException {",
+            "public void releaseConnection(Connection con) throws SQLException {",
+        ] {
+            assert!(m.contains(want), "{want}\n{m}");
+        }
+        assert_eq!(crate::dev::java::format::format(&m, "    "), m);
+        let main = school_main("Main", "DBManager", Some("Personen"), Some("model"));
+        assert!(main.contains("for (Personen x : db.getPersonen(con)) {"), "{main}");
+        assert_eq!(crate::dev::java::format::format(&main, "    "), main);
+    }
+}

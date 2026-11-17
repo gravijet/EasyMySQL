@@ -174,7 +174,7 @@ pub const CHAPTERS: &[Chapter] = &[
                         "Das Plus oben öffnet „Neu“: Datei, Ordner, Java-Klasse, SQL- oder Markdown-Datei und eine neue Datenbank – in jedem Projekt, egal welche Sprache. Neues entsteht im gewählten Ordner (bzw. im Ordner der gewählten Datei).",
                         "Rechtsklick auf Datei oder Ordner: Neu, ausschneiden, kopieren, einfügen, umbenennen, löschen, Pfad kopieren, Terminal hier öffnen. Mit mehreren gewählten Einträgen gilt der Befehl für alle.",
                         "Rechtsklick oder Doppelklick auf die freie Fläche: neue Datei oder neuer Ordner im Projekt.",
-                        "Neue Datei: den ganzen Dateinamen mit Endung tippen, wie in IntelliJ IDEA – etwa „Main.java“, „liste.md“ oder „seite.html“. Die Endung bestimmt die Art; bei Java erscheint darunter die Vorlage. Ohne Endung wird die zum Ordner passende ergänzt. SQL-Dateien beginnen mit USE der aktuellen Datenbank.",
+                        "Neue Datei: den Namen tippen, z. B. „Main“, „liste.md“ oder „seite.html“; ohne Endung wird die zum Ordner passende ergänzt. Mit / oder \\ entstehen Unterordner („abfragen/top10“), bei Java mit Punkt Pakete („model.Person“ landet als Person.java mit package model im Quellordner). Die Java-Vorlage ergibt sich aus dem Namen: Heißt die Klasse wie eine Tabelle, bekommt sie deren Spalten als Felder samt Gettern, Settern und toString; „DBManager“ bekommt die Verbindung und Methoden zum Lesen, Einfügen, Ändern und Löschen für jede Tabelle (fehlende Modellklassen entstehen mit); „Main“ bekommt main und nutzt einen vorhandenen DBManager. SQL-Dateien beginnen mit USE der aktuellen Datenbank.",
                         "Löschen verschiebt in den Ordner „.papierkorb“ im Projekt. Von dort lässt sich jede Datei zurückholen.",
                         "Die Datei der aktiven Registerkarte ist im Explorer gewählt.",
                     ]),
@@ -248,7 +248,7 @@ pub const CHAPTERS: &[Chapter] = &[
                 id: "vorschlaege",
                 title: "Vorschläge beim Tippen",
                 blocks: &[
-                    P("Beim Tippen erscheinen Vorschläge. Pfeiltasten wählen, Enter oder Tab übernimmt, Esc schließt. Ist das Wort schon vollständig getippt, bleibt Enter ein Zeilenumbruch."),
+                    P("Vorschläge erscheinen, während ein Wort getippt wird oder nach einem Punkt – nach Leerzeichen, Enter oder Klammer nicht, so setzen Tab und Enter nie ungefragt etwas ein. Pfeiltasten wählen, Enter oder Tab übernimmt, Esc schließt. Ist das Wort schon vollständig getippt, bleibt Enter ein Zeilenumbruch."),
                     P("Der Editor schlägt vor, was an der Stelle passt:"),
                     List(&[
                         "Nach FROM, JOIN, INTO und UPDATE kommen die Tabellen, nach SELECT, WHERE, ON und ORDER BY die Spalten der Tabellen aus der Anweisung (mit Datentyp). Nach „alias.“ oder „tabelle.“ erscheinen deren Spalten.",
@@ -358,6 +358,8 @@ pub const CHAPTERS: &[Chapter] = &[
                     List(&[
                         "Erkannt werden Tippfehler in Schlüsselwörtern (SELCT, FORM, WEHRE), fehlende Klammern, Anführungszeichen, Kommas und Semikolons, == statt = und = NULL statt IS NULL.",
                         "Ist eine Datenbank gewählt, findet die Prüfung auch unbekannte Tabellen und Spalten und schlägt ähnliche Namen vor („Meinten Sie vorname?“).",
+                        "MariaDB-Eigenheiten: „--“ braucht ein Leerzeichen danach; Schreibweisen anderer Datenbanken (TOP, GETDATE(), LEN(), ISNULL(a, b), [Name], VARCHAR2, NUMBER, IDENTITY, AUTOINCREMENT) werden umgeschrieben; Text ohne Anführungszeichen in VALUES, deutsches Datum (17.11.2026 → '2026-11-17'), Kommazahl mit Komma, fehlende Kommas zwischen Spalten oder Zeilen, REFERENCES ohne Spalte und eine falsche Anzahl Werte werden erkannt.",
+                        "Meldet der Server beim Ausführen einen Fehler, stehen darunter passende Knöpfe: IF NOT EXISTS bzw. IF EXISTS, der ähnliche Tabellen- oder Spaltenname, mehrdeutige Spalte mit Tabelle, IN statt =, INSERT IGNORE oder ohne ID, Spalte vergrößern, Datentyp des Fremdschlüssels angleichen, Datenbank wählen. Ein Klick setzt die korrigierte Anweisung ein und führt ab dort weiter aus.",
                         "Der Knopf „Korrigieren“ oder das Tastenkürzel bessert alle Fehler mit Vorschlag selbst aus. Danach kurz prüfen, ob die Anweisung noch das Gewünschte tut.",
                         "Prozeduren und Trigger werden nicht geprüft. Unter Einstellungen → Editor lässt sich die Prüfung ausschalten.",
                     ]),
