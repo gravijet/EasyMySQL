@@ -16,6 +16,8 @@ pub mod refactor;
 mod menu;
 mod lang;
 mod lint;
+mod dialect;
+pub mod errfix;
 mod schema_fix;
 mod schema_decl;
 mod schema_jpa;
@@ -1538,6 +1540,9 @@ impl SqlEditor {
                     self.cursor = c;
                 }
             }
+            // Von selbst nur, waehrend ein Wort (oder nach einem Punkt) getippt wird: nach Leerzeichen, Enter oder
+            // Klammer bliebe sonst eine Liste offen, und Tab/Enter wuerden ungefragt den ersten Eintrag einsetzen.
+            let c = c.filter(|&c| force || typing_word(text, c));
             self.popup = c.and_then(|c| self.suggest(text, c, force).map(|s| Popup { items: s.items, selected: 0, word_start: s.word_start, cursor: c, imports: Vec::new() }));
         } else if let (Some(p), Some(c)) = (&self.popup, cursor)
             && p.cursor != c {
@@ -1723,6 +1728,11 @@ fn squiggle(x0: f32, x1: f32, y: f32, color: Color32) -> egui::Shape {
     egui::Shape::line(pts, egui::Stroke::new(1.2, color))
 }
 
+/// Wird am Cursor gerade ein Wort getippt (Buchstabe/Ziffer/_ davor) oder steht ein Punkt davor?
+fn typing_word(text: &str, cursor: usize) -> bool {
+    cursor > 0 && text.chars().nth(cursor - 1).is_some_and(|c| is_word_char(c) || c == '.')
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1739,6 +1749,17 @@ mod tests {
         let t = "SELECT `a`, 'x''y' -- k\nFROM t WHERE n = 1.5 /* c */ AND COUNT(*)";
         let job = highlight(t, FontId::monospace(13.0));
         assert_eq!(job.text, t);
+    }
+
+    #[test]
+    fn suggestions_open_only_while_typing_a_word() {
+        assert!(typing_word("SELECT na", 9));
+        assert!(typing_word("SELECT p.", 9));
+        assert!(!typing_word("SELECT ", 7));
+        assert!(!typing_word("SELECT a
+", 9));
+        assert!(!typing_word("INSERT INTO t (", 15));
+        assert!(!typing_word("", 0));
     }
 
     #[test]

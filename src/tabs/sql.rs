@@ -36,6 +36,23 @@ enum HistoryAct {
     Run(String),
     /// Erkannten Fehler beheben
     Fix(crate::dev::autofix::Fix),
+    /// Korrigierte Anweisung einsetzen und erneut ausfuehren (Index in `Failed::fixes`)
+    ErrorFix(usize),
+    /// In dieser Datenbank erneut ausfuehren
+    UseDatabase(String),
+}
+
+/// Zuletzt fehlgeschlagene Anweisung samt Behebungen
+struct Failed {
+    /// Zeichenbereich der Anweisung im Text und ihr SQL
+    start: usize,
+    end: usize,
+    sql: String,
+    /// Ende des ausgefuehrten Bereichs (danach wird weiter ausgefuehrt)
+    run_end: usize,
+    fixes: Vec<crate::sqledit::errfix::ErrorFix>,
+    /// Datenbanken, in denen die Tabellen der Anweisung liegen (bei "No database selected")
+    databases: Vec<String>,
 }
 
 type JobResult = (Option<Conn>, Vec<StmtResult>, Option<String>, Option<String>);
@@ -58,8 +75,10 @@ pub struct SqlTab {
     file_check: Option<Instant>,
     conn: Option<Conn>,
     job: Option<Receiver<JobResult>>,
-    /// Anweisungen des laufenden Auftrags (fuer den Verlauf)
+    /// Anweisungen des laufenden Auftrags (Zeichenbereiche im Text) und Ende des ausgefuehrten Bereichs
     running: Vec<Stmt>,
+    run_end: usize,
+    failed: Option<Failed>,
     results: Vec<StmtResult>,
     note: Option<String>,
     pane: Pane,
@@ -120,6 +139,8 @@ impl SqlTab {
             conn: None,
             job: None,
             running: Vec::new(),
+            run_end: 0,
+            failed: None,
             results: Vec::new(),
             note: None,
             pane: Pane::Messages,
@@ -282,7 +303,11 @@ impl SqlTab {
         let base_line = sqledit::line_col(&self.text, offset).0;
         for s in &mut stmts {
             s.line += base_line;
+            s.start += offset;
+            s.end += offset;
         }
+        self.run_end = offset + sql.chars().count();
+        self.failed = None;
         let conn = match self.conn.take() {
             Some(c) => c,
             None => match dbc.new_conn() {
@@ -389,6 +414,28 @@ impl SqlTab {
         cx.status(crate::i18n::text("Java-Code kopiert."));
     }
 
+    /// Korrigierte Anweisung an die Stelle der fehlgeschlagenen setzen und ab dort weiter ausfuehren
+    fn apply_error_fix(&mut self, cx: &mut Ctx, k: usize) {
+        let Some(f) = self.failed.take() else { return };
+        let Some(new) = f.fixes.get(k).map(|x| x.sql.clone()) else { return };
+        let chars: Vec<char> = self.text.chars().collect();
+        let seg: String = chars[f.start.min(chars.len())..f.end.min(chars.len())].iter().collect();
+        // Die Anweisung muss noch dort stehen (der Text kann seitdem geaendert worden sein)
+        let Some(pos) = seg.find(&f.sql) else {
+            cx.status(crate::i18n::tr("Die Anweisung wurde inzwischen geändert – bitte erneut ausführen.", "The statement has changed since – please run it again."));
+            return;
+        };
+        let a = f.start + seg[..pos].chars().count();
+        let b = a + f.sql.chars().count();
+        let mut out: Vec<char> = chars.clone();
+        out.splice(a..b, new.chars());
+        self.text = out.iter().collect();
+        self.last_edit = Instant::now();
+        let end = (f.run_end + new.chars().count()).saturating_sub(f.sql.chars().count()).min(out.len());
+        let sql: String = out[a..end.max(a)].iter().collect();
+        self.run(cx, sql, a);
+    }
+
     /// Alle Fehler mit Korrekturvorschlag selbst ausbessern
     fn fix_all(&mut self, cx: &mut Ctx) {
         let n = self.editor.fix_all(&mut self.text);
@@ -428,6 +475,34 @@ impl SqlTab {
             })
             .collect();
         cx.actions.push(Action::History(entries));
+        // Fehler: passende Behebungen vorbereiten (korrigierte Anweisung oder andere Datenbank)
+        if let Some((i, err)) = results.iter().enumerate().find_map(|(i, r)| r.error.clone().map(|e| (i, e)))
+            && let Some(st) = self.running.get(i).cloned()
+        {
+            let schema = if db_before.is_empty() { None } else { cx.schema(&db_before) };
+            let mut fixes = crate::sqledit::errfix::for_error(&err, &st.sql, schema.as_deref());
+            let mut databases = Vec::new();
+            if crate::sqledit::errfix::code(&err) == Some(1046) {
+                // Eine vorher im Skript angelegte Datenbank, sonst alle Datenbanken mit diesen Tabellen
+                let before: String = self.text.chars().take(st.start).collect();
+                if let Some(d) = crate::sqledit::errfix::created_database(&before) {
+                    fixes.push(crate::sqledit::errfix::ErrorFix { label: crate::tr_format!("Zuerst USE {}", "USE {} first", d), sql: format!("USE {};\n{}", db::q(&d), st.sql) });
+                }
+                let names = crate::sqledit::errfix::table_names(&st.sql);
+                let candidates: Vec<String> = cx.databases.iter().filter(|d| !crate::db::SYSTEM_DATABASES.contains(&d.as_str())).take(40).cloned().collect();
+                for d in candidates {
+                    if let Some(s) = cx.schema(&d)
+                        && !names.is_empty()
+                        && names.iter().all(|n| s.tables.iter().any(|t| t.name.eq_ignore_ascii_case(n)))
+                    {
+                        databases.push(d);
+                    }
+                }
+            }
+            if !fixes.is_empty() || !databases.is_empty() {
+                self.failed = Some(Failed { start: st.start, end: st.end, sql: st.sql.clone(), run_end: self.run_end, fixes, databases });
+            }
+        }
         self.running.clear();
         let changed_structure = results.iter().any(|r| {
             let u = r.preview.to_uppercase();
@@ -558,6 +633,7 @@ impl SqlTab {
                 }
                 let mut jump = None;
                 let mut fixes = Vec::new();
+                let mut fix_pick: Option<HistoryAct> = None;
                 egui::ScrollArea::vertical().id_salt(self.editor.id.with("msgs")).auto_shrink([false, false]).show(ui, |ui| {
                     for r in &self.results {
                         let (ok, msg) = match &r.error {
@@ -580,6 +656,21 @@ impl SqlTab {
                                 ui.label(RichText::new(msg).color(color));
                             } else {
                                 crate::widgets::error_label(ui, &msg);
+                                // Eindeutige Korrekturen der Anweisung: ein Klick setzt sie ein und fuehrt weiter aus
+                                if let Some(f) = &self.failed {
+                                    ui.horizontal_wrapped(|ui| {
+                                        for (k, x) in f.fixes.iter().enumerate() {
+                                            if crate::icons::text_button(ui, crate::icons::Icon::Wizard, &x.label).on_hover_text(crate::tr_format!("Wird zu:\n{}", "Becomes:\n{}", x.sql)).clicked() {
+                                                fix_pick = Some(HistoryAct::ErrorFix(k));
+                                            }
+                                        }
+                                        for d in &f.databases {
+                                            if crate::icons::text_button(ui, crate::icons::Icon::Database, &crate::tr_format!("In {} ausführen", "Run in {}", d)).clicked() {
+                                                fix_pick = Some(HistoryAct::UseDatabase(d.clone()));
+                                            }
+                                        }
+                                    });
+                                }
                                 // Erkannte Fehler: Erklaerung und Behebung (Datenbank anlegen, Tabelle anlegen …)
                                 for sug in crate::dev::autofix::analyze_output(&msg, None, None, false) {
                                     ui.horizontal(|ui| {
@@ -603,6 +694,9 @@ impl SqlTab {
                 }
                 if let Some(f) = fixes.into_iter().next() {
                     act = Some(HistoryAct::Fix(f));
+                }
+                if fix_pick.is_some() {
+                    act = fix_pick;
                 }
             }
             Pane::History => {
@@ -1060,6 +1154,14 @@ impl TabView for SqlTab {
             }
             Some(HistoryAct::Run(sql)) => self.run(cx, sql, 0),
             Some(HistoryAct::Fix(f)) => cx.actions.push(Action::AutoFix(f)),
+            Some(HistoryAct::ErrorFix(k)) => self.apply_error_fix(cx, k),
+            Some(HistoryAct::UseDatabase(d)) => {
+                if let Some(f) = self.failed.take() {
+                    self.set_database(d);
+                    let sql: String = self.text.chars().skip(f.start).take(f.run_end.saturating_sub(f.start)).collect();
+                    self.run(cx, sql, f.start);
+                }
+            }
             None => {}
         }
         let h = (ui.available_height() - 8.0).max(100.0);

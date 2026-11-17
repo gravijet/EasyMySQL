@@ -1,0 +1,543 @@
+// Behebungen fuer Fehler, die der Server beim Ausfuehren meldet. Jede Behebung ist die korrigierte
+// Anweisung; der SQL-Reiter setzt sie an die Stelle der alten und fuehrt sie erneut aus.
+// Bewusst nur eindeutige Korrekturen: nichts wird geraten, was Daten veraendern koennte.
+
+use super::dialect::{group_end, insert_parts, items, text};
+use super::lint::{Env, Kind, Tok, apply_fixes, lex, lint, nearest, quote_if_needed};
+use crate::db::{Schema, TableInfo};
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ErrorFix {
+    /// Beschriftung des Knopfes
+    pub label: String,
+    /// Die korrigierte Anweisung (kann mehrere Anweisungen enthalten, z. B. ALTER davor)
+    pub sql: String,
+}
+
+fn fix(label: String, sql: String) -> ErrorFix {
+    ErrorFix { label, sql }
+}
+
+/// Fehlernummer aus "ERROR 1146 (42S02): ..."
+pub fn code(err: &str) -> Option<u32> {
+    let rest = &err[err.find("ERROR ")? + 6..];
+    rest.split(|c: char| !c.is_ascii_digit()).next()?.parse().ok()
+}
+
+/// Text zwischen `start'` und dem naechsten `'`
+fn quoted_after<'a>(err: &'a str, start: &str) -> Option<&'a str> {
+    let i = err.find(start)? + start.len();
+    let r = &err[i..];
+    r.find('\'').map(|e| &r[..e])
+}
+
+/// Bereiche (Zeichen) ersetzen; Bereiche duerfen sich nicht ueberschneiden
+fn edit(chars: &[char], mut edits: Vec<(usize, usize, String)>) -> String {
+    edits.sort_by_key(|e| std::cmp::Reverse(e.0));
+    let mut out: Vec<char> = chars.to_vec();
+    for (a, b, t) in edits {
+        out.splice(a..b, t.chars());
+    }
+    out.into_iter().collect()
+}
+
+/// Nach dem Wort `after` (erstes Vorkommen am Anfang der Anweisung) `insert` einfuegen
+fn insert_after_word(chars: &[char], toks: &[Tok], after: &[&str], insert: &str) -> Option<String> {
+    let k = toks.iter().take(8).position(|t| after.iter().any(|w| t.is_word(w)))?;
+    let at = toks[k].end;
+    Some(edit(chars, vec![(at, at, format!(" {insert}"))]))
+}
+
+fn has_words(toks: &[Tok], words: &[&str]) -> bool {
+    toks.windows(words.len()).any(|w| w.iter().zip(words).all(|(t, x)| t.is_word(x)))
+}
+
+/// Tabellen, die in der Anweisung vorkommen (bekannt aus dem Schema)
+fn used_tables<'a>(toks: &[Tok], schema: &'a Schema) -> Vec<&'a TableInfo> {
+    let mut out: Vec<&TableInfo> = Vec::new();
+    for t in toks.iter().filter(|t| t.is_name()) {
+        if let Some(info) = schema.tables.iter().find(|x| x.name.eq_ignore_ascii_case(&t.text))
+            && !out.iter().any(|o| o.name == info.name)
+        {
+            out.push(info);
+        }
+    }
+    out
+}
+
+/// Alle Behebungen fuer den Fehler `err` der Anweisung `sql`
+pub fn for_error(err: &str, sql: &str, schema: Option<&Schema>) -> Vec<ErrorFix> {
+    let chars: Vec<char> = sql.chars().collect();
+    let toks = lex(&chars).toks;
+    let mut out: Vec<ErrorFix> = Vec::new();
+    let tr = crate::i18n::tr;
+    match code(err) {
+        // Gibt es schon / gibt es nicht
+        Some(1050) if !has_words(&toks, &["IF", "NOT", "EXISTS"]) => {
+            if let Some(s) = insert_after_word(&chars, &toks, &["TABLE"], "IF NOT EXISTS") {
+                out.push(fix(tr("Nur anlegen, wenn sie fehlt (IF NOT EXISTS)", "Create only if missing (IF NOT EXISTS)").into(), s));
+            }
+            if let Some(name) = quoted_after(err, "Table '") {
+                out.push(fix(
+                    crate::tr_format!("Alte Tabelle „{name}“ ersetzen", "Replace the old table “{name}”"),
+                    format!("DROP TABLE IF EXISTS {};\n{}", crate::db::q(name), sql.trim()),
+                ));
+            }
+        }
+        Some(1007) if !has_words(&toks, &["IF", "NOT", "EXISTS"]) => {
+            if let Some(s) = insert_after_word(&chars, &toks, &["DATABASE", "SCHEMA"], "IF NOT EXISTS") {
+                out.push(fix(tr("Nur anlegen, wenn sie fehlt (IF NOT EXISTS)", "Create only if missing (IF NOT EXISTS)").into(), s));
+            }
+        }
+        Some(1051 | 1008) if !has_words(&toks, &["IF", "EXISTS"]) => {
+            if let Some(s) = insert_after_word(&chars, &toks, &["TABLE", "TABLES", "DATABASE", "SCHEMA", "VIEW"], "IF EXISTS") {
+                out.push(fix(tr("Nur löschen, wenn vorhanden (IF EXISTS)", "Drop only if it exists (IF EXISTS)").into(), s));
+            }
+        }
+        Some(1091) => {
+            // ALTER TABLE t DROP [COLUMN|INDEX|KEY|FOREIGN KEY|CONSTRAINT] x -> ... IF EXISTS x
+            let mut edits = Vec::new();
+            for (k, t) in toks.iter().enumerate() {
+                if !t.is_word("DROP") || k < 2 {
+                    continue;
+                }
+                let mut j = k + 1;
+                if toks.get(j).is_some_and(|x| x.is_word("FOREIGN")) {
+                    j += 1;
+                }
+                if toks.get(j).is_some_and(|x| ["COLUMN", "INDEX", "KEY", "CONSTRAINT"].iter().any(|w| x.is_word(w))) {
+                    j += 1;
+                }
+                if toks.get(j).is_some_and(|x| x.is_word("IF") || x.is_word("PRIMARY")) {
+                    continue;
+                }
+                if let Some(name) = toks.get(j).filter(|x| x.is_name()) {
+                    edits.push((name.start, name.start, "IF EXISTS ".to_string()));
+                }
+            }
+            if !edits.is_empty() {
+                out.push(fix(tr("Nur löschen, wenn vorhanden (IF EXISTS)", "Drop only if it exists (IF EXISTS)").into(), edit(&chars, edits)));
+            }
+        }
+        Some(1060) if !has_words(&toks, &["IF", "NOT", "EXISTS"]) => {
+            // ADD [COLUMN] x -> ADD [COLUMN] IF NOT EXISTS x
+            let mut edits = Vec::new();
+            for (k, t) in toks.iter().enumerate() {
+                if t.is_word("ADD") {
+                    let j = if toks.get(k + 1).is_some_and(|x| x.is_word("COLUMN")) { k + 2 } else { k + 1 };
+                    if let Some(name) = toks.get(j).filter(|x| x.is_name() && !super::lint::known_word(&x.upper())) {
+                        edits.push((name.start, name.start, "IF NOT EXISTS ".to_string()));
+                    }
+                }
+            }
+            if !edits.is_empty() {
+                out.push(fix(tr("Nur ergänzen, wenn sie fehlt (IF NOT EXISTS)", "Add only if missing (IF NOT EXISTS)").into(), edit(&chars, edits)));
+            }
+        }
+        // Tabelle unbekannt: aehnlicher Name im Schema
+        Some(1146) => {
+            if let (Some(full), Some(s)) = (quoted_after(err, "Table '"), schema) {
+                let missing = full.rsplit('.').next().unwrap_or(full);
+                let names: Vec<&str> = s.tables.iter().map(|t| t.name.as_str()).collect();
+                let best = names.iter().find(|n| n.eq_ignore_ascii_case(missing) && **n != missing).copied().or_else(|| nearest(missing, names.iter().copied()));
+                if let Some(b) = best {
+                    let edits: Vec<_> = toks.iter().filter(|t| t.is_name() && t.text == missing).map(|t| (t.start, t.end, quote_if_needed(b))).collect();
+                    if !edits.is_empty() {
+                        out.push(fix(crate::tr_format!("„{b}“ verwenden", "Use “{b}”"), edit(&chars, edits)));
+                    }
+                }
+            }
+        }
+        // Spalte unbekannt: aehnlicher Name in den Tabellen der Anweisung
+        Some(1054) => {
+            // In VALUES ist ein "unbekannter Name" fast immer Text ohne Anfuehrungszeichen (siehe unten)
+            let in_values = insert_parts(&toks).is_some_and(|(_, vi)| quoted_after(err, "Unknown column '").is_some_and(|c| toks[vi..].iter().any(|t| t.is_name() && t.text == c)));
+            if !in_values && let (Some(full), Some(s)) = (quoted_after(err, "Unknown column '"), schema) {
+                let (qual, col) = match full.rsplit_once('.') {
+                    Some((q, c)) => (Some(q), c),
+                    None => (None, full),
+                };
+                let tables = used_tables(&toks, s);
+                let tables = if tables.is_empty() { s.tables.iter().collect() } else { tables };
+                let mut cols: Vec<&str> = Vec::new();
+                for t in &tables {
+                    for c in &t.columns {
+                        if !cols.contains(&c.name.as_str()) {
+                            cols.push(&c.name);
+                        }
+                    }
+                }
+                let best = cols.iter().find(|n| n.eq_ignore_ascii_case(col) && **n != col).copied().or_else(|| nearest(col, cols.iter().copied()));
+                if let Some(b) = best {
+                    let edits: Vec<_> = toks
+                        .iter()
+                        .enumerate()
+                        .filter(|(k, t)| {
+                            t.is_name() && t.text == col && match qual {
+                                Some(q) => *k >= 2 && toks[k - 1].kind == Kind::Dot && toks[k - 2].text == q,
+                                None => true,
+                            }
+                        })
+                        .map(|(_, t)| (t.start, t.end, quote_if_needed(b)))
+                        .collect();
+                    if !edits.is_empty() {
+                        out.push(fix(crate::tr_format!("„{b}“ verwenden", "Use “{b}”"), edit(&chars, edits)));
+                    }
+                }
+            }
+        }
+        // Mehrdeutige Spalte: mit der ersten passenden Tabelle bzw. ihrem Alias qualifizieren
+        Some(1052) => {
+            if let (Some(col), Some(s)) = (quoted_after(err, "Column '"), schema)
+                && let Some(alias) = owner_of(&toks, s, col)
+            {
+                let edits: Vec<_> = toks
+                    .iter()
+                    .enumerate()
+                    .filter(|(k, t)| {
+                        t.is_name()
+                            && t.text.eq_ignore_ascii_case(col)
+                            && (*k == 0 || toks[k - 1].kind != Kind::Dot && !toks[k - 1].is_word("AS"))
+                            && toks.get(k + 1).is_none_or(|n| n.kind != Kind::Dot && n.kind != Kind::Open)
+                    })
+                    .map(|(_, t)| (t.start, t.start, format!("{alias}.")))
+                    .collect();
+                if !edits.is_empty() {
+                    out.push(fix(crate::tr_format!("Als {alias}.{col} schreiben", "Write it as {alias}.{col}"), edit(&chars, edits)));
+                }
+            }
+        }
+        // Unterabfrage liefert mehrere Zeilen: = (SELECT ...) -> IN (SELECT ...)
+        Some(1242) => {
+            let mut edits = Vec::new();
+            for (k, t) in toks.iter().enumerate() {
+                if t.kind == Kind::Op && matches!(t.text.as_str(), "=" | "<>" | "!=") && toks.get(k + 1).is_some_and(|o| o.kind == Kind::Open) && toks.get(k + 2).is_some_and(|w| w.is_word("SELECT")) {
+                    edits.push((t.start, t.end, if t.text == "=" { "IN" } else { "NOT IN" }.to_string()));
+                }
+            }
+            if !edits.is_empty() {
+                out.push(fix(tr("Mehrere Treffer erlauben (IN statt =)", "Allow several matches (IN instead of =)").into(), edit(&chars, edits)));
+            }
+        }
+        // Doppelter Schluessel
+        Some(1062) if toks.first().is_some_and(|t| t.is_word("INSERT")) && !toks.get(1).is_some_and(|t| t.is_word("IGNORE")) => {
+            if let Some(s) = schema
+                && let Some(without) = without_auto_id(&chars, &toks, s)
+            {
+                out.push(fix(tr("Ohne ID einfügen (MariaDB vergibt sie)", "Insert without the ID (MariaDB assigns it)").into(), without));
+            }
+            let at = toks[0].end;
+            out.push(fix(tr("Vorhandene überspringen (INSERT IGNORE)", "Skip existing rows (INSERT IGNORE)").into(), edit(&chars, vec![(at, at, " IGNORE".into())])));
+        }
+        // Text zu lang: Spalte verlaengern
+        Some(1406) => {
+            if let (Some(col), Some(s)) = (quoted_after(err, "for column '").or_else(|| quoted_after(err, "for column `")), schema)
+                && let Some(alter) = widen_column(&chars, &toks, s, col.trim_matches('`'))
+            {
+                out.push(fix(alter.0, format!("{};\n{}", alter.1, sql.trim())));
+            }
+        }
+        // Fremdschluessel nicht moeglich: Datentyp an die Zielspalte anpassen
+        Some(1005 | 1215 | 150) => {
+            if let Some(s) = schema
+                && let Some(f) = fk_type_fix(&chars, &toks, s)
+            {
+                out.push(f);
+            }
+        }
+        _ => {}
+    }
+    // Syntax, Datum, Zahl, Anzahl der Werte, Text ohne Anfuehrungszeichen: die Pruefung des Editors weiss es
+    if out.is_empty() && matches!(code(err), Some(1064 | 1292 | 1366 | 1136 | 1054 | 1265 | 1305 | 1630)) {
+        let env = Env { schema, databases: &[] };
+        let problems = lint(sql, &env);
+        let (fixed, n) = apply_fixes(sql, &problems);
+        if n > 0 && fixed != sql {
+            let first = problems.iter().find(|p| p.fix.is_some()).map(|p| p.message.clone()).unwrap_or_default();
+            out.push(fix(if n == 1 { first } else { crate::tr_format!("{n} Stellen korrigieren", "Correct {n} places") }, fixed));
+        }
+    }
+    out
+}
+
+/// Zuletzt per CREATE DATABASE oder USE genannte Datenbank in `script` (fuer "No database selected")
+pub fn created_database(script: &str) -> Option<String> {
+    let chars: Vec<char> = script.chars().collect();
+    let toks = lex(&chars).toks;
+    let mut found = None;
+    for (k, t) in toks.iter().enumerate() {
+        let name_at = if t.is_word("USE") {
+            Some(k + 1)
+        } else if t.is_word("CREATE") && toks.get(k + 1).is_some_and(|x| x.is_word("DATABASE") || x.is_word("SCHEMA")) {
+            let j = k + 2;
+            Some(if toks.get(j).is_some_and(|x| x.is_word("IF")) { j + 3 } else { j })
+        } else {
+            None
+        };
+        if let Some(n) = name_at.and_then(|j| toks.get(j)).filter(|x| x.is_name()) {
+            found = Some(n.text.clone());
+        }
+    }
+    found
+}
+
+/// Tabellennamen nach FROM, JOIN, INTO, UPDATE, TABLE
+pub fn table_names(sql: &str) -> Vec<String> {
+    let chars: Vec<char> = sql.chars().collect();
+    let toks = lex(&chars).toks;
+    let mut out: Vec<String> = Vec::new();
+    for (k, t) in toks.iter().enumerate() {
+        if ["FROM", "JOIN", "INTO", "UPDATE", "TABLE"].iter().any(|w| t.is_word(w))
+            && let Some(n) = toks.get(k + 1).filter(|x| x.is_name() && !super::lint::known_word(&x.upper()))
+            && toks.get(k + 2).is_none_or(|x| x.kind != Kind::Dot)
+            && !out.contains(&n.text)
+        {
+            out.push(n.text.clone());
+        }
+    }
+    out
+}
+
+/// Tabelle bzw. Alias in FROM/JOIN, deren Tabelle die Spalte `col` hat
+fn owner_of(toks: &[Tok], schema: &Schema, col: &str) -> Option<String> {
+    for (k, t) in toks.iter().enumerate() {
+        if !(t.is_word("FROM") || t.is_word("JOIN") || t.is_word("UPDATE")) {
+            continue;
+        }
+        let Some(name) = toks.get(k + 1).filter(|x| x.is_name()) else { continue };
+        let Some(info) = schema.tables.iter().find(|x| x.name.eq_ignore_ascii_case(&name.text)) else { continue };
+        if !info.columns.iter().any(|c| c.name.eq_ignore_ascii_case(col)) {
+            continue;
+        }
+        let mut j = k + 2;
+        if toks.get(j).is_some_and(|x| x.is_word("AS")) {
+            j += 1;
+        }
+        let alias = toks.get(j).filter(|x| x.kind == Kind::Word && !super::lint::known_word(&x.upper()) || x.kind == Kind::Quoted);
+        return Some(alias.map_or_else(|| name.text.clone(), |a| a.text.clone()));
+    }
+    None
+}
+
+/// INSERT mit Wert fuer die automatisch vergebene ID: ohne diese Spalte und ihre Werte
+fn without_auto_id(chars: &[char], toks: &[Tok], schema: &Schema) -> Option<String> {
+    let (ti, vi) = insert_parts(toks)?;
+    let table = schema.tables.iter().find(|t| t.name.eq_ignore_ascii_case(&toks[ti].text))?;
+    let auto = table.columns.iter().find(|c| c.extra.to_ascii_lowercase().contains("auto_increment"))?;
+    // Spaltenliste vorhanden: Position der ID darin; sonst ist es die Position in der Tabelle
+    let list = (toks.get(ti + 1).is_some_and(|t| t.kind == Kind::Open)).then_some(ti + 1);
+    let cols: Vec<String> = match list {
+        Some(o) => {
+            let c = group_end(toks, o)?;
+            items(toks, o, c).iter().map(|(a, _)| toks[*a].text.clone()).collect()
+        }
+        None => table.columns.iter().filter(|c| !c.is_generated()).map(|c| c.name.clone()).collect(),
+    };
+    let pos = cols.iter().position(|c| c.eq_ignore_ascii_case(&auto.name))?;
+    let mut edits: Vec<(usize, usize, String)> = Vec::new();
+    // Ein Eintrag samt Komma davor (bzw. danach beim ersten)
+    let remove = |edits: &mut Vec<(usize, usize, String)>, open: usize, close: usize| -> Option<()> {
+        let its = items(toks, open, close);
+        if its.len() < 2 {
+            return None;
+        }
+        let (a, b) = *its.get(pos)?;
+        let (s, e) = if pos == 0 { (toks[a].start, toks[its[1].0].start) } else { (toks[its[pos - 1].1 - 1].end, toks[b - 1].end) };
+        edits.push((s, e, String::new()));
+        Some(())
+    };
+    match list {
+        Some(o) => remove(&mut edits, o, group_end(toks, o)?)?,
+        None => {
+            let names: Vec<String> = cols.iter().filter(|c| !c.eq_ignore_ascii_case(&auto.name)).map(|c| quote_if_needed(c)).collect();
+            edits.push((toks[ti].end, toks[ti].end, format!(" ({})", names.join(", "))));
+        }
+    }
+    let mut k = vi + 1;
+    while let Some(t) = toks.get(k) {
+        match t.kind {
+            Kind::Open => {
+                let c = group_end(toks, k)?;
+                remove(&mut edits, k, c)?;
+                k = c + 1;
+            }
+            Kind::Comma => k += 1,
+            _ => break,
+        }
+    }
+    Some(edit(chars, edits))
+}
+
+/// "Data too long for column": ALTER TABLE ... MODIFY mit genug Platz fuer den laengsten Text der Anweisung
+fn widen_column(chars: &[char], toks: &[Tok], schema: &Schema, col: &str) -> Option<(String, String)> {
+    let table = used_tables(toks, schema).into_iter().find(|t| t.columns.iter().any(|c| c.name.eq_ignore_ascii_case(col)))?;
+    let info = table.columns.iter().find(|c| c.name.eq_ignore_ascii_case(col))?;
+    let t = info.col_type.to_ascii_lowercase();
+    let base = if t.starts_with("varchar") { "VARCHAR" } else if t.starts_with("char") { "CHAR" } else { return None };
+    let current: usize = t.split_once('(').and_then(|(_, r)| r.trim_end_matches(')').parse().ok())?;
+    let longest = toks.iter().filter(|x| x.kind == Kind::Str).map(|x| x.end - x.start - 2).max().unwrap_or(0);
+    let need = longest.max(current + 1);
+    let size = [50, 100, 255, 500, 1000, 2000, 4000].into_iter().find(|s| *s >= need && *s > current);
+    let new_type = match size {
+        Some(s) => format!("{base}({s})"),
+        None => "TEXT".into(),
+    };
+    let mut def = format!("ALTER TABLE {} MODIFY {} {new_type}", quote_if_needed(&table.name), quote_if_needed(&info.name));
+    if !info.nullable {
+        def.push_str(" NOT NULL");
+    }
+    // MariaDB liefert den Standardwert schon als SQL-Ausdruck ('text', 0, current_timestamp())
+    if let Some(d) = &info.default {
+        def.push_str(&format!(" DEFAULT {d}"));
+    }
+    let _ = chars;
+    Some((crate::tr_format!("Spalte {} auf {new_type} vergrößern", "Widen column {} to {new_type}", info.name), def))
+}
+
+/// Typ einer Spalte ohne Anzeigebreite: "int(11) unsigned" -> "INT UNSIGNED"
+fn norm_type(t: &str) -> String {
+    let t = t.to_ascii_uppercase();
+    let (base, rest) = match t.split_once('(') {
+        Some((b, r)) => (b.trim().to_string(), r.split_once(')').map(|(args, tail)| (args.to_string(), tail.trim().to_string()))),
+        None => (t.split_whitespace().next().unwrap_or("").to_string(), Some((String::new(), t.split_whitespace().skip(1).collect::<Vec<_>>().join(" ")))),
+    };
+    let (args, tail) = rest.unwrap_or_default();
+    let int = matches!(base.as_str(), "INT" | "INTEGER" | "TINYINT" | "SMALLINT" | "MEDIUMINT" | "BIGINT");
+    let base = if base == "INTEGER" { "INT".to_string() } else { base };
+    let mut out = if int || args.is_empty() { base } else { format!("{base}({args})") };
+    if tail.contains("UNSIGNED") {
+        out.push_str(" UNSIGNED");
+    }
+    out
+}
+
+/// CREATE/ALTER TABLE mit Fremdschluessel auf eine Spalte anderen Typs: Typ der eigenen Spalte angleichen
+fn fk_type_fix(chars: &[char], toks: &[Tok], schema: &Schema) -> Option<ErrorFix> {
+    for (k, t) in toks.iter().enumerate() {
+        if !t.is_word("REFERENCES") {
+            continue;
+        }
+        let target = toks.get(k + 1).filter(|x| x.is_name())?;
+        let Some(info) = schema.tables.iter().find(|x| x.name.eq_ignore_ascii_case(&target.text)) else { continue };
+        // Zielspalte
+        let ref_col = match toks.get(k + 2) {
+            Some(o) if o.kind == Kind::Open => toks.get(k + 3).map(|x| x.text.clone()),
+            _ => info.pk_columns().first().cloned(),
+        }?;
+        let ref_info = info.columns.iter().find(|c| c.name.eq_ignore_ascii_case(&ref_col))?;
+        // Eigene Spalte: FOREIGN KEY (x) davor, sonst die Spalte dieser Definition
+        let own = if k >= 3 && toks[k - 1].kind == Kind::Close && toks[k - 3].kind == Kind::Open { toks[k - 2].text.clone() } else { continue };
+        // Definition der eigenen Spalte in derselben Anweisung: "(own TYP" bzw. ", own TYP"
+        let def = toks.iter().enumerate().position(|(j, x)| j >= 1 && x.text.eq_ignore_ascii_case(&own) && x.is_name() && matches!(toks[j - 1].kind, Kind::Open | Kind::Comma) && toks.get(j + 1).is_some_and(|n| n.kind == Kind::Word && crate::sqlfmt::is_type(&n.text)))?;
+        let ty = def + 1;
+        let mut end = ty;
+        if toks.get(ty + 1).is_some_and(|x| x.kind == Kind::Open) {
+            end = group_end(toks, ty + 1)?;
+        }
+        if toks.get(end + 1).is_some_and(|x| x.is_word("UNSIGNED")) {
+            end += 1;
+        }
+        let have = norm_type(&text(chars, toks[ty].start, toks[end].end));
+        let want = norm_type(&ref_info.col_type);
+        if have == want {
+            continue;
+        }
+        return Some(fix(
+            crate::tr_format!("Typ von {own} an {}.{} anpassen ({want})", "Match the type of {own} to {}.{} ({want})", info.name, ref_info.name),
+            edit(chars, vec![(toks[ty].start, toks[end].end, want)]),
+        ));
+    }
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::ColumnInfo;
+
+    fn col(name: &str, t: &str, extra: &str, key: &str) -> ColumnInfo {
+        ColumnInfo { name: name.into(), col_type: t.into(), extra: extra.into(), key: key.into(), ..Default::default() }
+    }
+
+    fn schema() -> Schema {
+        Schema {
+            name: "person".into(),
+            tables: vec![
+                TableInfo {
+                    name: "Personen".into(),
+                    columns: vec![col("pid", "int(10) unsigned", "auto_increment", "PRI"), col("vorname", "varchar(20)", "", ""), col("nachname", "varchar(100)", "", "")],
+                    ..Default::default()
+                },
+                TableInfo { name: "Email".into(), columns: vec![col("pid", "int(11)", "", ""), col("email", "varchar(200)", "", "PRI")], ..Default::default() },
+            ],
+            ..Default::default()
+        }
+    }
+
+    fn first(err: &str, sql: &str) -> String {
+        let s = schema();
+        for_error(err, sql, Some(&s)).into_iter().next().map(|f| f.sql).unwrap_or_else(|| panic!("keine Behebung fuer {err}"))
+    }
+
+    #[test]
+    fn exists_and_missing() {
+        assert_eq!(first("ERROR 1050 (42S01): Table 'Personen' already exists", "CREATE TABLE Personen (pid INT)"), "CREATE TABLE IF NOT EXISTS Personen (pid INT)");
+        let s = schema();
+        let all = for_error("ERROR 1050 (42S01): Table 'Personen' already exists", "CREATE TABLE Personen (pid INT)", Some(&s));
+        assert_eq!(all[1].sql, "DROP TABLE IF EXISTS `Personen`;\nCREATE TABLE Personen (pid INT)");
+        assert_eq!(first("ERROR 1007 (HY000): Can't create database 'x'; database exists", "create database x"), "create database IF NOT EXISTS x");
+        assert_eq!(first("ERROR 1051 (42S02): Unknown table 'person.x'", "DROP TABLE x"), "DROP TABLE IF EXISTS x");
+        assert_eq!(first("ERROR 1091 (42000): Can't DROP COLUMN `a`; check that it exists", "ALTER TABLE t DROP COLUMN a"), "ALTER TABLE t DROP COLUMN IF EXISTS a");
+        assert_eq!(first("ERROR 1060 (42S21): Duplicate column name 'a'", "ALTER TABLE t ADD a INT"), "ALTER TABLE t ADD IF NOT EXISTS a INT");
+    }
+
+    #[test]
+    fn similar_names() {
+        assert_eq!(first("ERROR 1146 (42S02): Table 'person.personen' doesn't exist", "SELECT * FROM personen"), "SELECT * FROM Personen");
+        assert_eq!(first("ERROR 1146 (42S02): Table 'person.Persone' doesn't exist", "SELECT * FROM Persone p"), "SELECT * FROM Personen p");
+        assert_eq!(first("ERROR 1054 (42S22): Unknown column 'vornme' in 'field list'", "SELECT vornme FROM Personen"), "SELECT vorname FROM Personen");
+        assert_eq!(first("ERROR 1054 (42S22): Unknown column 'p.nachnam' in 'field list'", "SELECT p.nachnam, nachnam FROM Personen p"), "SELECT p.nachname, nachnam FROM Personen p");
+        assert_eq!(
+            first("ERROR 1052 (23000): Column 'pid' in field list is ambiguous", "SELECT pid, email FROM Personen p JOIN Email e ON e.pid = p.pid"),
+            "SELECT p.pid, email FROM Personen p JOIN Email e ON e.pid = p.pid"
+        );
+    }
+
+    #[test]
+    fn values_and_rows() {
+        // MariaDB 11: "in 'VALUES'"; Name aehnlich einer Spalte darf trotzdem nicht ersetzt werden
+        assert_eq!(first("ERROR 1054 (42S22): Unknown column 'vornam' in 'VALUES'", "INSERT INTO Personen (vorname) VALUES (vornam)"), "INSERT INTO Personen (vorname) VALUES ('vornam')");
+        assert_eq!(first("ERROR 1242 (21000): Subquery returns more than 1 row", "SELECT * FROM Personen WHERE pid = (SELECT pid FROM Email)"), "SELECT * FROM Personen WHERE pid IN (SELECT pid FROM Email)");
+        assert_eq!(first("ERROR 1062 (23000): Duplicate entry '1' for key 'PRIMARY'", "INSERT INTO Personen (pid, vorname) VALUES (1, 'A'), (2, 'B')"), "INSERT INTO Personen (vorname) VALUES ('A'), ('B')");
+        assert_eq!(first("ERROR 1062 (23000): Duplicate entry 'a' for key 'PRIMARY'", "INSERT INTO Email VALUES (1, 'a')"), "INSERT IGNORE INTO Email VALUES (1, 'a')");
+        assert_eq!(
+            first("ERROR 1406 (22001): Data too long for column 'vorname' at row 1", "INSERT INTO Personen (vorname) VALUES ('Maximilian-Alexander-Ferdinand')"),
+            "ALTER TABLE Personen MODIFY vorname VARCHAR(50) NOT NULL;\nINSERT INTO Personen (vorname) VALUES ('Maximilian-Alexander-Ferdinand')"
+        );
+        assert_eq!(first("ERROR 1064 (42000): You have an error in your SQL syntax", "INSERT INTO Personen (vorname, nachname) VALUES (Max, Muster)"), "INSERT INTO Personen (vorname, nachname) VALUES ('Max', 'Muster')");
+        assert_eq!(first("ERROR 1292 (22007): Incorrect date value: '17.11.2026'", "SELECT * FROM Personen WHERE x > '17.11.2026'"), "SELECT * FROM Personen WHERE x > '2026-11-17'");
+    }
+
+    #[test]
+    fn foreign_key_type() {
+        assert_eq!(
+            first("ERROR 1005 (HY000): Can't create table `person`.`Tel` (errno: 150 \"Foreign key constraint is incorrectly formed\")", "CREATE TABLE Tel (pid INT(11) NOT NULL, FOREIGN KEY (pid) REFERENCES Personen (pid))"),
+            "CREATE TABLE Tel (pid INT UNSIGNED NOT NULL, FOREIGN KEY (pid) REFERENCES Personen (pid))"
+        );
+        assert_eq!(norm_type("int(11)"), "INT");
+        assert_eq!(norm_type("decimal(8,2) unsigned"), "DECIMAL(8,2) UNSIGNED");
+    }
+
+    #[test]
+    fn database_hints() {
+        assert_eq!(created_database("DROP DATABASE IF EXISTS person;\nCREATE DATABASE IF NOT EXISTS person;\n").as_deref(), Some("person"));
+        assert_eq!(created_database("CREATE DATABASE a; USE `b`;").as_deref(), Some("b"));
+        assert_eq!(table_names("SELECT * FROM Personen p JOIN Email e ON 1 WHERE x IN (SELECT 1 FROM Telefon)"), vec!["Personen", "Email", "Telefon"]);
+    }
+
+    #[test]
+    fn code_is_read() {
+        assert_eq!(code("ERROR 1146 (42S02): x"), Some(1146));
+        assert_eq!(code("nix"), None);
+    }
+}

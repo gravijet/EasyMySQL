@@ -94,8 +94,21 @@ pub(super) fn lex(chars: &[char]) -> Lexed {
         let next = chars.get(i + 1).copied().unwrap_or('\0');
         let start = i;
         let tok = |kind: Kind, end: usize, text: String| Tok { kind, start, end, text };
+        // "--x" am Zeilenanfang ist gemeint als Kommentar, aber MariaDB verlangt Leerraum nach "--"
+        let dash_line_start = c == '-' && next == '-' && chars[..i].iter().rev().take_while(|c| **c != '\n').all(|c| c.is_whitespace());
         if c.is_whitespace() {
             i += 1;
+        } else if dash_line_start && chars.get(i + 2).is_some_and(|c| !c.is_whitespace()) {
+            problems.push(Problem {
+                start,
+                end: start + 2,
+                severity: Severity::Error,
+                message: crate::tr_format!("Nach -- braucht MariaDB ein Leerzeichen, sonst ist es kein Kommentar.", "MariaDB needs a space after --, otherwise it is not a comment."),
+                fix: Some(Fix { start: start + 2, end: start + 2, text: " ".into() }),
+            });
+            while i < n && chars[i] != '\n' {
+                i += 1;
+            }
         } else if (c == '-' && next == '-' && chars.get(i + 2).is_none_or(|c| c.is_whitespace())) || c == '#' {
             while i < n && chars[i] != '\n' {
                 i += 1;
@@ -287,7 +300,7 @@ fn distance_full(a: &str, b: &str) -> usize {
 }
 
 /// Aehnlichster Name aus `names` (hoechstens ein Fuenftel der Laenge, mindestens 1 Abweichung erlaubt)
-fn nearest<'a>(word: &str, names: impl IntoIterator<Item = &'a str>) -> Option<&'a str> {
+pub(super) fn nearest<'a>(word: &str, names: impl IntoIterator<Item = &'a str>) -> Option<&'a str> {
     if word.chars().count() < 3 {
         return None;
     }
@@ -343,7 +356,7 @@ fn keyword_typo_neu(word: &str, strict_names_known: bool) -> Option<&'static str
     best.map(|(_, k)| k)
 }
 
-fn quote_if_needed(name: &str) -> String {
+pub(super) fn quote_if_needed(name: &str) -> String {
     let simple = !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') && !name.starts_with(|c: char| c.is_ascii_digit());
     if simple { name.to_string() } else { format!("`{name}`") }
 }
@@ -388,9 +401,12 @@ pub fn lint(text: &str, env: &Env) -> Vec<Problem> {
         if fw == "DELIMITER" || routine || stmt.iter().any(|t| t.is_word("BEGIN")) && fw != "START" {
             break;
         }
+        super::dialect::check(&chars, stmt, &tables, &mut problems);
         check_statement(stmt, env, &tables, &fw, &mut problems);
     }
+    // Stabil sortiert: bei gleicher Stelle bleibt die genauere Meldung (MariaDB-Hinweis) vorne
     problems.sort_by_key(|p| (p.start, p.end));
+    problems.dedup_by(|b, a| a.start == b.start && a.end == b.end);
     problems
 }
 
@@ -802,6 +818,8 @@ fn check_words<'a>(stmt: &[Tok], names: Option<(&Scope<'a>, &HashMap<String, &'a
         }
     }
     let schema_known = names.is_some();
+    // INSERT ... VALUES: einzelne Woerter sind dort meist vergessene Anfuehrungszeichen (siehe dialect)
+    let values_from = stmt.first().filter(|f| f.is_word("INSERT") || f.is_word("REPLACE")).and_then(|_| stmt.iter().position(|t| t.is_word("VALUES") || t.is_word("VALUE")));
     for (i, t) in stmt.iter().enumerate() {
         if t.kind != Kind::Word && t.kind != Kind::Quoted {
             continue;
@@ -890,6 +908,9 @@ fn check_words<'a>(stmt: &[Tok], names: Option<(&Scope<'a>, &HashMap<String, &'a
             {
                 out.push(spelling(t, col));
             }
+            continue;
+        }
+        if values_from.is_some_and(|v| i > v) {
             continue;
         }
         // Tippfehler in Schluesselwoertern
