@@ -1302,6 +1302,11 @@ impl eframe::App for EasyApp {
         for f in crate::workspace::schreibfehler_abholen() {
             self.toast_error(f);
         }
+        // Hat der Installer die lokale KI gewuenscht? Einmal pro Start im Hintergrund laden
+        static KI_GEPRUEFT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        if !KI_GEPRUEFT.swap(true, std::sync::atomic::Ordering::Relaxed) && crate::sqledit::ai::install_if_requested(ctx) {
+            self.toast(crate::i18n::tr("Die lokale KI wird im Hintergrund geladen (Einstellungen → Editor).", "The local AI is downloading in the background (Settings → Editor)."));
+        }
         // MariaDB-Update: neuen Programmordner uebernehmen, nach Updates sehen (taeglich, je nach Einstellung)
         if let Some(bin) = crate::mariadb_update::take_applied() {
             self.settings.server.bin_dir = bin;
@@ -1486,6 +1491,7 @@ impl eframe::App for EasyApp {
     }
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        crate::sqledit::ai::shutdown();
         crate::dev::debug::stop();
         crate::dev::lsp::shutdown_all();
         self.terminal.close_all();

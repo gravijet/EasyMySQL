@@ -1212,43 +1212,66 @@ fn editor_settings(ui: &mut egui::Ui, s: &mut crate::settings::Settings) {
     crate::widgets::row(ui, crate::i18n::tr("SQL in Programmcode", "SQL in program code"), |ui| {
         crate::widgets::switch(ui, &mut e.sql_in_strings, crate::i18n::tr("SQL in Java-Zeichenketten prüfen", "Check SQL in Java strings"));
     });
-    crate::widgets::row(ui, crate::i18n::tr("KI-Vorschläge", "AI suggestions"), |ui| {
+    crate::widgets::row(ui, crate::i18n::tr("Lokale KI", "Local AI"), |ui| {
         use crate::sqledit::ai::{self, Status};
         ui.vertical(|ui| {
-            crate::widgets::switch(ui, &mut e.ai_complete, crate::i18n::tr("Ganze Blöcke vorschlagen (lokal mit Ollama, kostenlos)", "Suggest whole blocks (local with Ollama, free)"));
-            if !e.ai_complete {
-                return;
-            }
+            crate::widgets::switch(
+                ui,
+                &mut e.ai_complete,
+                crate::i18n::tr("Ganze Blöcke vorschlagen und beim Auto-Fix mitdenken", "Suggest whole blocks and help the auto-fix"),
+            );
             let weak = style::pal().text_weak;
-            match ai::status(&e.ai_model) {
-                Status::Ready => {
-                    ui.label(RichText::new(crate::tr_format!("Bereit: {}", "Ready: {}", e.ai_model)).small().color(weak));
-                }
-                Status::NoModel if ai::pulling() => {
-                    ui.label(RichText::new(crate::tr_format!("Lade {} (etwa 1 GB) …", "Downloading {} (about 1 GB) …", e.ai_model)).small().color(weak));
-                    ui.ctx().request_repaint_after(std::time::Duration::from_secs(2));
-                }
-                Status::NoModel => {
+            let small = |ui: &mut egui::Ui, s: String| {
+                ui.label(RichText::new(s).small().color(weak));
+            };
+            match ai::status() {
+                Status::Installing => {
+                    let (_, stage, done, total, _) = ai::install_state();
+                    small(ui, stage);
                     ui.horizontal(|ui| {
-                        ui.label(RichText::new(crate::tr_format!("Ollama läuft, das Modell {} fehlt.", "Ollama is running, model {} is missing.", e.ai_model)).small().color(weak));
-                        if ui.small_button(crate::i18n::tr("Modell laden", "Download model")).on_hover_text(crate::i18n::tr("Einmalig etwa 1 GB", "About 1 GB, once")).clicked() {
-                            ai::pull(&e.ai_model);
+                        let frac = if total > 0 { done as f32 / total as f32 } else { 0.0 };
+                        ui.add(egui::ProgressBar::new(frac).desired_width(220.0).text(format!("{:.0} / {:.0} MB", done as f64 / 1e6, total as f64 / 1e6)));
+                        if ui.small_button(crate::i18n::tr("Abbrechen", "Cancel")).clicked() {
+                            ai::cancel_install();
                         }
                     });
+                    ui.ctx().request_repaint_after(std::time::Duration::from_millis(300));
                 }
-                Status::Off | Status::Unknown => {
+                Status::NotInstalled => {
+                    small(
+                        ui,
+                        crate::tr_format!(
+                            "Eigene KI ({}) – kostenlos, läuft nur auf diesem Rechner, ohne Konto und ohne Internet. Einmalig etwa {} GB.",
+                            "Own AI ({}) – free, runs only on this computer, no account and no internet. About {} GB, once.",
+                            ai::MODEL_LABEL,
+                            ai::size_gb()
+                        ),
+                    );
+                    if let Some(err) = ai::install_state().4 {
+                        ui.label(RichText::new(err).small().color(style::pal().error_text));
+                    }
+                    if ui.button(crate::i18n::tr("KI installieren", "Install AI")).clicked() {
+                        ai::install(Some(ui.ctx().clone()));
+                    }
+                }
+                st => {
+                    let what = match st {
+                        Status::Ready => crate::i18n::tr("bereit", "ready"),
+                        Status::Starting => crate::i18n::tr("startet …", "starting …"),
+                        Status::Failed => crate::i18n::tr("startet nicht (siehe ki/server.log)", "does not start (see ki/server.log)"),
+                        _ => crate::i18n::tr("startet beim Tippen im Editor", "starts when you type in the editor"),
+                    };
                     ui.horizontal(|ui| {
-                        ui.label(RichText::new(crate::i18n::tr("Ollama läuft nicht. Ohne Ollama gibt es nur die eingebauten Vorschläge.", "Ollama is not running. Without it only the built-in suggestions are offered.")).small().color(weak));
-                        if ui.small_button("ollama.com").clicked() {
-                            crate::git::github::open_url("https://ollama.com/download");
+                        small(ui, format!("{} · {what}", ai::MODEL_LABEL));
+                        if ui.small_button(crate::i18n::tr("Entfernen", "Remove")).on_hover_text(crate::tr_format!("Gibt etwa {} GB frei", "Frees about {} GB", ai::size_gb())).clicked() {
+                            let _ = ai::uninstall();
                         }
                     });
+                    if st == Status::Starting {
+                        ui.ctx().request_repaint_after(std::time::Duration::from_millis(500));
+                    }
                 }
             }
-            ui.horizontal(|ui| {
-                ui.label(RichText::new(crate::i18n::tr("Modell", "Model")).small().color(weak));
-                ui.add(egui::TextEdit::singleline(&mut e.ai_model).desired_width(200.0).font(egui::TextStyle::Monospace));
-            });
         });
     });
     crate::widgets::row(ui, crate::i18n::tr("Prüfen nach", "Check after"), |ui| {

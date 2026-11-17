@@ -57,6 +57,27 @@ struct Failed {
 
 type JobResult = (Option<Conn>, Vec<StmtResult>, Option<String>, Option<String>);
 
+/// Auto-Fix mit Probelauf (laeuft im Hintergrund, Ergebnis als Leiste ueber dem Editor)
+struct AutoFix {
+    rx: Option<Receiver<sqledit::probe::Report>>,
+    status: std::sync::Arc<std::sync::Mutex<String>>,
+    cancel: std::sync::Arc<AtomicBool>,
+    /// Text beim Start (zum Rueckgaengigmachen und um spaetere Aenderungen zu erkennen)
+    before: String,
+    report: Option<sqledit::probe::Report>,
+    /// Text nach dem Auto-Fix (Rueckgaengig nur, solange er unveraendert ist)
+    after: String,
+}
+
+/// Wunsch aus der Auto-Fix-Leiste
+enum FixAct {
+    Run,
+    Undo,
+    Close,
+    Cancel,
+    Goto(usize),
+}
+
 pub struct SqlTab {
     /// Datei (None = unbenannte Abfrage, gesichert im Speicherordner)
     pub file: Option<PathBuf>,
@@ -96,6 +117,7 @@ pub struct SqlTab {
     pending_line: Option<usize>,
     /// Beim ersten Anzeigen den Editor fokussieren (neue Abfrage: sofort lostippen)
     focus_editor: bool,
+    autofix: Option<AutoFix>,
 }
 
 fn next_scratch_id() -> usize {
@@ -155,6 +177,7 @@ impl SqlTab {
             save_error: None,
             pending_line: None,
             focus_editor: false,
+            autofix: None,
         }
     }
 
@@ -436,15 +459,168 @@ impl SqlTab {
         self.run(cx, sql, a);
     }
 
-    /// Alle Fehler mit Korrekturvorschlag selbst ausbessern
+    /// Auto-Fix: alle Fehler beheben; mit Server zusaetzlich Probelaeufe in Wegwerf-Kopien, bis das Skript laeuft
     fn fix_all(&mut self, cx: &mut Ctx) {
-        let n = self.editor.fix_all(&mut self.text);
-        if n > 0 {
-            self.last_edit = Instant::now();
-            cx.status(crate::tr_format!("{n} Stelle(n) korrigiert.", "{n} place(s) corrected."));
-        } else {
-            cx.status(crate::i18n::text("Nichts zu korrigieren."));
+        if self.autofix.as_ref().is_some_and(|a| a.rx.is_some()) || self.text.trim().is_empty() {
+            return;
         }
+        let Some(dbc) = cx.db else {
+            let n = self.editor.fix_all(&mut self.text);
+            if n > 0 {
+                self.last_edit = Instant::now();
+                cx.status(crate::tr_format!("{n} Stelle(n) korrigiert.", "{n} place(s) corrected."));
+            } else {
+                cx.status(crate::i18n::text("Nichts zu korrigieren."));
+            }
+            return;
+        };
+        let setup = sqledit::probe::Setup {
+            database: Some(self.database.clone()).filter(|d| !d.is_empty()),
+            databases: cx.databases.to_vec(),
+            file_stem: self.file.as_ref().and_then(|f| f.file_stem()).map(|s| s.to_string_lossy().into_owned()),
+        };
+        let pool = crate::db::Db { pool: dbc.pool.clone(), info: dbc.info.clone(), version: dbc.version.clone() };
+        let status = std::sync::Arc::new(std::sync::Mutex::new(crate::i18n::tr("Auto-Fix startet …", "Auto-fix is starting …").to_string()));
+        let cancel = std::sync::Arc::new(AtomicBool::new(false));
+        let (tx, rx) = channel();
+        let (text, st, cn) = (self.text.clone(), status.clone(), cancel.clone());
+        let ai_ready = sqledit::ai::ready();
+        std::thread::spawn(move || {
+            let say = |m: String| {
+                if let Ok(mut g) = st.lock() {
+                    *g = m;
+                }
+            };
+            let ask = |sql: &str, err: &str, schema: Option<&crate::db::Schema>| sqledit::ai::fix_statement(sql, err, schema);
+            let ai: Option<sqledit::probe::Ai> = if ai_ready { Some(&ask) } else { None };
+            let report = match pool.new_conn() {
+                Ok(conn) => {
+                    let mut live = sqledit::probe::Live { conn, db: pool };
+                    sqledit::probe::repair(&text, &setup, Some(&mut live), &say, &cn, ai)
+                }
+                Err(e) => {
+                    let mut r = sqledit::probe::repair(&text, &setup, None, &say, &cn, None);
+                    r.end = sqledit::probe::End::Failed(e);
+                    r
+                }
+            };
+            let _ = tx.send(report);
+        });
+        self.autofix = Some(AutoFix { rx: Some(rx), status, cancel, before: self.text.clone(), report: None, after: String::new() });
+    }
+
+    /// Ergebnis des Auto-Fix uebernehmen
+    fn poll_autofix(&mut self, cx: &mut Ctx) {
+        let Some(a) = &mut self.autofix else { return };
+        let Some(rx) = &a.rx else { return };
+        let Ok(report) = rx.try_recv() else { return };
+        a.rx = None;
+        if self.text != a.before {
+            self.autofix = None;
+            cx.status(crate::i18n::tr("Auto-Fix verworfen: Der Text wurde inzwischen geändert.", "Auto-fix discarded: the text was changed in the meantime."));
+            return;
+        }
+        if report.text != self.text {
+            self.text = report.text.clone();
+            self.last_edit = Instant::now();
+        }
+        a.after = self.text.clone();
+        a.report = Some(report);
+    }
+
+    /// Leiste mit dem Ergebnis des Auto-Fix
+    fn autofix_ui(&mut self, ui: &mut egui::Ui) -> Option<FixAct> {
+        use sqledit::probe::End;
+        let a = self.autofix.as_ref()?;
+        let pal = style::pal();
+        let tr = crate::i18n::tr;
+        let mut act = None;
+        egui::Frame::new()
+            .fill(pal.face_light)
+            .stroke(egui::Stroke::new(1.0, pal.border))
+            .corner_radius(6.0)
+            .inner_margin(egui::Margin::symmetric(10, 8))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                let Some(r) = &a.report else {
+                    ui.horizontal(|ui| {
+                        ui.spinner();
+                        let s = a.status.lock().map(|s| s.clone()).unwrap_or_default();
+                        ui.label(s);
+                        if ui.button(tr("Abbrechen", "Cancel")).clicked() {
+                            act = Some(FixAct::Cancel);
+                        }
+                    });
+                    ui.ctx().request_repaint_after(Duration::from_millis(100));
+                    return;
+                };
+                let n = r.changes.len();
+                let (icon, color, head) = match &r.end {
+                    End::Clean if n == 0 => (Icon::Check, pal.ok_text, tr("Alles in Ordnung: Das Skript läuft im Probelauf ohne Fehler.", "All good: the script runs without errors in a trial run.").to_string()),
+                    End::Clean => (Icon::Check, pal.ok_text, crate::tr_format!("{n} Änderung(en) – das Skript läuft jetzt im Probelauf ohne Fehler.", "{n} change(s) – the script now runs without errors in a trial run.")),
+                    End::Offline => (Icon::Sparkles, pal.warn_text, crate::tr_format!("{n} Stelle(n) korrigiert (ohne Server kein Probelauf).", "{n} place(s) corrected (no trial run without a server).")),
+                    End::Stuck { line, error } => (Icon::Alert, pal.error_text, crate::tr_format!("Zeile {}: {} – dafür gibt es keine sichere Korrektur.", "Line {}: {} – there is no safe fix for this.", line + 1, error.lines().next().unwrap_or(""))),
+                    End::Cancelled => (Icon::Alert, pal.warn_text, tr("Abgebrochen.", "Cancelled.").to_string()),
+                    End::Failed(e) => (Icon::Alert, pal.error_text, crate::tr_format!("Probelauf nicht möglich: {e}", "Trial run not possible: {e}")),
+                };
+                ui.horizontal(|ui| {
+                    let (rect, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
+                    icons::paint(ui.painter(), rect, icon, color);
+                    ui.add(egui::Label::new(RichText::new(head).color(color)).wrap());
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if icons::button(ui, Icon::Close, tr("Schließen", "Close")).clicked() {
+                            act = Some(FixAct::Close);
+                        }
+                        if n > 0 && self.text == a.after && icons::text_button(ui, Icon::Undo, tr("Rückgängig", "Undo")).clicked() {
+                            act = Some(FixAct::Undo);
+                        }
+                        if r.end == End::Clean && icons::run_button(ui, tr("Ausführen", "Run")).clicked() {
+                            act = Some(FixAct::Run);
+                        }
+                    });
+                });
+                // Lange Listen scrollen, damit der Editor sichtbar bleibt
+                egui::ScrollArea::vertical().max_height(150.0).auto_shrink([false, true]).show(ui, |ui| {
+                    ui.spacing_mut().item_spacing.y = 3.0;
+                    ui.spacing_mut().interact_size.y = 14.0;
+                    for c in &r.changes {
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = 6.0;
+                            match c.line {
+                                Some(l) => {
+                                    if ui.link(RichText::new(crate::tr_format!("Z. {}", "Ln {}", l + 1)).small()).clicked() {
+                                        act = Some(FixAct::Goto(l));
+                                    }
+                                }
+                                None => {
+                                    ui.label(RichText::new("•").small().color(pal.text_weak));
+                                }
+                            }
+                            let text = RichText::new(&c.label).small();
+                            ui.add(egui::Label::new(if c.check { text.color(pal.warn_text) } else { text }).wrap());
+                        });
+                    }
+                });
+                let mut notes: Vec<String> = Vec::new();
+                if r.skipped > 0 {
+                    notes.push(crate::tr_format!(
+                        "{} Anweisung(en) liefen im Probelauf bewusst nicht (Benutzer, Rechte, Dateien, globale Einstellungen).",
+                        "{} statement(s) were deliberately not run in the trial (users, privileges, files, global settings).",
+                        r.skipped
+                    ));
+                }
+                if r.without_data {
+                    notes.push(tr("Die Datenbank ist zu groß zum Kopieren: doppelte Schlüssel und fehlende Elternzeilen wurden nicht geprüft.", "The database is too large to copy: duplicate keys and missing parent rows were not checked.").into());
+                }
+                if r.runs > 0 {
+                    notes.push(crate::tr_format!("Geprüft in {} Probeläufen auf Kopien – deine Daten wurden nicht verändert.", "Checked in {} trial runs on copies – your data was not changed.", r.runs));
+                }
+                for note in notes {
+                    ui.label(RichText::new(note).small().color(pal.text_weak));
+                }
+            });
+        ui.add_space(4.0);
+        act
     }
 
     fn format(&mut self) {
@@ -1009,6 +1185,7 @@ impl TabView for SqlTab {
 
     fn ui(&mut self, ui: &mut egui::Ui, cx: &mut Ctx) {
         self.poll(cx);
+        self.poll_autofix(cx);
         let pal = style::pal();
         if self.job.is_some() {
             ui.ctx().request_repaint_after(Duration::from_millis(50));
@@ -1071,7 +1248,20 @@ impl TabView for SqlTab {
                     self.save();
                 }
             }
-            let (errors, warnings, fixable) = self.editor.lint_summary();
+            let (errors, warnings, _) = self.editor.lint_summary();
+            let busy = self.autofix.as_ref().is_some_and(|a| a.rx.is_some());
+            if ui
+                .add_enabled_ui(!busy && self.job.is_none() && !self.text.trim().is_empty(), |ui| icons::text_button(ui, Icon::Sparkles, "Auto-Fix"))
+                .inner
+                .on_hover_text(crate::tr_format!(
+                    "Alle Fehler beheben und das Skript in einer Kopie der Datenbank probelaufen lassen, bis es ohne Fehler läuft ({})",
+                    "Fix every error and trial-run the script on a copy of the database until it runs without errors ({})",
+                    crate::keymap::text(Cmd::FixAll)
+                ))
+                .clicked()
+            {
+                self.fix_all(cx);
+            }
             if errors + warnings > 0 {
                 let color = if errors > 0 { pal.error_text } else { pal.warn_text };
                 let summary = match (errors, warnings) {
@@ -1080,13 +1270,6 @@ impl TabView for SqlTab {
                     (e, w) => crate::tr_format!("{e} Fehler, {w} Hinweis(e)", "{e} error(s), {w} warning(s)"),
                 };
                 ui.label(RichText::new(summary).small().color(color));
-                if fixable > 0
-                    && icons::text_button(ui, Icon::Sparkles, crate::i18n::text("Korrigieren"))
-                        .on_hover_text(crate::tr_format!("Alle Fehler mit Vorschlag selbst ausbessern ({})", "Fix every problem that has a suggestion ({})", crate::keymap::text(Cmd::FixAll)))
-                        .clicked()
-                {
-                    self.fix_all(cx);
-                }
             }
             if icons::button(ui, Icon::History, crate::i18n::text("Verlauf")).clicked() {
                 self.show_history = !self.show_history || self.pane != Pane::History;
@@ -1117,6 +1300,26 @@ impl TabView for SqlTab {
 
         ui.add_space(4.0);
         let font_row = ui.ctx().fonts_mut(|f| f.row_height(&egui::FontId::monospace(sqledit::font_size())));
+        match self.autofix_ui(ui) {
+            Some(FixAct::Run) => {
+                self.autofix = None;
+                self.run(cx, self.text.clone(), 0);
+            }
+            Some(FixAct::Undo) => {
+                if let Some(a) = self.autofix.take() {
+                    self.text = a.before;
+                    self.last_edit = Instant::now();
+                }
+            }
+            Some(FixAct::Close) => self.autofix = None,
+            Some(FixAct::Cancel) => {
+                if let Some(a) = &self.autofix {
+                    a.cancel.store(true, Ordering::Relaxed);
+                }
+            }
+            Some(FixAct::Goto(l)) => self.pending_line = Some(l),
+            None => {}
+        }
         if let Some(l) = self.pending_line.take() {
             let ctx = ui.ctx().clone();
             self.editor.goto_line(&ctx, &self.text, l, font_row);

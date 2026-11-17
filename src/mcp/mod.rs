@@ -26,6 +26,8 @@ Usage:
                                  target: all (default), claude, codex; --remove undoes it
   easymysql install-ai [target]  download Claude Code and/or Codex (newest version, checked) and register
                                  them; then sign in with: claude auth login / codex login
+  easymysql install-local-ai     download the free local AI (llama.cpp + Qwen2.5-Coder 1.5B, about 1.7 GB)
+                                 for code suggestions and auto-fix; --later: download on the next app start
   easymysql --version            print the version
 
 MCP options (defaults come from the EasyMySQL settings):
@@ -129,6 +131,10 @@ pub fn run_cli(args: &[std::ffi::OsString]) -> Option<i32> {
         "install-ai" => {
             attach_console();
             Some(setup::install(&args[1..]))
+        }
+        "install-local-ai" => {
+            attach_console();
+            Some(crate::sqledit::ai::install_cli(&args[1..]))
         }
         "--version" | "-V" | "version" => {
             attach_console();

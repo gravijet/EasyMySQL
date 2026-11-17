@@ -6,6 +6,7 @@
 # Options as environment variables, e.g.  curl -fsSL … | EASYMYSQL_YES=1 sh
 #   EASYMYSQL_YES=1          answer every question with yes
 #   EASYMYSQL_AI=1 / 0       download and connect Claude Code and Codex without asking / never
+#   EASYMYSQL_LOCAL_AI=1 / 0 download the own local AI (about 1.7 GB) without asking / never
 #   EASYMYSQL_NO_MARIADB=1   do not install MariaDB
 #   EASYMYSQL_BIN=dir        where the `easymysql` command goes (default ~/.local/bin)
 #   NO_COLOR=1               plain output without colors and animations
@@ -445,6 +446,21 @@ main() {
     fi
   fi
 
+  # Local AI (llama.cpp + Qwen2.5-Coder 1.5B, about 1.7 GB) -----------------------------------------
+  # Nicht mit EASYMYSQL_YES: so ein grosser Download nur auf ausdruecklichen Wunsch
+  local_ai=0
+  if [ "${EASYMYSQL_LOCAL_AI:-}" = "1" ]; then local_ai=1
+  elif [ "${EASYMYSQL_LOCAL_AI:-}" != "0" ] && [ "${EASYMYSQL_YES:-}" != "1" ] && (exec </dev/tty) 2>/dev/null; then
+    say ""
+    if ask "Install the own local AI for code suggestions and auto-fix (free, runs offline, about 1.7 GB)?" n; then local_ai=1; fi
+  fi
+  if [ "$local_ai" = "1" ] && "$EXE" --help 2>/dev/null </dev/null | grep -q install-local-ai; then
+    say ""
+    if "$EXE" install-local-ai </dev/null; then done_ "Local AI" "ready - suggestions and auto-fix run on this computer"
+    else warn "Local AI" "the download did not work; try again under Settings > Editor"
+    fi
+  fi
+
   # Done -------------------------------------------------------------------------------------------
   took=$(( $(date +%s) - START ))
   say ""
@@ -452,6 +468,7 @@ main() {
     "c|easymysql|open the app, the server starts" \
     "c|mariadb -u root|console while EasyMySQL runs" \
     "c|easymysql install-ai|connect Claude Code + Codex" \
+    "c|easymysql install-local-ai|own local AI (about 1.7 GB)" \
     "c|easymysql mcp|MCP server for other AI apps"
   say ""
   if ask "Start EasyMySQL now?" y; then

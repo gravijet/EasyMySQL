@@ -319,16 +319,21 @@ fn hex(bytes: &[u8]) -> String {
 
 /// Laedt `url` nach `target`; erst nach bestandener Pruefung liegt die Datei dort.
 pub fn download(url: &str, target: &Path, checksum: &Checksum, progress: &Progress, cancel: &AtomicBool) -> Result<(), String> {
+    download_max(url, target, checksum, progress, cancel, MAX_DOWNLOAD)
+}
+
+/// Wie `download`, mit eigener Hoechstgroesse (KI-Modell)
+pub fn download_max(url: &str, target: &Path, checksum: &Checksum, progress: &Progress, cancel: &AtomicBool, max: u64) -> Result<(), String> {
     let part = target.with_extension("part");
     let result = (|| {
         let mut r = agent(Duration::from_secs(60 * 60)).get(url).call().map_err(|e| format!("{url}: {e}"))?;
         let total = r.body().content_length().unwrap_or(0);
-        if total > MAX_DOWNLOAD {
+        if total > max {
             return Err(crate::i18n::tr("Der Download ist zu groß.", "The download is too large.").to_string());
         }
         progress.total.store(total, Ordering::Relaxed);
         progress.done.store(0, Ordering::Relaxed);
-        let mut reader = r.body_mut().with_config().limit(MAX_DOWNLOAD).reader();
+        let mut reader = r.body_mut().with_config().limit(max).reader();
         if let Some(dir) = part.parent() {
             std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
         }

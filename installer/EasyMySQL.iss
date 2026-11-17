@@ -60,6 +60,7 @@ english.DriverGroup=Drivers:
 english.AiTask=Download the AI assistants Claude Code and Codex and connect them to EasyMySQL (about 250 MB, sign in later in the app)
 english.AiGroup=AI assistants:
 english.InstallingAi=Downloading Claude Code and Codex ...
+english.LocalAiTask=Own local AI for code suggestions and auto-fix (free, runs offline, about 1.7 GB; downloads in the background when EasyMySQL starts)
 english.ConsoleShortcut=MariaDB Console (mysql -u root)
 english.InstallingVc=Installing Visual C++ runtime libraries ...
 english.InstallingOdbc=Installing the MariaDB ODBC driver ...
@@ -76,6 +77,7 @@ german.DriverGroup=Treiber:
 german.AiTask=KI-Assistenten Claude Code und Codex herunterladen und mit EasyMySQL verbinden (etwa 250 MB, Anmeldung später in der App)
 german.AiGroup=KI-Assistenten:
 german.InstallingAi=Claude Code und Codex werden geladen ...
+german.LocalAiTask=Eigene lokale KI für Code-Vorschläge und Auto-Fix (kostenlos, läuft offline, etwa 1,7 GB; wird beim Start von EasyMySQL im Hintergrund geladen)
 german.ConsoleShortcut=MariaDB-Konsole (mysql -u root)
 german.InstallingVc=Visual C++ Laufzeitbibliotheken werden installiert ...
 german.InstallingOdbc=MariaDB ODBC-Treiber wird installiert ...
@@ -90,6 +92,7 @@ Name: "assoc"; Description: "{cm:AssocTask}"; GroupDescription: "{cm:ShortcutGro
 Name: "odbc"; Description: "{cm:OdbcTask}"; GroupDescription: "{cm:DriverGroup}"
 #endif
 Name: "ai"; Description: "{cm:AiTask}"; GroupDescription: "{cm:AiGroup}"; Flags: unchecked
+Name: "localai"; Description: "{cm:LocalAiTask}"; GroupDescription: "{cm:AiGroup}"; Flags: unchecked
 
 [Dirs]
 ; Shared data folder, writable by all users.
@@ -145,6 +148,8 @@ Filename: "msiexec.exe"; Parameters: "/i ""{tmp}\mariadb-connector-odbc.msi"" /q
 #endif
 ; Claude Code und Codex fuer den angemeldeten Benutzer laden (in dessen Datenordner) und eintragen
 Filename: "{app}\EasyMySQL.exe"; Parameters: "install-ai"; StatusMsg: "{cm:InstallingAi}"; Tasks: ai; Flags: runhidden waituntilterminated runasoriginaluser
+; Lokale KI (1,7 GB) nicht im Setup laden: nur vormerken, EasyMySQL laedt sie beim Start im Hintergrund mit Fortschritt
+Filename: "{app}\EasyMySQL.exe"; Parameters: "install-local-ai --later"; Tasks: localai; Flags: runhidden waituntilterminated runasoriginaluser
 Filename: "{app}\EasyMySQL.exe"; Description: "{cm:LaunchApp}"; Flags: postinstall nowait skipifsilent runasoriginaluser
 
 [UninstallRun]

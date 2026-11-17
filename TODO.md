@@ -314,14 +314,46 @@ Sicherungen, Benutzerverwaltung, Git, Suche, Menüs.
 - Block-Vorschläge (`src/sqledit/block.rs`): grau hinter dem Cursor, Tab übernimmt, Esc verwirft. INSERT nach
   CREATE TABLE, nächste VALUES-Zeile nach Muster, Primärschlüssel nach der Namensregel der Datenbank, ON-Bedingung
   nach JOIN. Kopflos per egui-Test geprüft (Anzeige, Tab, Esc/Cursor bewegen).
-- Lokale KI (`src/sqledit/ai.rs`): Ollama (FIM, Standardmodell qwen2.5-coder:1.5b) nach 600 ms Pause, nur am
-  Zeilenende, mit Schema als Kommentar. Einstellungen → Editor → KI-Vorschläge (Status, „Modell laden“). Gegen ein
-  nachgebautes Ollama getestet (`ai_block_from_ollama`, ignoriert).
+- Lokale KI: in Runde 17 durch die eigene KI (llama.cpp) ersetzt.
 - Formatieren: jede Bedingung (WHERE/HAVING/ON mit mehreren), jede SET-Zuweisung eigene Zeile; Spaltenlisten ab 4
   Einträgen oder über 40 Zeichen eine je Zeile (bis 12 Einträge), CASE ab 40 Zeichen mehrzeilig.
 - Sicherung vor `DROP DATABASE IF EXISTS x` scheiterte, wenn x nicht existiert; jetzt werden nur vorhandene gesichert.
 
 **Offen / nicht geprüft:**
-- Mit echtem Ollama nicht ausprobiert (hier nicht installiert); Qualität der KI-Vorschläge daher unbekannt.
 - Block-Vorschläge nicht per Bildschirmfoto geprüft (Rechner war in Benutzung; nur kopfloser egui-Test).
 - 1364/1452 haben keine automatische Korrektur (die Daten muss der Mensch entscheiden).
+
+## 17. Siebte Runde (2026-11-17, Version 1.1.22): Auto-Fix mit Probelauf, eigene lokale KI
+
+**Erledigt** (353 Tests, Clippy ohne Warnungen, echte Läufe gegen MariaDB 11 und die echte KI):
+- Auto-Fix mit Probelauf (`src/sqledit/probe.rs`): erst statische Korrekturen bis zum Fixpunkt, dann läuft das Skript
+  auf dem echten Server in Wegwerf-Kopien (`easymysql_probe_<pid>_<n>`, Struktur + Daten bis 20.000 Zeilen).
+  Scheitert eine Anweisung, werden Kandidaten nacheinander probiert (Skript-Regeln, `errfix`, Editor-Prüfung der
+  Anweisung mit der echten Struktur, zuletzt die KI); einer gilt nur, wenn der nächste Probelauf weiter kommt
+  (eingefügte Anweisungen herausgerechnet, keine Kreise). Neue Regeln: Skript wiederholbar (DROP DATABASE bzw.
+  DROP TABLE davor, sonst IF NOT EXISTS), fehlende Datenbank aus dem Dateinamen, Schlüssel ohne Wert →
+  AUTO_INCREMENT, Pflichtfeld → NULL, fehlende Elternzeilen mit Platzhaltern (gelb, „bitte prüfen“).
+  Schutz: Datenbanknamen werden umgeschrieben (auch neu auftauchende, echte als Kopie); Benutzer, Rechte, Dateien,
+  globale SET, Systemdatenbanken, CALL bei dynamischem SQL laufen nicht. KI-Antworten nur bei gleicher Art und
+  gleichem Ziel (Tippfehler im ersten Wort zählen als nächstliegendes Schlüsselwort, nie DROP aus DELET).
+- SQL-Reiter: Knopf „Auto-Fix“ immer da; Leiste mit Fortschritt/Abbrechen, Ergebnis, Änderungen nach Zeile
+  (anklickbar), „Ausführen“, „Rückgängig“. Ohne Server nur die statischen Korrekturen.
+- Eigene lokale KI (`src/sqledit/ai.rs`): llama.cpp (neuester CPU-Build, GitHub-Prüfsumme) + Qwen2.5-Coder 1.5B Q8
+  (ggml-org, Hugging-Face-SHA-256), in `<Datenordner>/ki`; Server nur auf 127.0.0.1, freier Port, schläft nach 10 min.
+  `/infill` für Block-Vorschläge, `/completion` für den Auto-Fix. Einstellungen → Editor → Lokale KI (Installieren
+  mit Fortschritt/Abbrechen, Entfernen). Installer: Inno-Aufgabe „localai“ (merkt vor, App lädt beim Start),
+  `install.ps1`/`install.sh` fragen (Standard: nein, nicht mit EASYMYSQL_YES), CLI `easymysql install-local-ai [--later]`.
+- Release-Workflow: Auswahl „windows-linux“ (ohne macOS).
+- Echt geprüft: Schulskript (falsche Reihenfolge, zu kurze Spalte, fehlende ID, fehlende Elternzeile, LIMT) in
+  6 Probeläufen repariert, danach echt fehlerfrei; zweiter Lauf → DROP DATABASE IF EXISTS davor, echte Daten
+  unberührt; Tabelle mit fremdem Verweis → IF NOT EXISTS. KI korrigierte `SELECT klasse COUNT(*)` (Probelauf
+  bestätigt) und ihr Versuch, CREATE TABLE in CREATE DATABASE umzubauen, wurde verworfen. Oberfläche per
+  Bildschirmfoto: Leiste, Rückgängig, Einstellungen, Installieren mit Fortschritt und Abbrechen.
+
+**Offen / nicht geprüft:**
+- Linux-Build nur in CI (hier kein Cross-Compiler); llama.cpp unter Linux nicht lokal gestartet.
+- Block-Vorschläge der KI im laufenden Editor nicht per Bildschirmfoto (KI dafür nicht dauerhaft installiert);
+  `/infill` selbst echt getestet.
+- Bricht EasyMySQL ab, ohne `on_exit`, läuft llama-server weiter, bis er nach 10 min schläft (kein Job-Objekt).
+- Probelauf kopiert keine Trigger/Prozeduren der echten Datenbank; Fehler, die nur durch sie entstehen, fehlen.
+- Java-Dateien: Auto-Fix bleibt dort statisch (kein Probelauf für SQL in Java-Zeichenketten).

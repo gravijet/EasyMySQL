@@ -237,7 +237,6 @@ impl Settings {
                 "editor_auto_indent" => s.editor.auto_indent = on,
                 "editor_sql_in_strings" => s.editor.sql_in_strings = on,
                 "editor_ai_complete" => s.editor.ai_complete = on,
-                "editor_ai_model" if !v.trim().is_empty() => s.editor.ai_model = v.trim().to_string(),
                 "editor_lint_delay_ms" => s.editor.lint_delay_ms = v.parse().unwrap_or(350).min(5000),
                 "editor_scroll_past_end" => s.editor.scroll_past_end = on,
                 "terminal_font" => s.terminal.font_size = v.parse().unwrap_or(0),
@@ -342,7 +341,7 @@ impl Settings {
             e.lint_delay_ms,
             b(e.scroll_past_end)
         ));
-        text.push_str(&format!("editor_ai_complete={}\neditor_ai_model={}\n", b(e.ai_complete), e.ai_model));
+        text.push_str(&format!("editor_ai_complete={}\n", b(e.ai_complete)));
         let t = &self.terminal;
         text.push_str(&format!("terminal_font={}\nterminal_scrollback={}\nterminal_default_shell={}\nterminal_custom_shell={}\n", t.font_size, t.scrollback, escape(&t.default_shell), escape(&t.custom_shell)));
         let g = &self.git;

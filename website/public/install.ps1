@@ -8,6 +8,7 @@
 # Options as environment variables (set them before the command):
 #   $env:EASYMYSQL_PORTABLE = "1"   portable version for this user only, no administrator rights
 #   $env:EASYMYSQL_AI = "1" / "0"   download and connect Claude Code and Codex without asking / never
+#   $env:EASYMYSQL_LOCAL_AI = "1" / "0"  download the own local AI (about 1.7 GB) without asking / never
 #   $env:EASYMYSQL_YES = "1"        answer every question with yes
 #   $env:NO_COLOR = "1"             plain output without colors and animations
 #
@@ -427,11 +428,27 @@
             else { Warn 'AI' 'setting up the AI assistants did not fully work (see above)' }
         }
 
+        # Local AI (llama.cpp + Qwen2.5-Coder 1.5B, about 1.7 GB) ---------------------------------
+        # Nicht mit EASYMYSQL_YES: so ein grosser Download nur auf ausdruecklichen Wunsch
+        $wantLocal = $false
+        if ($env:EASYMYSQL_LOCAL_AI -eq '1') { $wantLocal = $true }
+        elseif ($env:EASYMYSQL_LOCAL_AI -ne '0' -and -not $Yes -and $Interactive) {
+            Write-Host ''
+            $wantLocal = Ask 'Install the own local AI for code suggestions and auto-fix (free, runs offline, about 1.7 GB)?' $false
+        }
+        if ($wantLocal -and ((& $exe --help 2>$null | Out-String) -match 'install-local-ai')) {
+            Write-Host ''
+            & $exe install-local-ai | Out-Host
+            if ($LASTEXITCODE -eq 0) { Done 'Local AI' 'ready - suggestions and auto-fix run on this computer' }
+            else { Warn 'Local AI' 'the download did not work; try again under Settings > Editor' }
+        }
+
         # Done ------------------------------------------------------------------------------------
         Card ("EasyMySQL {0} is ready  ({1:N0} s)" -f $rel.version, $Started.Elapsed.TotalSeconds) @(
             , @('easymysql', 'open the app, the server starts')
             , @('mysql -u root', 'console while EasyMySQL runs')
             , @('easymysql install-ai', 'connect Claude Code + Codex')
+            , @('easymysql install-local-ai', 'own local AI (about 1.7 GB)')
             , @('easymysql mcp', 'MCP server for other AI apps')
         )
         Write-Host ''

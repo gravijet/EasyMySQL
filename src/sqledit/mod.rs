@@ -20,6 +20,7 @@ mod dialect;
 mod script;
 pub mod block;
 pub mod ai;
+pub mod probe;
 pub mod errfix;
 mod schema_fix;
 mod schema_decl;
@@ -64,14 +65,13 @@ pub struct Prefs {
     pub lint_delay_ms: u64,
     /// Ueber die letzte Zeile hinaus scrollen
     pub scroll_past_end: bool,
-    /// Block-Vorschlaege der lokalen KI (Ollama), wenn sie laeuft
+    /// Block-Vorschlaege und Auto-Fix-Hilfe der eigenen lokalen KI (llama.cpp), wenn installiert
     pub ai_complete: bool,
-    pub ai_model: String,
 }
 
 impl Default for Prefs {
     fn default() -> Self {
-        Prefs { indent: 0, line_numbers: true, highlight_line: true, match_brackets: true, auto_indent: true, sql_in_strings: true, lint_delay_ms: 350, scroll_past_end: true, ai_complete: true, ai_model: ai::DEFAULT_MODEL.into() }
+        Prefs { indent: 0, line_numbers: true, highlight_line: true, match_brackets: true, auto_indent: true, sql_in_strings: true, lint_delay_ms: 350, scroll_past_end: true, ai_complete: true }
     }
 }
 
@@ -1596,9 +1596,9 @@ impl SqlEditor {
             }
         }
 
-        // Ob die lokale KI bereitsteht, frueh pruefen (im Hintergrund, hoechstens alle 30 s)
+        // Die lokale KI schon starten, sobald im Editor gearbeitet wird (das Modell braucht ein paar Sekunden)
         if focused && prefs.ai_complete {
-            ai::status(&prefs.ai_model);
+            ai::status_and_start(true);
         }
         // Vorschlaege aktualisieren
         let auto = AUTO_SUGGEST.load(std::sync::atomic::Ordering::Relaxed);
@@ -1633,7 +1633,7 @@ impl SqlEditor {
                 let rule = if self.lang == Lang::Sql { block::block(text, at, &self.lint_env()) } else { None };
                 if let Some(g) = rule {
                     self.ghost = Some((at, g));
-                } else if prefs.ai_complete && matches!(self.lang, Lang::Sql | Lang::Java) && ai::status(&prefs.ai_model) == ai::Status::Ready && rest_of_line_is_empty(text, at) {
+                } else if prefs.ai_complete && matches!(self.lang, Lang::Sql | Lang::Java) && ai::status() == ai::Status::Ready && rest_of_line_is_empty(text, at) {
                     self.ai_due = Some((Instant::now() + Duration::from_millis(600), at));
                 }
             }
@@ -1662,7 +1662,7 @@ impl SqlEditor {
                 let suf: String = chars[at..(at + 1500).min(chars.len())].iter().collect();
                 let comment = if self.lang == Lang::Sql { "--" } else { "//" };
                 let prefix = format!("{}{pre}", ai::schema_hint(self.schema.as_deref(), comment));
-                ai::request(ctx.clone(), prefs.ai_model.clone(), prefix, suf, at, self.ai_gen, self.ai_slot.clone());
+                ai::request(ctx.clone(), prefix, suf, at, self.ai_gen, self.ai_slot.clone());
             } else {
                 ctx.request_repaint_after(when - now);
             }
@@ -2141,24 +2141,5 @@ mod ghost_tests {
         assert!(editor.ghost.is_none());
         frame(&ctx, &mut editor, &mut text, vec![key(Key::Tab)]);
         assert!(!text.contains("INSERT"), "{text:?}");
-    }
-
-    /// Braucht ein (nachgebautes) Ollama auf 127.0.0.1:11434
-    #[test]
-    #[ignore]
-    fn ai_block_from_ollama() {
-        let (ctx, mut editor, mut text) = ready("-- Kunden mit Anzahl ihrer Bestellungen");
-        let _ = ai::status(&prefs().ai_model);
-        std::thread::sleep(Duration::from_millis(1500));
-        frame(&ctx, &mut editor, &mut text, vec![key(Key::Enter)]);
-        let start = Instant::now();
-        while editor.ghost.is_none() && start.elapsed() < Duration::from_secs(5) {
-            std::thread::sleep(Duration::from_millis(100));
-            frame(&ctx, &mut editor, &mut text, vec![]);
-        }
-        let shown = frame(&ctx, &mut editor, &mut text, vec![]);
-        assert!(shown.iter().any(|s| s.contains("GROUP BY k.name;")), "{shown:?}");
-        frame(&ctx, &mut editor, &mut text, vec![key(Key::Tab)]);
-        assert!(text.ends_with("Bestellungen\nSELECT k.name, COUNT(*) AS anzahl\nFROM Kunde k\nJOIN Bestellung b ON b.kid = k.kid\nGROUP BY k.name;"), "{text:?}");
     }
 }

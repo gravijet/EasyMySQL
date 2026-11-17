@@ -11,6 +11,7 @@ on:
         default: windows
         options:
           - windows
+          - windows-linux
           - all
   # Ein gepushtes Versions-Tag (v1.1.19) oder ein Commit auf main mit "[release]" in der Nachricht baut alle Pakete.
   # Normale Pushes loesen nie ein Release aus (der Pruefjob wird uebersprungen und kostet keine Minuten).
@@ -202,17 +203,13 @@ jobs:
   # MariaDB is not bundled there: install.sh installs it with Homebrew or the package manager.
   unix:
     needs: check
-    if: needs.check.outputs.new == 'true' && (inputs.platform == 'all' || github.event_name == 'push')
+    if: needs.check.outputs.new == 'true' && (inputs.platform == 'all' || inputs.platform == 'windows-linux' || github.event_name == 'push')
     strategy:
       fail-fast: false
       matrix:
-        include:
-          # Intel baut beide Architekturen; der ARM-Testjob bleibt in ci.yml.
-          # So haengt das Release nicht an den knappen macOS-ARM-Runnern.
-          - os: macos-15-intel
-            kind: macos
-          - os: ubuntu-22.04
-            kind: linux
+        # Intel baut beide macOS-Architekturen; der ARM-Testjob bleibt in ci.yml.
+        # So haengt das Release nicht an den knappen macOS-ARM-Runnern. "windows-linux" laesst macOS aus.
+        include: ${{ fromJSON(inputs.platform == 'windows-linux' && '[{"os":"ubuntu-22.04","kind":"linux"}]' || '[{"os":"macos-15-intel","kind":"macos"},{"os":"ubuntu-22.04","kind":"linux"}]') }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
