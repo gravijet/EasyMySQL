@@ -1756,8 +1756,7 @@ mod tests {
         assert!(typing_word("SELECT na", 9));
         assert!(typing_word("SELECT p.", 9));
         assert!(!typing_word("SELECT ", 7));
-        assert!(!typing_word("SELECT a
-", 9));
+        assert!(!typing_word("SELECT a\n", 9));
         assert!(!typing_word("INSERT INTO t (", 15));
         assert!(!typing_word("", 0));
     }

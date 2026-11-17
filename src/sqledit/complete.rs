@@ -216,6 +216,33 @@ fn snippet_item(label: &str, text: &str, lower: bool) -> Item {
     Item { label: label.to_string(), insert: text.replace(CURSOR, ""), kind: crate::i18n::text("Vorlage"), detail: String::new(), back }
 }
 
+/// Fertige Anweisung fuer eine Tabelle nach INSERT INTO / UPDATE / DELETE FROM: Spaltenliste mit VALUES bzw.
+/// WHERE ueber den Primaerschluessel (damit nie versehentlich alle Zeilen geaendert werden)
+fn table_template(t: &TableInfo, first: &str, lower: bool) -> Option<Item> {
+    if t.is_view {
+        return None;
+    }
+    let name = quote_name(&t.name);
+    let kw = |k: &str| styled(k, lower);
+    let pk: Vec<&str> = t.columns.iter().filter(|c| c.is_pk()).map(|c| c.name.as_str()).collect();
+    let where_pk = || pk.iter().map(|c| format!("{} = ", quote_name(c))).collect::<Vec<_>>().join(&format!(" {} ", kw("AND")));
+    let (label, text) = match first {
+        "INSERT" | "REPLACE" => {
+            let cols: Vec<String> = t.columns.iter().filter(|c| !c.is_generated() && !c.extra.to_ascii_lowercase().contains("auto_increment")).map(|c| quote_name(&c.name)).collect();
+            if cols.is_empty() {
+                return None;
+            }
+            let list = cols.join(", ");
+            (format!("{} ({list}) {} (…)", t.name, kw("VALUES")), format!("{name} ({list})\n{} ({CURSOR})", kw("VALUES")))
+        }
+        "UPDATE" if !pk.is_empty() => (format!("{} {} … {} {}", t.name, kw("SET"), kw("WHERE"), pk.join(", ")), format!("{name}\n{} {CURSOR}\n{} {}", kw("SET"), kw("WHERE"), where_pk())),
+        "DELETE" if !pk.is_empty() => (format!("{} {} {} = …", t.name, kw("WHERE"), pk.join(", ")), format!("{name}\n{} {}{CURSOR}", kw("WHERE"), where_pk())),
+        _ => return None,
+    };
+    let back = text.chars().skip_while(|c| *c != CURSOR).count().saturating_sub(1);
+    Some(Item { label, insert: text.replace(CURSOR, ""), kind: crate::i18n::text("Vorlage"), detail: crate::tr_format!("{} Spalten", "{} columns", t.columns.len()), back })
+}
+
 fn styled_snippet(text: &str, lower: bool) -> String {
     if !lower {
         return text.to_string();
@@ -476,6 +503,16 @@ pub fn suggest(text: &str, cursor: usize, env: &Env, force: bool) -> Option<Sugg
                             let cond = eigene.iter().zip(fremde).map(|(e, f)| format!("{neu}.{} = {al}.{}", quote_name(f), quote_name(e))).collect::<Vec<_>>().join(" AND ");
                             let text = format!("{} {neu} ON {cond}", quote_name(nach));
                             items.push((0, Item { label: text.clone(), insert: text, kind: crate::i18n::text("Join"), detail: fk.name.clone(), back: 0 }));
+                        }
+                    }
+                }
+                // Ganze Anweisung samt Spalten bzw. WHERE, sobald die Tabelle gewaehlt wird
+                if matches!((first.as_str(), clause.as_deref()), ("INSERT" | "REPLACE", Some("INTO")) | ("UPDATE", Some("UPDATE")) | ("DELETE", Some("FROM")))
+                    && let Some(sch) = schema
+                {
+                    for t in &sch.tables {
+                        if let Some(it) = table_template(t, &first, lower) {
+                            items.push((0, it));
                         }
                     }
                 }
@@ -753,6 +790,24 @@ mod tests {
         let sn = p.items.iter().find(|i| i.label == "UPDATE … SET … WHERE").unwrap();
         assert_eq!(sn.insert, "UPDATE \nSET \nWHERE ");
         assert_eq!(sn.back, "\nSET \nWHERE ".chars().count());
+    }
+
+    #[test]
+    fn choosing_the_table_writes_the_whole_statement() {
+        let mut s = schema();
+        for t in &mut s.tables {
+            t.columns[0].key = "PRI".into();
+        }
+        let env = Env { schema: Some(&s), databases: &[] };
+        let p = suggest("INSERT INTO Kla", 15, &env, false).unwrap();
+        let it = &p.items[0];
+        assert_eq!((it.insert.as_str(), it.back), ("Klasse (id, name)\nVALUES ()", 1), "{:?}", p.items);
+        let p = suggest("UPDATE Kla", 10, &env, false).unwrap();
+        assert!(p.items.iter().any(|i| i.insert == "Klasse\nSET \nWHERE id = "), "{:?}", p.items);
+        let p = suggest("DELETE FROM Kla", 15, &env, false).unwrap();
+        assert_eq!(p.items[0].insert, "Klasse\nWHERE id = ");
+        // SELECT bleibt beim blossen Tabellennamen
+        assert_eq!(suggest("SELECT * FROM Kla", 17, &env, false).unwrap().items[0].insert, "Klasse");
     }
 
     #[test]
