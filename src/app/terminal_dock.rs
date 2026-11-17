@@ -32,12 +32,11 @@ impl TermTab {
 
 #[derive(Default)]
 pub struct TerminalDock {
-    pub open: bool,
     tabs: Vec<TermTab>,
     active: usize,
     next_uid: usize,
     /// Der Fokus soll im naechsten Bild auf das aktive Terminal gehen
-    focus: bool,
+    pub focus: bool,
 }
 
 impl TerminalDock {
@@ -79,8 +78,12 @@ impl EasyApp {
         d.next_uid += 1;
         d.tabs.push(TermTab::new(d.next_uid, title, Session::spawn(ctx, profile, cwd, prefix), false));
         d.active = d.tabs.len() - 1;
-        d.open = true;
         d.focus = true;
+        self.show_tool(SideView::Terminal);
+    }
+
+    pub(super) fn terminal_empty(&self) -> bool {
+        self.terminal.tabs.is_empty()
     }
 
     /// Ordner vorne in PATH: MariaDB-Programme und die Java-Werkzeuge
@@ -113,23 +116,32 @@ impl EasyApp {
                 d.active = d.tabs.len() - 1;
             }
         }
-        d.open = true;
         d.focus = true;
+        self.show_tool(SideView::Terminal);
     }
 
-    /// Terminal-Bereich ein- oder ausblenden (laufende Shells bleiben erhalten)
+    /// Terminal ein- oder ausblenden (laufende Shells bleiben erhalten), wo es gerade steht
     pub(super) fn toggle_terminal(&mut self, ctx: &egui::Context) {
-        if self.terminal.open {
-            self.terminal.open = false;
+        if self.tool_open(SideView::Terminal) {
+            self.hide_tool(SideView::Terminal);
         } else if self.terminal.tabs.is_empty() {
             self.new_terminal(ctx, None);
         } else {
-            self.terminal.open = true;
-            self.terminal.focus = true;
+            self.show_tool(SideView::Terminal);
         }
     }
 
+    /// Terminal als Leiste unter dem Editor
     pub(super) fn terminal_panel(&mut self, ui: &mut egui::Ui) {
+        let frame = egui::Frame::new().fill(style::pal().bg);
+        let mut actions = Vec::new();
+        egui::Panel::bottom("terminal-dock").resizable(true).show_separator_line(true).default_size(280.0).min_size(110.0).frame(frame).show(ui, |ui| {
+            self.tool_ui(ui, SideView::Terminal, &mut actions);
+        });
+    }
+
+    /// Terminals mit Registerkarten, gleich wo sie stehen (unten, seitlich, eigenes Fenster)
+    pub(super) fn terminal_view(&mut self, ui: &mut egui::Ui) {
         let pal = style::pal();
         let ctx = ui.ctx().clone();
         let mut new_profile: Option<Option<Profile>> = None;
@@ -139,8 +151,7 @@ impl EasyApp {
         // Einrichten (Knopf oder automatisch) und danach diesen Lauf neu starten: (uid, Fix, automatisch)
         let mut einrichten: Option<(usize, crate::dev::autofix::Fix, bool)> = None;
         let mut link: Option<(String, usize, String, PathBuf)> = None;
-        let frame = egui::Frame::new().fill(pal.bg);
-        egui::Panel::bottom("terminal-dock").resizable(true).show_separator_line(true).default_size(280.0).min_size(110.0).frame(frame).show(ui, |ui| {
+        {
           style::panel_card(ui, pal.bg, egui::Margin::symmetric(8, 6), |ui| {
             // Kopfzeile: Registerkarten links, Aktionen rechts
             let (bar, _) = ui.allocate_exact_size(vec2(ui.available_width(), 28.0), Sense::hover());
@@ -265,7 +276,7 @@ impl EasyApp {
                 }
             }
           });
-        });
+        }
         if let Some(i) = close
             && i < self.terminal.tabs.len()
         {
@@ -273,11 +284,11 @@ impl EasyApp {
             self.terminal.active = self.terminal.active.min(self.terminal.tabs.len().saturating_sub(1));
             self.terminal.focus = true;
             if self.terminal.tabs.is_empty() {
-                self.terminal.open = false;
+                self.hide_tool(SideView::Terminal);
             }
         }
         if hide {
-            self.terminal.open = false;
+            self.hide_tool(SideView::Terminal);
         }
         if let Some(p) = new_profile {
             self.new_terminal(&ctx, p);

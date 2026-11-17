@@ -620,6 +620,7 @@ impl Language {
             "Seitenleiste Datenbanken" => "Database sidebar",
             "Seitenleiste ein/aus" => "Toggle sidebar",
             "Seitenleiste: Breite mit der Maus an der rechten Kante ziehen." => "Drag the sidebar's right edge to change its width.",
+            "Werkzeuge verschieben wie in VS Code: Explorer, Suchen, Datenbanken, Verlauf, Git, Claude, Codex und Terminal an der Kopfzeile oder am Symbol der Leiste packen und ziehen. Es erscheinen Zonen für links, rechts und unten; außerhalb des Hauptfensters losgelassen entsteht ein eigenes Fenster an dieser Stelle. Aus einem eigenen Fenster zieht man das Werkzeug genauso zurück. Platz und offene Fenster bleiben über einen Neustart erhalten." => "Move tools as in VS Code: grab Explorer, Search, Databases, History, Git, Claude, Codex or Terminal by its header or its icon in the bar and drag it. Zones for left, right and bottom appear; released outside the main window it becomes a separate window at that spot. Drag it back from a separate window the same way. Place and open windows survive a restart.",
             "Sende Beenden-Signal an Prozess {pid} ..." => "Sending shutdown signal to process {pid} ...",
             "Server antwortet nicht (Zeitüberschreitung)." => "Server is not responding (timeout).",
             "Server beendet ({status})" => "Server stopped ({status})",

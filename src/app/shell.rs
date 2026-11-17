@@ -428,9 +428,10 @@ impl EasyApp {
         const GAP: f32 = 6.0;
         let pal = style::pal();
         let ctx = ui.ctx().clone();
-        // Ein Knopf der Leiste (wie die Werkzeugfenster-Leiste von IntelliJ IDEA): quadratische Flaeche, Symbol mittig
-        let button = |ui: &mut egui::Ui, icon: Icon, active: bool, tip: String| -> bool {
-            let (slot, resp) = ui.allocate_exact_size(vec2(ui.available_width(), BTN), Sense::click());
+        // Ein Knopf der Leiste (wie die Werkzeugfenster-Leiste von IntelliJ IDEA): quadratische Flaeche, Symbol mittig.
+        // Klick blendet ein/aus, Rechtsklick verschiebt, Ziehen auf eine Zone verschiebt ebenfalls.
+        let button = |ui: &mut egui::Ui, icon: Icon, active: bool, tip: String| -> egui::Response {
+            let (slot, resp) = ui.allocate_exact_size(vec2(ui.available_width(), BTN), Sense::click_and_drag());
             let r = Rect::from_center_size(slot.center(), vec2(BTN, BTN));
             let radius = style::RADIUS as f32 + 1.0;
             if active {
@@ -442,45 +443,55 @@ impl EasyApp {
             let own = icons::tint(icon);
             let color = if active { own.lerp_to_gamma(pal.activity_active, if pal.dark { 0.15 } else { 0.0 }) } else if resp.hovered() { own } else { own.lerp_to_gamma(pal.activity_fg, 0.45) };
             icons::paint(ui.painter(), Rect::from_center_size(r.center(), vec2(20.0, 20.0)), icon, color);
-            resp.on_hover_text(tip).clicked()
+            resp.on_hover_text(tip)
         };
         ui.spacing_mut().item_spacing.y = GAP;
-        for (icon, view, cmd) in [
-            (Icon::Files, SideView::Explorer, Cmd::ShowExplorer),
-            (Icon::Search, SideView::Search, Cmd::ShowSearch),
-            (Icon::Database, SideView::Databases, Cmd::ShowDatabases),
-            (Icon::History, SideView::History, Cmd::ShowHistory),
-            (Icon::GitBranch, SideView::Git, Cmd::ShowGit),
-        ] {
-            let active = self.settings.sidebar && self.side_view == view;
-            let k = keymap::text(cmd);
-            let tip = if k.is_empty() { cmd.label().to_string() } else { format!("{} ({k})", cmd.label()) };
-            if button(ui, icon, active, tip) {
-                if active {
-                    self.settings.sidebar = false;
-                    self.settings.save();
-                } else {
-                    self.show_side(view);
-                    if view == SideView::Search {
-                        self.search.focus = true;
-                    }
+        let tool = |this: &mut Self, ui: &mut egui::Ui, view: SideView, cmd: Option<Cmd>| {
+            let mut tip = super::dock::tool_title(view).to_string();
+            if let Some(cmd) = cmd {
+                let k = keymap::text(cmd);
+                tip = if k.is_empty() { cmd.label().to_string() } else { format!("{} ({k})", cmd.label()) };
+            }
+            let place = this.place_of(view);
+            if place != super::dock::Place::Left {
+                tip.push_str(&format!(" · {}", place.label()));
+            }
+            tip.push_str(crate::i18n::tr("\nZiehen zum Verschieben oder Abdocken", "\nDrag to move or undock"));
+            let resp = button(ui, super::dock::tool_icon(view), this.tool_open(view), tip);
+            if resp.drag_started() {
+                this.dock.start_drag(view, ui.ctx().viewport_id());
+            }
+            if resp.clicked() {
+                let open = this.tool_open(view);
+                this.toggle_tool(view);
+                if !open && view == SideView::Search {
+                    this.search.focus = true;
                 }
             }
+            egui::Popup::context_menu(&resp).show(|ui| this.tool_place_menu(ui, view));
+        };
+        for (view, cmd) in [
+            (SideView::Explorer, Cmd::ShowExplorer),
+            (SideView::Search, Cmd::ShowSearch),
+            (SideView::Databases, Cmd::ShowDatabases),
+            (SideView::History, Cmd::ShowHistory),
+            (SideView::Git, Cmd::ShowGit),
+        ] {
+            tool(self, ui, view, Some(cmd));
         }
         ui.add_space(6.0);
-        for (icon, view, label) in [(Icon::Claude, SideView::Claude, "Claude Code"), (Icon::Codex, SideView::Codex, "Codex")] {
-            let active = self.settings.sidebar && self.side_view == view;
-            if button(ui, icon, active, label.into()) {
-                if active { self.settings.sidebar = false; self.settings.save(); } else { self.show_side(view); }
-            }
+        for view in [SideView::Claude, SideView::Codex] {
+            tool(self, ui, view, None);
         }
+        ui.add_space(6.0);
+        tool(self, ui, SideView::Terminal, Some(Cmd::ToggleTerminal));
         // Einstellungen unten, getrennt von den Ansichten
         ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
             ui.add_space(2.0);
             let k = keymap::text(Cmd::Settings);
             let tip = if k.is_empty() { Cmd::Settings.label().to_string() } else { format!("{} ({k})", Cmd::Settings.label()) };
             let open = self.tabs.get(self.active).is_some_and(|t| t.icon() == Some(Icon::Settings));
-            if button(ui, Icon::Settings, open, tip) {
+            if button(ui, Icon::Settings, open, tip).clicked() {
                 self.run_cmd(&ctx, Cmd::Settings);
             }
         });

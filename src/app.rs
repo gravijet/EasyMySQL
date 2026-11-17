@@ -9,6 +9,7 @@ mod palette;
 mod remote;
 mod shell;
 mod side;
+mod dock;
 mod terminal_dock;
 mod titlebar;
 
@@ -129,6 +130,8 @@ pub struct EasyApp {
     tree_scan: Option<Instant>,
     tree_job: Option<Receiver<(PathBuf, crate::workspace::Node)>>,
     side_view: SideView,
+    /// Werkzeugfenster rechts, unten und in eigenen Fenstern
+    dock: dock::Dock,
     assistenten: [crate::tabs::ai::AiTab; 2],
     explorer_dlg: Option<ExplorerDlg>,
     /// Auswahl und Zwischenablage im Explorer
@@ -201,6 +204,7 @@ impl EasyApp {
             })
             .filter(|p| !s_empty(p) && p.is_dir());
         let history = crate::qhistory::load();
+        let dock = dock::Dock::restore(&settings);
         let mut app = EasyApp {
             applied_language: settings.language,
             settings,
@@ -242,6 +246,7 @@ impl EasyApp {
             tree_scan: None,
             tree_job: None,
             side_view: SideView::Explorer,
+            dock,
             assistenten: [crate::tabs::ai::AiTab::new(crate::mcp::setup::Target::Claude, None), crate::tabs::ai::AiTab::new(crate::mcp::setup::Target::Codex, None)],
             explorer_dlg: None,
             explorer: Default::default(),
@@ -971,11 +976,7 @@ impl EasyApp {
     }
 
     fn show_side(&mut self, v: SideView) {
-        self.side_view = v;
-        if !self.settings.sidebar {
-            self.settings.sidebar = true;
-            self.settings.save();
-        }
+        self.show_tool(v);
     }
 
     /// Tastenkuerzel, die unabhaengig vom Fokus gelten
@@ -1376,16 +1377,16 @@ impl eframe::App for EasyApp {
         egui::Panel::left("activity").exact_size(44.0).resizable(false).show_separator_line(true).frame(flat(pal.face, egui::Margin::symmetric(0, 6))).show(ui, |ui| {
             self.activity_bar(ui);
         });
-        if self.settings.sidebar {
+        // Rechts und unten vor der linken Leiste und dem Editor anlegen
+        self.dock_panels(ui, &mut actions);
+        if self.settings.sidebar && self.place_of(self.side_view) == dock::Place::Left {
             let chat = matches!(self.side_view, SideView::Claude | SideView::Codex);
             egui::Panel::left(if chat { "sidebar-chat" } else { "sidebar" }).resizable(true).show_separator_line(true).default_size(if chat { 360.0 } else { (ctx.content_rect().width() * 0.22).clamp(200.0, 280.0) }).min_size(if chat { 250.0 } else { 170.0 }).max_size((ctx.content_rect().width() * if chat { 0.7 } else { 0.36 }).max(250.0)).frame(flat(pal.sidebar_bg, egui::Margin::ZERO)).show(ui, |ui| {
                 style::panel_card(ui, pal.sidebar_bg, egui::Margin { left: 4, right: 4, top: 2, bottom: 6 }, |ui| {
-                    self.side_panel(ui, &mut actions);
+                    let v = self.side_view;
+                    self.tool_ui(ui, v, &mut actions);
                 });
             });
-        }
-        if self.terminal.open {
-            self.terminal_panel(ui);
         }
         egui::CentralPanel::default().frame(flat(pal.bg, egui::Margin::ZERO)).show(ui, |ui| {
             if !self.tabs.is_empty() {
@@ -1451,6 +1452,8 @@ impl eframe::App for EasyApp {
         if self.session_saved.elapsed().as_secs() >= 5 {
             self.save_session();
         }
+        self.dock_windows(&ctx, &mut actions);
+        self.dock_drag_overlay(&ctx);
         self.explorer_dialogs(&ctx);
         self.project_dialog(&ctx);
         self.git_dialogs(&ctx);

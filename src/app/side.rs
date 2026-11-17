@@ -17,6 +17,7 @@ pub enum SideView {
     Git,
     Claude,
     Codex,
+    Terminal,
 }
 
 impl SideView {
@@ -29,6 +30,7 @@ impl SideView {
             SideView::Git => "git",
             SideView::Claude => "claude",
             SideView::Codex => "codex",
+            SideView::Terminal => "terminal",
         }
     }
     pub fn from_name(s: &str) -> SideView {
@@ -39,6 +41,7 @@ impl SideView {
             "git" => SideView::Git,
             "claude" => SideView::Claude,
             "codex" => SideView::Codex,
+            "terminal" => SideView::Terminal,
             _ => SideView::Explorer,
         }
     }
@@ -298,17 +301,19 @@ pub(super) fn recent_row(ui: &mut egui::Ui, p: &Path) -> egui::Response {
 }
 
 impl EasyApp {
-    pub(super) fn side_panel(&mut self, ui: &mut egui::Ui, actions: &mut Vec<Action>) {
-        match self.side_view {
+    /// Inhalt einer Seitenleiste, gleich wo sie steht (links, rechts, unten, eigenes Fenster)
+    pub(super) fn side_panel_for(&mut self, ui: &mut egui::Ui, view: SideView, actions: &mut Vec<Action>) {
+        match view {
             SideView::Explorer => self.explorer(ui),
             SideView::Search => self.search_side(ui, actions),
             SideView::Databases => self.databases_side(ui, actions),
             SideView::History => self.history_side(ui, actions),
             SideView::Git => self.git_side(ui, actions),
             SideView::Claude | SideView::Codex => {
-                let index = usize::from(self.side_view == SideView::Codex);
+                let index = usize::from(view == SideView::Codex);
                 self.chat_side(ui, actions, index);
             }
+            SideView::Terminal => self.terminal_view(ui),
         }
     }
 
