@@ -1212,6 +1212,45 @@ fn editor_settings(ui: &mut egui::Ui, s: &mut crate::settings::Settings) {
     crate::widgets::row(ui, crate::i18n::tr("SQL in Programmcode", "SQL in program code"), |ui| {
         crate::widgets::switch(ui, &mut e.sql_in_strings, crate::i18n::tr("SQL in Java-Zeichenketten prüfen", "Check SQL in Java strings"));
     });
+    crate::widgets::row(ui, crate::i18n::tr("KI-Vorschläge", "AI suggestions"), |ui| {
+        use crate::sqledit::ai::{self, Status};
+        ui.vertical(|ui| {
+            crate::widgets::switch(ui, &mut e.ai_complete, crate::i18n::tr("Ganze Blöcke vorschlagen (lokal mit Ollama, kostenlos)", "Suggest whole blocks (local with Ollama, free)"));
+            if !e.ai_complete {
+                return;
+            }
+            let weak = style::pal().text_weak;
+            match ai::status(&e.ai_model) {
+                Status::Ready => {
+                    ui.label(RichText::new(crate::tr_format!("Bereit: {}", "Ready: {}", e.ai_model)).small().color(weak));
+                }
+                Status::NoModel if ai::pulling() => {
+                    ui.label(RichText::new(crate::tr_format!("Lade {} (etwa 1 GB) …", "Downloading {} (about 1 GB) …", e.ai_model)).small().color(weak));
+                    ui.ctx().request_repaint_after(std::time::Duration::from_secs(2));
+                }
+                Status::NoModel => {
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new(crate::tr_format!("Ollama läuft, das Modell {} fehlt.", "Ollama is running, model {} is missing.", e.ai_model)).small().color(weak));
+                        if ui.small_button(crate::i18n::tr("Modell laden", "Download model")).on_hover_text(crate::i18n::tr("Einmalig etwa 1 GB", "About 1 GB, once")).clicked() {
+                            ai::pull(&e.ai_model);
+                        }
+                    });
+                }
+                Status::Off | Status::Unknown => {
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new(crate::i18n::tr("Ollama läuft nicht. Ohne Ollama gibt es nur die eingebauten Vorschläge.", "Ollama is not running. Without it only the built-in suggestions are offered.")).small().color(weak));
+                        if ui.small_button("ollama.com").clicked() {
+                            crate::git::github::open_url("https://ollama.com/download");
+                        }
+                    });
+                }
+            }
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(crate::i18n::tr("Modell", "Model")).small().color(weak));
+                ui.add(egui::TextEdit::singleline(&mut e.ai_model).desired_width(200.0).font(egui::TextStyle::Monospace));
+            });
+        });
+    });
     crate::widgets::row(ui, crate::i18n::tr("Prüfen nach", "Check after"), |ui| {
         ui.horizontal(|ui| {
             crate::widgets::drag(ui, &mut e.lint_delay_ms, 0..=5000, " ms");

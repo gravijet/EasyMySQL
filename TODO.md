@@ -299,3 +299,29 @@ Sicherungen, Benutzerverwaltung, Git, Suche, Menüs.
 - Neue-Datei-Dialog und SQL-Fehlerknöpfe nur per Test geprüft, nicht per Bildschirmfoto.
 - Java-Formatierung mit laufendem Sprachserver (jdtls) unverändert; nur der eigene Formatierer wurde verbessert.
 - SQL in Java-Zeichenketten: Serverfehler aus einem Java-Programm nutzen `errfix` noch nicht.
+
+## 16. Sechste Runde (2026-11-17, Version 1.1.22): Skript-Simulation, Block-Vorschläge, mehr Zeilenumbrüche
+
+**Erledigt** (347 Tests, Clippy ohne Warnungen):
+- Skript-Simulation (`src/sqledit/script.rs`): `lint` spielt das Skript gegen ein virtuelles Schema durch
+  (CREATE/DROP/ALTER/RENAME TABLE, CREATE/DROP DATABASE, USE, SET FOREIGN_KEY_CHECKS, bekannte Zeilen samt
+  AUTO_INCREMENT). Vorhergesagt mit Korrektur: Reihenfolge (FK auf spätere Tabelle, DROP Eltern vor Kind, Kindzeile
+  vor Elternzeile), INSERT in fehlende Tabelle (CREATE TABLE mit Typen aus allen Werten, PK, FKs), fehlende Spalte,
+  1050, 1051, 1060, 1062, 1091, 1406, FK-Typ/Index (150); ohne Korrektur: 1364, 1452. Verhalten von MariaDB 11
+  vorher echt geprüft (DROP-Reihenfolge, VARCHAR-Längen bei FKs, UNSIGNED/BIGINT, Index-Pflicht). Ein fehlerhaftes
+  Schulskript wurde per „Alle korrigieren“ repariert und lief danach fehlerfrei auf dem Server.
+  Tempo: 220.000 Zeichen mit 3.000 Fehlern 44 ms (Release); Verschieben nur bis 20.000 Zeichen Abstand.
+- Block-Vorschläge (`src/sqledit/block.rs`): grau hinter dem Cursor, Tab übernimmt, Esc verwirft. INSERT nach
+  CREATE TABLE, nächste VALUES-Zeile nach Muster, Primärschlüssel nach der Namensregel der Datenbank, ON-Bedingung
+  nach JOIN. Kopflos per egui-Test geprüft (Anzeige, Tab, Esc/Cursor bewegen).
+- Lokale KI (`src/sqledit/ai.rs`): Ollama (FIM, Standardmodell qwen2.5-coder:1.5b) nach 600 ms Pause, nur am
+  Zeilenende, mit Schema als Kommentar. Einstellungen → Editor → KI-Vorschläge (Status, „Modell laden“). Gegen ein
+  nachgebautes Ollama getestet (`ai_block_from_ollama`, ignoriert).
+- Formatieren: jede Bedingung (WHERE/HAVING/ON mit mehreren), jede SET-Zuweisung eigene Zeile; Spaltenlisten ab 4
+  Einträgen oder über 40 Zeichen eine je Zeile (bis 12 Einträge), CASE ab 40 Zeichen mehrzeilig.
+- Sicherung vor `DROP DATABASE IF EXISTS x` scheiterte, wenn x nicht existiert; jetzt werden nur vorhandene gesichert.
+
+**Offen / nicht geprüft:**
+- Mit echtem Ollama nicht ausprobiert (hier nicht installiert); Qualität der KI-Vorschläge daher unbekannt.
+- Block-Vorschläge nicht per Bildschirmfoto geprüft (Rechner war in Benutzung; nur kopfloser egui-Test).
+- 1364/1452 haben keine automatische Korrektur (die Daten muss der Mensch entscheiden).

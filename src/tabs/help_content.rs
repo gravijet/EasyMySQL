@@ -259,6 +259,8 @@ pub const CHAPTERS: &[Chapter] = &[
                         "Namen behalten die Schreibweise der Datenbank, und gleiche Groß-/Kleinschreibung steht weiter oben. SQL-Wörter und Funktionen übernehmen deine Schreibweise: „sel“ ergibt select, „SEL“ ergibt SELECT. Funktionen werden mit Klammern eingefügt.",
                     ]),
                     Keys(&[Cmd::Suggest]),
+                    P("Ganze Blöcke erscheinen grau hinter dem Cursor; Tab übernimmt sie, Esc oder Weitertippen verwirft sie: nach CREATE TABLE das passende INSERT, in VALUES die nächste Zeile nach dem Muster der vorigen (ID hochgezählt), im leeren CREATE TABLE der Primärschlüssel nach der Namensregel der Datenbank, nach JOIN tabelle die ON-Bedingung."),
+                    P("Mit Ollama (kostenlos, läuft lokal und ohne Internet) schlägt eine KI nach einer kurzen Tipp-Pause auch längere Blöcke vor, etwa die Abfrage zu einem Kommentar. Sie kennt die Tabellen der gewählten Datenbank. Einrichten unter Einstellungen → Editor → KI-Vorschläge; ohne Ollama bleibt es bei den eingebauten Vorschlägen."),
                     P("In den Einstellungen lassen sich die automatischen Vorschläge abschalten – dann nur noch per Tastenkürzel."),
                     Open("Editor-Einstellungen", Settings("editor")),
                 ],
@@ -339,15 +341,13 @@ pub const CHAPTERS: &[Chapter] = &[
                 id: "formatieren",
                 title: "SQL formatieren",
                 blocks: &[
-                    P("Formatieren schreibt SQL-Wörter groß und setzt jede Klausel (SELECT, FROM, JOIN, WHERE, GROUP BY, ORDER BY, …) an den Zeilenanfang. \
-                       Spaltenlisten bleiben in einer Zeile und werden erst umbrochen, wenn die Zeile länger als 100 Zeichen würde. Lange WHERE-Bedingungen \
-                       werden an AND/OR umbrochen, CREATE TABLE bekommt eine Spalte je Zeile."),
+                    P("Formatieren schreibt SQL-Wörter groß und setzt jede Klausel (SELECT, FROM, JOIN, WHERE, GROUP BY, ORDER BY, …) an den Zeilenanfang. Jede Bedingung nach WHERE, HAVING und ON steht auf einer eigenen Zeile, ebenso jede Zuweisung nach SET und jede Zeile nach VALUES. Spaltenlisten ab vier Einträgen oder über 40 Zeichen bekommen eine Spalte je Zeile, sehr lange Listen werden bis 100 Zeichen gefüllt. CREATE TABLE bekommt eine Spalte je Zeile."),
                     List(&[
                         "Spaltennamen wie „date“ oder „text“ bleiben klein; Datentypen werden nur in CREATE/ALTER großgeschrieben.",
                         "Kommentare, Texte in Anführungszeichen und DELIMITER-Abschnitte bleiben unverändert, ebenso Prozeduren und Trigger (BEGIN … END).",
                         "Zweimal formatieren ändert nichts mehr.",
                     ]),
-                    Code("SELECT k.nachname, COUNT(*) AS anzahl\nFROM kunde k\nLEFT JOIN bestellung b ON b.kunde_id = k.id\nWHERE k.ort IN ('Berlin', 'Hamburg')\nGROUP BY k.nachname\nORDER BY anzahl DESC;"),
+                    Code("SELECT k.nachname, COUNT(*) AS anzahl\nFROM kunde k\nLEFT JOIN bestellung b ON b.kunde_id = k.id\nWHERE k.ort IN ('Berlin', 'Hamburg')\n  AND b.betrag > 100\nGROUP BY k.nachname\nORDER BY anzahl DESC;"),
                     Keys(&[Cmd::Format]),
                 ],
             },
@@ -361,6 +361,8 @@ pub const CHAPTERS: &[Chapter] = &[
                         "Ist eine Datenbank gewählt, findet die Prüfung auch unbekannte Tabellen und Spalten und schlägt ähnliche Namen vor („Meinten Sie vorname?“).",
                         "MariaDB-Eigenheiten: „--“ braucht ein Leerzeichen danach; Schreibweisen anderer Datenbanken (TOP, GETDATE(), LEN(), ISNULL(a, b), [Name], VARCHAR2, NUMBER, IDENTITY, AUTOINCREMENT) werden umgeschrieben; Text ohne Anführungszeichen in VALUES, deutsches Datum (17.11.2026 → '2026-11-17'), Kommazahl mit Komma, fehlende Kommas zwischen Spalten oder Zeilen, REFERENCES ohne Spalte und eine falsche Anzahl Werte werden erkannt.",
                         "Meldet der Server beim Ausführen einen Fehler, stehen darunter passende Knöpfe: IF NOT EXISTS bzw. IF EXISTS, der ähnliche Tabellen- oder Spaltenname, mehrdeutige Spalte mit Tabelle, IN statt =, INSERT IGNORE oder ohne ID, Spalte vergrößern, Datentyp des Fremdschlüssels angleichen, Datenbank wählen. Ein Klick setzt die korrigierte Anweisung ein und führt ab dort weiter aus.",
+                        "Das ganze Skript wird vorab durchgespielt, Anweisung für Anweisung: Tabellen aus CREATE TABLE sind weiter unten bekannt (auch nach CREATE DATABASE und USE), und Fehler, die erst beim Ausführen kämen, werden vorher gemeldet. Dazu gehören Fremdschlüssel auf eine erst später angelegte Tabelle, DROP der Eltern- vor der Kindtabelle und Kindzeilen vor ihrer Elternzeile (die Korrektur stellt die Anweisungen um), doppelte Schlüssel, Werte ohne Elternzeile, zu lange Texte, fehlende Pflichtfelder, Fremdschlüssel mit anderem Typ oder ohne Index und Tabellen, die es schon gibt.",
+                        "INSERT in eine Tabelle, die es nicht gibt: Die Korrektur legt sie davor an – mit Datentypen aus allen Werten im Skript, Primärschlüssel (id bzw. tabelleid, sonst neu mit AUTO_INCREMENT) und Fremdschlüsseln zu gleichnamigen Schlüsselspalten anderer Tabellen. Fehlt nur eine Spalte, wird sie im CREATE TABLE des Skripts bzw. mit ALTER TABLE ergänzt.",
                         "Der Knopf „Korrigieren“ oder das Tastenkürzel bessert alle Fehler mit Vorschlag selbst aus. Danach kurz prüfen, ob die Anweisung noch das Gewünschte tut.",
                         "Prozeduren und Trigger werden nicht geprüft. Unter Einstellungen → Editor lässt sich die Prüfung ausschalten.",
                     ]),

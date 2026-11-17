@@ -17,6 +17,9 @@ mod menu;
 mod lang;
 mod lint;
 mod dialect;
+mod script;
+pub mod block;
+pub mod ai;
 pub mod errfix;
 mod schema_fix;
 mod schema_decl;
@@ -61,11 +64,14 @@ pub struct Prefs {
     pub lint_delay_ms: u64,
     /// Ueber die letzte Zeile hinaus scrollen
     pub scroll_past_end: bool,
+    /// Block-Vorschlaege der lokalen KI (Ollama), wenn sie laeuft
+    pub ai_complete: bool,
+    pub ai_model: String,
 }
 
 impl Default for Prefs {
     fn default() -> Self {
-        Prefs { indent: 0, line_numbers: true, highlight_line: true, match_brackets: true, auto_indent: true, sql_in_strings: true, lint_delay_ms: 350, scroll_past_end: true }
+        Prefs { indent: 0, line_numbers: true, highlight_line: true, match_brackets: true, auto_indent: true, sql_in_strings: true, lint_delay_ms: 350, scroll_past_end: true, ai_complete: true, ai_model: ai::DEFAULT_MODEL.into() }
     }
 }
 
@@ -279,6 +285,12 @@ pub struct SqlEditor {
     focus_next: bool,
     /// Zwischenergebnisse fuer Klammern, gleiche Namen und Zeilen
     deco: Deco,
+    /// Block-Vorschlag grau hinter dem Cursor (Stelle, Text mit Cursormarke); Tab uebernimmt ihn
+    ghost: Option<(usize, String)>,
+    /// KI-Vorschlag: Ergebnis, Nummer der gueltigen Anfrage, wann (und fuer welche Stelle) gefragt wird
+    ai_slot: ai::Slot,
+    ai_gen: u64,
+    ai_due: Option<(Instant, usize)>,
 }
 
 #[derive(Default)]
@@ -337,6 +349,10 @@ impl SqlEditor {
             caret_screen: egui::Pos2::ZERO,
             focus_next: true,
             deco: Deco::default(),
+            ghost: None,
+            ai_slot: Default::default(),
+            ai_gen: 0,
+            ai_due: None,
         }
     }
 
@@ -400,6 +416,43 @@ impl SqlEditor {
             self.popup = self.suggest(text, end, true).map(|s| Popup { items: s.items, selected: 0, word_start: s.word_start, cursor: end, imports: Vec::new() });
         }
         import
+    }
+
+    /// Block-Vorschlag grau zeichnen: am Textende direkt im Text, sonst in einem Kasten unter der Zeile
+    #[allow(clippy::too_many_arguments)]
+    fn paint_ghost(&self, ui: &egui::Ui, o: &egui::text_edit::TextEditOutput, text: &str, at: usize, g: &str, clip: egui::Rect, font: &FontId, row_h: f32) {
+        let pal = crate::style::pal();
+        let painter = ui.painter().with_clip_rect(clip);
+        let caret = o.galley.pos_from_cursor(CCursor::new(at));
+        let shown = g.replace(block::CURSOR, "");
+        let lines: Vec<&str> = shown.split('\n').collect();
+        let color = pal.text_weak.gamma_multiply(0.75);
+        let hint = format!("  Tab {}", crate::i18n::tr("übernehmen", "accept"));
+        let small = FontId::proportional((font_size() - 2.0).max(10.0));
+        let inline = lines.len() == 1 || text.chars().skip(at).all(char::is_whitespace);
+        if inline {
+            let mut end = egui::Pos2::ZERO;
+            for (k, line) in lines.iter().enumerate() {
+                let x = if k == 0 { o.galley_pos.x + caret.min.x } else { o.galley_pos.x };
+                let pos = egui::pos2(x, o.galley_pos.y + caret.min.y + k as f32 * row_h);
+                let galley = painter.layout_no_wrap(line.to_string(), font.clone(), color);
+                end = pos + egui::vec2(galley.size().x, 0.0);
+                painter.galley(pos, galley, color);
+            }
+            painter.text(end + egui::vec2(0.0, row_h / 2.0), egui::Align2::LEFT_CENTER, hint, small, pal.text_weak.gamma_multiply(0.6));
+            return;
+        }
+        // Text dahinter: Kasten unter der Zeile, damit nichts uebermalt aussieht
+        let galleys: Vec<_> = lines.iter().map(|l| painter.layout_no_wrap(l.to_string(), font.clone(), color)).collect();
+        let w = galleys.iter().map(|g| g.size().x).fold(120.0, f32::max) + 16.0;
+        let h = lines.len() as f32 * row_h + row_h + 10.0;
+        let top = o.galley_pos + caret.left_bottom().to_vec2() + egui::vec2(-4.0, 2.0);
+        let rect = egui::Rect::from_min_size(top, egui::vec2(w, h));
+        painter.rect(rect, crate::style::RADIUS as f32, pal.face, egui::Stroke::new(1.0, pal.border), egui::StrokeKind::Inside);
+        for (k, galley) in galleys.into_iter().enumerate() {
+            painter.galley(rect.min + egui::vec2(8.0, 5.0 + k as f32 * row_h), galley, color);
+        }
+        painter.text(egui::pos2(rect.min.x + 8.0, rect.max.y - 5.0 - row_h / 2.0), egui::Align2::LEFT_CENTER, hint.trim(), small, pal.text_weak);
     }
 
     /// Tab-Vervollstaendigung an `c`. Liefert true, wenn der Text geaendert wurde.
@@ -1110,6 +1163,24 @@ impl SqlEditor {
                 self.popup = None;
             }
         }
+        // Block-Vorschlag (grau hinter dem Cursor): Tab uebernimmt ihn
+        if focused
+            && self.popup.is_none()
+            && self.picker.is_none()
+            && self.rename.is_none()
+            && let Some((at, g)) = self.ghost.clone()
+            && self.selection(&ctx) == Some((at, at))
+            && ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Tab))
+        {
+            let mark = g.chars().position(|c| c == block::CURSOR);
+            let insert = g.replace(block::CURSOR, "");
+            let b = byte_of(text, at);
+            text.insert_str(b, &insert);
+            self.set_cursor(&ctx, at + mark.unwrap_or(insert.chars().count()));
+            self.prev_text = text.clone();
+            self.ghost = None;
+            out.changed = true;
+        }
         // Tab direkt hinter einem Wort (ohne offenes Fenster): eindeutig -> einsetzen, sonst bis zum gemeinsamen
         // Anfang ergaenzen und die Liste zeigen. Am Zeilenanfang und nach Leerzeichen bleibt Tab Einruecken.
         if focused
@@ -1140,6 +1211,8 @@ impl SqlEditor {
         if focused && ESCAPE.swap(false, std::sync::atomic::Ordering::Relaxed) {
             if self.popup.is_some() {
                 self.popup = None;
+            } else if self.ghost.is_some() {
+                self.ghost = None;
             } else {
                 self.find = None;
                 self.goto = None;
@@ -1523,11 +1596,16 @@ impl SqlEditor {
             }
         }
 
+        // Ob die lokale KI bereitsteht, frueh pruefen (im Hintergrund, hoechstens alle 30 s)
+        if focused && prefs.ai_complete {
+            ai::status(&prefs.ai_model);
+        }
         // Vorschlaege aktualisieren
         let auto = AUTO_SUGGEST.load(std::sync::atomic::Ordering::Relaxed);
         if (o.response.response.changed() && auto) || force {
             // Nach dem Einruecken steht der Cursor woanders als im Ergebnis des Editors
             let c = cursor.map(|c| if self.cursor_moved.take().is_some() { self.cursor } else { c });
+            let typed_at = c;
             // Java-Code: auch der Sprachserver soll vorschlagen (nach einem Punkt, in einem Wort oder auf Wunsch)
             if self.lang == Lang::Java
                 && let Some(c) = c
@@ -1544,10 +1622,59 @@ impl SqlEditor {
             // Klammer bliebe sonst eine Liste offen, und Tab/Enter wuerden ungefragt den ersten Eintrag einsetzen.
             let c = c.filter(|&c| force || typing_word(text, c));
             self.popup = c.and_then(|c| self.suggest(text, c, force).map(|s| Popup { items: s.items, selected: 0, word_start: s.word_start, cursor: c, imports: Vec::new() }));
+            // Ganze Bloecke: erst die eindeutigen Regeln, sonst nach einer kurzen Pause die lokale KI
+            self.ghost = None;
+            self.ai_due = None;
+            self.ai_gen += 1;
+            if self.popup.is_none()
+                && !force
+                && let Some(at) = typed_at
+            {
+                let rule = if self.lang == Lang::Sql { block::block(text, at, &self.lint_env()) } else { None };
+                if let Some(g) = rule {
+                    self.ghost = Some((at, g));
+                } else if prefs.ai_complete && matches!(self.lang, Lang::Sql | Lang::Java) && ai::status(&prefs.ai_model) == ai::Status::Ready && rest_of_line_is_empty(text, at) {
+                    self.ai_due = Some((Instant::now() + Duration::from_millis(600), at));
+                }
+            }
         } else if let (Some(p), Some(c)) = (&self.popup, cursor)
             && p.cursor != c {
                 self.popup = None;
             }
+        if let Some(c) = cursor {
+            if self.ghost.as_ref().is_some_and(|(at, _)| *at != c) {
+                self.ghost = None;
+            }
+            if self.ai_due.is_some_and(|(_, at)| at != c) {
+                self.ai_due = None;
+            }
+        }
+        if out.changed && !o.response.response.changed() {
+            self.ghost = None;
+        }
+        // KI fragen, wenn die Pause vorbei ist; Antwort nur fuer dieselbe Stelle und denselben Text
+        if let Some((when, at)) = self.ai_due {
+            let now = Instant::now();
+            if now >= when {
+                self.ai_due = None;
+                let chars: Vec<char> = text.chars().collect();
+                let pre: String = chars[at.saturating_sub(4000)..at].iter().collect();
+                let suf: String = chars[at..(at + 1500).min(chars.len())].iter().collect();
+                let comment = if self.lang == Lang::Sql { "--" } else { "//" };
+                let prefix = format!("{}{pre}", ai::schema_hint(self.schema.as_deref(), comment));
+                ai::request(ctx.clone(), prefs.ai_model.clone(), prefix, suf, at, self.ai_gen, self.ai_slot.clone());
+            } else {
+                ctx.request_repaint_after(when - now);
+            }
+        }
+        let answer = self.ai_slot.lock().unwrap_or_else(|e| e.into_inner()).take();
+        if let Some((g, at, s)) = answer
+            && g == self.ai_gen
+            && cursor == Some(at)
+            && self.popup.is_none()
+        {
+            self.ghost = Some((at, s));
+        }
         if !ctx.memory(|m| m.has_focus(self.id)) && !force {
             // Fokus verloren (ausser durch Klick ins Vorschlagsfenster)
             let pressed_outside = ctx.input(|i| {
@@ -1650,6 +1777,14 @@ impl SqlEditor {
         } else {
             self.popup_rect = None;
         }
+        if focused
+            && self.popup.is_none()
+            && let Some((at, g)) = &self.ghost
+            && cursor == Some(*at)
+            && let Some((_, _, clip)) = scroll_state
+        {
+            self.paint_ghost(ui, &o, text, *at, g, clip, &font, row_h);
+        }
         if let Some(i) = clicked {
             if let Some(p) = self.popup.as_mut() {
                 p.selected = i;
@@ -1660,6 +1795,11 @@ impl SqlEditor {
         }
         out
     }
+}
+
+/// Hinter dem Cursor steht in dieser Zeile nichts ausser schliessenden Klammern und Semikolon
+fn rest_of_line_is_empty(text: &str, at: usize) -> bool {
+    text.chars().skip(at).take_while(|c| *c != '\n').all(|c| c.is_whitespace() || matches!(c, ')' | ';' | '}' | ']'))
 }
 
 /// Wurde seit `old` nur etwas eingefuegt, das genau vor dem Cursor endet? (auch mehrere Zeichen in einem Bild,
@@ -1939,5 +2079,86 @@ mod indent_tests {
         assert_eq!(ed.fix_all(&mut text), 1);
         assert!(text.contains("int x = 1;\n"));
         assert_eq!(ed.fix_all(&mut text), 0);
+    }
+}
+
+#[cfg(test)]
+mod ghost_tests {
+    use super::*;
+
+    fn frame(ctx: &egui::Context, editor: &mut SqlEditor, text: &mut String, events: Vec<egui::Event>) -> Vec<String> {
+        let out = ctx.run_ui(
+            egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 760.0))), events, ..Default::default() },
+            |ui| {
+                editor.show(ui, text, 700.0);
+            },
+        );
+        fn texts(s: &egui::Shape, v: &mut Vec<String>) {
+            match s {
+                egui::Shape::Text(t) => v.push(t.galley.text().to_string()),
+                egui::Shape::Vec(list) => list.iter().for_each(|x| texts(x, v)),
+                _ => {}
+            }
+        }
+        let mut v = Vec::new();
+        out.shapes.iter().for_each(|c| texts(&c.shape, &mut v));
+        v
+    }
+
+    fn key(k: Key) -> egui::Event {
+        egui::Event::Key { key: k, physical_key: None, pressed: true, repeat: false, modifiers: Modifiers::NONE }
+    }
+
+    fn ready(text: &str) -> (egui::Context, SqlEditor, String) {
+        let ctx = egui::Context::default();
+        let mut editor = SqlEditor::new(egui::Id::new("ghost-editor"));
+        let mut t = text.to_string();
+        frame(&ctx, &mut editor, &mut t, vec![]);
+        ctx.memory_mut(|m| m.request_focus(editor.id));
+        editor.set_cursor(&ctx, t.chars().count());
+        frame(&ctx, &mut editor, &mut t, vec![]);
+        (ctx, editor, t)
+    }
+
+    #[test]
+    fn insert_is_suggested_after_create_table_and_tab_takes_it() {
+        let (ctx, mut editor, mut text) = ready("CREATE TABLE Person (\n    pid INT AUTO_INCREMENT PRIMARY KEY,\n    name VARCHAR(50)\n);\n");
+        let shown = frame(&ctx, &mut editor, &mut text, vec![key(Key::Enter)]);
+        let shown = [shown, frame(&ctx, &mut editor, &mut text, vec![])].concat();
+        assert!(shown.iter().any(|s| s.contains("INSERT INTO Person (name)")), "{shown:?}");
+        assert!(shown.iter().any(|s| s.contains("Tab")), "Hinweis fehlt: {shown:?}");
+        frame(&ctx, &mut editor, &mut text, vec![key(Key::Tab)]);
+        frame(&ctx, &mut editor, &mut text, vec![egui::Event::Text("'Max'".into())]);
+        assert!(text.ends_with(");\n\nINSERT INTO Person (name)\nVALUES ('Max');"), "{text:?}");
+    }
+
+    #[test]
+    fn escape_and_moving_drop_the_suggestion() {
+        let (ctx, mut editor, mut text) = ready("CREATE TABLE t (a INT);\n");
+        frame(&ctx, &mut editor, &mut text, vec![key(Key::Enter)]);
+        assert!(editor.ghost.is_some());
+        frame(&ctx, &mut editor, &mut text, vec![key(Key::ArrowUp)]);
+        assert!(editor.ghost.is_none());
+        frame(&ctx, &mut editor, &mut text, vec![key(Key::Tab)]);
+        assert!(!text.contains("INSERT"), "{text:?}");
+    }
+
+    /// Braucht ein (nachgebautes) Ollama auf 127.0.0.1:11434
+    #[test]
+    #[ignore]
+    fn ai_block_from_ollama() {
+        let (ctx, mut editor, mut text) = ready("-- Kunden mit Anzahl ihrer Bestellungen");
+        let _ = ai::status(&prefs().ai_model);
+        std::thread::sleep(Duration::from_millis(1500));
+        frame(&ctx, &mut editor, &mut text, vec![key(Key::Enter)]);
+        let start = Instant::now();
+        while editor.ghost.is_none() && start.elapsed() < Duration::from_secs(5) {
+            std::thread::sleep(Duration::from_millis(100));
+            frame(&ctx, &mut editor, &mut text, vec![]);
+        }
+        let shown = frame(&ctx, &mut editor, &mut text, vec![]);
+        assert!(shown.iter().any(|s| s.contains("GROUP BY k.name;")), "{shown:?}");
+        frame(&ctx, &mut editor, &mut text, vec![key(Key::Tab)]);
+        assert!(text.ends_with("Bestellungen\nSELECT k.name, COUNT(*) AS anzahl\nFROM Kunde k\nJOIN Bestellung b ON b.kid = k.kid\nGROUP BY k.name;"), "{text:?}");
     }
 }

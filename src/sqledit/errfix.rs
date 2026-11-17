@@ -320,7 +320,7 @@ fn owner_of(toks: &[Tok], schema: &Schema, col: &str) -> Option<String> {
 }
 
 /// INSERT mit Wert fuer die automatisch vergebene ID: ohne diese Spalte und ihre Werte
-fn without_auto_id(chars: &[char], toks: &[Tok], schema: &Schema) -> Option<String> {
+pub(super) fn without_auto_id(chars: &[char], toks: &[Tok], schema: &Schema) -> Option<String> {
     let (ti, vi) = insert_parts(toks)?;
     let table = schema.tables.iter().find(|t| t.name.eq_ignore_ascii_case(&toks[ti].text))?;
     let auto = table.columns.iter().find(|c| c.extra.to_ascii_lowercase().contains("auto_increment"))?;
@@ -395,7 +395,7 @@ fn widen_column(chars: &[char], toks: &[Tok], schema: &Schema, col: &str) -> Opt
 }
 
 /// Typ einer Spalte ohne Anzeigebreite: "int(11) unsigned" -> "INT UNSIGNED"
-fn norm_type(t: &str) -> String {
+pub(super) fn norm_type(t: &str) -> String {
     let t = t.to_ascii_uppercase();
     let (base, rest) = match t.split_once('(') {
         Some((b, r)) => (b.trim().to_string(), r.split_once(')').map(|(args, tail)| (args.to_string(), tail.trim().to_string()))),

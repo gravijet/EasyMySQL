@@ -322,7 +322,17 @@ impl Fmt {
         let head = if kw.is_empty() { String::new() } else { format!("{kw} ") };
         let one = format!("{head}{}", self.inline(body, indent + 2)).trim_end().to_string();
         let rows = if matches!(kw, "VALUES" | "VALUE") { split_commas(body).len() } else { 0 };
-        if indent + one.chars().count() <= WIDTH && !one.contains('\n') && !has_block_subquery(body) && rows < 2 {
+        // Lesbarkeit vor Kuerze: jede Bedingung, jede Zuweisung und laengere Spaltenlisten auf eigener Zeile
+        let n_items = split_commas(body).len();
+        let logic = matches!(kw, "WHERE" | "HAVING" | "ON") && split_logic(body).len() > 1;
+        let one_per_line = match kw {
+            // sehr lange Listen (z. B. 30 Spalten) werden weiter fortlaufend gefuellt
+            "SELECT" | "RETURNING" | "GROUP BY" | "ORDER BY" => n_items <= 12 && (n_items >= 4 || (n_items > 1 && one.chars().count() > LIST_INLINE)),
+            "SET" | "ON DUPLICATE KEY UPDATE" => n_items > 1,
+            _ => false,
+        };
+        let join_on = kw.ends_with("JOIN") && body.iter().position(|n| word_of(n).as_deref() == Some("ON")).is_some_and(|p| split_logic(&body[p + 1..]).len() > 1);
+        if !(logic || one_per_line || join_on) && indent + one.chars().count() <= WIDTH && !one.contains('\n') && !has_block_subquery(body) && rows < 2 {
             return one;
         }
         let pad = " ".repeat(indent);
@@ -370,6 +380,11 @@ impl Fmt {
                 let lines: Vec<String> = items.iter().enumerate().map(|(i, it)| self.list_item(it, indent + 4, i + 1 < items.len()).0).collect();
                 return format!("{}{cont}{}", head.trim_end(), lines.join(&cont));
             }
+        }
+        if one_per_line && items.len() > 1 {
+            let start = indent + head.chars().count();
+            let lines: Vec<String> = items.iter().enumerate().map(|(i, it)| self.list_item(it, start, i + 1 < items.len()).0).collect();
+            return format!("{head}{}", lines.join(&aligned));
         }
         if items.len() > 1 {
             let mut out = head.clone();
@@ -476,7 +491,10 @@ impl Fmt {
 }
 
 /// Laengere CASE-Ausdruecke werden auf mehrere Zeilen verteilt
-const CASE_INLINE: usize = 50;
+const CASE_INLINE: usize = 40;
+
+/// Laengere Spaltenlisten (SELECT, ORDER BY ...) stehen eine pro Zeile
+const LIST_INLINE: usize = 40;
 
 /// Position des END, das zum CASE an Stelle `start` gehoert
 fn case_end(nodes: &[Node], start: usize) -> Option<usize> {
@@ -968,7 +986,7 @@ mod tests {
     #[test]
     fn insert_update_delete() {
         assert_eq!(format_sql("insert into t (a,b) values (1,'x'),(2,'y')"), "INSERT INTO t (a, b)\nVALUES (1, 'x'),\n       (2, 'y')\n");
-        assert_eq!(format_sql("update t set a=1, b='x' where id=5"), "UPDATE t\nSET a = 1, b = 'x'\nWHERE id = 5\n");
+        assert_eq!(format_sql("update t set a=1, b='x' where id=5"), "UPDATE t\nSET a = 1,\n    b = 'x'\nWHERE id = 5\n");
         assert_eq!(format_sql("delete from t where id=-1"), "DELETE FROM t\nWHERE id = -1\n");
     }
 
@@ -1010,5 +1028,3 @@ mod tests {
         assert_eq!(format_sql("select 'a,b  from' , \"x\"\"y\" from t"), "SELECT 'a,b  from', \"x\"\"y\"\nFROM t\n");
     }
 }
-
-

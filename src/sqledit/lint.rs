@@ -383,29 +383,42 @@ pub fn lint(text: &str, env: &Env) -> Vec<Problem> {
         return Vec::new();
     }
     let Lexed { toks, mut problems } = lex(&chars);
-    let tables: HashMap<String, &TableInfo> = env.schema.map(|s| s.tables.iter().map(|t| (t.name.to_lowercase(), t)).collect()).unwrap_or_default();
     // Anweisungen trennen; Prozeduren (BEGIN ... END) und DELIMITER werden nicht geprueft
     let mut start = 0;
-    let mut stmts: Vec<&[Tok]> = Vec::new();
+    let mut stmts: Vec<super::script::Stmt> = Vec::new();
     for (i, t) in toks.iter().enumerate() {
         if t.kind == Kind::Semi {
-            stmts.push(&toks[start..i]);
+            if i > start {
+                stmts.push(super::script::Stmt { toks: &toks[start..i], start: toks[start].start, end: t.end, semi: true });
+            }
             start = i + 1;
         }
     }
-    stmts.push(&toks[start..]);
-    for stmt in stmts {
+    if let Some(last) = toks.last().filter(|_| start < toks.len()) {
+        stmts.push(super::script::Stmt { toks: &toks[start..], start: toks[start].start, end: last.end, semi: false });
+    }
+    // Das Skript wird gegen ein virtuelles Schema durchgespielt: Tabellen aus CREATE TABLE sind weiter unten
+    // bekannt, Fehler beim Ausfuehren werden vorhergesagt
+    let facts: Vec<super::script::Fact> = stmts.iter().map(|s| super::script::fact(&chars, s.toks)).collect();
+    let mut sim = super::script::Sim::new(env.schema, env.databases);
+    for i in 0..stmts.len() {
+        let stmt = stmts[i].toks;
         let Some(first) = stmt.first() else { continue };
         let fw = if first.kind == Kind::Word { first.upper() } else { String::new() };
         let routine = fw == "CREATE" && stmt.iter().take(8).any(|t| ["PROCEDURE", "FUNCTION", "TRIGGER", "EVENT"].iter().any(|k| t.is_word(k)));
         if fw == "DELIMITER" || routine || stmt.iter().any(|t| t.is_word("BEGIN")) && fw != "START" {
             break;
         }
-        super::dialect::check(&chars, stmt, &tables, &mut problems);
-        check_statement(stmt, env, &tables, &fw, &mut problems);
+        {
+            let tables = sim.tables();
+            let env = Env { schema: sim.schema(), databases: env.databases };
+            super::dialect::check(&chars, stmt, &tables, &mut problems);
+            check_statement(stmt, &env, &tables, &fw, &mut problems);
+        }
+        sim.step(&chars, &stmts, &facts, i, &mut problems);
     }
-    // Stabil sortiert: bei gleicher Stelle bleibt die genauere Meldung (MariaDB-Hinweis) vorne
-    problems.sort_by_key(|p| (p.start, p.end));
+    // Stabil sortiert: bei gleicher Stelle bleibt die Meldung mit Korrektur bzw. die genauere (MariaDB-Hinweis) vorne
+    problems.sort_by_key(|p| (p.start, p.end, p.fix.is_none()));
     problems.dedup_by(|b, a| a.start == b.start && a.end == b.end);
     problems
 }

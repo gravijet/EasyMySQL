@@ -292,7 +292,11 @@ pub fn dump_db(env: &Env, db: &str, file: &Path) -> Result<u64, String> {
 /// Neue Sicherung anlegen. `dbs` = None -> alle Benutzer-Datenbanken.
 pub fn create(env: &Env, dbs: Option<Vec<String>>, reason: &str, log: &dyn Fn(String)) -> Result<PathBuf, String> {
     let dbs = match dbs {
-        Some(d) => d,
+        // Nur vorhandene sichern: "DROP DATABASE IF EXISTS neu" darf nicht an der Sicherung scheitern
+        Some(d) => match user_databases(&env.conn) {
+            Ok(all) => d.into_iter().filter(|x| all.iter().any(|a| a.eq_ignore_ascii_case(x))).collect(),
+            Err(_) => d,
+        },
         None => user_databases(&env.conn)?,
     };
     let dir = env.dir.join(format!("{}_{reason}", timestamp()));
