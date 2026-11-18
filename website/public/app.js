@@ -15,7 +15,7 @@
     // auf /en/ steht Englisch im Text und das deutsche Original in data-de (scripts/en.mjs)
     return [el, el.hasAttribute("data-de") ? el.getAttribute("data-de") : el.textContent];
   });
-  var attribute = ["alt", "label", "content"]
+  var attribute = ["alt", "label", "content", "href"]
     .map(function (art) {
       return $$("[data-en-" + art + "]").map(function (el) {
         var name = art === "label" ? "aria-label" : art;
