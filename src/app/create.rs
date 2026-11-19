@@ -259,11 +259,12 @@ pub fn package_for(dir: &Path) -> Option<String> {
 
 /// Naheliegende Art fuer einen Ordner: Java in Java-Projekten und neben .java-Dateien
 fn context_kind(dir: &Path) -> Option<FileKind> {
-    if dir.components().any(|c| c.as_os_str() == "java") || dir.join("pom.xml").is_file() {
+    if dir.components().any(|c| c.as_os_str() == "java") || ["pom.xml", "build.gradle", "build.gradle.kts"].iter().any(|f| dir.join(f).is_file()) {
         return Some(FileKind::Java);
     }
-    let names: Vec<String> = std::fs::read_dir(dir).map(|rd| rd.flatten().map(|e| e.file_name().to_string_lossy().to_lowercase()).collect()).unwrap_or_default();
-    names.iter().any(|n| n.ends_with(".java")).then_some(FileKind::Java)
+    // Java-Dateien im Ordner selbst oder (ueblich in Schulprojekten) in src/
+    let has_java = |d: &Path| std::fs::read_dir(d).map(|rd| rd.flatten().any(|e| e.file_name().to_string_lossy().to_lowercase().ends_with(".java"))).unwrap_or(false);
+    (has_java(dir) || has_java(&dir.join("src"))).then_some(FileKind::Java)
 }
 
 /// Tabelle, zu der eine Klasse dieses Namens gehoert ("Personen" -> Personen, "SchuelerKlasse" -> schueler_klasse)
@@ -868,6 +869,16 @@ impl ProjectDlg {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn java_projects_with_sources_in_src_default_to_java() {
+        let dir = std::env::temp_dir().join(format!("easymysql-ctx-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        assert_eq!(context_kind(&dir), None);
+        std::fs::write(dir.join("src").join("Main.java"), "class Main {}").unwrap();
+        assert_eq!(context_kind(&dir), Some(FileKind::Java));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     use super::*;
 
     #[test]
