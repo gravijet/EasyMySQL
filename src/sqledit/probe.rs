@@ -6,6 +6,7 @@
 // globale Einstellungen), wird im Probelauf nicht ausgefuehrt.
 
 mod aufbau;
+pub(crate) use aufbau::beispieldaten;
 
 use super::dialect::{group_end, insert_parts, items};
 use super::errfix;

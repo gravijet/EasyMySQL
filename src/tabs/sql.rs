@@ -658,7 +658,19 @@ impl SqlTab {
                 let n = r.changes.len();
                 let (icon, color, head) = match &r.end {
                     End::Clean if a.ran => (Icon::Check, pal.ok_text, crate::tr_format!("Fehler automatisch behoben ({n} Änderung(en), auf Kopien geprüft) und weiter ausgeführt.", "Error fixed automatically ({n} change(s), checked on copies) and execution continued.")),
-                    End::Clean if a.heal.is_some() => (Icon::Alert, pal.warn_text, crate::tr_format!("Korrektur gefunden ({n} Änderung(en)). Sie löscht Daten oder enthält Platzhalter – bitte ansehen, dann weiter ausführen.", "Fix found ({n} change(s)). It deletes data or contains placeholders – please review, then continue.")),
+                    End::Clean if a.heal.is_some() => {
+                        // Warum nicht von selbst weiter: der konkrete Grund statt einer Sammelformel
+                        let deletes = a.heal.as_ref().is_some_and(|h| {
+                            let before: String = a.before.chars().skip(h.start).take(h.end.saturating_sub(h.start)).collect();
+                            sqledit::probe::adds_destruction(&before, &r.text)
+                        });
+                        let head = if deletes {
+                            crate::tr_format!("Korrektur gefunden ({n} Änderung(en)). Sie löscht Daten – bitte ansehen, dann weiter ausführen.", "Fix found ({n} change(s)). It deletes data – please review, then continue.")
+                        } else {
+                            crate::tr_format!("Korrektur gefunden ({n} Änderung(en)). Sie legt erfundene Werte oder Namen an – bitte ansehen, dann weiter ausführen.", "Fix found ({n} change(s)). It adds invented values or names – please review, then continue.")
+                        };
+                        (Icon::Alert, pal.warn_text, head)
+                    }
                     End::Clean if n == 0 => (Icon::Check, pal.ok_text, tr("Alles in Ordnung: Das Skript läuft im Probelauf ohne Fehler.", "All good: the script runs without errors in a trial run.").to_string()),
                     End::Clean => (Icon::Check, pal.ok_text, crate::tr_format!("{n} Änderung(en) – das Skript läuft jetzt im Probelauf ohne Fehler.", "{n} change(s) – the script now runs without errors in a trial run.")),
                     End::Offline => (Icon::Sparkles, pal.warn_text, crate::tr_format!("{n} Stelle(n) korrigiert (ohne Server kein Probelauf).", "{n} place(s) corrected (no trial run without a server).")),

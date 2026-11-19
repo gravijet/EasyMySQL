@@ -16,6 +16,8 @@ pub struct Projekt {
     pub quellen: Vec<String>,
     /// Benutzte Tabellen samt Spalten (aus allen Abfragen im Code)
     pub nutzung: Vec<Nutzung>,
+    /// Tabellen, in die der Code selbst schreibt (INSERT/REPLACE, klein geschrieben)
+    pub geschrieben: Vec<String>,
 }
 
 /// Ergebnis: auszufuehrendes SQL und eine Zusammenfassung
@@ -100,6 +102,7 @@ pub fn hat_bedarf(root: &Path) -> bool {
 /// Ohne Dateizugriff (testbar): `texte` = (Endung, Inhalt) der Code- und Konfigurationsdateien
 pub fn analysieren(texte: &[(String, String)], quellen: &[String]) -> Projekt {
     let mut nutzung: Vec<Nutzung> = Vec::new();
+    let mut geschrieben: Vec<String> = Vec::new();
     for (ext, text) in texte {
         let abfragen: Vec<(String, Option<String>)> = match ext.as_str() {
             "java" => crate::sqledit::java_abfragen(text),
@@ -109,6 +112,13 @@ pub fn analysieren(texte: &[(String, String)], quellen: &[String]) -> Projekt {
         let getter = if ext == "java" { getter_typen(text) } else { HashMap::new() };
         let mut datei: Vec<Nutzung> = Vec::new();
         let einziges_prepare = text.matches("prepareStatement").count() == 1;
+        for (sql, _) in &abfragen {
+            if let Some(t) = schreibziel(sql)
+                && !geschrieben.contains(&t)
+            {
+                geschrieben.push(t);
+            }
+        }
         for (sql, empfaenger) in &abfragen {
             let setter = if ext == "java" && (empfaenger.is_some() || einziges_prepare) { setter_typen(text, empfaenger.as_deref()) } else { HashMap::new() };
             for n in crate::sqledit::nutzung(sql, &|i| setter.get(&i).cloned()) {
@@ -136,7 +146,21 @@ pub fn analysieren(texte: &[(String, String)], quellen: &[String]) -> Projekt {
             vereinen(&mut nutzung, n);
         }
     }
-    Projekt { datenbank: datenbank_aus(texte), quellen: quellen.to_vec(), nutzung }
+    Projekt { datenbank: datenbank_aus(texte), quellen: quellen.to_vec(), nutzung, geschrieben }
+}
+
+/// Zieltabelle von INSERT/REPLACE (klein geschrieben, ohne Datenbank und Backticks)
+fn schreibziel(sql: &str) -> Option<String> {
+    let mut w = sql.split_whitespace();
+    let erstes = w.next()?.to_ascii_uppercase();
+    if erstes != "INSERT" && erstes != "REPLACE" {
+        return None;
+    }
+    let mut w = w.skip_while(|x| !x.eq_ignore_ascii_case("INTO"));
+    w.next()?;
+    let name = w.next()?.split('(').next()?.trim_matches('`');
+    let name = name.rsplit('.').next()?.trim_matches('`');
+    (!name.is_empty()).then(|| name.to_ascii_lowercase())
 }
 
 fn vereinen(ziel: &mut Vec<Nutzung>, n: Nutzung) {
@@ -506,6 +530,7 @@ pub fn plan(p: &Projekt, db: &str, schema: Option<&Schema>, alles: bool) -> Opti
         }
     }
     // 2. Benutzte, nirgends deklarierte Tabellen aus den Abfragen ableiten
+    let mut beispiele: Vec<String> = Vec::new();
     for n in &nutzung {
         let name = &n.tabelle;
         if vorhanden(name) || dekl.tabellen.iter().any(|(t, _)| t.eq_ignore_ascii_case(name)) || tabellen.iter().any(|t| t.eq_ignore_ascii_case(name)) {
@@ -543,6 +568,13 @@ pub fn plan(p: &Projekt, db: &str, schema: Option<&Schema>, alles: bool) -> Opti
         }
         sql.push(format!("CREATE TABLE IF NOT EXISTS {} (\n  {}\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4", q(name), defs.join(",\n  ")));
         tabellen.push(name.clone());
+        // Liest der Code nur aus der Tabelle, bekommt sie passende Beispielzeilen (sonst zeigt das Programm nichts)
+        if !p.geschrieben.iter().any(|t| t.eq_ignore_ascii_case(name))
+            && n.positionell.is_none()
+            && let Some(ins) = crate::sqledit::probe::beispieldaten(name, &n.spalten, pk, 8)
+        {
+            beispiele.push(ins);
+        }
     }
     // 3. Fehlende Spalten in vorhandenen und eben deklarierten Tabellen
     let mut spalten: Vec<(String, String)> = Vec::new();
@@ -583,6 +615,8 @@ pub fn plan(p: &Projekt, db: &str, schema: Option<&Schema>, alles: bool) -> Opti
             zeilen += 1;
         }
     }
+    zeilen += beispiele.len();
+    sql.extend(beispiele);
     let db_neu = schema.is_none();
     if sql.is_empty() && !(db_neu && (!nutzung.is_empty() || !dekl.tabellen.is_empty())) {
         return None;
@@ -718,6 +752,18 @@ mod tests {
         let s = schema(vec![tabelle("kunde", &["id", "name"], 0), tabelle("bestellung", &["id", "kunde_id", "status"], 0)]);
         let nur_daten = super::plan(&p, "shop", Some(&s), false).unwrap();
         assert_eq!((nur_daten.tabellen.len(), nur_daten.zeilen), (0, 1));
+    }
+
+    #[test]
+    fn nur_gelesene_tabellen_bekommen_beispieldaten() {
+        // aufgabe wird nur gelesen (Beispielzeilen), schueler schreibt der Code selbst (keine)
+        let py = ("py".to_string(), "cur.execute(\"INSERT INTO schueler (vorname) VALUES (%s)\", w)\ncur.execute('SELECT titel, faellig, erledigt FROM aufgabe')\n".to_string());
+        let p = analysieren(&[py], &[]);
+        assert_eq!(p.geschrieben, ["schueler"]);
+        let plan = plan(&p, "schule", None, false).unwrap();
+        assert!(plan.sql.contains("INSERT INTO aufgabe (titel, faellig, erledigt) VALUES"), "{}", plan.sql);
+        assert!(!plan.sql.contains("INSERT INTO schueler"), "{}", plan.sql);
+        assert_eq!(plan.zeilen, 1);
     }
 
     #[test]

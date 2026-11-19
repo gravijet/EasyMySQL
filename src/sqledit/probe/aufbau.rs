@@ -775,6 +775,23 @@ pub(super) fn beispielzeilen(e: &Entwurf, ws: &HashMap<String, Vec<Wert>>, elter
     Some(format!("INSERT INTO {name} ({}) VALUES\n{}", cols.join(", "), rows.join(",\n")))
 }
 
+/// Beispielzeilen fuer eine neu abgeleitete Tabelle (auch "Alles einrichten" fuer Programme, die nur lesen)
+pub(crate) fn beispieldaten(tabelle: &str, spalten: &[(String, String)], pk: Option<usize>, n: usize) -> Option<String> {
+    let spalten: Vec<(String, String)> = spalten
+        .iter()
+        .map(|(c, t)| (c.clone(), if t.is_empty() { crate::dev::einrichten::typ_aus_name(c).to_string() } else { t.clone() }))
+        .collect();
+    let keys = spalten
+        .iter()
+        .enumerate()
+        .filter(|(i, (c, _))| Some(*i) != pk && (c.to_ascii_lowercase().ends_with("_id") || c.to_ascii_lowercase().starts_with("id_")))
+        .map(|(_, (c, _))| c.clone())
+        .collect();
+    let e = Entwurf { name: tabelle.to_string(), spalten, pk, keys, geraten: false };
+    let mut keine = |_: &str| Vec::new();
+    beispielzeilen(&e, &HashMap::new(), &mut keine, n, None)
+}
+
 /// Tabelle, auf die eine Verweis-Spalte zeigt (kunde_id -> kunde/kunden), mit ihrer Schluesselspalte
 fn eltern_tabelle<'a>(schema: &'a Schema, spalte: &str) -> Option<(&'a str, String)> {
     let lc = spalte.to_ascii_lowercase();
