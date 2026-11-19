@@ -383,8 +383,9 @@ impl CodeTab {
                 if let Ok(result) = rx.try_recv() {
                     self.run = RunState::Idle;
                     match result {
-                        Ok(Prepared::Launch(launch)) => {
+                        Ok(Prepared::Launch(mut launch)) => {
                             let env = self.env(cx);
+                            launch.source = Some(self.file.clone());
                             cx.actions.push(Action::RunProgram { launch, env });
                         }
                         Ok(Prepared::Debug(launch, port, roots)) => {

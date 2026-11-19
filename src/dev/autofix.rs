@@ -12,6 +12,9 @@ use std::path::{Path, PathBuf};
 pub enum Fix {
     /// Textaenderungen in Dateien
     Edit(WorkspaceEdit),
+    /// Eindeutige Textaenderung, die nach einem Programmfehler von selbst angewendet wird; danach wird neu
+    /// uebersetzt und gestartet
+    EditAuto(WorkspaceEdit),
     CreateDatabase(String),
     /// Tabellen-Designer fuer diese Datenbank oeffnen
     NewTable(String),
@@ -568,32 +571,16 @@ pub fn analyze_output(raw: &str, project: Option<&Path>, file: Option<&Path>, lo
         v.push(Suggestion::new(tr("Der MariaDB-Treiber fehlt.", "The MariaDB driver is missing.").into(), tr("Treiber laden", "Download driver"), Fix::Install(Tool::JavaDrivers)));
     }
     if text.contains("Public Key Retrieval is not allowed") {
-        let mut edit = WorkspaceEdit::default();
-        let mut files = Vec::new();
-        match project {
-            Some(p) => source_files(p, &mut files, 0),
-            None => files.extend(file.map(Path::to_path_buf)),
-        }
-        for f in files {
-            let Ok(t) = std::fs::read_to_string(&f) else { continue };
-            let mut edits = Vec::new();
-            for (n, line) in t.lines().enumerate() {
-                for (i, _) in line.match_indices("jdbc:mysql://") {
-                    let end = line[i..].find(['"', '\'', ' ']).map(|j| i + j).unwrap_or(line.len());
-                    if line[i..end].contains("allowPublicKeyRetrieval") {
-                        continue;
-                    }
-                    let add = if line[i..end].contains('?') { "&allowPublicKeyRetrieval=true" } else { "?allowPublicKeyRetrieval=true" };
-                    let c = utf16(&line[..end]);
-                    edits.push(((n, c), (n, c), add.to_string()));
-                }
-            }
-            if !edits.is_empty() {
-                edit.files.push(FileEdit { path: f, edits });
-            }
-        }
+        let edit = url_param_edit(project, file, "jdbc:mysql://", "allowPublicKeyRetrieval", "allowPublicKeyRetrieval=true", false);
         let p = tr("Der MySQL-Treiber darf den Schlüssel des Servers nicht abrufen.", "The MySQL driver may not fetch the server's public key.").to_string();
         v.push(if edit.files.is_empty() { Suggestion::hint(p) } else { Suggestion::new(p, tr("allowPublicKeyRetrieval=true ergänzen", "Add allowPublicKeyRetrieval=true"), Fix::Edit(edit)) });
+    }
+    // MariaDB-Treiber ab 4: verschluesselt immer und verlangt ohne Passwort ein Zertifikat. Fuer den Server auf
+    // diesem PC ist sslMode=disable richtig (so schreibt EasyMySQL es auch in erzeugten Code); laeuft automatisch.
+    if text.contains("ssl not enabled in the server") || text.contains("MitM-Proof authentication plugin") || text.contains("provide server certificate to client") {
+        let edit = url_param_edit(project, file, "jdbc:mariadb://", "sslMode", "sslMode=disable", true);
+        let p = tr("Der MariaDB-Treiber verlangt Verschlüsselung, der Server auf diesem PC braucht sie nicht.", "The MariaDB driver insists on encryption; the server on this PC does not need it.").to_string();
+        v.push(if edit.files.is_empty() { Suggestion::hint(p) } else { Suggestion::new(p, tr("sslMode=disable ergänzen", "Add sslMode=disable"), Fix::EditAuto(edit)) });
     }
     let java_hints: [(&str, &str, &str); 9] = [
         ("NullPointerException", "Ein Objekt ist null (nicht angelegt oder nicht gefunden). Die Zeile steht unten im Stacktrace.", "An object is null (never created or not found). The line is shown in the stack trace."),
@@ -619,6 +606,38 @@ pub fn analyze_output(raw: &str, project: Option<&Path>, file: Option<&Path>, lo
     }
 
     dedup(v)
+}
+
+/// An jede JDBC-Adresse mit `prefix` in den Quelltexten `param` anhaengen (ohne vorhandenes `key`).
+/// `only_local`: nur Adressen auf diesen PC (localhost, 127.0.0.1, ::1).
+fn url_param_edit(project: Option<&Path>, file: Option<&Path>, prefix: &str, key: &str, param: &str, only_local: bool) -> WorkspaceEdit {
+    let mut edit = WorkspaceEdit::default();
+    let mut files = Vec::new();
+    match project {
+        Some(p) => source_files(p, &mut files, 0),
+        None => files.extend(file.map(Path::to_path_buf)),
+    }
+    for f in files {
+        let Ok(t) = std::fs::read_to_string(&f) else { continue };
+        let mut edits = Vec::new();
+        for (n, line) in t.lines().enumerate() {
+            for (i, _) in line.match_indices(prefix) {
+                let end = line[i..].find(['"', '\'', ' ']).map(|j| i + j).unwrap_or(line.len());
+                let url = &line[i..end];
+                let host = url[prefix.len()..].split(['/', ':', '?']).next().unwrap_or("");
+                if url.contains(key) || only_local && !matches!(host, "localhost" | "127.0.0.1" | "[::1]" | "") {
+                    continue;
+                }
+                let add = if url.contains('?') { format!("&{param}") } else { format!("?{param}") };
+                let c = utf16(&line[..end]);
+                edits.push(((n, c), (n, c), add));
+            }
+        }
+        if !edits.is_empty() {
+            edit.files.push(FileEdit { path: f, edits });
+        }
+    }
+    edit
 }
 
 fn dedup(v: Vec<Suggestion>) -> Vec<Suggestion> {
@@ -1280,6 +1299,25 @@ pub fn projekt_sql(root: &Path, db: &str, table: Option<&str>) -> Option<(String
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn mariadb_driver_tls_error_adds_ssl_mode_for_local_urls_only() {
+        let dir = std::env::temp_dir().join(format!("easymysql-ssl-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let src = "class Main {\n  String a = \"jdbc:mariadb://localhost:3306/shop\";\n  String b = \"jdbc:mariadb://db.schule.at/shop\";\n  String c = \"jdbc:mariadb://127.0.0.1/x?user=root\";\n}\n";
+        std::fs::write(dir.join("Main.java"), src).unwrap();
+        let err = "java.sql.SQLNonTransientConnectionException: (conn=7) Trying to connect with ssl, but ssl not enabled in the server.";
+        let fixes = analyze_output(err, Some(&dir), None, true);
+        let Some(Fix::EditAuto(e)) = fixes.iter().find_map(|s| s.fix.clone()) else { panic!("{fixes:?}") };
+        let edits = &e.files[0].edits;
+        assert_eq!(edits.len(), 2, "{edits:?}");
+        assert!(edits.iter().any(|(_, _, t)| t == "?sslMode=disable") && edits.iter().any(|(_, _, t)| t == "&sslMode=disable"));
+        // Schon ergaenzt: nichts mehr zu tun (kein Kreislauf beim automatischen Neustart)
+        std::fs::write(dir.join("Main.java"), src.replace("3306/shop", "3306/shop?sslMode=disable").replace("?user=root", "?user=root&sslMode=disable")).unwrap();
+        let again = analyze_output(err, Some(&dir), None, true);
+        assert!(again.iter().all(|s| s.fix.is_none()), "{again:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     use super::*;
 
     const JAVA_TRACE: &str = "Loading class `com.mysql.jdbc.Driver'. This is deprecated. The new driver class is `com.mysql.cj.jdbc.Driver'.\n\

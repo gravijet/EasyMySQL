@@ -16,11 +16,13 @@ pub struct Launch {
     pub cwd: PathBuf,
     /// Zusaetzliche Umgebung (ueberschreibt die allgemeine)
     pub env: Vec<(String, String)>,
+    /// Quelldatei, aus der gestartet wurde (fuer Neu-Uebersetzen nach einer Korrektur)
+    pub source: Option<PathBuf>,
 }
 
 impl Launch {
     pub fn new(title: impl Into<String>, program: impl Into<PathBuf>, args: Vec<String>, cwd: PathBuf) -> Self {
-        Launch { title: title.into(), program: program.into(), args, cwd, env: Vec::new() }
+        Launch { title: title.into(), program: program.into(), args, cwd, env: Vec::new(), source: None }
     }
 }
 

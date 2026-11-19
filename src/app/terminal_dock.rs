@@ -24,6 +24,8 @@ struct TermTab {
     auto_neustarts: u8,
     /// Automatisch behoben, wartet auf den Server bzw. die Werkzeuge und startet dann neu (seit wann)
     warten: Option<(Warten, Instant)>,
+    /// Quelldatei des Programms: nach einer Code-Korrektur wird aus ihr neu uebersetzt
+    quelle: Option<PathBuf>,
 }
 
 /// Worauf ein automatisch behobener Lauf vor dem Neustart wartet
@@ -35,7 +37,7 @@ enum Warten {
 
 impl TermTab {
     fn new(uid: usize, title: String, session: Session, program: bool) -> Self {
-        TermTab { uid, title, session, program, fixes: Vec::new(), analyzed: (0, None), applied: Vec::new(), original: String::new(), auto_geprueft: false, auto_neustarts: 0, warten: None }
+        TermTab { uid, title, session, program, fixes: Vec::new(), analyzed: (0, None), applied: Vec::new(), original: String::new(), auto_geprueft: false, auto_neustarts: 0, warten: None, quelle: None }
     }
 }
 
@@ -113,7 +115,8 @@ impl EasyApp {
         let session = Session::spawn(ctx, profile, launch.cwd, prefix);
         let d = &mut self.terminal;
         d.next_uid += 1;
-        let tab = TermTab::new(d.next_uid, launch.title.clone(), session, true);
+        let mut tab = TermTab::new(d.next_uid, launch.title.clone(), session, true);
+        tab.quelle = launch.source.clone();
         let reuse = crate::dev::config().reuse_terminal;
         match d.tabs.iter().position(|t| reuse && t.program && t.title == launch.title) {
             Some(i) => {
@@ -157,6 +160,8 @@ impl EasyApp {
         let mut close: Option<usize> = None;
         let mut hide = false;
         let mut fixes: Vec<crate::dev::autofix::Fix> = Vec::new();
+        // Nach einer Code-Korrektur aus dieser Quelldatei neu uebersetzen und starten
+        let mut neu_bauen: Option<PathBuf> = None;
         // Einrichten (Knopf oder automatisch) und danach diesen Lauf neu starten: (uid, Fix, automatisch)
         let mut einrichten: Option<(usize, crate::dev::autofix::Fix, bool)> = None;
         let mut link: Option<(String, usize, String, PathBuf)> = None;
@@ -257,6 +262,15 @@ impl EasyApp {
                             einrichten = Some((t.uid, f, true));
                         } else {
                             for (i, s) in t.fixes.iter().enumerate() {
+                                // Eindeutige Code-Korrektur: anwenden und aus der Quelle neu starten
+                                if let Some(Fix::EditAuto(_)) = &s.fix
+                                    && let Some(q) = t.quelle.clone()
+                                {
+                                    fixes.push(s.fix.clone().unwrap_or(Fix::StartServer));
+                                    t.applied.push(i);
+                                    neu_bauen = Some(q);
+                                    continue;
+                                }
                                 let warten = match &s.fix {
                                     Some(Fix::StartServer) if local && !server_bereit => Warten::Server,
                                     // Nur wenn das Werkzeug wirklich fehlt (sonst hilft ein Neustart nicht)
@@ -304,7 +318,11 @@ impl EasyApp {
                             fixes.push(f);
                         }
                     }
-                    if rerun {
+                    // Nach einer Code-Korrektur reicht ein Neustart nicht: aus der Quelle neu uebersetzen
+                    let code_geaendert = t.applied.iter().any(|i| matches!(t.fixes.get(*i).and_then(|s| s.fix.as_ref()), Some(crate::dev::autofix::Fix::Edit(_) | crate::dev::autofix::Fix::EditAuto(_))));
+                    if rerun && code_geaendert && let Some(q) = t.quelle.clone() {
+                        neu_bauen = Some(q);
+                    } else if rerun {
                         t.session.restart(&ctx);
                         t.fixes.clear();
                         t.analyzed = (0, None);
@@ -340,6 +358,9 @@ impl EasyApp {
         for f in fixes {
             self.apply_fix(f);
         }
+        if let Some(q) = neu_bauen {
+            self.rebuild_and_run(&ctx, &q);
+        }
         if let Some((uid, crate::dev::autofix::Fix::Einrichten { root, datenbank }, auto)) = einrichten
             && self.projekt_einrichten(&root, datenbank.as_deref(), auto)
             && let Some(t) = self.terminal.tabs.iter_mut().find(|t| t.uid == uid)
@@ -362,6 +383,21 @@ impl EasyApp {
                 None => self.toast(crate::tr_format!("„{file}“ wurde im Projekt nicht gefunden.", "“{file}” was not found in the project.")),
             }
         }
+    }
+
+    /// Programm aus seiner Quelldatei neu uebersetzen und starten (Reiter der Datei, sonst wird sie geoeffnet)
+    fn rebuild_and_run(&mut self, ctx: &egui::Context, source: &Path) {
+        let offen = self.tabs.iter().position(|t| t.file() == Some(source));
+        match offen {
+            Some(i) => self.active = i,
+            None => {
+                self.handle_actions(vec![Action::OpenFileAt { path: source.to_path_buf(), line: 0 }]);
+                if self.tabs.iter().all(|t| t.file() != Some(source)) {
+                    return;
+                }
+            }
+        }
+        self.run_cmd(ctx, Cmd::RunAll);
     }
 
     /// Alles einrichten, was das Projekt in `root` an der Datenbank braucht. `auto`: ohne Rueckfragen und ohne
@@ -448,7 +484,7 @@ impl EasyApp {
             Fix::Einrichten { root, datenbank } => {
                 self.projekt_einrichten(&root, datenbank.as_deref(), false);
             }
-            Fix::Edit(edit) => {
+            Fix::Edit(edit) | Fix::EditAuto(edit) => {
                 let n = self.write_edit(&edit);
                 self.toast(crate::tr_format!("Behoben in {n} Datei(en).", "Fixed in {n} file(s)."));
             }
