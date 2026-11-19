@@ -445,9 +445,10 @@ pub fn text_button_right(ui: &mut egui::Ui, icon: Icon, text: &str) -> Response 
     labelled_button(ui, icon, text, false, true)
 }
 
-/// Ausfuehren wie in IntelliJ IDEA: ruhiger Knopf mit gruenem Startsymbol
+/// Ausfuehren: die Hauptaktion, gruen gefuellt mit weissem Startsymbol
 pub fn run_button(ui: &mut egui::Ui, text: &str) -> Response {
-    labelled_button_tinted(ui, Icon::Play, text, false, false, Some(style::pal().ok_text))
+    let green = if style::pal().dark { Color32::from_rgb(0x2F, 0x7D, 0x4A) } else { Color32::from_rgb(0x23, 0x7A, 0x45) };
+    labelled_button_filled(ui, Icon::Play, text, green)
 }
 
 /// Hervorgehobene Hauptaktion (blau gefuellt)
@@ -457,6 +458,27 @@ pub fn primary_button(ui: &mut egui::Ui, icon: Icon, text: &str) -> Response {
 
 fn labelled_button(ui: &mut egui::Ui, icon: Icon, text: &str, primary: bool, icon_right: bool) -> Response {
     labelled_button_tinted(ui, icon, text, primary, icon_right, None)
+}
+
+/// Gefuellter Knopf in eigener Farbe (weisse Schrift); gesperrt wie ein normaler Knopf
+fn labelled_button_filled(ui: &mut egui::Ui, icon: Icon, text: &str, color: Color32) -> Response {
+    if !ui.is_enabled() {
+        return labelled_button_tinted(ui, icon, text, false, false, None);
+    }
+    let galley = ui.painter().layout_no_wrap(text.to_string(), egui::FontId::proportional(13.0), Color32::WHITE);
+    let size = vec2(galley.size().x + 41.0, ui.spacing().interact_size.y.max(24.0));
+    let (r, resp) = ui.allocate_exact_size(size, Sense::click());
+    let t = ui.ctx().animate_bool_with_time(resp.id.with("hot"), resp.hovered(), 0.12);
+    let fill = if resp.is_pointer_button_down_on() { color.gamma_multiply(0.85) } else { color.lerp_to_gamma(Color32::WHITE, 0.12 * t) };
+    // Beim Druecken minimal kleiner (Rueckmeldung ohne Verzoegerung)
+    let r = if resp.is_pointer_button_down_on() { r.shrink(0.6) } else { r };
+    ui.painter().rect_filled(r, style::RADIUS as f32, fill);
+    paint(ui.painter(), Rect::from_center_size(pos2(r.left() + 17.0, r.center().y), vec2(14.0, 14.0)), icon, Color32::WHITE);
+    ui.painter().galley_with_override_text_color(pos2(r.left() + 31.0, r.center().y - galley.size().y / 2.0), galley, Color32::WHITE);
+    if resp.has_focus() {
+        ui.painter().rect_stroke(r.expand(1.5), style::RADIUS as f32 + 1.5, Stroke::new(1.5, color.lerp_to_gamma(Color32::WHITE, 0.4)), egui::StrokeKind::Outside);
+    }
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
 /// `tint`: eigene Farbe des Symbols (nur wenn der Knopf bedienbar ist)

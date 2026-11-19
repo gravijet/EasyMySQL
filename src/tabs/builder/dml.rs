@@ -198,7 +198,7 @@ pub fn ui(ui: &mut egui::Ui, dml: &mut Dml, mode: Mode, query: &mut Query, env: 
                     {
                         dml.rows.remove(i);
                     }
-                    if ui.button(crate::i18n::text("+ Zeile")).clicked() {
+                    if crate::widgets::add_button(ui, crate::i18n::text("+ Zeile")).clicked() {
                         dml.rows.push(vec![String::new(); n]);
                     }
                     ui.label(RichText::new(crate::i18n::text("Text wird automatisch in Anführungszeichen gesetzt; Zahlen, NULL und DEFAULT bleiben, wie sie sind.")).small().color(crate::style::pal().text_weak));
@@ -222,7 +222,7 @@ pub fn ui(ui: &mut egui::Ui, dml: &mut Dml, mode: Mode, query: &mut Query, env: 
                 if let Some(i) = remove {
                     dml.sets.remove(i);
                 }
-                if ui.button(crate::i18n::text("+ Zuweisung")).clicked() {
+                if crate::widgets::add_button(ui, crate::i18n::text("+ Zuweisung")).clicked() {
                     dml.sets.push((cols.first().map(|c| c.0.clone()).unwrap_or_default(), String::new()));
                 }
             });

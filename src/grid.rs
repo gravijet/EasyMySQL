@@ -13,6 +13,15 @@ pub struct GridState {
     editing: Option<(usize, usize, String, bool)>,
     /// Anfangsbreiten der Spalten mit Schluessel der Daten, aus denen sie gemessen wurden
     widths: Option<(u64, Vec<f32>)>,
+    /// Spalten mit nur Zahlen (rechtsbuendig, damit Stellen untereinander stehen)
+    numeric: Vec<bool>,
+}
+
+/// Sieht der Wert wie eine Zahl aus? Codes mit fuehrender Null (PLZ "0815", "007") gelten als Text.
+fn is_number(v: &str) -> bool {
+    let t = v.strip_prefix('-').unwrap_or(v);
+    let lead_zero = t.len() > 1 && t.starts_with('0') && !t.starts_with("0.");
+    !t.is_empty() && !lead_zero && t.parse::<f64>().is_ok() && t.bytes().all(|b| b.is_ascii_digit() || b == b'.')
 }
 
 impl GridState {
@@ -127,8 +136,15 @@ pub fn show(
                 (text_w + 2.0 * PAD + 4.0).ceil().clamp(60.0, 340.0)
             }).collect();
             state.widths = Some((key, widths));
+            state.numeric = (0..columns.len())
+                .map(|ci| {
+                    let mut vals = rows.iter().take(100).filter_map(|r| r.get(ci).cloned().flatten()).peekable();
+                    vals.peek().is_some() && vals.all(|v| is_number(&v))
+                })
+                .collect();
         }
         let widths = state.widths.as_ref().map(|(_, w)| w.clone()).unwrap_or_default();
+        let numeric = state.numeric.clone();
         let mut tb = TableBuilder::new(ui)
             .id_salt(id)
             .striped(true)
@@ -149,9 +165,10 @@ pub fn show(
                 ui.label(RichText::new("#").color(style::pal().text_weak));
             });
             for (ci, c) in columns.iter().enumerate() {
+                let right = numeric.get(ci).copied().unwrap_or(false);
                 header.col(|ui| {
                     cell_frame(ui, true);
-                    ui.add_space(PAD);
+                    let mut inner = |ui: &mut egui::Ui| {
                     if edit != Edit::CellsAndColumns {
                         ui.label(RichText::new(c).strong());
                         return;
@@ -194,6 +211,16 @@ pub fn show(
                         egui::Popup::open_id(ui.ctx(), egui::Popup::default_response_id(&resp));
                     }
                     egui::Popup::menu(&resp).show(&mut menu);
+                    };
+                    // Kopf ueber Zahlenspalten ebenfalls rechtsbuendig (Platz fuer den Menuepfeil bleibt frei)
+                    if right {
+                        let cell = ui.max_rect();
+                        let cell = egui::Rect::from_min_max(egui::pos2(cell.left() + PAD, cell.top()), egui::pos2(cell.right() - PAD - 4.0, cell.bottom()));
+                        ui.scope_builder(egui::UiBuilder::new().max_rect(cell).layout(egui::Layout::right_to_left(egui::Align::Center)), |ui| inner(ui));
+                    } else {
+                        ui.add_space(PAD);
+                        inner(ui);
+                    }
                 });
             }
         })
@@ -224,6 +251,7 @@ pub fn show(
                             return;
                         }
                         cell_frame(ui, false);
+                        let numeric = state.numeric.get(c).copied().unwrap_or(false);
                         ui.add_space(PAD);
                         if let Some((er, ec, text, focused)) = state.editing.as_mut()
                             && *er == r && *ec == c {
@@ -243,7 +271,7 @@ pub fn show(
                                 }
                                 return;
                             }
-                        let resp = match val {
+                        let label = |ui: &mut egui::Ui| match val {
                             None => ui.add(
                                 egui::Label::new(RichText::new("NULL").italics().color(style::pal().null_text))
                                     .selectable(false)
@@ -255,6 +283,13 @@ pub fn show(
                                     .truncate()
                                     .sense(Sense::click()),
                             ),
+                        };
+                        // Zahlen rechtsbuendig mit demselben Abstand zum Rand, damit die Stellen untereinander stehen
+                        let resp = if numeric {
+                            let cell = ui.max_rect().shrink2(egui::vec2(PAD, 0.0));
+                            ui.scope_builder(egui::UiBuilder::new().max_rect(cell).layout(egui::Layout::right_to_left(egui::Align::Center)), label).inner
+                        } else {
+                            label(ui)
                         };
                         if resp.clicked() {
                             state.selected = Some(r);
@@ -465,5 +500,18 @@ mod tests {
         assert_eq!(to_inserts("t", &cols, &rows), "INSERT INTO `t` (`id`, `name`) VALUES\n  (1, 'O''Neil'),\n  (2, NULL);\n");
         assert!(to_json(&cols, &rows).contains("\"name\": null"));
         assert_eq!(to_markdown(&cols, &rows).lines().nth(1), Some("| --- | --- |"));
+    }
+}
+
+#[cfg(test)]
+mod zahl_tests {
+    #[test]
+    fn numbers_but_not_codes() {
+        for v in ["0", "12", "-3.5", "1299.99", "0.25"] {
+            assert!(super::is_number(v), "{v}");
+        }
+        for v in ["007", "0815", "1e5", "12a", "", "-", "2024-01-03", "1,5"] {
+            assert!(!super::is_number(v), "{v}");
+        }
     }
 }

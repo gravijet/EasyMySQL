@@ -515,7 +515,7 @@ fn expr_ui(ui: &mut egui::Ui, e: &mut Expr, env: &Env, id: egui::Id) {
                         whens.remove(i);
                     }
                     ui.horizontal(|ui| {
-                        if ui.button("+ WHEN").clicked() {
+                        if crate::widgets::add_button(ui, "+ WHEN").clicked() {
                             whens.push((Cond::Cmp { left: env.first_column(), op: CmpOp::Eq, right: vec![Expr::Value(String::new())], quant: Quant::None, sub: None }, Expr::Value(String::new())));
                         }
                         let mut has_else = otherwise.is_some();
@@ -748,16 +748,16 @@ fn cond_group_ui(ui: &mut egui::Ui, c: &mut Cond, env: &Env, id: egui::Id) {
         items.remove(i);
     }
     ui.horizontal(|ui| {
-        if ui.button(crate::i18n::text("+ Bedingung")).clicked() {
+        if crate::widgets::add_button(ui, crate::i18n::text("+ Bedingung")).clicked() {
             items.push(new_cmp(env));
         }
-        if ui.button(crate::i18n::text("+ Gruppe (…)")).clicked() {
+        if crate::widgets::add_button(ui, crate::i18n::text("+ Gruppe (…)")).clicked() {
             items.push(Cond::Group { any: !*any, not: false, items: vec![new_cmp(env)] });
         }
-        if ui.button("+ EXISTS").clicked() {
+        if crate::widgets::add_button(ui, "+ EXISTS").clicked() {
             items.push(Cond::Exists { not: false, query: Box::new(new_query(env)) });
         }
-        if ui.button("+ SQL").clicked() {
+        if crate::widgets::add_button(ui, "+ SQL").clicked() {
             items.push(Cond::Raw(String::new()));
         }
     });
@@ -926,7 +926,7 @@ fn sources_ui(ui: &mut egui::Ui, s: &mut Select, env: &Env, id: egui::Id) {
     }
     ui.horizontal(|ui| {
         let joins = fk_joins(s, env);
-        ui.menu_button(crate::i18n::text("+ Tabelle"), |ui| {
+        { let knopf = crate::widgets::add_button(ui, crate::i18n::text("+ Tabelle")); egui::Popup::menu(&knopf).show(|ui| {
             if !joins.is_empty() {
                 ui.label(RichText::new(crate::i18n::text("Über Beziehungen")).small().color(style::pal().text_weak));
                 for (label, src) in &joins {
@@ -974,17 +974,16 @@ fn sources_ui(ui: &mut egui::Ui, s: &mut Select, env: &Env, id: egui::Id) {
                 s.sources.push(Source { from: From::Sub(Box::new(new_query(env))), alias: format!("u{}", s.sources.len() + 1), ..Source::table("") });
                 ui.close();
             }
-        });
+        }); }
     });
 }
 
 /// "+ Spalte": Spalten aller Tabellen der Abfrage ankreuzen (mehrere auf einmal), mit Suchfeld.
 /// Das Menue bleibt offen, bis man daneben klickt.
 fn column_menu(ui: &mut egui::Ui, s: &mut Select, env: &Env, id: egui::Id) {
-    use egui::containers::menu::{MenuButton, MenuConfig};
-    let cfg = MenuConfig::new().close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside);
     let opened = id.with("opened");
-    let (_, inner) = MenuButton::from_button(egui::Button::new(crate::i18n::text("+ Spalte"))).config(cfg).ui(ui, |ui| {
+    let knopf = crate::widgets::add_button(ui, crate::i18n::text("+ Spalte"));
+    let inner = egui::Popup::menu(&knopf).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
         ui.set_min_width(250.0);
         let mut filter: String = ui.data_mut(|d| d.get_temp(id.with("filter")).unwrap_or_default());
         let r = ui.add(crate::widgets::edit(&mut filter).id(id.with("filter-edit")).hint_text(crate::i18n::text("Suchen …")).desired_width(250.0));
@@ -1086,7 +1085,7 @@ fn items_ui(ui: &mut egui::Ui, s: &mut Select, env: &Env, id: egui::Id) {
     }
     ui.horizontal(|ui| {
         column_menu(ui, s, env, id.with("cols"));
-        ui.menu_button(crate::i18n::text("+ Funktion"), |ui| {
+        { let knopf = crate::widgets::add_button(ui, crate::i18n::text("+ Funktion")); egui::Popup::menu(&knopf).show(|ui| {
             let mut groups: Vec<&str> = FUNCS.iter().map(|f| f.group).collect();
             groups.dedup();
             for g in groups {
@@ -1107,14 +1106,14 @@ fn items_ui(ui: &mut egui::Ui, s: &mut Select, env: &Env, id: egui::Id) {
                     }
                 });
             }
-        });
-        if ui.button(crate::i18n::text("+ Ausdruck")).clicked() {
+        }); }
+        if crate::widgets::add_button(ui, crate::i18n::text("+ Ausdruck")).clicked() {
             s.items.push(Item { expr: Expr::Op { op: "*".into(), left: Box::new(env.first_column()), right: Box::new(Expr::Value("1".into())) }, alias: String::new() });
         }
-        if ui.button("+ CASE").clicked() {
+        if crate::widgets::add_button(ui, "+ CASE").clicked() {
             s.items.push(Item { expr: convert(&env.first_column(), Kind::Case, env), alias: String::new() });
         }
-        if ui.button(crate::i18n::text("+ Unterabfrage")).clicked() {
+        if crate::widgets::add_button(ui, crate::i18n::text("+ Unterabfrage")).clicked() {
             s.items.push(Item { expr: Expr::Sub(Box::new(new_query(env))), alias: String::new() });
         }
         if !s.items.is_empty() && ui.button(crate::i18n::text("Alle entfernen")).clicked() {
@@ -1257,7 +1256,7 @@ fn query_ui(ui: &mut egui::Ui, qr: &mut Query, env: &Env, id: egui::Id) {
         qr.parts.remove(i);
     }
     ui.horizontal(|ui| {
-        ui.menu_button("+ UNION / EXCEPT / INTERSECT", |ui| {
+        { let knopf = crate::widgets::add_button(ui, "+ UNION / EXCEPT / INTERSECT"); egui::Popup::menu(&knopf).show(|ui| {
             for op in SetOp::ALL {
                 if ui.button(op.sql()).on_hover_text(op.hint()).clicked() {
                     // zweiter Teil mit gleicher Spaltenzahl beginnen
@@ -1268,8 +1267,8 @@ fn query_ui(ui: &mut egui::Ui, qr: &mut Query, env: &Env, id: egui::Id) {
                     ui.close();
                 }
             }
-        });
-        if ui.button("+ WITH").clicked() {
+        }); }
+        if crate::widgets::add_button(ui, "+ WITH").clicked() {
             let k = qr.with.len() + 1;
             qr.with.push(Cte { name: format!("hilf{k}"), columns: String::new(), query: new_query(&env) });
         }

@@ -131,7 +131,7 @@ fn shortcut_chip(ui: &mut egui::Ui, text: &str) {
 
 /// Linksbuendiger Text in fester Breite
 fn left_cell(ui: &mut egui::Ui, width: f32, text: RichText) {
-    ui.allocate_ui_with_layout(egui::vec2(width, 20.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+    crate::widgets::fixed(ui, width, 20.0, |ui| {
         ui.add(egui::Label::new(text).truncate());
     });
 }

@@ -482,7 +482,7 @@ impl AiTab {
 
     fn modell_name(&self) -> String {
         self.modelle.iter().find(|m| m.id == self.auswahl.modell).map(|m| m.name.clone()).unwrap_or_else(|| {
-            if self.auswahl.modell.is_empty() { self.live.modell.clone().map(|m| kurzer_modellname(&m)).unwrap_or_else(|| tr("Standardmodell", "Default model").into()) } else { self.auswahl.modell.clone() }
+            if self.auswahl.modell.is_empty() { self.live.modell.clone().map(|m| kurzer_modellname(&m)).unwrap_or_else(|| tr("Standard", "Default").into()) } else { self.auswahl.modell.clone() }
         })
     }
 
@@ -540,7 +540,8 @@ impl AiTab {
         let pal = crate::style::pal();
         let akzent = farbe(self.ziel);
         let angemeldet = self.angemeldet();
-        let resp = if installiert && angemeldet == Some(false) && ui.available_width() > 120.0 {
+        // Im Chat steht die Anmeldung schon gross als Karte: oben dann nur das Konto-Symbol
+        let resp = if installiert && angemeldet == Some(false) && ui.available_width() > 120.0 && self.ansicht != Ansicht::Chat {
             pill(ui, Some(Icon::Key), tr("Anmelden", "Sign in"), akzent, true)
         } else {
             let (r, resp) = ui.allocate_exact_size(egui::vec2(28.0, 28.0), egui::Sense::click());

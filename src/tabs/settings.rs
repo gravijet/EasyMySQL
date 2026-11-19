@@ -195,7 +195,7 @@ impl SettingsTab {
                     let top = ui.cursor().top();
                     ui.horizontal(|ui| {
                         ui.set_min_height(34.0);
-                        ui.allocate_ui_with_layout(egui::vec2(210.0, 22.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        crate::widgets::fixed(ui, 210.0, 22.0, |ui| {
                             ui.add(egui::Label::new(cmd.label()).truncate());
                         });
                         let list = self.keymap.get(cmd).to_vec();
@@ -619,7 +619,7 @@ impl TabView for SettingsTab {
                             ui.add(crate::widgets::edit(&mut info.host));
                         });
                         crate::widgets::row(ui, "Port", |ui| {
-                            ui.add(egui::DragValue::new(&mut info.port).range(1..=65535));
+                            crate::widgets::number_field(ui, &mut info.port, 1..=65535);
                         });
                         crate::widgets::row(ui, crate::i18n::text("Benutzer"), |ui| {
                             ui.add(crate::widgets::edit(&mut info.user));
@@ -632,19 +632,32 @@ impl TabView for SettingsTab {
                         });
                     });
                     let ssh = self.ssh.get_or_insert_with(|| s.ssh.clone());
-                    ssh_form(ui, "g-ssh", ssh);
+                    grid(ui, "g-ssh-card", &mut |ui| {
+                        crate::widgets::row(ui, "SSH", |ui| {
+                            ssh_switch(ui, ssh);
+                        });
+                        ssh_fields(ui, "g-ssh", ssh);
+                    });
+                    ui.add_space(8.0);
                     ui.horizontal(|ui| {
-                        if ui.button(crate::i18n::text("Verbinden")).clicked() {
+                        ui.add_space(crate::widgets::LABEL_W + 27.0);
+                        if crate::widgets::primary(ui, crate::i18n::text("Verbinden")).clicked() {
                             s.conn = info.clone();
                             s.save_password = *save_pw;
                             s.ssh = ssh.clone();
                             cx.actions.push(Action::Connect);
                         }
-                        if ui.button(crate::i18n::text("Standard")).clicked() {
+                        if ui.button(crate::i18n::tr("Zurücksetzen", "Reset")).on_hover_text(crate::i18n::tr("Eigener Server: 127.0.0.1, root, ohne SSH", "Own server: 127.0.0.1, root, no SSH")).clicked() {
                             *info = ConnInfo::default();
                             *ssh = Default::default();
                         }
-                        let connected = cx.db.map(|d| d.info.label()).unwrap_or_else(|| crate::i18n::text("nicht verbunden").into());
+                        let (dot, connected) = match cx.db {
+                            Some(d) => (pal.ok_text, crate::tr_format!("Verbunden mit {}", "Connected to {}", d.info.label())),
+                            None => (pal.text_weak, crate::i18n::text("nicht verbunden").to_string()),
+                        };
+                        ui.add_space(4.0);
+                        let (r, _) = ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
+                        ui.painter().circle_filled(r.center(), 3.5, dot);
                         ui.label(RichText::new(connected).color(pal.text_weak));
                     });
 
@@ -696,7 +709,7 @@ impl TabView for SettingsTab {
                                 ui.add(crate::widgets::edit(&mut p.conn.host));
                             });
                             crate::widgets::row(ui, "Port", |ui| {
-                                ui.add(egui::DragValue::new(&mut p.conn.port).range(1..=65535));
+                                crate::widgets::number_field(ui, &mut p.conn.port, 1..=65535);
                             });
                             crate::widgets::row(ui, crate::i18n::text("Benutzer"), |ui| {
                                 ui.add(crate::widgets::edit(&mut p.conn.user));
@@ -733,7 +746,7 @@ impl TabView for SettingsTab {
                         } else if cancel {
                             self.server_edit = None;
                         }
-                    } else if ui.button(crate::i18n::tr("+ Server hinzufügen", "+ Add server")).clicked() {
+                    } else if crate::widgets::add_button(ui, crate::i18n::tr("+ Server hinzufügen", "+ Add server")).clicked() {
                         let mut p = crate::profiles::Profile::new("");
                         p.conn.host = String::new();
                         self.server_edit = Some((None, p));
@@ -758,14 +771,14 @@ impl TabView for SettingsTab {
                         crate::widgets::row(ui, crate::i18n::text("Automatisch sichern"), |ui| {
                             ui.horizontal(|ui| {
                                 crate::widgets::switch(ui, &mut self.backup.auto, crate::i18n::text("alle"));
-                                ui.add(egui::DragValue::new(&mut self.backup.interval_hours).range(1..=168).suffix(" h"));
+                                crate::widgets::drag(ui, &mut self.backup.interval_hours, 1..=168, " h");
                             });
                         });
                         crate::widgets::row(ui, crate::i18n::text("Aufbewahren"), |ui| {
                             ui.horizontal(|ui| {
-                                ui.add(egui::DragValue::new(&mut self.backup.keep_count).range(1..=200));
+                                crate::widgets::number_field(ui, &mut self.backup.keep_count, 1..=200);
                                 ui.label(crate::i18n::text("neueste, dazu eine je Tag für"));
-                                ui.add(egui::DragValue::new(&mut self.backup.keep_days).range(0..=365).suffix(crate::i18n::text(" Tage")));
+                                crate::widgets::drag(ui, &mut self.backup.keep_days, 0..=365, crate::i18n::text(" Tage"));
                             });
                         });
                     });
@@ -795,7 +808,7 @@ impl TabView for SettingsTab {
                                 ));
                         });
                         crate::widgets::row(ui, crate::i18n::tr("Standard-Datenbank", "Default database"), |ui| {
-                            ui.add(egui::TextEdit::singleline(&mut s.ai.database).hint_text(crate::i18n::tr("keine", "none")).desired_width(220.0));
+                            ui.add(crate::widgets::edit(&mut s.ai.database).hint_text(crate::i18n::tr("keine", "none")).desired_width(220.0));
                         });
                         crate::widgets::row(ui, crate::i18n::tr("Zeilen je Abfrage", "Rows per query"), |ui| {
                             crate::widgets::drag(ui, &mut s.ai.max_rows, 1..=5000, "");
@@ -1034,7 +1047,7 @@ fn server_settings(ui: &mut egui::Ui, s: &mut crate::settings::Settings, server:
             if cfg.tls != crate::tls::Mode::Default {
                 ui.horizontal(|ui| {
                     ui.label(RichText::new(crate::i18n::tr("Weitere Namen:", "More names:")).small());
-                    ui.add(egui::TextEdit::singleline(&mut cfg.tls_names).hint_text("db.firma.local 192.168.1.20").desired_width(260.0));
+                    ui.add(crate::widgets::edit(&mut cfg.tls_names).hint_text("db.firma.local 192.168.1.20").desired_width(260.0));
                 });
                 ui.horizontal(|ui| {
                     if ui.small_button(crate::i18n::tr("CA-Zertifikat speichern …", "Save CA certificate …")).on_hover_text(crate::i18n::tr("Für andere Rechner und Programme, die das Zertifikat prüfen sollen", "For other computers and programs that should verify the certificate")).clicked() {
@@ -1103,7 +1116,7 @@ fn note(ui: &mut egui::Ui, t: &str) {
 
 /// Einzeiliges Feld fuer Optionen (Monospace, ganze Breite)
 fn args_field(ui: &mut egui::Ui, value: &mut String, hint: &str) {
-    ui.add(egui::TextEdit::singleline(value).font(egui::TextStyle::Monospace).hint_text(hint).desired_width(f32::INFINITY));
+    ui.add(crate::widgets::edit(value).font(egui::TextStyle::Monospace).hint_text(hint).desired_width(f32::INFINITY));
 }
 
 /// Wahl eines Werkzeugs: automatisch, eigenes, vom System oder ein Pfad
@@ -1133,7 +1146,7 @@ fn tool_choice(ui: &mut egui::Ui, id: &str, value: &mut String, pick_folder: boo
         }
         if k == 3 {
             ui.horizontal(|ui| {
-                ui.add(egui::TextEdit::singleline(value).font(egui::TextStyle::Monospace).desired_width(ui.available_width() - 80.0));
+                ui.add(crate::widgets::edit(value).font(egui::TextStyle::Monospace).desired_width(ui.available_width() - 80.0));
                 if ui.button(crate::i18n::text("Ändern …")).clicked() {
                     let picked = if pick_folder { rfd::FileDialog::new().pick_folder() } else { rfd::FileDialog::new().pick_file() };
                     if let Some(p) = picked {
@@ -1675,10 +1688,21 @@ fn path_with_open(ui: &mut egui::Ui, path: &str) -> bool {
 
 /// SSH-Tunnel-Einstellungen: Schalter und, wenn an, die Felder
 fn ssh_form(ui: &mut egui::Ui, id: &str, ssh: &mut crate::ssh::SshConfig) {
+    crate::widgets::row(ui, "SSH", |ui| {
+        ssh_switch(ui, ssh);
+    });
+    ssh_fields(ui, id, ssh);
+}
+
+fn ssh_switch(ui: &mut egui::Ui, ssh: &mut crate::ssh::SshConfig) {
     crate::widgets::switch(ui, &mut ssh.enabled, crate::i18n::tr("Über SSH-Tunnel verbinden", "Connect through an SSH tunnel")).on_hover_text(crate::i18n::tr(
         "Server und Port oben gelten dann aus Sicht des SSH-Servers (meist 127.0.0.1).",
         "Server and port above then apply as seen from the SSH server (usually 127.0.0.1).",
     ));
+}
+
+/// Felder des SSH-Tunnels (nur wenn eingeschaltet)
+fn ssh_fields(ui: &mut egui::Ui, id: &str, ssh: &mut crate::ssh::SshConfig) {
     if !ssh.enabled {
         return;
     }
@@ -1688,7 +1712,7 @@ fn ssh_form(ui: &mut egui::Ui, id: &str, ssh: &mut crate::ssh::SshConfig) {
             ui.add(crate::widgets::edit(&mut ssh.host));
         });
         crate::widgets::row(ui, "SSH-Port", |ui| {
-            ui.add(egui::DragValue::new(&mut ssh.port).range(1..=65535));
+            crate::widgets::number_field(ui, &mut ssh.port, 1..=65535);
         });
         crate::widgets::row(ui, crate::i18n::text("Benutzer"), |ui| {
             ui.add(crate::widgets::edit(&mut ssh.user));

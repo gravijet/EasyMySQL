@@ -690,16 +690,14 @@ impl SqlTab {
                     for c in &r.changes {
                         ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing.x = 6.0;
-                            match c.line {
-                                Some(l) => {
-                                    if ui.link(RichText::new(crate::tr_format!("Z. {}", "Ln {}", l + 1)).small()).clicked() {
-                                        act = Some(FixAct::Goto(l));
-                                    }
+                            // Zeilenangaben in einer festen Spalte, damit die Texte buendig stehen
+                            crate::widgets::fixed(ui, 46.0, 16.0, |ui| {
+                                if let Some(l) = c.line
+                                    && ui.link(RichText::new(crate::tr_format!("Z. {}", "Ln {}", l + 1)).small()).on_hover_text(crate::i18n::tr("Zur Zeile springen", "Go to the line")).clicked()
+                                {
+                                    act = Some(FixAct::Goto(l));
                                 }
-                                None => {
-                                    ui.label(RichText::new("•").small().color(pal.text_weak));
-                                }
-                            }
+                            });
                             let text = RichText::new(&c.label).small();
                             ui.add(egui::Label::new(if c.check { text.color(pal.warn_text) } else { text }).wrap());
                         });
@@ -919,7 +917,7 @@ impl SqlTab {
                     if set.truncated {
                         info.push_str(&crate::tr_format!(" (die ersten {})", " (first {})", db::max_rows()));
                     }
-                    ui.label(RichText::new(info).color(pal.ok_text));
+                    ui.label(RichText::new(info).color(pal.text_weak));
                     grid::export_menu(ui, "ergebnis", &set.columns, &set.rows);
                 });
                 grid::show(ui, ("sqlgrid", self.editor.id, tab), &set.columns, &set.rows, grid::Edit::View, &mut self.grid);
@@ -1375,7 +1373,7 @@ impl TabView for SqlTab {
                     self.run_selection_or_all(cx);
                 }
             });
-            if ui.button(crate::i18n::text("Formatieren")).on_hover_text(crate::keymap::text(Cmd::Format)).clicked() {
+            if icons::text_button(ui, Icon::Code, crate::i18n::text("Formatieren")).on_hover_text(crate::keymap::text(Cmd::Format)).clicked() {
                 self.format();
             }
             if self.file.is_some() {

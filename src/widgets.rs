@@ -186,8 +186,22 @@ pub fn slider<N: egui::emath::Numeric>(ui: &mut egui::Ui, value: &mut N, range: 
     if step > 0.0 {
         dv = dv.speed(step).fixed_decimals(if step.fract() == 0.0 { 0 } else { 2 });
     }
-    let num = ui.add_sized([if suffix.len() > 2 { 78.0 } else { 70.0 }, CONTROL_H], dv);
+    let num = input_look(ui, |ui| ui.add_sized([if suffix.len() > 2 { 78.0 } else { 70.0 }, CONTROL_H], dv));
     resp | num
+}
+
+/// Feld fester Groesse (Inhalt links, senkrecht mittig). Anders als `allocate_ui_with_layout` bleibt die volle
+/// Breite reserviert, auch wenn der Inhalt schmaler ist – so stehen Spalten untereinander buendig.
+pub fn fixed(ui: &mut egui::Ui, w: f32, h: f32, add: impl FnOnce(&mut egui::Ui)) {
+    let (rect, _) = ui.allocate_exact_size(vec2(w, h), Sense::hover());
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(egui::Layout::left_to_right(egui::Align::Center)));
+    child.set_clip_rect(rect.intersect(ui.clip_rect()));
+    add(&mut child);
+}
+
+/// "+ Spalte" als Knopf mit Plus-Symbol statt Pluszeichen im Text (der Text darf mit "+ " beginnen)
+pub fn add_button(ui: &mut egui::Ui, text: &str) -> Response {
+    icons::text_button(ui, Icon::Plus, text.trim_start_matches('+').trim_start())
 }
 
 /// Hervorgehobene Hauptaktion nur mit Text (Akzentfarbe, weisse Schrift)
@@ -240,9 +254,27 @@ pub fn password_field(ui: &mut egui::Ui, text: &mut String, hint: &str, width: O
     ui.add_sized([w, CONTROL_H], egui::TextEdit::singleline(text).password(true).hint_text(hint).margin(Margin::symmetric(8, 0)).vertical_align(egui::Align::Center))
 }
 
+/// Zahlenfelder (egui::DragValue) sehen sonst wie Knoepfe aus: Flaeche, Rand und Fokus wie bei Textfeldern
+pub fn input_look<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    ui.scope(|ui| {
+        let p = style::pal();
+        let v = ui.visuals_mut();
+        let fill = v.text_edit_bg_color.unwrap_or(p.bg);
+        let edge = v.widgets.inactive.bg_stroke;
+        let hover = v.widgets.hovered.bg_stroke;
+        for (w, stroke) in [(&mut v.widgets.inactive, edge), (&mut v.widgets.hovered, hover), (&mut v.widgets.active, Stroke::new(1.0, p.accent))] {
+            w.bg_fill = fill;
+            w.weak_bg_fill = fill;
+            w.bg_stroke = stroke;
+        }
+        add(ui)
+    })
+    .inner
+}
+
 /// Zahlenfeld fester Breite
 pub fn number_field<N: egui::emath::Numeric>(ui: &mut egui::Ui, value: &mut N, range: std::ops::RangeInclusive<N>) -> Response {
-    ui.add_sized([88.0, CONTROL_H], egui::DragValue::new(value).range(range))
+    input_look(ui, |ui| ui.add_sized([88.0, CONTROL_H], egui::DragValue::new(value).range(range)))
 }
 
 /// Abschnitt mit Titel in einer Karte
@@ -292,7 +324,7 @@ pub fn chips<T: PartialEq + Clone>(ui: &mut egui::Ui, value: &mut T, items: &[(T
 
 /// Zahlenfeld mit Einheit (z. B. " h") und einheitlicher Hoehe
 pub fn drag<N: egui::emath::Numeric>(ui: &mut egui::Ui, value: &mut N, range: std::ops::RangeInclusive<N>, suffix: &str) -> Response {
-    ui.add_sized([if suffix.len() > 3 { 104.0 } else { 78.0 }, CONTROL_H], egui::DragValue::new(value).range(range).suffix(suffix))
+    input_look(ui, |ui| ui.add_sized([if suffix.len() > 3 { 104.0 } else { 78.0 }, CONTROL_H], egui::DragValue::new(value).range(range).suffix(suffix)))
 }
 
 /// Einzeiliges Textfeld in der einheitlichen Hoehe (Text mittig); Breite wie bei `TextEdit` einstellbar

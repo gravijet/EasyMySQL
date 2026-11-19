@@ -538,7 +538,7 @@ impl TabView for ErTab {
                 self.save_layout();
             }
             ui.separator();
-            if ui.button(crate::i18n::text("+ Beziehung")).clicked() {
+            if crate::widgets::add_button(ui, crate::i18n::text("+ Beziehung")).clicked() {
                 self.open_link(String::new(), String::new(), String::new());
             }
             ui.separator();

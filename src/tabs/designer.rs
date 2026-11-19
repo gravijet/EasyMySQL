@@ -194,7 +194,7 @@ impl TabView for DesignerTab {
                     }
                 });
             ui.horizontal(|ui| {
-                if ui.button(crate::i18n::text("+ Spalte hinzufügen")).clicked() {
+                if crate::widgets::add_button(ui, crate::i18n::text("+ Spalte hinzufügen")).clicked() {
                     self.cols.push(ColDef::new("", "VARCHAR(255)"));
                 }
             });

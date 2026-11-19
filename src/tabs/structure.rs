@@ -293,8 +293,12 @@ impl StructureTab {
         let mut edit = None;
         style::sunken_frame().show(ui, |ui| {
             ui.set_min_width(ui.available_width());
+            // Kopfzeile als durchgehende Flaeche wie in der Datentabelle (ohne Luecken zwischen den Zellen)
+            ui.spacing_mut().item_spacing.x = 0.0;
             let head = |ui: &mut egui::Ui, t: &str| {
-                ui.painter().rect_filled(ui.max_rect().expand2(egui::vec2(4.0, 2.0)), 0.0, pal.face_light);
+                let r = ui.max_rect();
+                ui.painter().rect_filled(r, 0.0, pal.face_light);
+                ui.painter().hline(r.x_range(), r.bottom() - 0.5, egui::Stroke::new(1.0, pal.border));
                 ui.add_space(PAD);
                 ui.label(RichText::new(t).strong());
             };
@@ -358,9 +362,11 @@ impl StructureTab {
                         });
                         row.col(|ui| {
                             ui.add_space(PAD);
+                            // Ohne Standardwert: NULL nur, wenn die Spalte leer sein darf; sonst gibt es keinen
                             match &c.default {
                                 Some(d) => ui.add(egui::Label::new(d).selectable(false).truncate()),
-                                None => ui.label(RichText::new("NULL").italics().color(pal.null_text)),
+                                None if c.nullable => ui.label(RichText::new("NULL").italics().color(pal.null_text)),
+                                None => ui.label(RichText::new("–").color(pal.text_weak)),
                             };
                         });
                         row.col(|ui| {
@@ -532,17 +538,13 @@ impl TabView for StructureTab {
                     ui.label(RichText::new(crate::i18n::text("keine")).color(style::pal().null_text));
                 }
                 let mut drop = None;
-                egui::Grid::new(("idx", &self.table)).striped(false).spacing([24.0, 8.0]).show(ui, |ui| {
-                    for ix in &self.indexes {
-                        ui.label(RichText::new(&ix.name).strong());
-                        ui.label(RichText::new(if ix.name == "PRIMARY" { crate::i18n::text("Primärschlüssel") } else if ix.unique { crate::i18n::text("Eindeutig") } else { "Index" }).color(style::pal().text_weak));
-                        ui.label(ix.columns.join(", "));
-                        if !info.is_view && crate::icons::button(ui, crate::icons::Icon::Trash, crate::i18n::text("löschen")).clicked() {
-                            drop = Some(ix.name.clone());
-                        }
-                        ui.end_row();
+                for ix in &self.indexes {
+                    let kind = if ix.name == "PRIMARY" { crate::i18n::text("Primärschlüssel") } else if ix.unique { crate::i18n::text("Eindeutig") } else { "Index" };
+                    let cells = [(RichText::new(&ix.name).strong(), 190.0), (RichText::new(kind).color(style::pal().text_weak), 150.0), (RichText::new(ix.columns.join(", ")), 0.0)];
+                    if list_row(ui, cells, !info.is_view) {
+                        drop = Some(ix.name.clone());
                     }
-                });
+                }
                 if let Some(n) = drop {
                     let sql = if n == "PRIMARY" {
                         format!("ALTER TABLE {} DROP PRIMARY KEY", self.full())
@@ -560,27 +562,31 @@ impl TabView for StructureTab {
                     ui.label(RichText::new(crate::i18n::text("keine")).color(style::pal().null_text));
                 }
                 let mut drop = None;
-                egui::Grid::new(("fks", &self.table)).striped(false).spacing([24.0, 8.0]).show(ui, |ui| {
-                    for f in &self.fks_out {
-                        ui.label(RichText::new(&f.name).strong());
-                        ui.label(format!("{}.({}) → {}.({})", f.table, f.columns.join(","), f.ref_table, f.ref_columns.join(",")));
-                        ui.label(RichText::new(format!("ON DELETE {} / ON UPDATE {}", f.on_delete, f.on_update)).color(style::pal().text_weak));
-                        if crate::icons::button(ui, crate::icons::Icon::Trash, crate::i18n::text("löschen")).clicked() {
-                            drop = Some(f.name.clone());
-                        }
-                        ui.end_row();
+                for f in &self.fks_out {
+                    let cells = [
+                        (RichText::new(&f.name).strong(), 190.0),
+                        (RichText::new(format!("{}.({}) → {}.({})", f.table, f.columns.join(","), f.ref_table, f.ref_columns.join(","))), 340.0),
+                        (RichText::new(format!("ON DELETE {} / ON UPDATE {}", f.on_delete, f.on_update)).color(style::pal().text_weak), 0.0),
+                    ];
+                    if list_row(ui, cells, true) {
+                        drop = Some(f.name.clone());
                     }
-                    for f in &self.fks_in {
-                        ui.label(RichText::new(&f.name).strong());
-                        let r = ui.link(format!("{}.({}) → {}.({})", f.table, f.columns.join(","), f.ref_table, f.ref_columns.join(",")));
-                        if r.clicked() {
-                            cx.actions.push(Action::OpenStructure { db: self.db.clone(), table: f.table.clone() });
-                        }
+                }
+                for f in &self.fks_in {
+                    ui.horizontal(|ui| {
+                        ui.set_min_height(30.0);
+                        ui.spacing_mut().item_spacing.x = 0.0;
+                        crate::widgets::fixed(ui, 190.0, 30.0, |ui| {
+                            ui.add(egui::Label::new(RichText::new(&f.name).strong()).truncate());
+                        });
+                        crate::widgets::fixed(ui, 340.0, 30.0, |ui| {
+                            if ui.link(format!("{}.({}) → {}.({})", f.table, f.columns.join(","), f.ref_table, f.ref_columns.join(","))).on_hover_text(crate::i18n::tr("Struktur dieser Tabelle öffnen", "Open this table's structure")).clicked() {
+                                cx.actions.push(Action::OpenStructure { db: self.db.clone(), table: f.table.clone() });
+                            }
+                        });
                         ui.label(RichText::new(crate::i18n::text("(eingehend)")).color(style::pal().text_weak));
-                        ui.label("");
-                        ui.end_row();
-                    }
-                });
+                    });
+                }
                 if let Some(n) = drop {
                     cx.actions.push(Action::Confirm {
                         text: crate::tr_format!("Fremdschlüssel \"{n}\" löschen?", "Delete foreign key \"{n}\"?"),
@@ -606,4 +612,26 @@ impl TabView for StructureTab {
         let ctx = ui.ctx().clone();
         self.dialog_ui(&ctx, cx);
     }
+}
+
+/// Zeile einer Liste (Indizes, Fremdschluessel): Spalten fester Breite (0 = Rest), Loeschen immer am rechten Rand
+fn list_row(ui: &mut egui::Ui, cells: [(RichText, f32); 3], deletable: bool) -> bool {
+    let mut delete = false;
+    ui.horizontal(|ui| {
+        ui.set_min_height(30.0);
+        ui.spacing_mut().item_spacing.x = 0.0;
+        let right = if deletable { 30.0 } else { 0.0 };
+        for (text, w) in cells {
+            let w = if w > 0.0 { w } else { (ui.available_width() - right).max(40.0) };
+            crate::widgets::fixed(ui, w, 30.0, |ui| {
+                ui.add(egui::Label::new(text).truncate());
+            });
+        }
+        if deletable {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                delete = crate::icons::button(ui, crate::icons::Icon::Trash, crate::i18n::text("löschen")).clicked();
+            });
+        }
+    });
+    delete
 }
