@@ -94,6 +94,8 @@ pub struct EasyApp {
     server: Server,
     db: Option<Db>,
     auto_connect: bool,
+    /// Automatische Neustarts des eigenen Servers nach einem Absturz (Zeitpunkte, fuer die Begrenzung)
+    crash_restarts: Vec<Instant>,
     databases: Vec<String>,
     schemas: SchemaCache,
     /// Verbindungen zu den gespeicherten Servern, die Dateien gewaehlt haben (Name -> Verbindung)
@@ -212,6 +214,7 @@ impl EasyApp {
             server,
             db: None,
             auto_connect: true,
+            crash_restarts: Vec::new(),
             databases: Vec::new(),
             schemas: {
                 let mut c = SchemaCache::default();
@@ -684,6 +687,19 @@ impl EasyApp {
                 Action::Status(s) => self.toast(s),
                 Action::Error(e) => self.error(e),
                 Action::Confirm { text, db, sql } => self.dialogs.push(Dialog::Confirm { text, db, sql }),
+                Action::EnsureServer => {
+                    let st = self.server.state();
+                    if self.db.is_none() && self.connect_job.is_none() {
+                        if self.is_local() && !st.is_running() && !st.is_busy() {
+                            if let Some(ctx) = CTX.lock_ok().clone() {
+                                self.toast(crate::i18n::tr("Der Datenbankserver wird gestartet …", "Starting the database server …"));
+                                self.start_server(&ctx);
+                            }
+                        } else if !st.is_busy() {
+                            self.connect(false);
+                        }
+                    }
+                }
                 Action::Reconnect | Action::Connect => {
                     self.auto_connect = true;
                     self.db = None;
@@ -1082,6 +1098,16 @@ impl EasyApp {
                 self.db = None;
                 self.databases.clear();
                 self.schemas.clear();
+            }
+            // Eigener Server unerwartet beendet: von selbst neu starten (hoechstens 3-mal in 10 Minuten)
+            let crashed = matches!(st, State::Failed(_)) && matches!(self.last_state, State::Running { own: true }) && self.settings.server_autostart;
+            self.crash_restarts.retain(|t| t.elapsed() < Duration::from_secs(600));
+            if crashed && self.crash_restarts.len() < 3 {
+                self.crash_restarts.push(Instant::now());
+                self.toast(crate::i18n::tr("Der Datenbankserver wurde unerwartet beendet und startet von selbst neu …", "The database server stopped unexpectedly and is restarting by itself …"));
+                self.last_state = st;
+                self.start_server(ctx);
+                return;
             }
             if let State::Failed(e) = &st {
                 self.toast_error(format!("Server: {e}"));

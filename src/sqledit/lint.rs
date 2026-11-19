@@ -141,6 +141,25 @@ pub(super) fn lex(chars: &[char]) -> Lexed {
                         i += 2;
                         continue;
                     }
+                    // 'O'Brien': Apostroph mitten im Wort (Buchstaben direkt danach und gleich wieder ein Anfuehrungszeichen)
+                    let mut w = i + 1;
+                    while w < n && chars[w].is_alphabetic() {
+                        w += 1;
+                    }
+                    if w > i + 1 && i > start + 1 && chars[i - 1].is_alphabetic() && chars.get(w) == Some(&c) && chars.get(w + 1) != Some(&c) {
+                        let word: String = chars[i + 1..w].iter().collect();
+                        problems.push(Problem {
+                            start: i,
+                            end: i + 1,
+                            severity: Severity::Error,
+                            message: crate::tr_format!("Ein Apostroph im Text wird verdoppelt: ''{word}", "An apostrophe inside text is doubled: ''{word}"),
+                            fix: Some(Fix { start: i, end: i, text: c.to_string() }),
+                        });
+                        // Das Anfuehrungszeichen nach dem Wort beendet den Text
+                        i = w;
+                        closed = true;
+                        break;
+                    }
                     closed = true;
                     break;
                 }
@@ -1135,6 +1154,29 @@ mod tests {
 
 #[cfg(test)]
 mod abstand_tests {
+    use super::{Env, apply_fixes, lint};
+
+    #[test]
+    fn apostrophe_inside_text_is_doubled() {
+        let env = Env { schema: None, databases: &[] };
+        let sql = "INSERT INTO t (name, n) VALUES ('O'Brien', 1);";
+        let (fixed, n) = apply_fixes(sql, &lint(sql, &env));
+        assert_eq!((fixed.as_str(), n), ("INSERT INTO t (name, n) VALUES ('O''Brien', 1);", 1));
+        // Zwei Texte hintereinander bleiben, wie sie sind
+        let ok = "INSERT INTO t (a, b) VALUES ('Ann', 'x');";
+        assert_eq!(apply_fixes(ok, &lint(ok, &env)).0, ok);
+    }
+
+    #[test]
+    fn typographic_quotes_and_bare_dates() {
+        let env = Env { schema: None, databases: &[] };
+        let sql = "SELECT * FROM t WHERE name = \u{2018}Ada\u{2019} AND geburt > 2008-03-01;";
+        let (fixed, _) = apply_fixes(sql, &lint(sql, &env));
+        assert_eq!(fixed, "SELECT * FROM t WHERE name = 'Ada' AND geburt > '2008-03-01';");
+        let math = "SELECT 2008 - 3 - 1;";
+        assert_eq!(apply_fixes(math, &lint(math, &env)).0, math);
+    }
+
     #[test]
     fn begrenzter_abstand_stimmt_mit_dem_vollen_ueberein() {
         let w = ["SELECT", "SELCET", "slect", "FORM", "from", "customers", "kunde_id", "WHERE", "wehre", "a", "", "ÄÖÜ", "äöü"];

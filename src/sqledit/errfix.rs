@@ -167,7 +167,32 @@ pub fn for_error(err: &str, sql: &str, schema: Option<&Schema>) -> Vec<ErrorFix>
                         }
                     }
                 }
+                // tabelle.spalte, obwohl die Tabelle einen Alias hat: mit dem Alias schreiben
+                if let Some(q) = qual
+                    && let Some(alias) = alias_of(&toks, q)
+                {
+                    let edits: Vec<_> = toks
+                        .iter()
+                        .enumerate()
+                        .filter(|(k, t)| t.is_name() && t.text.eq_ignore_ascii_case(q) && toks.get(k + 1).is_some_and(|d| d.kind == Kind::Dot) && (*k == 0 || toks[k - 1].kind != Kind::Dot))
+                        .map(|(_, t)| (t.start, t.end, alias.clone()))
+                        .collect();
+                    out.push(fix(crate::tr_format!("Den Alias {alias} statt {q} verwenden", "Use the alias {alias} instead of {q}"), edit(&chars, edits)));
+                }
                 let best = cols.iter().find(|n| n.eq_ignore_ascii_case(col) && **n != col).copied().or_else(|| nearest(col, cols.iter().copied()));
+                // Text ohne Anfuehrungszeichen nach einem Vergleich: name = Ada -> name = 'Ada'
+                let compared: Vec<_> = toks
+                    .iter()
+                    .enumerate()
+                    .filter(|(k, t)| {
+                        qual.is_none() && t.kind == Kind::Word && t.text == col && *k >= 1
+                            && (toks[k - 1].kind == Kind::Op && ["=", "<>", "!=", "<", ">", "<=", ">="].contains(&toks[k - 1].text.as_str()) || toks[k - 1].is_word("LIKE"))
+                    })
+                    .map(|(_, t)| (t.start, t.end, format!("'{}'", t.text)))
+                    .collect();
+                if best.is_none() && !compared.is_empty() {
+                    out.push(fix(crate::tr_format!("„{col}“ ist Text: in Anführungszeichen setzen", "“{col}” is text: put it in quotes"), edit(&chars, compared.clone())));
+                }
                 if let Some(b) = best {
                     let edits: Vec<_> = toks
                         .iter()
@@ -184,6 +209,15 @@ pub fn for_error(err: &str, sql: &str, schema: Option<&Schema>) -> Vec<ErrorFix>
                         out.push(fix(crate::tr_format!("„{b}“ verwenden", "Use “{b}”"), edit(&chars, edits)));
                     }
                 }
+                if best.is_some() && !compared.is_empty() {
+                    out.push(fix(crate::tr_format!("„{col}“ ist Text: in Anführungszeichen setzen", "“{col}” is text: put it in quotes"), edit(&chars, compared)));
+                }
+            }
+        }
+        // Aggregat in WHERE: Bedingung nach GROUP BY als HAVING
+        Some(1111) => {
+            if let Some(f) = where_to_having(&chars, &toks) {
+                out.push(f);
             }
         }
         // Mehrdeutige Spalte: mit der ersten passenden Tabelle bzw. ihrem Alias qualifizieren
@@ -258,6 +292,157 @@ pub fn for_error(err: &str, sql: &str, schema: Option<&Schema>) -> Vec<ErrorFix>
         }
     }
     out
+}
+
+/// Woerter, die als Tabellen- oder Spaltenname Backticks brauchen und oft so benutzt werden
+const RESERVED_NAMES: &[&str] = &[
+    "ORDER", "GROUP", "KEY", "KEYS", "INDEX", "TABLE", "DESC", "ASC", "CHECK", "CONDITION", "DEFAULT", "RANGE", "READ", "RELEASE", "REPEAT",
+    "RETURN", "SCHEMA", "SET", "SHOW", "LIMIT", "LINES", "LOAD", "LOCK", "MATCH", "OPTION", "OUT", "PARTITION", "PROCEDURE", "REFERENCES",
+    "RENAME", "REPLACE", "RESTRICT", "SELECT", "FROM", "WHERE", "USAGE", "USE", "VALUES", "INTERVAL", "LEAVE", "LOOP", "MOD", "WITH", "ROWS",
+    "FUNCTION", "CHANGE", "COLUMN", "CROSS", "CURRENT_DATE", "DATABASE", "DELETE", "DIV", "ELSE", "EXIT", "FETCH", "FOR", "GRANT", "IN", "INNER",
+    "INSERT", "INT", "IS", "JOIN", "LEFT", "LIKE", "NATURAL", "NOT", "NULL", "ON", "OR", "RIGHT", "TO", "TRIGGER", "UNION", "UNIQUE", "UPDATE",
+    "USER_RESOURCES", "WHEN", "WHILE", "ADD", "ALL", "ALTER", "AND", "AS", "BETWEEN", "BY", "CASE", "CREATE", "DROP", "EXISTS", "HAVING", "IF",
+    "INTO", "PRIMARY", "SCHEMAS", "SQL", "THEN", "OVER", "RANK", "WINDOW", "SYSTEM", "ROW", "ROW_NUMBER", "LAG", "LEAD",
+];
+
+/// Schluesselwoerter, die an einer Stelle mit Syntaxfehler gemeint sein koennen
+const SYNTAX_WORDS: &[&str] = &[
+    "SELECT", "FROM", "WHERE", "GROUP", "ORDER", "BY", "HAVING", "LIMIT", "OFFSET", "JOIN", "INNER", "LEFT", "RIGHT", "OUTER", "ON", "USING",
+    "UNION", "DISTINCT", "INSERT", "INTO", "VALUES", "UPDATE", "SET", "DELETE", "CREATE", "TABLE", "ALTER", "DROP", "ADD", "COLUMN", "MODIFY",
+    "LIKE", "BETWEEN", "AND", "OR", "NOT", "NULL", "IS", "IN", "EXISTS", "CASE", "WHEN", "THEN", "ELSE", "END", "AS", "ASC", "DESC", "DEFAULT",
+    "PRIMARY", "KEY", "FOREIGN", "REFERENCES", "UNIQUE", "INDEX", "CONSTRAINT", "AUTO_INCREMENT", "DATABASE", "IF", "TRUNCATE", "VIEW",
+    "VARCHAR", "INT", "INTEGER", "DECIMAL", "DATE", "DATETIME", "TEXT", "BOOLEAN", "UNSIGNED", "CHARACTER", "COLLATE", "ENGINE", "CASCADE",
+];
+
+/// Funktionen, bei denen MariaDB kein Leerzeichen vor der Klammer erlaubt
+const NO_SPACE_FUNCS: &[&str] = &["COUNT", "SUM", "AVG", "MIN", "MAX", "GROUP_CONCAT", "BIT_AND", "BIT_OR", "BIT_XOR", "STD", "STDDEV", "VARIANCE", "SUBSTR", "SUBSTRING", "TRIM", "NOW", "CURDATE", "CAST", "EXTRACT", "POSITION"];
+
+/// Vermutungen fuer einen Syntaxfehler (1064) an der Stelle, die MariaDB nennt ("near '…'").
+/// Mehrere Kandidaten; der Probelauf behaelt nur den, mit dem das Skript weiter kommt.
+pub fn syntax_guesses(err: &str, sql: &str) -> Vec<ErrorFix> {
+    let chars: Vec<char> = sql.chars().collect();
+    let toks = lex(&chars).toks;
+    let mut out: Vec<ErrorFix> = Vec::new();
+    let tr = crate::i18n::tr;
+    // Leerzeichen zwischen Funktion und Klammer (ueberall in der Anweisung)
+    let spaced: Vec<(usize, usize, String)> = toks
+        .windows(2)
+        .filter(|w| w[0].kind == Kind::Word && w[1].kind == Kind::Open && w[1].start > w[0].end && NO_SPACE_FUNCS.contains(&w[0].upper().as_str()))
+        .map(|w| (w[0].end, w[1].start, String::new()))
+        .collect();
+    if !spaced.is_empty() {
+        out.push(fix(tr("Kein Leerzeichen zwischen Funktion und Klammer", "No space between function and parenthesis").into(), edit(&chars, spaced)));
+    }
+    // VARCHAR/CHAR ohne Laenge
+    let lengths: Vec<(usize, usize, String)> = toks
+        .iter()
+        .enumerate()
+        .filter(|(k, t)| (t.is_word("VARCHAR") || t.is_word("VARBINARY")) && toks.get(k + 1).is_none_or(|n| n.kind != Kind::Open))
+        .map(|(_, t)| (t.end, t.end, "(255)".to_string()))
+        .collect();
+    if !lengths.is_empty() {
+        out.push(fix(tr("VARCHAR braucht eine Länge: VARCHAR(255)", "VARCHAR needs a length: VARCHAR(255)").into(), edit(&chars, lengths)));
+    }
+    // Stelle des Fehlers
+    let Some(i) = err.find("near '") else { return out };
+    let rest = &err[i + 6..];
+    let near = rest.rfind("' at line").map_or(rest, |e| &rest[..e]);
+    let probe: String = near.chars().take(30).collect();
+    let Some(byte) = (if probe.trim().is_empty() { None } else { sql.find(probe.as_str()) }) else {
+        // Am Ende der Anweisung ("near ''"): fehlende Klammer zu
+        if near.is_empty() {
+            let depth: i32 = toks.iter().map(|t| match t.kind {
+                Kind::Open => 1,
+                Kind::Close => -1,
+                _ => 0,
+            }).sum();
+            if depth > 0 {
+                let end = sql.trim_end().trim_end_matches(';').trim_end().chars().count();
+                out.push(fix(tr("Klammer schließen", "Close the parenthesis").into(), edit(&chars, vec![(end, end, ")".repeat(depth as usize))])));
+            }
+        }
+        return out;
+    };
+    let at = sql[..byte].chars().count();
+    let Some(k) = toks.iter().position(|t| t.start >= at) else { return out };
+    let t = &toks[k];
+    let prev = k.checked_sub(1).map(|j| &toks[j]);
+    // Apostroph im Text: 'O'Brien' -> 'O''Brien'
+    if t.kind == Kind::Word && prev.is_some_and(|p| p.kind == Kind::Str && p.end == t.start) && chars.get(t.end) == Some(&'\'') {
+        let p = prev.map_or(at, |p| p.end - 1);
+        out.push(fix(tr("Apostroph im Text verdoppeln ('')", "Double the apostrophe inside the text ('')").into(), edit(&chars, vec![(p, p, "'".into())])));
+    }
+    // DELETE * FROM -> DELETE FROM
+    if t.kind == Kind::Op && t.text == "*" && prev.is_some_and(|p| p.is_word("DELETE")) {
+        out.push(fix(tr("DELETE ohne * schreiben", "Write DELETE without *").into(), edit(&chars, vec![(prev.map_or(t.start, |p| p.end), t.end, String::new())])));
+    }
+    // Reserviertes Wort als Name -> `Name`
+    let name_pos = prev.is_some_and(|p| ["TABLE", "INTO", "FROM", "JOIN", "UPDATE", "REFERENCES", "EXISTS"].iter().any(|w| p.is_word(w)) || matches!(p.kind, Kind::Comma | Kind::Open | Kind::Dot));
+    if t.kind == Kind::Word && name_pos && RESERVED_NAMES.contains(&t.upper().as_str()) {
+        let word = t.upper();
+        let edits: Vec<(usize, usize, String)> = toks
+            .iter()
+            .enumerate()
+            .filter(|(j, x)| {
+                x.kind == Kind::Word && x.upper() == word && *j > 0
+                    && (["TABLE", "INTO", "FROM", "JOIN", "UPDATE", "REFERENCES", "EXISTS"].iter().any(|w| toks[j - 1].is_word(w)) || toks[j - 1].kind == Kind::Dot || *j == k)
+            })
+            .map(|(_, x)| (x.start, x.end, format!("`{}`", x.text)))
+            .collect();
+        out.push(fix(crate::tr_format!("{} ist ein reserviertes Wort: als `{}` schreiben", "{} is a reserved word: write it as `{}`", t.text, t.text), edit(&chars, edits)));
+    }
+    // Vertipptes Schluesselwort an der Stelle
+    if t.kind == Kind::Word && !super::lint::known_word(&t.upper())
+        && let Some(w) = nearest(&t.upper(), SYNTAX_WORDS.iter().copied())
+    {
+        out.push(fix(crate::tr_format!("„{}“ statt „{}“", "“{}” instead of “{}”", w, t.text), edit(&chars, vec![(t.start, t.end, w.to_string())])));
+    }
+    // Fehlendes Komma vor der Stelle (Spalten, Werte, SET-Zuweisungen)
+    let ends_value = prev.is_some_and(|p| matches!(p.kind, Kind::Word | Kind::Quoted | Kind::Str | Kind::Num | Kind::Close | Kind::Var) && !(p.kind == Kind::Word && SYNTAX_WORDS.contains(&p.upper().as_str()) && !p.is_word("NULL")));
+    let starts_value = matches!(t.kind, Kind::Word | Kind::Quoted | Kind::Str | Kind::Num | Kind::Var) && !(t.kind == Kind::Word && SYNTAX_WORDS.contains(&t.upper().as_str()) && !t.is_word("NULL"));
+    if ends_value && starts_value {
+        let p = prev.map_or(t.start, |p| p.end);
+        out.push(fix(tr("Fehlendes Komma ergänzen", "Add the missing comma").into(), edit(&chars, vec![(p, p, ",".into())])));
+    }
+    out
+}
+
+/// Alias der Tabelle `table` in FROM/JOIN ("FROM schueler s" -> "s")
+fn alias_of(toks: &[Tok], table: &str) -> Option<String> {
+    for (k, t) in toks.iter().enumerate() {
+        let names_follow = t.is_word("FROM") || t.is_word("JOIN") || t.is_word("UPDATE") || t.kind == Kind::Comma;
+        if !names_follow || !toks.get(k + 1).is_some_and(|x| x.is_name() && x.text.eq_ignore_ascii_case(table)) {
+            continue;
+        }
+        let mut j = k + 2;
+        if toks.get(j).is_some_and(|x| x.is_word("AS")) {
+            j += 1;
+        }
+        return toks.get(j).filter(|x| x.kind == Kind::Word && !super::lint::known_word(&x.upper()) || x.kind == Kind::Quoted).map(|a| a.text.clone());
+    }
+    None
+}
+
+/// "WHERE COUNT(*) > 1 GROUP BY x" -> "GROUP BY x HAVING COUNT(*) > 1" (nur wenn die ganze WHERE-Bedingung ein Aggregat ist)
+fn where_to_having(chars: &[char], toks: &[Tok]) -> Option<ErrorFix> {
+    const AGG: &[&str] = &["COUNT", "SUM", "AVG", "MIN", "MAX", "GROUP_CONCAT"];
+    let depth_at = |k: usize| toks[..k].iter().map(|t| match t.kind { Kind::Open => 1i32, Kind::Close => -1, _ => 0 }).sum::<i32>();
+    let w = toks.iter().enumerate().position(|(k, t)| t.is_word("WHERE") && depth_at(k) == 0)?;
+    let g = toks.iter().enumerate().position(|(k, t)| t.is_word("GROUP") && toks.get(k + 1).is_some_and(|b| b.is_word("BY")) && k > w && depth_at(k) == 0)?;
+    let cond = &toks[w + 1..g];
+    if cond.is_empty() || !cond.iter().enumerate().any(|(j, t)| AGG.contains(&t.upper().as_str()) && cond.get(j + 1).is_some_and(|o| o.kind == Kind::Open)) {
+        return None;
+    }
+    // Ende von GROUP BY: HAVING, ORDER, LIMIT oder das Ende
+    let end = toks.iter().enumerate().skip(g + 2).find(|(k, t)| depth_at(*k) == 0 && (t.is_word("HAVING") || t.is_word("ORDER") || t.is_word("LIMIT") || t.kind == Kind::Semi)).map(|(k, _)| k);
+    let cond_text = text(chars, cond[0].start, cond[cond.len() - 1].end);
+    let group_end = end.map_or_else(|| toks.last().map_or(chars.len(), |t| t.end), |k| toks[k - 1].end);
+    let mut edits = vec![(toks[w].start, toks[g].start, String::new())];
+    match end.map(|k| &toks[k]) {
+        Some(h) if h.is_word("HAVING") => edits.push((h.end, h.end, format!(" {cond_text} AND"))),
+        _ => edits.push((group_end, group_end, format!(" HAVING {cond_text}"))),
+    }
+    Some(fix(crate::i18n::tr("Bedingung mit Aggregat gehört nach GROUP BY (HAVING)", "A condition with an aggregate belongs after GROUP BY (HAVING)").into(), edit(chars, edits)))
 }
 
 /// Zuletzt per CREATE DATABASE oder USE genannte Datenbank in `script` (fuer "No database selected")
@@ -452,6 +637,26 @@ fn fk_type_fix(chars: &[char], toks: &[Tok], schema: &Schema) -> Option<ErrorFix
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn syntax_guesses_at_the_reported_place() {
+        let near = |n: &str| format!("ERROR 1064 (42000): You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near '{n}' at line 1");
+        let has = |err: &str, sql: &str, want: &str| syntax_guesses(err, sql).iter().any(|f| f.sql == want);
+        assert!(has(&near("COUNT(*) FROM s GROUP BY k"), "SELECT k COUNT(*) FROM s GROUP BY k", "SELECT k, COUNT(*) FROM s GROUP BY k"));
+        assert!(has(&near("1)"), "INSERT INTO s (a, b) VALUES ('x' 1)", "INSERT INTO s (a, b) VALUES ('x', 1)"));
+        assert!(has(&near("DECS"), "SELECT * FROM s ORDER BY a DECS", "SELECT * FROM s ORDER BY a DESC"));
+        assert!(has(&near("* FROM s WHERE id = 2"), "DELETE * FROM s WHERE id = 2", "DELETE FROM s WHERE id = 2"));
+        assert!(has(&near("*) FROM s"), "SELECT COUNT (*) FROM s", "SELECT COUNT(*) FROM s"));
+        assert!(has(&near("order (id INT)"), "CREATE TABLE order (id INT)", "CREATE TABLE `order` (id INT)"));
+        assert!(has(&near(")"), "CREATE TABLE t (id INT, name VARCHAR)", "CREATE TABLE t (id INT, name VARCHAR(255))"));
+    }
+
+    #[test]
+    fn aggregate_in_where_moves_to_having() {
+        let sql = "SELECT k FROM s WHERE COUNT(*) > 1 GROUP BY k ORDER BY k";
+        let f = for_error("ERROR 1111 (HY000): Invalid use of group function", sql, None);
+        assert_eq!(f[0].sql, "SELECT k FROM s GROUP BY k HAVING COUNT(*) > 1 ORDER BY k");
+    }
+
     use super::*;
     use crate::db::ColumnInfo;
 

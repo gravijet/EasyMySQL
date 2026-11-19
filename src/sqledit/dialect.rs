@@ -166,6 +166,37 @@ pub(super) fn check(chars: &[char], stmt: &[Tok], tables: &HashMap<String, &Tabl
             ));
             continue;
         }
+        // Typografische Anfuehrungszeichen (aus Word oder PDF kopiert) -> ' bzw. "
+        if t.kind == Kind::Op && matches!(t.text.as_str(), "\u{2018}" | "\u{2019}" | "\u{201A}" | "\u{201C}" | "\u{201D}" | "\u{201E}") {
+            let plain = if matches!(t.text.as_str(), "\u{201C}" | "\u{201D}" | "\u{201E}") { "\"" } else { "'" };
+            out.push(problem(
+                t.start,
+                t.end,
+                Severity::Error,
+                crate::tr_format!("{} ist ein typografisches Anführungszeichen; SQL braucht {plain}.", "{} is a typographic quote; SQL needs {plain}.", t.text),
+                Some((t.start, t.end, plain.into())),
+            ));
+            continue;
+        }
+        // Datum ohne Anfuehrungszeichen: 2008-03-01 rechnet MariaDB als 2008 - 3 - 1
+        if t.kind == Kind::Num
+            && t.end - t.start == 4
+            && let [m, d2, m2, d] = [stmt.get(i + 1), stmt.get(i + 2), stmt.get(i + 3), stmt.get(i + 4)]
+            && let (Some(m), Some(d2), Some(m2), Some(d)) = (m, d2, m2, d)
+            && m.text == "-" && m2.text == "-" && d2.kind == Kind::Num && d.kind == Kind::Num
+            && m.start == t.end && d2.start == m.end && m2.start == d2.end && d.start == m2.end
+            && (1..=2).contains(&(d2.end - d2.start)) && (1..=2).contains(&(d.end - d.start))
+        {
+            let shown = text(chars, t.start, d.end);
+            out.push(problem(
+                t.start,
+                d.end,
+                Severity::Error,
+                crate::tr_format!("Ein Datum braucht Anführungszeichen: '{shown}' (ohne rechnet MariaDB eine Subtraktion).", "A date needs quotes: '{shown}' (without them MariaDB subtracts)."),
+                Some((t.start, d.end, format!("'{shown}'"))),
+            ));
+            continue;
+        }
         if t.kind != Kind::Word || after_dot || next.is_some_and(|n| n.kind == Kind::Dot) {
             continue;
         }

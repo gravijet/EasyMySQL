@@ -312,6 +312,8 @@ impl Db {
             .rows("SHOW DATABASES", ())?
             .into_iter()
             .map(|r| s(&r[0]))
+            // Wegwerf-Kopien des Auto-Fix gehoeren nicht in die Liste
+            .filter(|d| !d.starts_with(crate::sqledit::probe::SANDBOX_PREFIX))
             .collect())
     }
 

@@ -1212,6 +1212,13 @@ fn editor_settings(ui: &mut egui::Ui, s: &mut crate::settings::Settings) {
     crate::widgets::row(ui, crate::i18n::tr("SQL in Programmcode", "SQL in program code"), |ui| {
         crate::widgets::switch(ui, &mut e.sql_in_strings, crate::i18n::tr("SQL in Java-Zeichenketten prüfen", "Check SQL in Java strings"));
     });
+    crate::widgets::row(ui, crate::i18n::tr("Fehler beim Ausführen", "Errors while running"), |ui| {
+        crate::widgets::switch(
+            ui,
+            &mut e.auto_fix_run,
+            crate::i18n::tr("Automatisch auf Kopien reparieren und sicher Korrigiertes weiter ausführen", "Repair automatically on copies and keep running what was safely corrected"),
+        );
+    });
     crate::widgets::row(ui, crate::i18n::tr("Lokale KI", "Local AI"), |ui| {
         use crate::sqledit::ai::{self, Status};
         ui.vertical(|ui| {

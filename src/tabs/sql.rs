@@ -67,6 +67,18 @@ struct AutoFix {
     report: Option<sqledit::probe::Report>,
     /// Text nach dem Auto-Fix (Rueckgaengig nur, solange er unveraendert ist)
     after: String,
+    /// Nach einem Fehler beim Ausfuehren: repariert wird nur der Rest ab der fehlgeschlagenen Anweisung
+    heal: Option<Heal>,
+    /// Bereich, den "Ausfuehren" startet (Zeichen im Text nach dem Auto-Fix); None = alles
+    region: Option<(usize, usize)>,
+    /// Die Korrektur wurde schon von selbst weiter ausgefuehrt
+    ran: bool,
+}
+
+/// Rest eines fehlgeschlagenen Laufs (Zeichenbereich im Text beim Start der Reparatur)
+struct Heal {
+    start: usize,
+    end: usize,
 }
 
 /// Wunsch aus der Auto-Fix-Leiste
@@ -118,7 +130,16 @@ pub struct SqlTab {
     /// Beim ersten Anzeigen den Editor fokussieren (neue Abfrage: sofort lostippen)
     focus_editor: bool,
     autofix: Option<AutoFix>,
+    /// Automatische Reparaturen in Folge seit dem letzten Ausfuehren durch den Nutzer
+    heal_round: u8,
+    /// Der naechste Lauf setzt eine automatische Reparatur fort (zaehlt nicht als neuer Start)
+    heal_run: bool,
+    /// Ausfuehren ohne Verbindung: laeuft, sobald der Server bereit ist (SQL, Position, seit wann)
+    wait_run: Option<(String, usize, Instant)>,
 }
+
+/// So oft repariert ein Lauf sich hoechstens selbst, bevor der Nutzer wieder entscheidet
+const MAX_HEALS: u8 = 3;
 
 fn next_scratch_id() -> usize {
     let used: Vec<usize> = std::fs::read_dir(workspace::scratch_dir())
@@ -178,6 +199,9 @@ impl SqlTab {
             pending_line: None,
             focus_editor: false,
             autofix: None,
+            heal_round: 0,
+            heal_run: false,
+            wait_run: None,
         }
     }
 
@@ -316,7 +340,14 @@ impl SqlTab {
             return;
         }
         let Some(dbc) = cx.db else {
-            cx.error(crate::i18n::text("Keine Verbindung zum Datenbankserver."));
+            // Ohne Verbindung: Server starten bzw. verbinden, danach laeuft die Abfrage von selbst
+            if self.server.is_none() && self.wait_run.is_none() && !sql.trim().is_empty() {
+                self.wait_run = Some((sql, offset, Instant::now()));
+                cx.actions.push(Action::EnsureServer);
+                cx.status(crate::i18n::tr("Verbindung wird hergestellt – die Abfrage läuft danach von selbst.", "Connecting – the query runs by itself afterwards."));
+            } else if self.wait_run.is_none() {
+                cx.error(crate::i18n::text("Keine Verbindung zum Datenbankserver."));
+            }
             return;
         };
         let mut stmts = db::split_statements(&sql);
@@ -331,6 +362,13 @@ impl SqlTab {
         }
         self.run_end = offset + sql.chars().count();
         self.failed = None;
+        if !std::mem::take(&mut self.heal_run) {
+            self.heal_round = 0;
+            // Ein neuer Lauf ersetzt die Leiste einer frueheren Reparatur (eine laufende Reparatur bleibt)
+            if self.autofix.as_ref().is_some_and(|a| a.rx.is_none() && a.heal.is_some()) {
+                self.autofix = None;
+            }
+        }
         let conn = match self.conn.take() {
             Some(c) => c,
             None => match dbc.new_conn() {
@@ -348,17 +386,24 @@ impl SqlTab {
         std::thread::spawn(move || {
             let mut conn = conn;
             let fail = |conn: Conn, msg: String| (Some(conn), vec![StmtResult { error: Some(msg), ..Default::default() }], None, None);
+            let mut gone_note = None;
             if !database.is_empty() {
                 let cur: Option<String> = conn.query_first::<Option<String>, _>("SELECT DATABASE()").ok().flatten().flatten();
                 if cur.as_deref() != Some(database.as_str())
                     && let Err(e) = conn.query_drop(format!("USE {}", db::q(&database))) {
-                        let _ = tx.send(fail(conn, db::err_text(e)));
-                        return;
+                        let e = db::err_text(e);
+                        // Gemerkte Datenbank gibt es nicht mehr: ohne sie laufen (das Skript legt sie evtl. selbst an)
+                        if crate::sqledit::errfix::code(&e) == Some(1049) {
+                            gone_note = Some(crate::tr_format!("Die Datenbank {database} gibt es nicht mehr – ausgeführt ohne gewählte Datenbank.", "The database {database} no longer exists – run without a selected database."));
+                        } else {
+                            let _ = tx.send(fail(conn, e));
+                            return;
+                        }
                     }
             }
             // Vor DROP/TRUNCATE/DELETE ohne WHERE automatisch sichern
             let targets = if crate::backup::BEFORE_DELETE.load(std::sync::atomic::Ordering::Relaxed) { crate::backup::destructive_targets(&sql, Some(&database)) } else { Vec::new() };
-            let mut note = None;
+            let mut note = gone_note;
             if !targets.is_empty()
                 && let Some(env) = crate::backup::env() {
                     match crate::backup::create(&env, Some(targets.clone()), "vor-loeschen", &|_| {}) {
@@ -474,18 +519,42 @@ impl SqlTab {
             }
             return;
         };
+        let first = crate::i18n::tr("Auto-Fix startet …", "Auto-fix is starting …").to_string();
+        self.start_probe(dbc, cx.databases.to_vec(), self.text.clone(), None, first);
+    }
+
+    /// Fehlgeschlagenen Lauf im Hintergrund reparieren: der Rest ab der fehlgeschlagenen Anweisung laeuft
+    /// in Wegwerf-Kopien (die Anweisungen davor sind schon auf dem Server), bis er fehlerfrei durchgeht
+    fn heal(&mut self, cx: &mut Ctx, start: usize, end: usize, line: usize) {
+        let Some(dbc) = cx.db else { return };
+        let rest: String = self.text.chars().skip(start).take(end.saturating_sub(start)).collect();
+        if rest.trim().is_empty() {
+            return;
+        }
+        self.heal_round += 1;
+        let first = crate::tr_format!("Zeile {}: Fehler wird auf Kopien repariert …", "Line {}: repairing the error on copies …", line + 1);
+        self.start_probe(dbc, cx.databases.to_vec(), rest, Some(Heal { start, end }), first);
+    }
+
+    /// Auto-Fix mit Probelauf im Hintergrund starten (`text`: ganzer Text oder der Rest eines Laufs)
+    fn start_probe(&mut self, dbc: &crate::db::Db, databases: Vec<String>, text: String, heal: Option<Heal>, first: String) {
         let setup = sqledit::probe::Setup {
             database: Some(self.database.clone()).filter(|d| !d.is_empty()),
-            databases: cx.databases.to_vec(),
+            databases,
             file_stem: self.file.as_ref().and_then(|f| f.file_stem()).map(|s| s.to_string_lossy().into_owned()),
         };
         let pool = crate::db::Db { pool: dbc.pool.clone(), info: dbc.info.clone(), version: dbc.version.clone() };
-        let status = std::sync::Arc::new(std::sync::Mutex::new(crate::i18n::tr("Auto-Fix startet …", "Auto-fix is starting …").to_string()));
+        let status = std::sync::Arc::new(std::sync::Mutex::new(first));
         let cancel = std::sync::Arc::new(AtomicBool::new(false));
         let (tx, rx) = channel();
-        let (text, st, cn) = (self.text.clone(), status.clone(), cancel.clone());
+        let (st, cn) = (status.clone(), cancel.clone());
         let ai_ready = sqledit::ai::ready();
         std::thread::spawn(move || {
+            // Frische Liste: das Skript kann eben erst Datenbanken angelegt haben
+            let mut setup = setup;
+            if let Ok(list) = pool.databases() {
+                setup.databases = list;
+            }
             let say = |m: String| {
                 if let Ok(mut g) = st.lock() {
                     *g = m;
@@ -506,7 +575,7 @@ impl SqlTab {
             };
             let _ = tx.send(report);
         });
-        self.autofix = Some(AutoFix { rx: Some(rx), status, cancel, before: self.text.clone(), report: None, after: String::new() });
+        self.autofix = Some(AutoFix { rx: Some(rx), status, cancel, before: self.text.clone(), report: None, after: String::new(), heal, region: None, ran: false });
     }
 
     /// Ergebnis des Auto-Fix uebernehmen
@@ -518,6 +587,38 @@ impl SqlTab {
         if self.text != a.before {
             self.autofix = None;
             cx.status(crate::i18n::tr("Auto-Fix verworfen: Der Text wurde inzwischen geändert.", "Auto-fix discarded: the text was changed in the meantime."));
+            return;
+        }
+        if let Some(h) = &a.heal {
+            let (start, end) = (h.start, h.end);
+            let chars: Vec<char> = self.text.chars().collect();
+            let rest: String = chars[start.min(chars.len())..end.min(chars.len())].iter().collect();
+            if report.end != sqledit::probe::End::Clean || report.text == rest {
+                // Keine sichere Korrektur: Fehlermeldung und Ein-Klick-Hilfen unten bleiben
+                self.autofix = None;
+                if report.end != sqledit::probe::End::Cancelled {
+                    self.note = Some(crate::i18n::tr("Automatische Reparatur: keine sichere Korrektur gefunden.", "Automatic repair: no safe fix found.").into());
+                }
+                return;
+            }
+            let safe = !report.changes.iter().any(|c| c.check) && !sqledit::probe::adds_destruction(&rest, &report.text);
+            let base = sqledit::line_col(&self.text, start).0;
+            let mut report = report;
+            for c in &mut report.changes {
+                c.line = c.line.map(|l| l + base);
+            }
+            let fixed = report.text.clone();
+            self.text = chars[..start.min(chars.len())].iter().chain(fixed.chars().collect::<Vec<_>>().iter()).chain(chars[end.min(chars.len())..].iter()).collect();
+            self.last_edit = Instant::now();
+            a.after = self.text.clone();
+            a.region = Some((start, start + fixed.chars().count()));
+            a.report = Some(report);
+            a.ran = safe;
+            if safe {
+                // Auf Kopien geprueft, loescht nichts zusaetzlich: gleich weiter ausfuehren
+                self.heal_run = true;
+                self.run(cx, fixed, start);
+            }
             return;
         }
         if report.text != self.text {
@@ -556,6 +657,8 @@ impl SqlTab {
                 };
                 let n = r.changes.len();
                 let (icon, color, head) = match &r.end {
+                    End::Clean if a.ran => (Icon::Check, pal.ok_text, crate::tr_format!("Fehler automatisch behoben ({n} Änderung(en), auf Kopien geprüft) und weiter ausgeführt.", "Error fixed automatically ({n} change(s), checked on copies) and execution continued.")),
+                    End::Clean if a.heal.is_some() => (Icon::Alert, pal.warn_text, crate::tr_format!("Korrektur gefunden ({n} Änderung(en)). Sie löscht Daten oder enthält Platzhalter – bitte ansehen, dann weiter ausführen.", "Fix found ({n} change(s)). It deletes data or contains placeholders – please review, then continue.")),
                     End::Clean if n == 0 => (Icon::Check, pal.ok_text, tr("Alles in Ordnung: Das Skript läuft im Probelauf ohne Fehler.", "All good: the script runs without errors in a trial run.").to_string()),
                     End::Clean => (Icon::Check, pal.ok_text, crate::tr_format!("{n} Änderung(en) – das Skript läuft jetzt im Probelauf ohne Fehler.", "{n} change(s) – the script now runs without errors in a trial run.")),
                     End::Offline => (Icon::Sparkles, pal.warn_text, crate::tr_format!("{n} Stelle(n) korrigiert (ohne Server kein Probelauf).", "{n} place(s) corrected (no trial run without a server).")),
@@ -571,10 +674,11 @@ impl SqlTab {
                         if icons::button(ui, Icon::Close, tr("Schließen", "Close")).clicked() {
                             act = Some(FixAct::Close);
                         }
-                        if n > 0 && self.text == a.after && icons::text_button(ui, Icon::Undo, tr("Rückgängig", "Undo")).clicked() {
+                        if n > 0 && !a.ran && self.text == a.after && icons::text_button(ui, Icon::Undo, tr("Rückgängig", "Undo")).clicked() {
                             act = Some(FixAct::Undo);
                         }
-                        if r.end == End::Clean && icons::run_button(ui, tr("Ausführen", "Run")).clicked() {
+                        let label = if a.heal.is_some() { tr("Weiter ausführen", "Continue") } else { tr("Ausführen", "Run") };
+                        if r.end == End::Clean && !a.ran && self.text == a.after && icons::run_button(ui, label).clicked() {
                             act = Some(FixAct::Run);
                         }
                     });
@@ -634,8 +738,11 @@ impl SqlTab {
         self.conn = conn;
         self.job = None;
         let db_before = self.database.clone();
-        if let Some(d) = current {
-            self.set_database(d);
+        match current {
+            Some(d) => self.set_database(d),
+            // Gemerkte Datenbank gibt es nicht mehr: nicht weiter anzeigen
+            None if !self.database.is_empty() && !cx.databases.iter().any(|d| d == &self.database) => self.set_database(String::new()),
+            None => {}
         }
         // Verlauf
         let now = crate::server::timestamp();
@@ -652,9 +759,15 @@ impl SqlTab {
             .collect();
         cx.actions.push(Action::History(entries));
         // Fehler: passende Behebungen vorbereiten (korrigierte Anweisung oder andere Datenbank)
+        let mut heal_from: Option<(usize, usize)> = None;
         if let Some((i, err)) = results.iter().enumerate().find_map(|(i, r)| r.error.clone().map(|e| (i, e)))
             && let Some(st) = self.running.get(i).cloned()
         {
+            // Nur wenn die Anweisung so im Text steht (nicht bei EXPLAIN o. ae.) und die Verbindung steht
+            let seg: String = self.text.chars().skip(st.start).take(self.run_end.saturating_sub(st.start)).collect();
+            if self.conn.is_some() && seg.trim_start().starts_with(st.sql.trim_start()) {
+                heal_from = Some((st.start, st.line));
+            }
             let schema = if db_before.is_empty() { None } else { cx.schema(&db_before) };
             let mut fixes = crate::sqledit::errfix::for_error(&err, &st.sql, schema.as_deref());
             let mut databases = Vec::new();
@@ -696,6 +809,14 @@ impl SqlTab {
         self.pane = if n_sets > 0 && !results.iter().any(|r| r.error.is_some()) { Pane::Set(n_sets - 1) } else { Pane::Messages };
         self.results = results;
         self.note = note;
+        // Fehler: im Hintergrund auf Kopien reparieren und sicher Korrigiertes weiter ausfuehren
+        if let Some((start, line)) = heal_from
+            && sqledit::prefs().auto_fix_run
+            && self.heal_round < MAX_HEALS
+            && self.autofix.as_ref().is_none_or(|a| a.rx.is_none())
+        {
+            self.heal(cx, start, self.run_end, line);
+        }
     }
 
     fn results_ui(&mut self, ui: &mut egui::Ui, row_h: f32, history: &[crate::qhistory::Entry]) -> Option<HistoryAct> {
@@ -1186,6 +1307,18 @@ impl TabView for SqlTab {
     fn ui(&mut self, ui: &mut egui::Ui, cx: &mut Ctx) {
         self.poll(cx);
         self.poll_autofix(cx);
+        if let Some((_, _, since)) = &self.wait_run {
+            if cx.db.is_some() {
+                if let Some((sql, offset, _)) = self.wait_run.take() {
+                    self.run(cx, sql, offset);
+                }
+            } else if since.elapsed() > Duration::from_secs(60) {
+                self.wait_run = None;
+                cx.error(crate::i18n::text("Keine Verbindung zum Datenbankserver."));
+            } else {
+                ui.ctx().request_repaint_after(Duration::from_millis(250));
+            }
+        }
         let pal = style::pal();
         if self.job.is_some() {
             ui.ctx().request_repaint_after(Duration::from_millis(50));
@@ -1231,7 +1364,10 @@ impl TabView for SqlTab {
             if super::str_combo(ui, self.editor.id.with("db"), &dbs, &mut d, 150.0) {
                 self.set_database(d);
             }
-            ui.add_enabled_ui(self.job.is_none(), |ui| {
+            if self.wait_run.is_some() {
+                ui.spinner().on_hover_text(crate::i18n::tr("Wartet auf den Datenbankserver …", "Waiting for the database server …"));
+            }
+            ui.add_enabled_ui(self.job.is_none() && self.wait_run.is_none(), |ui| {
                 if icons::run_button(ui, crate::i18n::text("Ausführen"))
                     .on_hover_text(crate::tr_format!("Datei oder Markierung ausführen ({})", "Run file or selection ({})", crate::keymap::text(Cmd::RunAll)))
                     .clicked()
@@ -1302,8 +1438,14 @@ impl TabView for SqlTab {
         let font_row = ui.ctx().fonts_mut(|f| f.row_height(&egui::FontId::monospace(sqledit::font_size())));
         match self.autofix_ui(ui) {
             Some(FixAct::Run) => {
-                self.autofix = None;
-                self.run(cx, self.text.clone(), 0);
+                let region = self.autofix.take().and_then(|a| a.region);
+                match region {
+                    Some((a, b)) => {
+                        let sql: String = self.text.chars().skip(a).take(b - a).collect();
+                        self.run(cx, sql, a);
+                    }
+                    None => self.run(cx, self.text.clone(), 0),
+                }
             }
             Some(FixAct::Undo) => {
                 if let Some(a) = self.autofix.take() {

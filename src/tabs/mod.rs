@@ -45,6 +45,8 @@ pub enum Action {
     Reconnect,
     /// Verbindung trennen (z. B. vor der Server-Rettung)
     Disconnect,
+    /// Datenbank gebraucht, aber keine Verbindung: eigenen Server starten bzw. verbinden
+    EnsureServer,
     OpenSafety,
     OpenImport,
     /// Export einer Datenbank (optional nur einzelne Tabellen)

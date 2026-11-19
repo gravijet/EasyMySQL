@@ -366,6 +366,8 @@ pub const CHAPTERS: &[Chapter] = &[
                         "Der Knopf „Auto-Fix“ oder das Tastenkürzel bessert alles selbst aus und prüft das Ergebnis im Probelauf (siehe Auto-Fix).",
                         "Prozeduren und Trigger werden nicht geprüft. Unter Einstellungen → Editor lässt sich die Prüfung ausschalten.",
                     ]),
+                    P("Auch ohne Klick: Schlägt beim Ausführen eine Anweisung fehl, repariert EasyMySQL den Rest des Skripts von selbst auf Kopien. Löscht die Korrektur nichts zusätzlich und enthält sie keine Platzhalter, läuft das Skript ab der Fehlerstelle gleich weiter; sonst steht oben „Weiter ausführen“ zum Ansehen und Bestätigen. Abschaltbar unter Einstellungen → Editor → Fehler beim Ausführen."),
+                    P("Erkannt werden unter anderem fehlende Kommas (zwischen Spalten, Werten und SET-Zuweisungen), vertippte Schlüsselwörter (LIMT, DECS, FORM), DELETE *, COUNT (*), reservierte Wörter als Namen (order, group, key), VARCHAR ohne Länge, typografische Anführungszeichen, Apostroph im Text (O'Brien), Datum ohne Anführungszeichen, Text ohne Anführungszeichen nach =, Tabellenname statt Alias und Aggregate in WHERE (wird HAVING)."),
                     Keys(&[Cmd::FixAll]),
                     Open("Einstellungen zum Editor", Settings("editor")),
                 ],

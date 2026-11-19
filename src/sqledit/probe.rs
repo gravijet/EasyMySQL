@@ -173,20 +173,34 @@ fn chosen(problems: &[Problem]) -> Vec<&Problem> {
 // ---------------------------------------------------------------------------
 // Umschreiben auf die Probe-Datenbanken
 
+/// Vorsilbe aller Probe-Datenbanken (werden nie angezeigt und nach Abstuerzen aufgeraeumt)
+pub const SANDBOX_PREFIX: &str = "easymysql_probe_";
+
 /// Original -> Probe-Datenbank
 #[derive(Default)]
 struct Map {
     pairs: Vec<(String, String)>,
+    /// Laufende Nummer dieses Auto-Fix im Prozess (zwei Reiter duerfen gleichzeitig probieren)
+    run: u32,
 }
 
 impl Map {
+    fn new() -> Self {
+        static RUN: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
+        Map { pairs: Vec::new(), run: RUN.fetch_add(1, Ordering::Relaxed) }
+    }
+
+    fn sandbox(&self, n: usize) -> String {
+        format!("{SANDBOX_PREFIX}{}_{}_{n}", std::process::id(), self.run)
+    }
+
     fn get(&self, name: &str) -> Option<&str> {
         self.pairs.iter().find(|(o, _)| o.eq_ignore_ascii_case(name)).map(|(_, s)| s.as_str())
     }
 
     fn add(&mut self, name: &str) {
         if self.get(name).is_none() && !is_system(name) {
-            let s = format!("easymysql_probe_{}_{}", std::process::id(), self.pairs.len() + 1);
+            let s = self.sandbox(self.pairs.len() + 1);
             self.pairs.push((name.to_string(), s));
         }
     }
@@ -221,7 +235,7 @@ fn database_name_at(toks: &[Tok]) -> Option<Option<usize>> {
 
 /// Datenbanken, die das Skript nennt (USE, CREATE/DROP DATABASE, db.tabelle bei bekannten Datenbanken)
 fn referenced(text: &str, setup: &Setup) -> Map {
-    let mut map = Map::default();
+    let mut map = Map::new();
     if let Some(d) = setup.database.as_deref().filter(|d| !d.is_empty()) {
         map.add(d);
     }
@@ -326,6 +340,38 @@ struct Probe<'a> {
     skipped: usize,
     /// Datenbanken auf dem echten Server
     on_server: Vec<String>,
+    /// Struktur der Originale (aendert sich waehrend des Auto-Fix nicht): einmal lesen statt je Probelauf
+    cache: std::collections::HashMap<String, Vec<Item>>,
+    /// Woerter des gerade probierten Skripts (klein): nur genannte Tabellen werden kopiert
+    names: HashSet<String>,
+}
+
+/// Tabelle oder Sicht eines Originals
+#[derive(Clone)]
+struct Item {
+    name: String,
+    ddl: String,
+    view: bool,
+    /// Spalten zum Kopieren der Daten (leer = keine Daten)
+    cols: Vec<String>,
+}
+
+/// Ab so vielen Tabellen werden nur die vom Skript genannten (samt Fremdschluessel-Nachbarn) kopiert
+const COPY_ALL_UP_TO: usize = 8;
+
+/// Tabellen, auf die eine CREATE-Anweisung per REFERENCES bzw. FROM/JOIN verweist (klein geschrieben)
+fn mentioned_tables(ddl: &str) -> Vec<String> {
+    let chars: Vec<char> = ddl.chars().collect();
+    let toks = lex(&chars).toks;
+    let mut out = Vec::new();
+    for (k, t) in toks.iter().enumerate() {
+        if (t.is_word("REFERENCES") || t.is_word("FROM") || t.is_word("JOIN")) && let Some(n) = toks.get(k + 1).filter(|n| n.is_name()) {
+            // `db`.`tabelle` -> tabelle
+            let name = if toks.get(k + 2).is_some_and(|d| d.kind == Kind::Dot) { toks.get(k + 3).map_or(&n.text, |x| &x.text) } else { &n.text };
+            out.push(name.to_ascii_lowercase());
+        }
+    }
+    out
 }
 
 impl Probe<'_> {
@@ -336,6 +382,29 @@ impl Probe<'_> {
     }
 
     /// Kopie einer echten Datenbank anlegen (Struktur, Sichten, kleine Daten)
+    /// Tabellen und Sichten eines Originals (einmal je Auto-Fix gelesen)
+    fn items(&mut self, orig: &str) -> Result<Vec<Item>, String> {
+        if let Some(v) = self.cache.get(orig) {
+            return Ok(v.clone());
+        }
+        let tables = self.server.rows(&format!("SELECT TABLE_NAME, TABLE_TYPE FROM information_schema.TABLES WHERE TABLE_SCHEMA = {}", str_lit(orig)))?;
+        let schema = if self.copy_data { self.server.schema(orig) } else { None };
+        let mut out = Vec::new();
+        for r in &tables {
+            let name = r.first().cloned().flatten().unwrap_or_default();
+            let view = r.get(1).cloned().flatten().unwrap_or_default().contains("VIEW");
+            let rows = self.server.rows(&format!("SHOW CREATE {} {}.{}", if view { "VIEW" } else { "TABLE" }, db::q(orig), db::q(&name)))?;
+            let Some(ddl) = rows.first().and_then(|r| r.get(1).cloned().flatten()) else { continue };
+            let cols = match schema.as_ref().and_then(|s| s.tables.iter().find(|t| t.name == name)) {
+                Some(t) if !view => t.columns.iter().filter(|c| !c.is_generated()).map(|c| db::q(&c.name)).collect(),
+                _ => Vec::new(),
+            };
+            out.push(Item { name, ddl, view, cols });
+        }
+        self.cache.insert(orig.to_string(), out.clone());
+        Ok(out)
+    }
+
     fn copy(&mut self, orig: &str, with_tables: bool) -> Result<(), String> {
         let s = self.map.get(orig).ok_or("map")?.to_string();
         self.server.exec(&format!("CREATE DATABASE {}", db::q(&s)))?;
@@ -344,28 +413,41 @@ impl Probe<'_> {
         }
         self.server.exec(&format!("USE {}", db::q(&s)))?;
         self.server.exec("SET FOREIGN_KEY_CHECKS = 0")?;
-        let tables = self.server.rows(&format!("SELECT TABLE_NAME, TABLE_TYPE FROM information_schema.TABLES WHERE TABLE_SCHEMA = {}", str_lit(orig)))?;
-        let schema = if self.copy_data { self.server.schema(orig) } else { None };
-        let mut views: Vec<String> = Vec::new();
-        for r in &tables {
-            let name = r.first().cloned().flatten().unwrap_or_default();
-            let kind = r.get(1).cloned().flatten().unwrap_or_default();
-            if kind.contains("VIEW") {
-                let rows = self.server.rows(&format!("SHOW CREATE VIEW {}.{}", db::q(orig), db::q(&name)))?;
-                if let Some(ddl) = rows.first().and_then(|r| r.get(1).cloned().flatten()) {
-                    views.push(ddl);
+        let items = self.items(orig)?;
+        // Grosse Datenbanken: nur, was das Skript nennt, samt Fremdschluessel-Nachbarn und Tabellen der Sichten
+        let mut keep: HashSet<String> = HashSet::new();
+        let tables = items.iter().filter(|i| !i.view).count();
+        if tables <= COPY_ALL_UP_TO {
+            keep.extend(items.iter().map(|i| i.name.to_ascii_lowercase()));
+        } else {
+            keep.extend(items.iter().map(|i| i.name.to_ascii_lowercase()).filter(|n| self.names.contains(n)));
+            loop {
+                let before = keep.len();
+                for i in &items {
+                    let me = i.name.to_ascii_lowercase();
+                    let refs = mentioned_tables(&i.ddl);
+                    if keep.contains(&me) {
+                        keep.extend(refs);
+                    } else if !i.view && refs.iter().any(|r| keep.contains(r)) {
+                        // Kindtabellen: DROP/DELETE der Eltern verhalten sich sonst anders
+                        keep.insert(me);
+                    }
                 }
+                if keep.len() == before {
+                    break;
+                }
+            }
+        }
+        let mut views: Vec<String> = Vec::new();
+        for i in items.iter().filter(|i| keep.contains(&i.name.to_ascii_lowercase())) {
+            if i.view {
+                views.push(i.ddl.clone());
                 continue;
             }
-            let rows = self.server.rows(&format!("SHOW CREATE TABLE {}.{}", db::q(orig), db::q(&name)))?;
-            let Some(ddl) = rows.first().and_then(|r| r.get(1).cloned().flatten()) else { continue };
-            self.server.exec(&ddl)?;
-            if let Some(t) = schema.as_ref().and_then(|s| s.tables.iter().find(|t| t.name == name)) {
-                let cols: Vec<String> = t.columns.iter().filter(|c| !c.is_generated()).map(|c| db::q(&c.name)).collect();
-                if !cols.is_empty() {
-                    let cols = cols.join(", ");
-                    self.server.exec(&format!("INSERT INTO {}.{} ({cols}) SELECT {cols} FROM {}.{}", db::q(&s), db::q(&name), db::q(orig), db::q(&name)))?;
-                }
+            self.server.exec(&i.ddl)?;
+            if self.copy_data && !i.cols.is_empty() {
+                let cols = i.cols.join(", ");
+                self.server.exec(&format!("INSERT INTO {}.{} ({cols}) SELECT {cols} FROM {}.{}", db::q(&s), db::q(&i.name), db::q(orig), db::q(&i.name)))?;
             }
         }
         // Sichten koennen aufeinander aufbauen: mehrere Durchgaenge
@@ -426,13 +508,15 @@ impl Probe<'_> {
 
     /// Keine Datenbank gewaehlt (wie eine neue Verbindung ohne Datenbank)
     fn unselect(&mut self) -> Result<(), String> {
-        let s = format!("easymysql_probe_{}_0", std::process::id());
+        let s = self.map.sandbox(0);
         self.server.exec(&format!("CREATE DATABASE IF NOT EXISTS {}", db::q(&s)))?;
         self.server.exec(&format!("USE {}", db::q(&s)))?;
         self.server.exec(&format!("DROP DATABASE {}", db::q(&s)))
     }
 
     fn trial(&mut self, text: &str) -> Result<Trial, String> {
+        let chars: Vec<char> = text.chars().collect();
+        self.names = lex(&chars).toks.iter().filter(|t| t.is_name()).map(|t| t.text.to_ascii_lowercase()).collect();
         self.reset()?;
         self.skipped = 0;
         let mut ok = 0;
@@ -671,6 +755,12 @@ fn candidates(text: &str, f: &Fail, setup: &Setup, server: &mut dyn Server, sand
     for e in errfix::for_error(&f.error, &st.sql, f.schema.as_ref()) {
         push_replace(&mut out, &e.sql, e.label, false);
     }
+    // Syntaxfehler: Vermutungen an der genannten Stelle (der naechste Probelauf entscheidet)
+    if code == Some(1064) {
+        for e in errfix::syntax_guesses(&f.error, &st.sql) {
+            push_replace(&mut out, &e.sql, e.label, false);
+        }
+    }
     // Pruefung des Editors fuer diese Anweisung allein, mit der echten Struktur zum Zeitpunkt des Fehlers
     let env = Env { schema: f.schema.as_ref(), databases: &setup.databases };
     let probs = lint(&st.sql, &env);
@@ -882,6 +972,29 @@ fn line_of(text: &str, snippet: &str) -> Option<usize> {
     Some(text[..b].matches('\n').count())
 }
 
+/// Anweisungen, die Daten oder Struktur loeschen (DROP, TRUNCATE, DELETE, ALTER … DROP, UPDATE ohne WHERE)
+fn destructive_count(text: &str) -> usize {
+    db::split_statements(text)
+        .iter()
+        .filter(|st| {
+            let chars: Vec<char> = st.sql.chars().collect();
+            let toks = lex(&chars).toks;
+            let has = |k: &str| toks.iter().any(|t| t.is_word(k));
+            match toks.first() {
+                Some(t) if t.is_word("DROP") || t.is_word("TRUNCATE") || t.is_word("DELETE") => true,
+                Some(t) if t.is_word("ALTER") => has("DROP"),
+                Some(t) if t.is_word("UPDATE") => !has("WHERE"),
+                _ => false,
+            }
+        })
+        .count()
+}
+
+/// Loescht die Korrektur mehr als das Original? Dann laeuft sie nie ungefragt auf den echten Daten.
+pub fn adds_destruction(before: &str, after: &str) -> bool {
+    destructive_count(after) > destructive_count(before)
+}
+
 /// Auto-Fix: erst die Pruefung des Editors, dann Probelaeufe auf dem Server bis das Skript fehlerfrei laeuft.
 pub fn repair(text: &str, setup: &Setup, server: Option<&mut dyn Server>, status: &dyn Fn(String), cancel: &AtomicBool, ai: Option<Ai<'_>>) -> Report {
     let started = Instant::now();
@@ -892,6 +1005,15 @@ pub fn repair(text: &str, setup: &Setup, server: Option<&mut dyn Server>, status
         return Report { text, changes, end: End::Offline, runs: 0, skipped: 0, without_data: false };
     };
     status(crate::i18n::tr("Skript wird geprüft …", "Checking the script …").into());
+    // Die gewaehlte Datenbank gibt es auf dem Server, auch wenn die Liste des Aufrufers aelter ist
+    let mut fresh = setup.clone();
+    if let Some(d) = fresh.database.clone().filter(|d| !d.is_empty())
+        && !fresh.databases.iter().any(|x| x.eq_ignore_ascii_case(&d))
+        && server.schema(&d).is_some()
+    {
+        fresh.databases.push(d);
+    }
+    let setup = &fresh;
     let real = setup.database.as_deref().filter(|d| !d.is_empty()).and_then(|d| server.schema(d));
     let env = Env { schema: real.as_ref(), databases: &setup.databases };
     let (mut text, mut changes) = static_fix(text, &env, true);
@@ -929,7 +1051,18 @@ pub fn repair(text: &str, setup: &Setup, server: Option<&mut dyn Server>, status
         lex(&chars).toks.iter().any(|t| t.is_word("PREPARE") || t.is_word("IMMEDIATE"))
     };
     let current = setup.database.clone().filter(|d| !d.is_empty());
-    let mut probe = Probe { server, map, existing, current, copy_data, dynamic, skipped: 0, on_server: setup.databases.clone() };
+    // Reste eines abgebrochenen Laufs (anderer Prozess, z. B. nach einem Absturz) entfernen
+    if let Ok(rows) = server.rows(&format!("SHOW DATABASES LIKE '{}%'", SANDBOX_PREFIX.replace('_', "\\_"))) {
+        let own = format!("{SANDBOX_PREFIX}{}_", std::process::id());
+        for r in rows {
+            if let Some(Some(name)) = r.first()
+                && !name.starts_with(&own)
+            {
+                let _ = server.exec(&format!("DROP DATABASE IF EXISTS {}", db::q(name)));
+            }
+        }
+    }
+    let mut probe = Probe { server, map, existing, current, copy_data, dynamic, skipped: 0, on_server: setup.databases.clone(), cache: Default::default(), names: HashSet::new() };
     let mut runs = 0;
     let mut tried: HashSet<String> = HashSet::new();
     let mut seen: HashSet<(String, Option<u32>)> = HashSet::new();
@@ -1095,6 +1228,16 @@ mod tests {
     }
 
     #[test]
+    fn added_drops_are_never_safe() {
+        let orig = "CREATE DATABASE schule;\nUSE schule;\nDELETE FROM t WHERE id = 1;";
+        assert!(adds_destruction(orig, &format!("DROP DATABASE IF EXISTS schule;\n{orig}")));
+        assert!(adds_destruction("UPDATE t SET a = 1 WHERE id = 2", "UPDATE t SET a = 1"));
+        assert!(!adds_destruction("DROP TABLE t; SELECT 1", "DROP TABLE IF EXISTS t; SELECT 1"));
+        assert!(!adds_destruction("INSERT INTO t VALUES (1)", "INSERT IGNORE INTO t (id) VALUES (1)"));
+        assert!(!adds_destruction("SELECT 1 -- DROP TABLE x", "SELECT 1 -- DROP TABLE x\n;"));
+    }
+
+    #[test]
     fn scripts_that_drop_their_database_first_need_no_copy() {
         assert!(dropped_first("DROP DATABASE IF EXISTS schule;\nCREATE DATABASE schule;", "schule"));
         assert!(!dropped_first("USE schule;\nDROP DATABASE schule;", "schule"));
@@ -1149,6 +1292,35 @@ INSERT INTO kunde (name) VALUES ('Neu');";
     }
 }
 
+/// Echter Server: der Rest eines Laufs (ohne USE) wird in der gewaehlten Datenbank repariert
+/// EASYMYSQL_AUTOFIX_TEST_PORT=3407 cargo test probe_heals -- --ignored --nocapture
+#[cfg(test)]
+mod heal_tests {
+    use super::*;
+
+    #[test]
+    #[ignore]
+    fn probe_heals_the_rest_of_a_run() {
+        let port = std::env::var("EASYMYSQL_AUTOFIX_TEST_PORT").unwrap().parse().unwrap();
+        let info = crate::db::ConnInfo { port, ..Default::default() };
+        let dbc = crate::db::Db::connect(&info).unwrap();
+        let name = format!("heal_test_{}", std::process::id());
+        dbc.exec(&format!("CREATE DATABASE {name}"), ()).unwrap();
+        dbc.exec_in(&name, "CREATE TABLE klasse (id INT PRIMARY KEY AUTO_INCREMENT, name VARCHAR(10)); INSERT INTO klasse (name) VALUES ('4AHIF')").unwrap();
+        let rest = "SELECT nme FROM klasse;\nINSERT INTO klasse (name) VALUES ('5AHIF');\nSELECT * FROM klasse;\n";
+        // Liste von vor dem Lauf: die eben angelegte Datenbank fehlt darin
+        let databases: Vec<String> = dbc.databases().unwrap().into_iter().filter(|d| d != &name).collect();
+        let setup = Setup { database: Some(name.clone()), databases, file_stem: None };
+        let mut live = Live { conn: dbc.new_conn().unwrap(), db: crate::db::Db::connect(&info).unwrap() };
+        let r = repair(rest, &setup, Some(&mut live), &|s| eprintln!("{s}"), &AtomicBool::new(false), None);
+        eprintln!("{}\n{:#?}", r.text, r.changes);
+        let _ = dbc.exec(&format!("DROP DATABASE IF EXISTS {}", db::q(&name)), ());
+        assert_eq!(r.end, End::Clean, "{:?}", r.end);
+        assert!(r.text.starts_with("SELECT name FROM klasse"), "{}", r.text);
+        assert!(!adds_destruction(rest, &r.text));
+    }
+}
+
 #[cfg(test)]
 mod ai_tests {
     use super::*;
@@ -1177,5 +1349,92 @@ mod ai_tests {
         crate::sqledit::ai::shutdown();
         assert_eq!(r.end, End::Clean);
         assert!(!dbc.databases().unwrap().iter().any(|d| d.starts_with("easymysql_probe_") || d == "schule_probe"));
+    }
+}
+
+/// Typische Fehler aus dem Unterricht gegen einen echten Server reparieren (ohne KI):
+/// EASYMYSQL_AUTOFIX_TEST_PORT=3407 cargo test autofix_corpus -- --ignored --nocapture
+#[cfg(test)]
+mod corpus_tests {
+    use super::*;
+
+    const BASE: &str = "CREATE TABLE klasse (id INT PRIMARY KEY AUTO_INCREMENT, name VARCHAR(10) NOT NULL);\n\
+        CREATE TABLE schueler (id INT PRIMARY KEY AUTO_INCREMENT, name VARCHAR(50), klasse_id INT, geburt DATE,\n  FOREIGN KEY (klasse_id) REFERENCES klasse(id));\n\
+        INSERT INTO klasse (name) VALUES ('3A'), ('3B');\n\
+        INSERT INTO schueler (name, klasse_id, geburt) VALUES ('Ada', 1, '2008-01-02'), ('Linus', 2, '2008-05-06');\n";
+
+    pub(super) const CASES: &[(&str, &str)] = &[
+        ("Komma vor Funktion", "SELECT klasse_id COUNT(*) FROM schueler GROUP BY klasse_id;"),
+        ("LIMT", "SELECT name FROM schueler ORDER BY name LIMT 1;"),
+        ("SELEC", "SELEC * FROM schueler;"),
+        ("FORM", "SELECT * FORM schueler;"),
+        ("Werte ohne Spaltenliste", "INSERT INTO schueler VALUES ('Grace', 1, '2008-03-04');"),
+        ("Komma in VALUES", "INSERT INTO schueler (name, klasse_id) VALUES ('Grace' 1);"),
+        ("Text ohne Anfuehrungszeichen", "SELECT * FROM schueler WHERE name = Ada;"),
+        ("Doppeltes Gleich", "SELECT * FROM schueler WHERE klasse_id == 1;"),
+        ("VARCHAR ohne Laenge", "CREATE TABLE lehrer (id INT PRIMARY KEY AUTO_INCREMENT, name VARCHAR);"),
+        ("Komma vor Klammer zu", "CREATE TABLE fach (id INT PRIMARY KEY AUTO_INCREMENT, name VARCHAR(30),);"),
+        ("DECS", "SELECT * FROM schueler ORDER BY name DECS;"),
+        ("Strichpunkt fehlt", "SELECT name FROM schueler\nSELECT name FROM klasse;"),
+        ("Komma in SET", "UPDATE schueler SET name = 'Ada L' klasse_id = 2 WHERE id = 1;"),
+        ("Deutsches Datum", "INSERT INTO schueler (name, klasse_id, geburt) VALUES ('Grace', 1, '24.12.2008');"),
+        ("DELETE *", "DELETE * FROM schueler WHERE id = 2;"),
+        ("COUNT mit Leerzeichen", "SELECT COUNT (*) FROM schueler;"),
+        ("Reserviertes Wort als Tabelle", "CREATE TABLE order (id INT PRIMARY KEY AUTO_INCREMENT, betrag DECIMAL(8,2));\nINSERT INTO order (betrag) VALUES (9.5);"),
+        ("Typografische Anfuehrungszeichen", "SELECT * FROM schueler WHERE name = \u{2018}Ada\u{2019};"),
+        ("IF NOT EXIST", "CREATE TABLE IF NOT EXIST raum (id INT PRIMARY KEY);"),
+        ("AUTOINCREMENT", "CREATE TABLE raum (id INTEGER PRIMARY KEY AUTOINCREMENT, nummer VARCHAR(5));"),
+        ("VARCHAR2", "CREATE TABLE raum (id NUMBER(10) PRIMARY KEY, nummer VARCHAR2(5));"),
+        ("REFERENCES ohne Spalte", "CREATE TABLE note (id INT PRIMARY KEY AUTO_INCREMENT, schueler_id INT, FOREIGN KEY (schueler_id) REFERENCES schueler);"),
+        ("TOP", "SELECT TOP 1 * FROM schueler;"),
+        ("Apostroph im Text", "INSERT INTO schueler (name, klasse_id) VALUES ('O'Brien', 1);"),
+        ("Klammer fehlt", "CREATE TABLE raum (id INT PRIMARY KEY, nummer VARCHAR(5);"),
+        ("Alias statt Tabelle", "SELECT schueler.name FROM schueler s WHERE s.id = 1;"),
+        ("Spalte vertippt", "SELECT nmae FROM schueler;"),
+        ("Tabelle vertippt", "SELECT * FROM schuler;"),
+        ("Tabelle in Mehrzahl", "SELECT * FROM klassen;"),
+        ("Fehlende Elternzeile", "INSERT INTO schueler (name, klasse_id) VALUES ('Grace', 9);"),
+        ("Doppelter Schluessel", "INSERT INTO klasse (id, name) VALUES (1, '4A');"),
+        ("Zu langer Text", "INSERT INTO klasse (name) VALUES ('Abschlussklasse 2026');"),
+        ("Tabelle gibt es schon", "CREATE TABLE klasse (id INT PRIMARY KEY AUTO_INCREMENT, name VARCHAR(10));"),
+        ("Reihenfolge der Tabellen", "CREATE TABLE b (id INT PRIMARY KEY, a_id INT, FOREIGN KEY (a_id) REFERENCES a(id));\nCREATE TABLE a (id INT PRIMARY KEY);"),
+        ("Gleichheit mit NULL", "SELECT * FROM schueler WHERE geburt = NULL;"),
+        ("Aggregat in WHERE", "SELECT klasse_id FROM schueler WHERE COUNT(*) > 1 GROUP BY klasse_id;"),
+        ("JOIN ohne ON", "SELECT s.name, k.name FROM schueler s JOIN klasse k WHERE s.klasse_id = k.id;"),
+        ("Funktion vertippt", "SELECT COUNTT(*) FROM schueler;"),
+        ("Datum ohne Anfuehrungszeichen", "SELECT * FROM schueler WHERE geburt > 2008-03-01;"),
+    ];
+
+    #[test]
+    #[ignore]
+    fn autofix_corpus() {
+        let port = std::env::var("EASYMYSQL_AUTOFIX_TEST_PORT").unwrap().parse().unwrap();
+        let info = crate::db::ConnInfo { port, ..Default::default() };
+        let dbc = crate::db::Db::connect(&info).unwrap();
+        let name = format!("korpus_{}", std::process::id());
+        let mut failed = Vec::new();
+        for (label, case) in CASES {
+            let _ = dbc.exec(&format!("DROP DATABASE IF EXISTS {name}"), ());
+            dbc.exec(&format!("CREATE DATABASE {name}"), ()).unwrap();
+            dbc.exec_in(&name, BASE).unwrap();
+            let setup = Setup { database: Some(name.clone()), databases: dbc.databases().unwrap(), file_stem: None };
+            let mut live = Live { conn: dbc.new_conn().unwrap(), db: crate::db::Db::connect(&info).unwrap() };
+            let t = Instant::now();
+            let only = std::env::var("KORPUS_NUR").ok();
+            if only.as_deref().is_some_and(|o| !label.contains(o)) {
+                continue;
+            }
+            let t0 = Instant::now();
+            let r = repair(case, &setup, Some(&mut live), &|m| if only.is_some() { eprintln!("  {:>6} ms  {m}", t0.elapsed().as_millis()) }, &AtomicBool::new(false), None);
+            // "JOIN ohne ON" ist gueltig und darf unveraendert bleiben
+            let ok = r.end == End::Clean && (r.text != *case || label.starts_with("JOIN"));
+            eprintln!("{} {label} ({} ms, {} Laeufe)\n    vorher: {}\n    nachher: {}\n    {:?}", if ok { "OK  " } else { "FEHL" }, t.elapsed().as_millis(), r.runs, case.replace('\n', " | "), r.text.replace('\n', " | "), r.end);
+            if !ok {
+                failed.push(*label);
+            }
+        }
+        let _ = dbc.exec(&format!("DROP DATABASE IF EXISTS {name}"), ());
+        eprintln!("\n{} von {} repariert; offen: {failed:?}", CASES.len() - failed.len(), CASES.len());
+        assert!(failed.is_empty(), "{failed:?}");
     }
 }

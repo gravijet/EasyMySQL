@@ -22,11 +22,20 @@ struct TermTab {
     /// Automatisches Einrichten nach einem Datenbankfehler: schon geprueft (je Lauf) und Zahl der Neustarts
     auto_geprueft: bool,
     auto_neustarts: u8,
+    /// Automatisch behoben, wartet auf den Server bzw. die Werkzeuge und startet dann neu (seit wann)
+    warten: Option<(Warten, Instant)>,
+}
+
+/// Worauf ein automatisch behobener Lauf vor dem Neustart wartet
+#[derive(Clone, Copy, PartialEq)]
+enum Warten {
+    Server,
+    Werkzeuge,
 }
 
 impl TermTab {
     fn new(uid: usize, title: String, session: Session, program: bool) -> Self {
-        TermTab { uid, title, session, program, fixes: Vec::new(), analyzed: (0, None), applied: Vec::new(), original: String::new(), auto_geprueft: false, auto_neustarts: 0 }
+        TermTab { uid, title, session, program, fixes: Vec::new(), analyzed: (0, None), applied: Vec::new(), original: String::new(), auto_geprueft: false, auto_neustarts: 0, warten: None }
     }
 }
 
@@ -221,6 +230,8 @@ impl EasyApp {
 
             // Erkannte Fehler eines Programms: Erklaerung und Behebung
             let local = self.is_local();
+            let server_bereit = self.db.is_some();
+            let werkzeuge_bereit = !crate::dev::install::status().busy;
             if let Some(t) = self.terminal.tabs.get_mut(active)
                 && t.program
             {
@@ -235,19 +246,52 @@ impl EasyApp {
                 } else if len != t.analyzed.0 {
                     ctx.request_repaint_after(Duration::from_millis(500));
                 }
-                // Datenbankfehler auf dem eigenen Server: einmal je Lauf von selbst einrichten und neu starten
+                // Nach dem Ende einmal je Lauf von selbst beheben und neu starten: Datenbankfehler auf dem eigenen
+                // Server einrichten, gestoppten eigenen Server starten, fehlenden Treiber bzw. JDK laden
                 if t.session.exited() && !t.auto_geprueft && len == t.analyzed.0 {
                     t.auto_geprueft = true;
-                    if local
-                        && crate::dev::config().auto_setup
-                        && t.auto_neustarts < 2
-                        && let Some(f) = t.fixes.iter().find_map(|s| s.fix.clone().filter(|f| matches!(f, crate::dev::autofix::Fix::Einrichten { .. })))
-                    {
-                        einrichten = Some((t.uid, f, true));
+                    let cfg = crate::dev::config();
+                    if cfg.auto_setup && t.auto_neustarts < 2 {
+                        use crate::dev::autofix::Fix;
+                        if local && let Some(f) = t.fixes.iter().find_map(|s| s.fix.clone().filter(|f| matches!(f, Fix::Einrichten { .. }))) {
+                            einrichten = Some((t.uid, f, true));
+                        } else {
+                            for (i, s) in t.fixes.iter().enumerate() {
+                                let warten = match &s.fix {
+                                    Some(Fix::StartServer) if local && !server_bereit => Warten::Server,
+                                    // Nur wenn das Werkzeug wirklich fehlt (sonst hilft ein Neustart nicht)
+                                    Some(Fix::Install(tool)) if cfg.auto_download && !crate::dev::tools().has(*tool) => Warten::Werkzeuge,
+                                    _ => continue,
+                                };
+                                fixes.push(s.fix.clone().unwrap_or(Fix::StartServer));
+                                t.applied.push(i);
+                                t.warten = Some((warten, Instant::now()));
+                            }
+                        }
+                    }
+                }
+                // Automatisch behoben: neu starten, sobald Server bzw. Werkzeuge bereit sind (hoechstens 2 Minuten warten)
+                if let Some((w, seit)) = t.warten {
+                    let bereit = match w {
+                        Warten::Server => server_bereit,
+                        Warten::Werkzeuge => werkzeuge_bereit && crate::dev::install::status().error.is_none(),
+                    };
+                    if bereit {
+                        t.warten = None;
+                        t.auto_neustarts += 1;
+                        t.session.restart(&ctx);
+                        t.fixes.clear();
+                        t.applied.clear();
+                        t.analyzed = (0, None);
+                        t.auto_geprueft = false;
+                    } else if seit.elapsed() > Duration::from_secs(120) || (w == Warten::Werkzeuge && crate::dev::install::status().error.is_some()) {
+                        t.warten = None;
+                    } else {
+                        ctx.request_repaint_after(Duration::from_millis(300));
                     }
                 }
                 if !t.fixes.is_empty() {
-                    let (apply, rerun) = fix_bar(ui, &t.fixes, &t.applied, &t.original, t.session.exited());
+                    let (apply, rerun) = fix_bar(ui, &t.fixes, &t.applied, &t.original, t.session.exited(), t.warten.is_some());
                     for i in apply {
                         if let Some(f) = t.fixes[i].fix.clone() {
                             if matches!(f, crate::dev::autofix::Fix::Einrichten { .. }) {
@@ -522,7 +566,7 @@ fn datenbank_festgelegt(plaene: &[crate::sqledit::TabellenPlan], schema: &crate:
 }
 
 /// Leiste mit erkannten Fehlern ueber dem Terminal. Liefert die angeklickten Behebungen und "Erneut ausfuehren".
-fn fix_bar(ui: &mut egui::Ui, fixes: &[crate::dev::autofix::Suggestion], applied: &[usize], original: &str, exited: bool) -> (Vec<usize>, bool) {
+fn fix_bar(ui: &mut egui::Ui, fixes: &[crate::dev::autofix::Suggestion], applied: &[usize], original: &str, exited: bool, wartet: bool) -> (Vec<usize>, bool) {
     let pal = style::pal();
     let mut apply = Vec::new();
     let mut rerun = false;
@@ -531,6 +575,12 @@ fn fix_bar(ui: &mut egui::Ui, fixes: &[crate::dev::autofix::Suggestion], applied
     egui::Frame::new().fill(tone.gamma_multiply(0.07)).stroke(Stroke::new(1.0, tone.gamma_multiply(0.35))).corner_radius(style::RADIUS).inner_margin(egui::Margin::symmetric(10, 6)).show(ui, |ui| {
         ui.set_min_width(ui.available_width());
         ui.spacing_mut().item_spacing.y = 4.0;
+        if wartet {
+            ui.horizontal(|ui| {
+                ui.spinner();
+                ui.label(egui::RichText::new(crate::i18n::tr("Wird automatisch behoben – das Programm startet danach von selbst neu …", "Fixing automatically – the program restarts by itself afterwards …")).color(pal.ok_text));
+            });
+        }
         for (i, s) in fixes.iter().enumerate().take(5) {
             ui.horizontal(|ui| {
                 ui.set_min_height(24.0);
@@ -563,7 +613,7 @@ fn fix_bar(ui: &mut egui::Ui, fixes: &[crate::dev::autofix::Suggestion], applied
                 if open.len() > 1 && icons::primary_button(ui, Icon::Sparkles, crate::i18n::tr("Alle beheben", "Fix all")).clicked() {
                     apply.extend(open.iter().copied());
                 }
-                if exited && icons::run_button(ui, crate::i18n::tr("Erneut ausführen", "Run again")).clicked() {
+                if exited && !wartet && icons::run_button(ui, crate::i18n::tr("Erneut ausführen", "Run again")).clicked() {
                     rerun = true;
                 }
             });

@@ -67,11 +67,14 @@ pub struct Prefs {
     pub scroll_past_end: bool,
     /// Block-Vorschlaege und Auto-Fix-Hilfe der eigenen lokalen KI (llama.cpp), wenn installiert
     pub ai_complete: bool,
+    /// Schlaegt eine Anweisung beim Ausfuehren fehl: den Rest im Hintergrund per Probelauf reparieren und
+    /// sicher Korrigiertes gleich weiter ausfuehren
+    pub auto_fix_run: bool,
 }
 
 impl Default for Prefs {
     fn default() -> Self {
-        Prefs { indent: 0, line_numbers: true, highlight_line: true, match_brackets: true, auto_indent: true, sql_in_strings: true, lint_delay_ms: 350, scroll_past_end: true, ai_complete: true }
+        Prefs { indent: 0, line_numbers: true, highlight_line: true, match_brackets: true, auto_indent: true, sql_in_strings: true, lint_delay_ms: 350, scroll_past_end: true, ai_complete: true, auto_fix_run: true }
     }
 }
 
