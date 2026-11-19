@@ -435,6 +435,22 @@ pub fn button_sized(ui: &mut egui::Ui, icon: Icon, tip: &str, size: f32) -> Resp
     if tip.is_empty() { resp } else { resp.on_hover_text(tip) }
 }
 
+/// Quadratischer Symbolknopf mit Rahmen, so hoch wie die Textknoepfe daneben (Werkzeugleisten)
+pub fn tool_button(ui: &mut egui::Ui, icon: Icon, tip: &str) -> Response {
+    let pal = style::pal();
+    let h = ui.spacing().interact_size.y.max(24.0);
+    let (r, resp) = ui.allocate_exact_size(vec2(h, h), Sense::click());
+    let enabled = ui.is_enabled();
+    let visuals = *ui.style().interact(&resp);
+    ui.painter().rect(r, style::RADIUS as f32, visuals.weak_bg_fill, visuals.bg_stroke, egui::StrokeKind::Inside);
+    let color = if enabled { tint(icon) } else { pal.text_weak.gamma_multiply(0.6) };
+    paint(ui.painter(), Rect::from_center_size(r.center(), vec2(15.0, 15.0)), icon, color);
+    if resp.has_focus() {
+        ui.painter().rect_stroke(r, style::RADIUS as f32, Stroke::new(1.0, pal.accent), egui::StrokeKind::Outside);
+    }
+    if tip.is_empty() { resp } else { resp.on_hover_text(tip) }
+}
+
 /// Knopf mit Symbol und Text (Symbol links)
 pub fn text_button(ui: &mut egui::Ui, icon: Icon, text: &str) -> Response {
     labelled_button(ui, icon, text, false, false)

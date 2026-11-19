@@ -25,6 +25,8 @@ pub struct StructureTab {
     selected: Option<usize>,
     dlg: Option<Dlg>,
     targets: Vec<String>,
+    /// Genaue Zeilenzahl (kleine Tabellen; die Schaetzung von InnoDB liegt oft weit daneben)
+    exact_rows: Option<Option<u64>>,
 }
 
 const RULES: &[&str] = &["RESTRICT", "CASCADE", "SET NULL", "NO ACTION"];
@@ -44,6 +46,7 @@ impl StructureTab {
             selected: None,
             dlg: None,
             targets: Vec::new(),
+            exact_rows: None,
         }
     }
 
@@ -53,6 +56,7 @@ impl StructureTab {
 
     fn reload(&mut self, cx: &mut Ctx) {
         self.loaded = true;
+        self.exact_rows = None;
         let Some(dbc) = cx.db else { return };
         self.schema_wait = true;
         self.apply_schema(cx);
@@ -451,7 +455,20 @@ impl TabView for StructureTab {
             if !info.engine.is_empty() {
                 desc.push_str(&format!(" · {}", info.engine));
             }
-            desc.push_str(&crate::tr_format!(" · ca. {} Zeilen", " · approx. {} rows", info.rows.unwrap_or(0)));
+            if !info.is_view {
+                if self.exact_rows.is_none() {
+                    // Bis 200 000 geschaetzte Zeilen kostet COUNT(*) kaum etwas
+                    self.exact_rows = Some(if info.rows.unwrap_or(0) < 200_000 {
+                        cx.db.and_then(|d| d.query(&format!("SELECT COUNT(*) FROM {}", self.full())).ok()).and_then(|r| r.rows.first().and_then(|z| z.first().cloned().flatten()).and_then(|n| n.parse().ok()))
+                    } else {
+                        None
+                    });
+                }
+                match self.exact_rows.flatten() {
+                    Some(n) => desc.push_str(&crate::tr_format!(" · {} Zeilen", " · {} rows", n)),
+                    None => desc.push_str(&crate::tr_format!(" · ca. {} Zeilen", " · approx. {} rows", info.rows.unwrap_or(0))),
+                }
+            }
             if !info.comment.is_empty() {
                 desc.push_str(&format!(" · {}", info.comment));
             }
@@ -476,12 +493,12 @@ impl TabView for StructureTab {
             });
             // Aktionen fuer die gewaehlte Spalte
             ui.add_enabled_ui(sel.is_some() && !view, |ui| {
-                if icons::button(ui, Icon::Edit, crate::i18n::text("Spalte ändern")).clicked()
+                if icons::tool_button(ui, Icon::Edit, crate::i18n::text("Spalte ändern")).clicked()
                     && let Some(c) = sel.clone()
                 {
                     self.dlg = Some(Dlg::Column { orig: Some(c.name.clone()), def: ColDef::from_info(&c), after: String::new() });
                 }
-                if icons::button(ui, Icon::Trash, crate::i18n::text("Spalte löschen")).clicked()
+                if icons::tool_button(ui, Icon::Trash, crate::i18n::text("Spalte löschen")).clicked()
                     && let Some(c) = sel.clone()
                 {
                     cx.actions.push(Action::Confirm {
@@ -490,10 +507,10 @@ impl TabView for StructureTab {
                         sql: format!("ALTER TABLE {} DROP COLUMN {}", self.full(), q(&c.name)),
                     });
                 }
-                if icons::button(ui, Icon::ArrowUp, crate::i18n::tr("Spalte nach oben", "Move column up")).clicked() {
+                if icons::tool_button(ui, Icon::ArrowUp, crate::i18n::tr("Spalte nach oben", "Move column up")).clicked() {
                     mv = Some(crate::db::Move::Left);
                 }
-                if icons::button(ui, Icon::ArrowDown, crate::i18n::tr("Spalte nach unten", "Move column down")).clicked() {
+                if icons::tool_button(ui, Icon::ArrowDown, crate::i18n::tr("Spalte nach unten", "Move column down")).clicked() {
                     mv = Some(crate::db::Move::Right);
                 }
             });

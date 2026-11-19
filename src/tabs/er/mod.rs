@@ -527,7 +527,7 @@ impl TabView for ErTab {
             if super::db_combo(ui, "erdb", cx.databases, &mut d) {
                 self.db = d;
             }
-            if crate::icons::button(ui, crate::icons::Icon::Refresh, crate::i18n::text("Neu einlesen")).clicked() {
+            if crate::icons::tool_button(ui, crate::icons::Icon::Refresh, crate::i18n::text("Neu einlesen")).clicked() {
                 cx.schemas.invalidate(&self.db);
                 self.schema_changed(&self.db.clone(), cx);
             }

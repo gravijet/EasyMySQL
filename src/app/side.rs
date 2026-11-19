@@ -614,8 +614,8 @@ impl EasyApp {
     fn search_side(&mut self, ui: &mut egui::Ui, actions: &mut Vec<Action>) {
         section_header(ui, crate::i18n::text("SUCHEN"), |_| {});
         let Some(tree) = (self.rescan_tree(), self.tree.clone()).1 else {
-            egui::Frame::new().inner_margin(egui::Margin::symmetric(12, 6)).show(ui, |ui| {
-                if ui.button(crate::i18n::text("Ordner öffnen")).clicked() {
+            egui::Frame::new().inner_margin(egui::Margin::symmetric(8, 4)).show(ui, |ui| {
+                if crate::widgets::block_button(ui, crate::i18n::text("Ordner öffnen")).clicked() {
                     self.pick_project();
                 }
             });
@@ -625,7 +625,8 @@ impl EasyApp {
         egui::Frame::new().inner_margin(egui::Margin::symmetric(8, 4)).show(ui, |ui| {
             let w = ui.available_width();
             ui.horizontal(|ui| {
-                let r = ui.add(crate::widgets::edit(&mut self.search.query).hint_text(crate::i18n::text("Suchen")).desired_width((w - 52.0).max(60.0)));
+                let sp = ui.spacing().item_spacing.x;
+                let r = ui.add(crate::widgets::edit(&mut self.search.query).hint_text(crate::i18n::text("Suchen")).desired_width((w - crate::widgets::CONTROL_H - sp).max(60.0)));
                 if self.search.focus {
                     r.request_focus();
                     self.search.focus = false;
@@ -633,7 +634,9 @@ impl EasyApp {
                 if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                     run = true;
                 }
-                if ui.toggle_value(&mut self.search.case, "Aa").on_hover_text(crate::i18n::text("Groß-/Kleinschreibung beachten")).changed() {
+                let h = crate::widgets::CONTROL_H;
+                if ui.add_sized([h, h], egui::Button::selectable(self.search.case, "Aa")).on_hover_text(crate::i18n::text("Groß-/Kleinschreibung beachten")).clicked() {
+                    self.search.case = !self.search.case;
                     run = true;
                 }
             });
@@ -887,6 +890,9 @@ impl EasyApp {
                                 }
                                 if hr.clicked() {
                                     self.current_db = d.clone();
+                                    if let Some(t) = self.tabs.get_mut(self.active) {
+                                        t.adopt_database(d);
+                                    }
                                 }
                                 if hr.double_clicked() {
                                     actions.push(Action::OpenData { db: d.clone(), table: t.name.clone() });
@@ -964,6 +970,9 @@ impl EasyApp {
                 });
                 if hr.clicked() {
                     self.current_db = d.clone();
+                    if let Some(t) = self.tabs.get_mut(self.active) {
+                        t.adopt_database(d);
+                    }
                 }
                 hr.context_menu(|ui| {
                     crate::style::menu_item_look(ui);

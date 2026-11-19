@@ -343,6 +343,8 @@ pub trait TabView {
     fn database(&self) -> Option<String> {
         None
     }
+    /// In der Seitenleiste wurde eine Datenbank gewaehlt: uebernehmen, solange die Registerkarte noch keine hat
+    fn adopt_database(&mut self, _db: &str) {}
     /// Verarbeitet die Registerkarte selbst, wenn diese Datei auf das Fenster gezogen wird?
     fn takes_drop(&self, _path: &std::path::Path) -> bool {
         false
@@ -395,16 +397,22 @@ pub fn is_system_db(name: &str) -> bool {
 }
 
 pub fn db_combo(ui: &mut egui::Ui, id: &str, dbs: &[String], value: &mut String) -> bool {
-    let mut changed = false;
     let show_system = SHOW_SYSTEM_DBS.load(std::sync::atomic::Ordering::Relaxed);
-    let dbs: Vec<&String> = dbs.iter().filter(|d| show_system || !is_system_db(d) || *d == value).collect();
+    let dbs: Vec<String> = dbs.iter().filter(|d| show_system || !is_system_db(d) || *d == value).cloned().collect();
+    db_select(ui, id, &dbs, value, 170.0)
+}
+
+/// Auswahl der Datenbank; leer heisst ueberall gleich "Keine Datenbank" (statt eines Strichs)
+pub fn db_select(ui: &mut egui::Ui, id: impl std::hash::Hash + std::fmt::Debug, items: &[String], value: &mut String, width: f32) -> bool {
+    let none = crate::i18n::tr("Keine Datenbank", "No database");
+    let mut changed = false;
     crate::widgets::combo(id)
-        .selected_text(if value.is_empty() { crate::i18n::text("(keine)") } else { value.as_str() })
-        .width(170.0)
+        .selected_text(if value.is_empty() { egui::RichText::new(none).color(crate::style::pal().text_weak) } else { egui::RichText::new(value.as_str()) })
+        .width(width)
         .show_ui(ui, |ui| {
-            for d in dbs {
-                if ui.selectable_label(value == d, d.as_str()).clicked() {
-                    *value = d.clone();
+            for it in items {
+                if ui.selectable_label(value == it, if it.is_empty() { none } else { it.as_str() }).clicked() {
+                    *value = it.clone();
                     changed = true;
                 }
             }
@@ -412,27 +420,15 @@ pub fn db_combo(ui: &mut egui::Ui, id: &str, dbs: &[String], value: &mut String)
     changed
 }
 
-/// Auswahl der Datenbank mit Symbol; leer heisst "Keine Datenbank" (statt eines Strichs)
+/// Auswahl der Datenbank mit Symbol davor
 pub fn db_pick(ui: &mut egui::Ui, id: impl std::hash::Hash + std::fmt::Debug, items: &[String], value: &mut String, width: f32) -> bool {
-    let none = crate::i18n::tr("Keine Datenbank", "No database");
-    let mut changed = false;
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 6.0;
         let (r, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
         crate::icons::paint(ui.painter(), r, crate::icons::Icon::Database, crate::icons::tint(crate::icons::Icon::Database));
-        crate::widgets::combo(id)
-            .selected_text(if value.is_empty() { none } else { value.as_str() })
-            .width(width)
-            .show_ui(ui, |ui| {
-                for it in items {
-                    if ui.selectable_label(value == it, if it.is_empty() { none } else { it.as_str() }).clicked() {
-                        *value = it.clone();
-                        changed = true;
-                    }
-                }
-            });
-    });
-    changed
+        db_select(ui, id, items, value, width)
+    })
+    .inner
 }
 
 /// Einfaches Auswahlfeld fuer eine Liste von Strings.

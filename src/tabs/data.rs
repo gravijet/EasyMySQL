@@ -699,7 +699,7 @@ impl TabView for DataTab {
                 self.offset = 0;
                 self.reload(cx);
             }
-            if crate::icons::button(ui, crate::icons::Icon::Refresh, crate::i18n::text("Aktualisieren")).clicked() {
+            if crate::icons::tool_button(ui, crate::icons::Icon::Refresh, crate::i18n::text("Aktualisieren")).clicked() {
                 self.reload(cx);
             }
             if !self.order.is_empty() {
@@ -720,18 +720,18 @@ impl TabView for DataTab {
                     self.col_dlg = Some(ColDlg { orig: None, def: ColDef::new("", "VARCHAR(255)"), after: self.columns.last().cloned() });
                 }
                 let sel = self.grid.selected;
-                if ui.add_enabled_ui(sel.is_some(), |ui| icons::button(ui, Icon::Trash, crate::i18n::text("Zeile löschen"))).inner.clicked()
+                if ui.add_enabled_ui(sel.is_some(), |ui| icons::tool_button(ui, Icon::Trash, crate::i18n::text("Zeile löschen"))).inner.clicked()
                     && let Some(r) = sel
                 {
                     self.delete_row(cx, r);
                 }
                 let tip = format!("{} (Ctrl+Z)", crate::i18n::tr("Rückgängig", "Undo"));
-                if ui.add_enabled_ui(!self.undo.is_empty(), |ui| icons::button(ui, Icon::Undo, &tip)).inner.clicked() {
+                if ui.add_enabled_ui(!self.undo.is_empty(), |ui| icons::tool_button(ui, Icon::Undo, &tip)).inner.clicked() {
                     self.undo(cx);
                 }
             });
             ui.separator();
-            if icons::button(ui, Icon::Columns, crate::i18n::tr("Struktur, Indizes und Beziehungen", "Structure, indexes and relationships")).clicked() {
+            if icons::tool_button(ui, Icon::Columns, crate::i18n::tr("Struktur, Indizes und Beziehungen", "Structure, indexes and relationships")).clicked() {
                 cx.actions.push(Action::OpenStructure { db: self.db.clone(), table: self.table.clone() });
             }
             grid::export_menu(ui, &self.table, &self.columns, &self.rows);
@@ -742,12 +742,12 @@ impl TabView for DataTab {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let total = self.total.unwrap_or(self.rows.len() as u64);
                 let to = self.offset + self.rows.len();
-                if ui.add_enabled_ui((to as u64) < total, |ui| icons::button(ui, Icon::ChevronRight, crate::i18n::text("Nächste Seite"))).inner.clicked() {
+                if ui.add_enabled_ui((to as u64) < total, |ui| icons::tool_button(ui, Icon::ChevronRight, crate::i18n::text("Nächste Seite"))).inner.clicked() {
                     self.offset += self.limit;
                     self.reload(cx);
                 }
                 ui.label(RichText::new(crate::tr_format!("Zeilen {}–{} von {}", "Rows {}–{} of {}", if self.rows.is_empty() { 0 } else { self.offset + 1 }, to, total)).color(pal.text_weak));
-                if ui.add_enabled_ui(self.offset > 0, |ui| icons::button(ui, Icon::ChevronLeft, crate::i18n::text("Vorherige Seite"))).inner.clicked() {
+                if ui.add_enabled_ui(self.offset > 0, |ui| icons::tool_button(ui, Icon::ChevronLeft, crate::i18n::text("Vorherige Seite"))).inner.clicked() {
                     self.offset = self.offset.saturating_sub(self.limit);
                     self.reload(cx);
                 }

@@ -508,7 +508,8 @@ mod tests {
         start(&jdk.jdb(), port, vec![dir.join("src")], &eframe::egui::Context::default());
         let wait = |f: &dyn Fn(&State) -> bool| {
             let t = Instant::now();
-            while t.elapsed() < Duration::from_secs(30) {
+            // Grosszuegig: JVM und jdb starten bei voll ausgelasteten Testlaeufen deutlich langsamer
+            while t.elapsed() < Duration::from_secs(120) {
                 if let Some(s) = session()
                     && f(&s.state.lock_ok())
                 {

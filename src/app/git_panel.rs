@@ -326,12 +326,12 @@ impl EasyApp {
                         Some(p) => {
                             let p = p.clone();
                             ui.label(RichText::new(crate::i18n::tr("Der Ordner ist noch kein Git-Repository.", "The folder is not a Git repository yet.")).color(pal.text_weak));
-                            if crate::widgets::primary(ui, crate::i18n::tr("Repository anlegen", "Initialize repository")).clicked() {
+                            if crate::widgets::block_primary(ui, crate::i18n::tr("Repository anlegen", "Initialize repository")).clicked() {
                                 self.git_job(crate::i18n::tr("Repository anlegen", "Initialize"), move || git::init(&p).map(|_| String::new()));
                             }
                         }
                     }
-                    if ui.button(crate::i18n::tr("Repository klonen …", "Clone repository …")).clicked() {
+                    if crate::widgets::block_button(ui, crate::i18n::tr("Repository klonen …", "Clone repository …")).clicked() {
                         self.open_clone_dialog();
                     }
                     self.github_section(ui, None);
@@ -604,11 +604,11 @@ impl EasyApp {
         ui.horizontal(|ui| {
             let (r, _) = ui.allocate_exact_size(vec2(16.0, 16.0), Sense::hover());
             icons::paint(ui.painter(), r, Icon::Github, pal.text_weak);
-            ui.label(RichText::new("GITHUB").small().strong().color(pal.text_weak));
+            ui.label(RichText::new("GITHUB").size(12.0).color(pal.text_weak));
         });
         if github::token().is_none() {
             ui.label(RichText::new(crate::i18n::tr("Anmelden, um Repositorys zu veröffentlichen, zu klonen und Pull Requests zu öffnen.", "Sign in to publish and clone repositories and open pull requests.")).small().color(pal.text_weak));
-            if ui.button(crate::i18n::tr("Bei GitHub anmelden …", "Sign in to GitHub …")).clicked() {
+            if crate::widgets::block_button(ui, crate::i18n::tr("Bei GitHub anmelden …", "Sign in to GitHub …")).clicked() {
                 self.git.dialog = Some(GitDialog::Login { token: String::new(), error: None, job: None });
             }
             return;

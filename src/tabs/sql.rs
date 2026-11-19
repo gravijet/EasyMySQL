@@ -1182,6 +1182,12 @@ impl TabView for SqlTab {
         self.set_server(server);
     }
 
+    fn adopt_database(&mut self, db: &str) {
+        if self.database.is_empty() && self.job.is_none() {
+            self.set_database(db.to_string());
+        }
+    }
+
     fn database(&self) -> Option<String> {
         Some(self.database.clone()).filter(|d| !d.is_empty())
     }
@@ -1357,7 +1363,7 @@ impl TabView for SqlTab {
             dbs.extend(cx.databases.iter().filter(|d| show_system || !super::is_system_db(d) || **d == self.database).cloned());
             self.server_combo(ui, cx);
             let mut d = self.database.clone();
-            if super::str_combo(ui, self.editor.id.with("db"), &dbs, &mut d, 150.0) {
+            if super::db_select(ui, self.editor.id.with("db"), &dbs, &mut d, 150.0) {
                 self.set_database(d);
             }
             if self.wait_run.is_some() {
@@ -1376,7 +1382,7 @@ impl TabView for SqlTab {
             }
             if self.file.is_some() {
                 let tip = format!("{} ({})", crate::i18n::text("Speichern"), crate::keymap::text(Cmd::Save));
-                if ui.add_enabled_ui(self.dirty(), |ui| icons::button(ui, Icon::Save, &tip)).inner.clicked() {
+                if ui.add_enabled_ui(self.dirty(), |ui| icons::tool_button(ui, Icon::Save, &tip)).inner.clicked() {
                     self.save();
                 }
             }
@@ -1403,12 +1409,12 @@ impl TabView for SqlTab {
                 };
                 ui.label(RichText::new(summary).small().color(color));
             }
-            if icons::button(ui, Icon::History, crate::i18n::text("Verlauf")).clicked() {
+            if icons::tool_button(ui, Icon::History, crate::i18n::text("Verlauf")).clicked() {
                 self.show_history = !self.show_history || self.pane != Pane::History;
                 self.pane = if self.show_history { Pane::History } else { Pane::Messages };
                 self.results_collapsed = false;
             }
-            let more = icons::button(ui, Icon::More, crate::i18n::text("Weitere"));
+            let more = icons::tool_button(ui, Icon::More, crate::i18n::text("Weitere"));
             egui::Popup::menu(&more).show(|ui| {
                 crate::style::menu_item_look(ui);
                 if ui.button(crate::i18n::text("Speichern unter …")).clicked() {

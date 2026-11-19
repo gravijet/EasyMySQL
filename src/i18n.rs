@@ -1225,7 +1225,6 @@ impl Language {
             "über 60 Funktionen nach Gruppen (Zusammenfassen, Fenster, Text, Zahl, Datum, Logik) oder jede andere per Name; Argumente sind wieder Ausdrücke" => "over 60 grouped functions (aggregate, window, text, number, date, logic), or any other function by name; arguments are expressions too",
             "über alle gleichnamigen Spalten (ohne ON)" => "joins all columns with matching names (without ON)",
             "– (ein Wert)" => "– (one value)",
-            "– (kein Verweis)" => "– (no reference)",
             "„+ Beziehung“: Tabellen und Spalten aus Listen wählen." => "“+ Relationship” lets you select tables and columns from lists.",
             "„+ EXISTS“: gilt, wenn die Unterabfrage mindestens eine Zeile liefert (bzw. keine bei NOT EXISTS)." => "“+ EXISTS” matches when a subquery returns at least one row, or no rows for NOT EXISTS.",
             "„+ Gruppe“ fügt eine Klammer ein – darin gilt die jeweils andere Verknüpfung, beliebig tief." => "“+ Group” adds a nested group using the other logical operator. Groups can be nested arbitrarily.",

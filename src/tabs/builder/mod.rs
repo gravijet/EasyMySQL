@@ -1682,11 +1682,11 @@ impl TabView for BuilderTab {
                     }
                 });
                 if self.mode == Mode::Select
-                    && ui.add_enabled_ui(self.job.is_none(), |ui| icons::button(ui, Icon::Explain, crate::i18n::text("Ausführungsplan (EXPLAIN)"))).inner.clicked()
+                    && ui.add_enabled_ui(self.job.is_none(), |ui| icons::tool_button(ui, Icon::Explain, crate::i18n::text("Ausführungsplan (EXPLAIN)"))).inner.clicked()
                 {
                     self.explain(cx);
                 }
-                let more = icons::button(ui, Icon::More, crate::i18n::text("Weitere Aktionen"));
+                let more = icons::tool_button(ui, Icon::More, crate::i18n::text("Weitere Aktionen"));
                 egui::Popup::menu(&more).show(|ui| {
                     crate::style::menu_item_look(ui);
                     if ui.button(crate::i18n::text("Im Editor öffnen")).clicked() {
@@ -1726,10 +1726,10 @@ impl TabView for BuilderTab {
                         ui.close();
                     }
                 });
-                if ui.add_enabled_ui(!self.redo.is_empty(), |ui| icons::button(ui, Icon::Redo, crate::i18n::text("Wiederholen (Strg+Y)"))).inner.clicked() {
+                if ui.add_enabled_ui(!self.redo.is_empty(), |ui| icons::tool_button(ui, Icon::Redo, crate::i18n::text("Wiederholen (Strg+Y)"))).inner.clicked() {
                     self.redo();
                 }
-                if ui.add_enabled_ui(!self.undo.is_empty(), |ui| icons::button(ui, Icon::Undo, crate::i18n::text("Rückgängig (Strg+Z)"))).inner.clicked() {
+                if ui.add_enabled_ui(!self.undo.is_empty(), |ui| icons::tool_button(ui, Icon::Undo, crate::i18n::text("Rückgängig (Strg+Z)"))).inner.clicked() {
                     self.undo();
                 }
             });

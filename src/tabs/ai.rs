@@ -493,11 +493,12 @@ impl AiTab {
         let pal = crate::style::pal();
         let akzent = farbe(self.ziel);
         ui.horizontal(|ui| {
-            ui.set_min_height(38.0);
+            // Gleiche Hoehe wie die Kopfzeilen der anderen Seitenleisten
+            ui.set_min_height(30.0);
             ui.spacing_mut().item_spacing.x = 6.0;
             ui.add_space(8.0);
-            logo(ui, self.icon(), akzent, 22.0);
-            ui.label(RichText::new(kurzname(self.ziel)).strong().size(14.0));
+            logo(ui, self.icon(), akzent, 18.0);
+            ui.label(RichText::new(kurzname(self.ziel)).strong().size(13.0));
             // Zustand als Punkt: gruen bereit, gelb verbindet, grau aus
             let verbindet = self.verbindung.as_ref().is_some_and(|_| !self.live.bereit && !self.live.beendet);
             let (punkt, text) = if !installiert {
@@ -965,7 +966,6 @@ impl AiTab {
         let mut klicks = Klicks::default();
         let laeuft = self.laeuft();
         let ziel = self.ziel;
-        let icon = self.icon();
         egui::ScrollArea::vertical().id_salt("chat-verlauf").stick_to_bottom(true).auto_shrink([false, false]).show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.add_space(10.0);
@@ -985,8 +985,9 @@ impl AiTab {
                 {
                     klicks.ordner = true;
                 }
-                if self.verlauf.is_empty() && !laeuft {
-                    leerer_chat(ui, ziel, icon, &mut klicks);
+                // Startpunkte nur, wenn der Assistent auch antworten kann
+                if self.verlauf.is_empty() && !laeuft && installiert && self.angemeldet() != Some(false) {
+                    leerer_chat(ui, ziel, &mut klicks);
                 }
                 // Fertige Nachrichten ausserhalb des sichtbaren Bereichs nur als Platz einsetzen
                 let breite = ui.available_width();
@@ -1392,19 +1393,13 @@ fn hinweis_karte(ui: &mut egui::Ui, icon: Icon, titel: String, text: &str, knopf
     geklickt
 }
 
-/// Begruessung und Vorschlaege fuer den ersten Satz
-fn leerer_chat(ui: &mut egui::Ui, ziel: Target, icon: Icon, klicks: &mut Klicks) {
+/// Leerer Chat: kurze Startpunkte als Zeilen (ein Klick fuellt bzw. sendet sie), ohne Begruessungsfloskel
+fn leerer_chat(ui: &mut egui::Ui, ziel: Target, klicks: &mut Klicks) {
     let pal = crate::style::pal();
     let akzent = farbe(ziel);
-    ui.add_space(14.0);
-    ui.vertical_centered(|ui| {
-        logo(ui, icon, akzent, 44.0);
-        ui.add_space(12.0);
-        ui.label(RichText::new(tr("Wie kann ich helfen?", "How can I help?")).size(20.0).strong());
-        ui.add_space(4.0);
-        ui.add(egui::Label::new(RichText::new(tr("Fragen zur Datenbank, SQL schreiben und prüfen, Code im Projekt ändern.", "Ask about your database, write and review SQL, change code in your project.")).color(pal.text_weak)).wrap());
-    });
-    ui.add_space(18.0);
+    ui.add_space(6.0);
+    ui.label(RichText::new(tr("ZUM BEISPIEL", "FOR EXAMPLE")).size(11.5).color(pal.text_weak));
+    ui.add_space(4.0);
     let vorschlaege = [
         (Icon::Database, tr("Erkläre das Schema meiner Datenbank", "Explain my database schema")),
         (Icon::Explain, tr("Finde langsame Abfragen und schlage Indizes vor", "Find slow queries and suggest indexes")),
@@ -1412,23 +1407,18 @@ fn leerer_chat(ui: &mut egui::Ui, ziel: Target, icon: Icon, klicks: &mut Klicks)
         (Icon::Bug, tr("Prüfe den Code im Projekt auf Fehler", "Review the project code for bugs")),
     ];
     let breite = ui.available_width();
-    let zwei = breite > 420.0;
-    let w = if zwei { (breite - 8.0) / 2.0 } else { breite };
-    for zeile in vorschlaege.chunks(if zwei { 2 } else { 1 }) {
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 8.0;
-            for (icon, text) in zeile {
-                let g = ui.painter().layout(text.to_string(), egui::FontId::proportional(12.5), pal.text, w - 44.0);
-                let (r, resp) = ui.allocate_exact_size(egui::vec2(w, (g.size().y + 22.0).max(42.0)), egui::Sense::click());
-                ui.painter().rect(r, 12.0, if resp.hovered() { pal.hover } else { pal.face_light.gamma_multiply(0.7) }, egui::Stroke::new(1.0, pal.border.gamma_multiply(0.7)), egui::StrokeKind::Inside);
-                icons::paint(ui.painter(), egui::Rect::from_center_size(egui::pos2(r.left() + 18.0, r.center().y), egui::vec2(14.0, 14.0)), *icon, akzent);
-                ui.painter().galley(egui::pos2(r.left() + 34.0, r.center().y - g.size().y / 2.0), g, pal.text);
-                if resp.clicked() {
-                    klicks.vorschlag = Some(text.trim_end_matches(" …").trim_end_matches('…').to_string());
-                }
-            }
-        });
-        ui.add_space(8.0);
+    for (icon, text) in vorschlaege {
+        let g = ui.painter().layout(text.to_string(), egui::FontId::proportional(13.0), pal.text, breite - 40.0);
+        let (r, resp) = ui.allocate_exact_size(egui::vec2(breite, (g.size().y + 14.0).max(30.0)), egui::Sense::click());
+        let t = ui.ctx().animate_bool_with_time(resp.id.with("hot"), resp.hovered(), 0.12);
+        if t > 0.0 {
+            ui.painter().rect_filled(r, crate::style::RADIUS as f32, pal.hover.gamma_multiply(t));
+        }
+        icons::paint(ui.painter(), egui::Rect::from_center_size(egui::pos2(r.left() + 14.0, r.center().y), egui::vec2(14.0, 14.0)), icon, akzent);
+        ui.painter().galley(egui::pos2(r.left() + 32.0, r.center().y - g.size().y / 2.0), g, pal.text);
+        if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+            klicks.vorschlag = Some(text.trim_end_matches(" …").trim_end_matches('…').to_string());
+        }
     }
     ui.add_space(8.0);
 }

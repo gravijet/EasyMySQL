@@ -129,10 +129,10 @@ impl UsersTab {
         let pal = style::pal();
         ui.horizontal(|ui| {
             crate::widgets::text_field(ui, &mut self.filter, tr("Filtern", "Filter"), Some((ui.available_width() - 64.0).max(60.0)));
-            if icons::button_sized(ui, Icon::Plus, tr("Neuer Benutzer", "New user"), 28.0).clicked() {
+            if icons::tool_button(ui, Icon::Plus, tr("Neuer Benutzer", "New user")).clicked() {
                 self.new_user = Some(NewUser { name: String::new(), host: "localhost".into(), password: String::new(), own_db: true });
             }
-            if icons::button_sized(ui, Icon::Refresh, tr("Aktualisieren", "Refresh"), 28.0).clicked() {
+            if icons::tool_button(ui, Icon::Refresh, tr("Aktualisieren", "Refresh")).clicked() {
                 self.reload(cx);
             }
         });
@@ -162,6 +162,11 @@ impl UsersTab {
                 }
             }
         });
+        // Nichts gewaehlt: gleich den ersten echten Benutzer zeigen statt einer leeren Flaeche
+        if pick.is_none() && self.sel.is_none() && !self.narrow {
+            const SYSTEM: [&str; 4] = ["mariadb.sys", "mysql.sys", "mysql.session", "mysql.infoschema"];
+            pick = self.accounts.iter().position(|a| !a.user.is_empty() && !SYSTEM.contains(&a.user.as_str()));
+        }
         if let Some(i) = pick {
             self.select(i, cx);
         }
@@ -175,7 +180,7 @@ impl UsersTab {
             return;
         };
         ui.horizontal_wrapped(|ui| {
-            if self.narrow && icons::button_sized(ui, Icon::ArrowLeft, tr("Zurück zur Liste", "Back to the list"), 28.0).clicked() {
+            if self.narrow && icons::tool_button(ui, Icon::ArrowLeft, tr("Zurück zur Liste", "Back to the list")).clicked() {
                 self.show_detail = false;
             }
             ui.label(RichText::new(acc.label()).size(16.0).strong());

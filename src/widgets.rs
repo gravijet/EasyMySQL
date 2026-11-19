@@ -229,6 +229,17 @@ pub fn dialog_actions(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
     ui.allocate_ui_with_layout(vec2(ui.available_width(), CONTROL_H), egui::Layout::right_to_left(egui::Align::Center), add);
 }
 
+/// Knopf ueber die ganze Breite (Seitenleisten): gestapelte Aktionen sind gleich breit und hoch
+pub fn block_button(ui: &mut egui::Ui, text: &str) -> Response {
+    ui.add_sized([ui.available_width(), CONTROL_H], egui::Button::new(text))
+}
+
+/// Hauptaktion ueber die ganze Breite (Seitenleisten)
+pub fn block_primary(ui: &mut egui::Ui, text: &str) -> Response {
+    let p = style::pal();
+    ui.add_sized([ui.available_width(), CONTROL_H], egui::Button::new(egui::RichText::new(text).color(Color32::WHITE)).fill(p.accent).stroke(Stroke::NONE))
+}
+
 /// Hervorgehobene Hauptaktion nur mit Text (Akzentfarbe, weisse Schrift)
 pub fn primary(ui: &mut egui::Ui, text: &str) -> Response {
     let p = style::pal();

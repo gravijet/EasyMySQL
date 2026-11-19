@@ -131,7 +131,7 @@ impl SafetyTab {
                 let _ = std::fs::create_dir_all(&d);
                 crate::app::open_path(&d);
             }
-            if crate::icons::button_sized(ui, crate::icons::Icon::Refresh, crate::i18n::text("Aktualisieren"), 28.0).clicked() {
+            if crate::icons::tool_button(ui, crate::icons::Icon::Refresh, crate::i18n::text("Aktualisieren")).clicked() {
                 self.refresh(cx);
             }
         });
