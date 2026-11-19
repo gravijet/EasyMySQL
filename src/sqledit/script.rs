@@ -1111,6 +1111,23 @@ impl Sim {
         let lenient = toks.iter().take(4).any(|t| t.is_word("IGNORE")) || toks[0].is_word("REPLACE") || toks.iter().any(|t| t.is_word("DUPLICATE"));
         let Some(db) = self.cur.as_ref() else { return };
         let Some(table) = db.table(&lower).cloned() else {
+            // Das Skript legt die Tabelle weiter unten an: das CREATE nach vorne holen statt sie doppelt anzulegen
+            let later = (i + 1..stmts.len()).find(|&j| matches!(&facts[j], Fact::Create(t) if *t == lower));
+            if let Some(j) = later {
+                if chars[st.start..stmts[j].end].len() <= MOVE_MAX {
+                    out.push(err(
+                        ttok.start,
+                        ttok.end,
+                        crate::tr_format!(
+                            "Die Tabelle „{}“ wird erst weiter unten angelegt. Korrektur: das CREATE TABLE nach vorne holen.",
+                            "Table “{}” is only created further down. Fix: move the CREATE TABLE up.",
+                            ttok.text
+                        ),
+                        Some(move_up(chars, st, &stmts[j])),
+                    ));
+                }
+                return;
+            }
             let names: Vec<&str> = db.schema.tables.iter().map(|t| t.name.as_str()).collect();
             if db.known && ins.list.is_some() && nearest(&ttok.text, names.iter().copied()).is_none() {
                 let (sql, created) = self.guess_table(toks, &ins, facts, i);
@@ -1490,6 +1507,12 @@ mod tests {
         assert!(fixed(sql).ends_with("DROP TABLE c, p;"));
         let sql = "CREATE TABLE p (id INT PRIMARY KEY);\nCREATE TABLE c (id INT PRIMARY KEY, pid INT REFERENCES p (id));\nDROP TABLE p;";
         assert!(fixed(sql).ends_with("DROP TABLE c, p;"));
+    }
+
+    #[test]
+    fn tables_created_further_down_are_moved_up() {
+        let sql = "INSERT INTO fach (name) VALUES ('Mathe');\nCREATE TABLE fach (id INT PRIMARY KEY AUTO_INCREMENT, name VARCHAR(30));";
+        assert_eq!(fixed(sql), "CREATE TABLE fach (id INT PRIMARY KEY AUTO_INCREMENT, name VARCHAR(30));\nINSERT INTO fach (name) VALUES ('Mathe');");
     }
 
     #[test]

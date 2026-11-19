@@ -72,6 +72,15 @@ pub fn for_error(err: &str, sql: &str, schema: Option<&Schema>) -> Vec<ErrorFix>
     let mut out: Vec<ErrorFix> = Vec::new();
     let tr = crate::i18n::tr;
     match code(err) {
+        // Sicht, Prozedur, Funktion oder Trigger gibt es schon: ersetzen (beim erneuten Ausfuehren gewollt)
+        Some(1050 | 1304 | 1359)
+            if toks.first().is_some_and(|t| t.is_word("CREATE"))
+                && !has_words(&toks, &["OR", "REPLACE"])
+                && toks.iter().take(12).any(|t| ["VIEW", "PROCEDURE", "FUNCTION", "TRIGGER"].iter().any(|w| t.is_word(w))) =>
+        {
+            let at = toks[0].end;
+            out.push(fix(tr("Vorhandene ersetzen (OR REPLACE)", "Replace the existing one (OR REPLACE)").into(), edit(&chars, vec![(at, at, " OR REPLACE".into())])));
+        }
         // Gibt es schon / gibt es nicht
         Some(1050) if !has_words(&toks, &["IF", "NOT", "EXISTS"]) => {
             if let Some(s) = insert_after_word(&chars, &toks, &["TABLE"], "IF NOT EXISTS") {
@@ -269,6 +278,46 @@ pub fn for_error(err: &str, sql: &str, schema: Option<&Schema>) -> Vec<ErrorFix>
                 && let Some(alter) = widen_column(&chars, &toks, s, col.trim_matches('`'))
             {
                 out.push(fix(alter.0, format!("{};\n{}", alter.1, sql.trim())));
+            }
+        }
+        // AUTO_INCREMENT braucht einen Schluessel
+        Some(1075) => {
+            if let Some(k) = toks.iter().position(|t| t.is_word("AUTO_INCREMENT")) {
+                let (word, label) = if toks.iter().any(|t| t.is_word("PRIMARY")) {
+                    (" UNIQUE", tr("Automatisch gezählte Spalte eindeutig machen (UNIQUE)", "Make the auto-numbered column unique (UNIQUE)"))
+                } else {
+                    (" PRIMARY KEY", tr("Automatisch gezählte Spalte als Primärschlüssel", "Use the auto-numbered column as primary key"))
+                };
+                let at = toks[k].end;
+                out.push(fix(label.into(), edit(&chars, vec![(at, at, word.into())])));
+            }
+        }
+        // Zwei Primaerschluessel: zu einem gemeinsamen zusammenfassen
+        Some(1068) => {
+            if let Some(f) = one_primary_key(&chars, &toks) {
+                out.push(f);
+            }
+        }
+        // TEXT/BLOB in einem Index: VARCHAR(255) statt TEXT
+        Some(1170) => {
+            if let Some(col) = quoted_after(err, "column '")
+                && let Some(f) = text_key(&chars, &toks, schema, col, sql)
+            {
+                out.push(f);
+            }
+        }
+        // Index gibt es schon
+        Some(1061) if !has_words(&toks, &["IF", "NOT", "EXISTS"]) => {
+            if let Some(s) = insert_after_word(&chars, &toks, &["INDEX", "KEY"], "IF NOT EXISTS") {
+                out.push(fix(tr("Nur anlegen, wenn er fehlt (IF NOT EXISTS)", "Create only if missing (IF NOT EXISTS)").into(), s));
+            }
+        }
+        // Zieltabelle in der Unterabfrage (MySQL): Unterabfrage in eine abgeleitete Tabelle packen
+        Some(1093) => {
+            if let Some(t) = quoted_after(err, "target table '").or_else(|| quoted_after(err, "Table '"))
+                && let Some(f) = wrap_self_subqueries(&chars, &toks, t)
+            {
+                out.push(f);
             }
         }
         // Fremdschluessel nicht moeglich: Datentyp an die Zielspalte anpassen
@@ -579,6 +628,98 @@ fn widen_column(chars: &[char], toks: &[Tok], schema: &Schema, col: &str) -> Opt
     Some((crate::tr_format!("Spalte {} auf {new_type} vergrößern", "Widen column {} to {new_type}", info.name), def))
 }
 
+/// Mehrere Primaerschluessel in CREATE TABLE (Spalte PRIMARY KEY und/oder PRIMARY KEY (…)) zu einem vereinen
+fn one_primary_key(chars: &[char], toks: &[Tok]) -> Option<ErrorFix> {
+    if !toks.first()?.is_word("CREATE") {
+        return None;
+    }
+    let open = toks.iter().position(|t| t.kind == Kind::Open)?;
+    let close = group_end(toks, open)?;
+    let mut cols: Vec<String> = Vec::new();
+    let mut edits: Vec<(usize, usize, String)> = Vec::new();
+    for (a, b) in items(toks, open, close) {
+        let Some(p) = (a..b.saturating_sub(1)).find(|&k| toks[k].is_word("PRIMARY") && toks[k + 1].is_word("KEY")) else { continue };
+        let table_level = toks[a].is_word("PRIMARY") || toks[a].is_word("CONSTRAINT");
+        if table_level {
+            let g = (p + 2..b).find(|&k| toks[k].kind == Kind::Open)?;
+            let ge = group_end(toks, g)?;
+            for t in &toks[g + 1..ge] {
+                if t.is_name() && !cols.iter().any(|c| c.eq_ignore_ascii_case(&t.text)) {
+                    cols.push(t.text.clone());
+                }
+            }
+            // Eintrag samt Komma davor entfernen
+            let from = if toks[a - 1].kind == Kind::Comma { toks[a - 1].start } else { toks[a].start };
+            edits.push((from, toks[b - 1].end, String::new()));
+        } else {
+            if !cols.iter().any(|c| c.eq_ignore_ascii_case(&toks[a].text)) {
+                cols.push(toks[a].text.clone());
+            }
+            edits.push((toks[p - 1].end, toks[p + 1].end, String::new()));
+        }
+    }
+    if edits.len() < 2 || cols.is_empty() {
+        return None;
+    }
+    let list: Vec<String> = cols.iter().map(|c| quote_if_needed(c)).collect();
+    let at = toks[close - 1].end;
+    edits.push((at, at, format!(",\n  PRIMARY KEY ({})", list.join(", "))));
+    Some(fix(crate::tr_format!("Einen gemeinsamen Primärschlüssel ({}) bilden", "Use one combined primary key ({})", list.join(", ")), edit(chars, edits)))
+}
+
+/// TEXT/BLOB-Spalte in einem Index: im CREATE TABLE VARCHAR(255) verwenden, sonst die Spalte vorher aendern
+fn text_key(chars: &[char], toks: &[Tok], schema: Option<&Schema>, col: &str, sql: &str) -> Option<ErrorFix> {
+    let label = crate::tr_format!("{col} als VARCHAR(255) statt TEXT (Text im Index braucht eine Länge)", "{col} as VARCHAR(255) instead of TEXT (text in an index needs a length)");
+    if toks.first()?.is_word("CREATE")
+        && let Some(open) = toks.iter().position(|t| t.kind == Kind::Open)
+        && let Some(close) = group_end(toks, open)
+    {
+        for (a, _) in items(toks, open, close) {
+            if toks[a].is_name() && toks[a].text.eq_ignore_ascii_case(col) && let Some(t) = toks.get(a + 1) {
+                let new = match t.upper().as_str() {
+                    "TEXT" | "TINYTEXT" | "MEDIUMTEXT" | "LONGTEXT" => "VARCHAR(255)",
+                    "BLOB" | "TINYBLOB" | "MEDIUMBLOB" | "LONGBLOB" => "VARBINARY(255)",
+                    _ => return None,
+                };
+                return Some(fix(label, edit(chars, vec![(t.start, t.end, new.into())])));
+            }
+        }
+    }
+    let table = used_tables(toks, schema?).into_iter().find(|t| t.columns.iter().any(|c| c.name.eq_ignore_ascii_case(col)))?;
+    let info = table.columns.iter().find(|c| c.name.eq_ignore_ascii_case(col))?;
+    if !info.col_type.to_ascii_lowercase().contains("text") {
+        return None;
+    }
+    let null = if info.nullable { "" } else { " NOT NULL" };
+    Some(fix(label, format!("ALTER TABLE {} MODIFY {} VARCHAR(255){null};\n{}", quote_if_needed(&table.name), quote_if_needed(&info.name), sql.trim())))
+}
+
+/// Unterabfragen, die die Zieltabelle lesen: (SELECT …) -> (SELECT * FROM (SELECT …) AS _t1)
+fn wrap_self_subqueries(chars: &[char], toks: &[Tok], target: &str) -> Option<ErrorFix> {
+    let target = target.rsplit('.').next().unwrap_or(target);
+    let mut edits = Vec::new();
+    let mut k = 0;
+    let mut n = 0;
+    while k + 1 < toks.len() {
+        if toks[k].kind == Kind::Open && toks[k + 1].is_word("SELECT") {
+            let end = group_end(toks, k)?;
+            let reads = toks[k..end].windows(2).any(|w| (w[0].is_word("FROM") || w[0].is_word("JOIN")) && w[1].is_name() && w[1].text.eq_ignore_ascii_case(target));
+            if reads {
+                n += 1;
+                edits.push((toks[k].end, toks[k].end, "SELECT * FROM (".to_string()));
+                edits.push((toks[end].start, toks[end].start, format!(") AS _t{n}")));
+                k = end + 1;
+                continue;
+            }
+        }
+        k += 1;
+    }
+    if edits.is_empty() {
+        return None;
+    }
+    Some(fix(crate::i18n::tr("Unterabfrage zuerst auswerten (abgeleitete Tabelle)", "Evaluate the subquery first (derived table)").into(), edit(chars, edits)))
+}
+
 /// Typ einer Spalte ohne Anzeigebreite: "int(11) unsigned" -> "INT UNSIGNED"
 pub(super) fn norm_type(t: &str) -> String {
     let t = t.to_ascii_uppercase();
@@ -694,6 +835,20 @@ mod tests {
         assert_eq!(first("ERROR 1051 (42S02): Unknown table 'person.x'", "DROP TABLE x"), "DROP TABLE IF EXISTS x");
         assert_eq!(first("ERROR 1091 (42000): Can't DROP COLUMN `a`; check that it exists", "ALTER TABLE t DROP COLUMN a"), "ALTER TABLE t DROP COLUMN IF EXISTS a");
         assert_eq!(first("ERROR 1060 (42S21): Duplicate column name 'a'", "ALTER TABLE t ADD a INT"), "ALTER TABLE t ADD IF NOT EXISTS a INT");
+    }
+
+    #[test]
+    fn table_definitions() {
+        assert_eq!(first("ERROR 1075 (42000): Incorrect table definition; there can be only one auto column and it must be defined as a key", "CREATE TABLE t (id INT AUTO_INCREMENT, n INT)"), "CREATE TABLE t (id INT AUTO_INCREMENT PRIMARY KEY, n INT)");
+        assert_eq!(first("ERROR 1068 (42000): Multiple primary key defined", "CREATE TABLE t (id INT PRIMARY KEY, n INT, PRIMARY KEY (id))"), "CREATE TABLE t (id INT, n INT,\n  PRIMARY KEY (id))");
+        assert_eq!(first("ERROR 1068 (42000): Multiple primary key defined", "CREATE TABLE t (a INT PRIMARY KEY, b INT PRIMARY KEY)"), "CREATE TABLE t (a INT, b INT,\n  PRIMARY KEY (a, b))");
+        assert_eq!(first("ERROR 1170 (42000): BLOB/TEXT column 'name' used in key specification without a key length", "CREATE TABLE t (name TEXT PRIMARY KEY)"), "CREATE TABLE t (name VARCHAR(255) PRIMARY KEY)");
+        assert_eq!(first("ERROR 1061 (42000): Duplicate key name 'ix'", "CREATE INDEX ix ON t (a)"), "CREATE INDEX IF NOT EXISTS ix ON t (a)");
+        assert_eq!(first("ERROR 1050 (42S01): Table 'v' already exists", "CREATE VIEW v AS SELECT 1"), "CREATE OR REPLACE VIEW v AS SELECT 1");
+        assert_eq!(
+            first("ERROR 1093 (HY000): You can't specify target table 't' for update in FROM clause", "DELETE FROM t WHERE id IN (SELECT id FROM t WHERE n > 1)"),
+            "DELETE FROM t WHERE id IN (SELECT * FROM (SELECT id FROM t WHERE n > 1) AS _t1)"
+        );
     }
 
     #[test]

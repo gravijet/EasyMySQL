@@ -5,6 +5,8 @@
 // wird auf die Kopien umgeschrieben, und was ausserhalb wirken koennte (Benutzer, Rechte, Dateien,
 // globale Einstellungen), wird im Probelauf nicht ausgefuehrt.
 
+mod aufbau;
+
 use super::dialect::{group_end, insert_parts, items};
 use super::errfix;
 use super::lint::{Env, Kind, Problem, Tok, apply_fixes, lex, lint};
@@ -99,6 +101,8 @@ pub struct Cand {
     pub label: String,
     pub check: bool,
     pub snippet: String,
+    /// Aus dem spaeteren Skript vor den Fehler gezogene Anweisungen (zaehlen nicht als Fortschritt)
+    pub moved: usize,
 }
 
 /// Lokale KI: (Anweisung, Fehler, Schema) -> korrigierte Anweisung
@@ -667,11 +671,35 @@ fn candidates(text: &str, f: &Fail, setup: &Setup, server: &mut dyn Server, sand
     let code = errfix::code(&f.error);
     let push_replace = |out: &mut Vec<Cand>, sql: &str, label: String, check: bool| {
         if let Some(t) = replace_stmt(text, st, sql) {
-            out.push(Cand { text: t, label, check, snippet: first_line(sql) });
+            out.push(Cand { text: t, label, check, moved: 0, snippet: first_line(sql) });
         }
     };
     let mut late: Vec<Cand> = Vec::new();
+    // Liefert eine spaetere Anweisung, was hier fehlt (Tabelle, Elternzeilen, Datenbank …)? Dann zuerst sie.
+    if let Some(c) = aufbau::vorziehen(text, f) {
+        out.push(c);
+    }
+    let (art, _) = head(&st.sql);
     match code {
+        // Tabelle fehlt: nach den Namens-Korrekturen aus einer anderen Datenbank uebernehmen oder ableiten
+        Some(1146) if !art.starts_with("DROP") && art != "TRUNCATE" => {
+            if let Some(full) = quoted(&f.error, "Table '") {
+                let (db_name, name) = full.rsplit_once('.').map_or((None, full.as_str()), |(d, n)| (Some(d), n));
+                let current = f.schema.as_ref().map(|s| s.name.as_str());
+                let qual = db_name.filter(|d| current.is_none_or(|c| !c.eq_ignore_ascii_case(d)) && toks.windows(3).any(|w| w[0].text.eq_ignore_ascii_case(d) && w[1].kind == Kind::Dot && w[2].text.eq_ignore_ascii_case(name)));
+                late.extend(aufbau::tabelle(text, f, setup, server, sandbox, name, qual));
+            }
+        }
+        // Fremdschluessel auf eine Tabelle, die es nirgends gibt: sie aus dem Skript ableiten
+        Some(1005 | 150 | 1215 | 1824) => {
+            for t in aufbau::fehlende_eltern(text, f) {
+                late.extend(aufbau::tabelle(text, f, setup, server, sandbox, &t, None));
+            }
+        }
+        Some(1049) => out.extend(aufbau::datenbank(text, f, setup)),
+        Some(1054) => late.extend(aufbau::spalte(text, f)),
+        Some(1406 | 1264 | 1366 | 1265 | 1292) => out.extend(aufbau::typ_anpassen(text, f)),
+        Some(1451) => late.extend(aufbau::kinder_zuerst(text, f)),
         // Tabelle gibt es schon: Skript wiederholbar machen (alte Tabellen vorher loeschen) oder IF NOT EXISTS
         Some(1050) => {
             if let Some(name) = quoted(&f.error, "Table '") {
@@ -691,7 +719,7 @@ fn candidates(text: &str, f: &Fail, setup: &Setup, server: &mut dyn Server, sand
                         text: insert_before(text, st, &drop),
                         label: crate::tr_format!("Vorhandene Tabellen vorher löschen, damit das Skript wiederholt laufen kann ({})", "Drop the existing tables first so the script can run again ({})", existing.join(", ")),
                         check: false,
-                        snippet: first_line(&drop),
+                        moved: 0, snippet: first_line(&drop),
                     };
                     if filled.contains(&lower) || empty {
                         out.push(cand);
@@ -713,7 +741,7 @@ fn candidates(text: &str, f: &Fail, setup: &Setup, server: &mut dyn Server, sand
                         text: insert_before(text, st, &drop),
                         label: crate::tr_format!("Datenbank „{name}“ vorher löschen, damit das Skript wiederholt laufen kann", "Drop the database “{name}” first so the script can run again"),
                         check: false,
-                        snippet: first_line(&drop),
+                        moved: 0, snippet: first_line(&drop),
                     });
                 }
             }
@@ -730,13 +758,13 @@ fn candidates(text: &str, f: &Fail, setup: &Setup, server: &mut dyn Server, sand
                     text: insert_before(text, st, &head),
                     label: crate::tr_format!("Datenbank „{n}“ anlegen und benutzen", "Create and use the database “{n}”"),
                     check: false,
-                    snippet: format!("USE {q};"),
+                    moved: 0, snippet: format!("USE {q};"),
                 });
             }
         }
         // Pflichtfeld ohne Wert: im CREATE TABLE des Skripts AUTO_INCREMENT (Schluessel) bzw. NULL erlauben
-        Some(1364) => {
-            if let (Some(col), Some((ti, _))) = (quoted(&f.error, "Field '"), insert_parts(&toks)) {
+        Some(1364 | 1048) => {
+            if let (Some(col), Some((ti, _))) = (quoted(&f.error, "Field '").or_else(|| quoted(&f.error, "Column '")), insert_parts(&toks)) {
                 let table = toks[ti].text.clone();
                 if let Some(c) = loosen_column(text, &table, &col) {
                     out.push(c);
@@ -781,7 +809,7 @@ fn ai_candidate(text: &str, f: &Fail, ai: Ai<'_>) -> Option<Cand> {
         return None;
     }
     let t = replace_stmt(text, st, &sql)?;
-    Some(Cand { text: t, label: crate::tr_format!("Von der lokalen KI umgeschrieben: {}", "Rewritten by the local AI: {}", first_line(&sql)), check: true, snippet: first_line(&sql) })
+    Some(Cand { text: t, label: crate::tr_format!("Von der lokalen KI umgeschrieben: {}", "Rewritten by the local AI: {}", first_line(&sql)), check: true, moved: 0, snippet: first_line(&sql) })
 }
 
 /// Art und Ziel einer Anweisung: ("CREATE TABLE", Some("kunde")), ("INSERT", Some("kunde")), ("SELECT", None)
@@ -863,7 +891,7 @@ fn loosen_column(text: &str, table: &str, col: &str) -> Option<Cand> {
             out.splice(edit.0..edit.1, edit.2.chars());
             let new: String = out.into_iter().collect();
             let t = replace_stmt(text, &st, &new)?;
-            return Some(Cand { text: t, label: edit.3, check: false, snippet: first_line(&new) });
+            return Some(Cand { text: t, label: edit.3, check: false, moved: 0, snippet: first_line(&new) });
         }
         return None;
     }
@@ -946,7 +974,7 @@ fn parent_rows(text: &str, f: &Fail, toks: &[Tok], chars: &[char], server: &mut 
             shown.join(", ")
         ),
         check: true,
-        snippet: first_line(&sql),
+        moved: 0, snippet: first_line(&sql),
     })
 }
 
@@ -1117,7 +1145,7 @@ pub fn repair(text: &str, setup: &Setup, server: Option<&mut dyn Server>, status
                 Err(e) => break 'outer End::Failed(e),
             };
             runs += 1;
-            let inserted = db::split_statements(&cand.text).len() as isize - base;
+            let inserted = db::split_statements(&cand.text).len() as isize - base + cand.moved as isize;
             if progressed(&cur, &next, inserted, &seen) {
                 text = cand.text;
                 changes.push(Change { label: cand.label, line: None, check: cand.check, snippet: cand.snippet });
@@ -1403,6 +1431,22 @@ mod corpus_tests {
         ("JOIN ohne ON", "SELECT s.name, k.name FROM schueler s JOIN klasse k WHERE s.klasse_id = k.id;"),
         ("Funktion vertippt", "SELECT COUNTT(*) FROM schueler;"),
         ("Datum ohne Anfuehrungszeichen", "SELECT * FROM schueler WHERE geburt > 2008-03-01;"),
+        ("Tabelle fehlt ganz", "SELECT name, ort FROM kunde WHERE ort = 'Wien';"),
+        ("Tabelle erst spaeter angelegt", "INSERT INTO fach (name) VALUES ('Mathe');\nCREATE TABLE fach (id INT PRIMARY KEY AUTO_INCREMENT, name VARCHAR(30));"),
+        ("Elternzeile kommt spaeter", "INSERT INTO schueler (name, klasse_id) VALUES ('Grace', 3);\nINSERT INTO klasse (id, name) VALUES (3, '4C');"),
+        ("Spalte fehlt", "INSERT INTO schueler (name, klasse_id, email) VALUES ('Grace', 1, 'grace@example.com');"),
+        ("Spalte fehlt im eigenen CREATE", "CREATE TABLE lehrer (id INT PRIMARY KEY AUTO_INCREMENT, name VARCHAR(30));\nINSERT INTO lehrer (name, fach) VALUES ('Huber', 'Mathematik');"),
+        ("Datenbank fehlt", "USE korpus_neu_xyz;\nCREATE TABLE t (id INT PRIMARY KEY);"),
+        ("Verweis auf fehlende Tabelle", "CREATE TABLE note (id INT PRIMARY KEY AUTO_INCREMENT, wert INT, fach_id INT, FOREIGN KEY (fach_id) REFERENCES fach(id));\nINSERT INTO note (wert, fach_id) VALUES (1, 1);"),
+        ("Zahl zu gross", "CREATE TABLE raum (nr TINYINT PRIMARY KEY);\nINSERT INTO raum VALUES (301);"),
+        ("Telefon als Zahl", "CREATE TABLE kontakt (id INT PRIMARY KEY AUTO_INCREMENT, telefon INT);\nINSERT INTO kontakt (telefon) VALUES ('0664 1234567');"),
+        ("AUTO_INCREMENT ohne Schluessel", "CREATE TABLE raum (id INT AUTO_INCREMENT, nummer VARCHAR(5));"),
+        ("Zwei Primaerschluessel", "CREATE TABLE raum (id INT PRIMARY KEY, nummer VARCHAR(5) PRIMARY KEY);"),
+        ("TEXT als Schluessel", "CREATE TABLE raum (name TEXT PRIMARY KEY);"),
+        ("Eltern vor Kind geloescht", "DROP TABLE IF EXISTS klasse;\nDROP TABLE IF EXISTS schueler;\nCREATE TABLE klasse (id INT PRIMARY KEY AUTO_INCREMENT, name VARCHAR(10));\nCREATE TABLE schueler (id INT PRIMARY KEY AUTO_INCREMENT, klasse_id INT, FOREIGN KEY (klasse_id) REFERENCES klasse(id));"),
+        ("Sicht gibt es schon", "CREATE VIEW v_schueler AS SELECT name FROM schueler;\nCREATE VIEW v_schueler AS SELECT name, geburt FROM schueler;"),
+        ("Index gibt es schon", "CREATE INDEX ix_name ON schueler (name);\nCREATE INDEX ix_name ON schueler (name);"),
+        ("Tabelle nur aus Werten", "INSERT INTO tier VALUES (1, 'Bello', '2020-05-01');\nSELECT * FROM tier;"),
     ];
 
     #[test]

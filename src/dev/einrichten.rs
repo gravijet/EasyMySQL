@@ -450,14 +450,14 @@ fn ist_zahl(typ: &str) -> bool {
 }
 
 /// Primaerschluessel einer abgeleiteten Tabelle: `id`, sonst `<tabelle>_id` / `<tabelle>id` / `id_<tabelle>`
-fn schluessel(tabelle: &str, spalten: &[(String, String)]) -> Option<usize> {
+pub(crate) fn schluessel(tabelle: &str, spalten: &[(String, String)]) -> Option<usize> {
     let t = tabelle.to_ascii_lowercase();
     let kandidaten = ["id".to_string(), format!("{t}_id"), format!("{t}id"), format!("id_{t}"), format!("{t}_nr"), format!("{t}nr")];
     kandidaten.iter().find_map(|k| spalten.iter().position(|(c, _)| c.eq_ignore_ascii_case(k)))
 }
 
 /// Spaltendefinition einer abgeleiteten Spalte
-fn spalte_ddl(name: &str, hinweis: &str, pk: bool) -> String {
+pub(crate) fn spalte_ddl(name: &str, hinweis: &str, pk: bool) -> String {
     let typ = if hinweis.is_empty() { typ_aus_name(name).to_string() } else { hinweis.to_string() };
     if pk {
         if ist_zahl(&typ) {
