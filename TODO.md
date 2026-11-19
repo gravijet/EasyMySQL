@@ -357,3 +357,36 @@ Sicherungen, Benutzerverwaltung, Git, Suche, Menüs.
 - Bricht EasyMySQL ab, ohne `on_exit`, läuft llama-server weiter, bis er nach 10 min schläft (kein Job-Objekt).
 - Probelauf kopiert keine Trigger/Prozeduren der echten Datenbank; Fehler, die nur durch sie entstehen, fehlen.
 - Java-Dateien: Auto-Fix bleibt dort statisch (kein Probelauf für SQL in Java-Zeichenketten).
+
+## 18. Achte Runde (2026-11-19, Version 1.1.23): alles von selbst, einheitliche Bedienelemente
+
+**Erledigt** (364 Tests, Clippy ohne Warnungen; echte Läufe gegen MariaDB 10.11 unter Xvfb):
+- Ausführen repariert sich selbst: Schlägt eine Anweisung fehl, läuft der Rest im Hintergrund als Probelauf auf
+  Kopien; eine Korrektur, die nichts zusätzlich löscht und keine Platzhalter enthält, wird übernommen und ab der
+  Fehlerstelle weiter ausgeführt (höchstens 3-mal in Folge), sonst „Weiter ausführen“. Einstellungen → Editor.
+- Auto-Fix-Korpus (`probe::corpus_tests::autofix_corpus`, 39 typische Fehler aus dem Unterricht gegen einen echten
+  Server): vorher 24, jetzt 39 repariert. Neu: Vermutungen an der Stelle „near '…'“ (Komma, Schlüsselwort, DELETE *,
+  COUNT (*), reservierte Namen, VARCHAR ohne Länge, Klammer), Apostroph im Text, typografische Anführungszeichen,
+  Datum ohne Anführungszeichen, Text nach =, Alias statt Tabellenname, Aggregat in WHERE → HAVING.
+- Probe-Datenbanken: eindeutig je Lauf (zwei Reiter stören sich nicht), Reste nach Abstürzen werden entfernt und nie
+  angezeigt; Struktur einmal gelesen, große Datenbanken kopieren nur die genannten Tabellen samt FK-Nachbarn.
+- Gemerkte, inzwischen gelöschte Datenbank blockierte jeden Lauf („Unknown database“ in Zeile 1) – behoben.
+- Ohne Verbindung: „Ausführen“ startet den eigenen Server und führt danach aus; Seitenleiste bietet „Server starten“.
+- Absturz des eigenen Servers: Neustart von selbst (höchstens 3-mal in 10 Minuten).
+- Programme: gestoppter Server wird gestartet, fehlender Treiber/JDK geladen, MariaDB-Treiber-4-Fehler (TLS/MitM)
+  bekommen bei Adressen auf diesen PC `?sslMode=disable`; danach wird neu übersetzt und gestartet. In der App geprüft.
+- Query Builder: Live-Vorschau standardmäßig an (nur SELECT, höchstens 200 Zeilen).
+- Import: „Datei wählen“ erkennt die Art an der Datei (wie Hineinziehen).
+- Oberfläche: Zahlenfelder wie Textfelder; Ausführen grün gefüllt; Plus-Symbol statt „+“; Zahlenspalten
+  rechtsbündig; Struktur-Ansicht mit durchgehendem Kopf und festen Spalten; alle Dialoge mit derselben
+  rechtsbündigen Knopfzeile (Hauptaktion rechts, rot beim Löschen, Esc bricht ab); Sicherungen als kompakte Zeilen;
+  Verbindungsseite neu geordnet; KI-Bereich ohne doppeltes „Anmelden“. Feste Spaltenbreiten fielen in egui auf die
+  Textbreite zusammen (`allocate_ui_with_layout`) – neuer Baustein `widgets::fixed`.
+
+**Beobachtet / offen:**
+- Debian-MariaDB 10.11 erzeugt im TLS-Modus „Standard“ kein Zertifikat (erst 11.4+); Verbindungen der App laufen
+  trotzdem, Java-Programme werden per sslMode repariert. Gebündeltes MariaDB unter Windows nicht geprüft.
+- `dev::debug::tests::debugging_a_program_stops_at_breakpoints` scheiterte einmal unter hoher Last (30-s-Fenster),
+  allein 3/3 grün.
+- Kopflos nicht geprüft: Andocken, Git-Bereich, Explorer-Dialoge nach den Dialog-Änderungen; Windows/macOS nur per
+  `cargo check --target x86_64-pc-windows-gnu`.

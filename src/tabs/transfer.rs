@@ -295,10 +295,17 @@ impl TransferTab {
     }
 
     fn choose_files(&mut self, ctx: &egui::Context) {
-        let mut dlg = rfd::FileDialog::new();
-        dlg = dlg.add_filter(self.kind.label(), self.kind.extensions()).add_filter(t("Alle Dateien", "All files"), &["*"]);
-        let picked = if matches!(self.kind, Kind::Sqlite | Kind::Redis) { dlg.pick_file().map(|f| vec![f]) } else { dlg.pick_files() };
-        if let Some(files) = picked {
+        // Alle lesbaren Dateien anbieten; die Art ergibt sich aus der gewaehlten Datei (wie beim Hineinziehen)
+        let known: Vec<&str> = [Kind::Sqlite, Kind::Mongo, Kind::Csv, Kind::Redis].iter().flat_map(|k| k.extensions().iter().copied()).collect();
+        let dlg = rfd::FileDialog::new()
+            .add_filter(t("Alle unterstützten Dateien", "All supported files"), &known)
+            .add_filter(self.kind.label(), self.kind.extensions())
+            .add_filter(t("Alle Dateien", "All files"), &["*"]);
+        let Some(files) = dlg.pick_files() else { return };
+        let kind = files.first().and_then(|p| Kind::from_path(p)).unwrap_or(self.kind);
+        self.kind = kind;
+        let files: Vec<PathBuf> = if matches!(kind, Kind::Sqlite | Kind::Redis) { files.into_iter().take(1).collect() } else { files.into_iter().filter(|p| Kind::from_path(p).is_none_or(|k| k == kind)).collect() };
+        if !files.is_empty() {
             self.set_files(ctx, files);
         }
     }

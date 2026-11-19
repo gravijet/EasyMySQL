@@ -808,11 +808,30 @@ impl EasyApp {
         let Some(dbc) = &self.db else {
             // Gleiche Einrueckung wie der Titel der Seitenleiste, etwas Luft zwischen Text und Knopf
             egui::Frame::new().inner_margin(egui::Margin { left: 2, right: 0, top: 2, bottom: 0 }).show(ui, |ui| {
-                ui.label(RichText::new(crate::i18n::text("Nicht verbunden")).color(style::pal().text_weak));
-                ui.add_space(4.0);
-                if ui.button(crate::i18n::text("Verbindung …")).clicked() {
-                    actions.push(Action::OpenSettings(Some("verbindung".into())));
-                }
+                let st = self.server.state();
+                let (text, own_stopped) = if st.is_busy() {
+                    (crate::i18n::tr("Server startet …", "Server is starting …"), false)
+                } else if self.is_local() && !st.is_running() {
+                    (crate::i18n::tr("Der eigene Server ist gestoppt.", "The own server is stopped."), true)
+                } else {
+                    (crate::i18n::text("Nicht verbunden"), false)
+                };
+                ui.horizontal(|ui| {
+                    if st.is_busy() {
+                        ui.spinner();
+                    }
+                    ui.label(RichText::new(text).color(style::pal().text_weak));
+                });
+                ui.add_space(6.0);
+                ui.horizontal(|ui| {
+                    // Eigener Server gestoppt: Starten ist die naheliegende Aktion
+                    if own_stopped && icons::run_button(ui, crate::i18n::tr("Server starten", "Start server")).clicked() {
+                        actions.push(Action::EnsureServer);
+                    }
+                    if !st.is_busy() && ui.button(crate::i18n::text("Verbindung …")).clicked() {
+                        actions.push(Action::OpenSettings(Some("verbindung".into())));
+                    }
+                });
             });
             return;
         };
