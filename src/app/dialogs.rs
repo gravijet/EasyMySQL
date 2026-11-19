@@ -58,6 +58,8 @@ impl EasyApp {
         let frame = egui::Frame::window(&ctx.global_style()).inner_margin(egui::Margin::same(14));
         let modal = egui::Modal::new(egui::Id::new("dialog")).frame(frame).show(ctx, |ui| {
             ui.set_max_width(520.0);
+            // Einheitliche Mindestbreite, damit die Knopfzeile rechts buendig mit dem Inhalt abschliesst
+            ui.set_min_width(400.0);
             match dlg {
                 Dialog::Message { title, text, error } => {
                     ui.set_max_width(560.0);
@@ -93,13 +95,14 @@ impl EasyApp {
                     egui::ScrollArea::vertical().max_height(240.0).show(ui, |ui| {
                         ui.label(RichText::new(sql.as_str()).monospace().small().color(pal.text_weak));
                     });
-                    ui.add_space(8.0);
-                    ui.horizontal(|ui| {
-                        if ui.button(crate::i18n::text("Ja")).clicked() {
+                    let deletes = !crate::backup::destructive_targets(sql, db.as_deref()).is_empty() || sql.to_uppercase().contains("DROP ");
+                    crate::widgets::dialog_actions(ui, |ui| {
+                        let yes = if deletes { crate::widgets::danger(ui, crate::i18n::text("Ja")) } else { crate::widgets::primary(ui, crate::i18n::text("Ja")) };
+                        if yes.clicked() {
                             run_sql = Some((db.clone(), sql.clone(), structure));
                             close = true;
                         }
-                        if ui.button(crate::i18n::text("Nein")).clicked() || ui.input(|i| i.key_pressed(Key::Escape)) {
+                        if ui.add(egui::Button::new(crate::i18n::text("Nein")).min_size(egui::vec2(84.0, 28.0))).clicked() || ui.input(|i| i.key_pressed(Key::Escape)) {
                             close = true;
                         }
                     });
@@ -114,8 +117,7 @@ impl EasyApp {
                             ui.label(job);
                         });
                     });
-                    ui.add_space(8.0);
-                    ui.horizontal(|ui| {
+                    crate::widgets::dialog_actions(ui, |ui| {
                         if crate::icons::primary_button(ui, crate::icons::Icon::Database, crate::i18n::tr("Erstellen", "Create")).clicked() {
                             run_project = Some((db.clone(), sql.clone()));
                             close = true;
@@ -128,17 +130,18 @@ impl EasyApp {
                 Dialog::NewDatabase { name, collation } => {
                     ui.label(RichText::new(crate::i18n::text("Neue Datenbank")).strong().size(15.0));
                     ui.add_space(4.0);
-                    egui::Grid::new("newdb").num_columns(2).show(ui, |ui| {
+                    ui.add_space(6.0);
+                    egui::Grid::new("newdb").num_columns(2).spacing([12.0, 10.0]).show(ui, |ui| {
                         ui.label("Name");
-                        ui.add(crate::widgets::edit(name)).request_focus();
+                        let r = ui.add_sized([280.0, crate::widgets::CONTROL_H], crate::widgets::edit(name).hint_text(crate::i18n::tr("z. B. schule", "e.g. school")));
+                        crate::widgets::focus_when_shown(ui, &r);
                         ui.end_row();
                         ui.label(crate::i18n::text("Sortierung"));
                         let items: Vec<String> = COLLATIONS.iter().map(|s| s.to_string()).collect();
-                        crate::tabs::str_combo(ui, "coll", &items, collation, 180.0);
+                        crate::tabs::str_combo(ui, "coll", &items, collation, 280.0);
                         ui.end_row();
                     });
-                    ui.add_space(6.0);
-                    ui.horizontal(|ui| {
+                    crate::widgets::dialog_actions(ui, |ui| {
                         let ok = !name.trim().is_empty();
                         let create = ui.add_enabled_ui(ok, |ui| crate::icons::primary_button(ui, crate::icons::Icon::Database, crate::i18n::text("Erstellen"))).inner.clicked();
                         if create || (ok && ui.input(|i| i.key_pressed(Key::Enter))) {
@@ -158,9 +161,9 @@ impl EasyApp {
                     if *copy {
                         crate::widgets::check(ui, with_data, t("Mit Daten", "With data"));
                     }
-                    ui.add_space(6.0);
-                    ui.horizontal(|ui| {
-                        let go = ui.add_enabled(valid, egui::Button::new("OK")).clicked() || (valid && r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)));
+                    crate::widgets::dialog_actions(ui, |ui| {
+                        let label = if *copy { t("Kopieren", "Copy") } else { t("Umbenennen", "Rename") };
+                        let go = ui.add_enabled_ui(valid, |ui| crate::widgets::primary(ui, label)).inner.clicked() || (valid && r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)));
                         if go {
                             let new = name.trim();
                             batch = Some((
@@ -238,12 +241,11 @@ impl EasyApp {
                         ui.add_space(6.0);
                         egui::ScrollArea::vertical().max_height(110.0).show(ui, |ui| ui.label(RichText::new(sel.as_str()).monospace().small().color(pal.text_weak)));
                     }
-                    ui.add_space(8.0);
-                    ui.horizontal(|ui| {
+                    crate::widgets::dialog_actions(ui, |ui| {
                         let ok = select.is_some() && !name.trim().is_empty();
                         if let Some(sel) = select {
                             let sql = format!("CREATE TABLE {}.{} AS\n{sel}", q(db), q(name.trim()));
-                            if ui.add_enabled(ok, egui::Button::new(t("Zusammenfügen", "Merge"))).clicked() {
+                            if ui.add_enabled_ui(ok, |ui| crate::widgets::primary(ui, t("Zusammenfügen", "Merge"))).inner.clicked() {
                                 batch = Some((db.clone(), vec![sql.clone()]));
                                 close = true;
                             }
@@ -263,9 +265,8 @@ impl EasyApp {
                     ui.label(crate::tr_format!("{} Tabelle(n) verwenden MyISAM und können bei einem Absturz beschädigt werden. InnoDB ist absturzsicher.", "{} table(s) use MyISAM and may be damaged by a crash. InnoDB is crash-safe.", list.len()));
                     let names: Vec<String> = list.iter().take(10).map(|(d, t)| format!("{d}.{t}")).collect();
                     ui.label(RichText::new(names.join(", ")).small());
-                    ui.add_space(6.0);
-                    ui.horizontal(|ui| {
-                        if ui.button(crate::i18n::text("In InnoDB umwandeln")).clicked() {
+                    crate::widgets::dialog_actions(ui, |ui| {
+                        if crate::widgets::primary(ui, crate::i18n::text("In InnoDB umwandeln")).clicked() {
                             convert = Some(list.clone());
                             close = true;
                         }
@@ -284,9 +285,8 @@ impl EasyApp {
                     if files.len() > 8 {
                         ui.label(RichText::new(format!("… +{}", files.len() - 8)).color(pal.text_weak));
                     }
-                    ui.add_space(6.0);
-                    ui.horizontal(|ui| {
-                        if ui.button(crate::i18n::text("Speichern")).clicked() || ui.input(|i| i.key_pressed(Key::Enter)) {
+                    crate::widgets::dialog_actions(ui, |ui| {
+                        if crate::widgets::primary(ui, crate::i18n::text("Speichern")).clicked() || ui.input(|i| i.key_pressed(Key::Enter)) {
                             unsaved = Some((true, then.clone()));
                             close = true;
                         }
@@ -303,9 +303,8 @@ impl EasyApp {
                     ui.label(RichText::new(crate::i18n::text("Verbindung fehlgeschlagen")).strong().size(15.0));
                     ui.add_space(4.0);
                     ui.label(RichText::new(e.as_str()).color(pal.error_text));
-                    ui.add_space(6.0);
-                    ui.horizontal(|ui| {
-                        if ui.button(crate::i18n::text("Erneut versuchen")).clicked() {
+                    crate::widgets::dialog_actions(ui, |ui| {
+                        if crate::widgets::primary(ui, crate::i18n::text("Erneut versuchen")).clicked() {
                             retry = true;
                             close = true;
                         }

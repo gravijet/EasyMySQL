@@ -216,11 +216,11 @@ impl ErTab {
                     }
                     Err(_) => {}
                 }
-                ui.horizontal(|ui| {
-                    if ui.add_enabled(sql.is_ok(), egui::Button::new(crate::i18n::text("Anlegen"))).clicked() {
+                crate::widgets::dialog_actions(ui, |ui| {
+                    if ui.add_enabled_ui(sql.is_ok(), |ui| crate::widgets::primary(ui, crate::i18n::text("Anlegen"))).inner.clicked() {
                         ok = true;
                     }
-                    if ui.button(crate::i18n::text("Abbrechen")).clicked() {
+                    if ui.button(crate::i18n::text("Abbrechen")).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
                         cancel = true;
                     }
                 });

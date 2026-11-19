@@ -1382,7 +1382,8 @@ impl BuilderTab {
             redo: Vec::new(),
             last_snap: (Query::default(), Mode::Select, Dml::default()),
             snap_at: std::time::Instant::now(),
-            live: false,
+            // Abfragen zeigen ihr Ergebnis von selbst (hoechstens 200 Zeilen); Aenderungen laufen nie automatisch
+            live: true,
             live_done: None,
             live_changed: std::time::Instant::now(),
         }
@@ -1750,8 +1751,6 @@ impl TabView for BuilderTab {
                                 ui.ctx().copy_text(sql.clone());
                                 cx.status(crate::i18n::text("SQL kopiert."));
                             }
-                            let lines = sql.lines().count();
-                            ui.label(RichText::new(crate::tr_format!("{} Zeile(n)", "{} line(s)", lines)).small().color(pal.text_weak));
                         });
                     });
                     egui::ScrollArea::both().id_salt("bsql").auto_shrink([false, false]).show(ui, |ui| {
@@ -1775,7 +1774,7 @@ impl TabView for BuilderTab {
                 if let Some(rs) = &self.result {
                     ui.horizontal(|ui| {
                         let took = self.took.map(|t| if t.as_millis() < 1000 { format!(" · {} ms", t.as_millis()) } else { format!(" · {:.1} s", t.as_secs_f32()) }).unwrap_or_default();
-                        ui.label(RichText::new(format!("{}{took}", crate::tr_format!("{} Zeile(n)", "{} row(s)", rs.rows.len()))).color(pal.ok_text));
+                        ui.label(RichText::new(format!("{}{took}", crate::tr_format!("{} Zeile(n)", "{} row(s)", rs.rows.len()))).color(pal.text_weak));
                         grid::export_menu(ui, "ergebnis", &rs.columns, &rs.rows);
                     });
                     grid::show(ui, ("bgrid", &self.id), &rs.columns, &rs.rows, grid::Edit::View, &mut self.grid);
@@ -1783,7 +1782,12 @@ impl TabView for BuilderTab {
                     // Hinweis mittig in der leeren Karte
                     ui.add_space(((ui.available_height() - 20.0) / 2.0).max(10.0));
                     ui.vertical_centered(|ui| {
-                        ui.label(RichText::new(crate::i18n::text("Noch kein Ergebnis. „Ausführen“ zeigt die Zeilen der Abfrage.")).color(pal.text_weak));
+                        let hint = if self.live && self.mode == Mode::Select {
+                            crate::i18n::tr("Das Ergebnis erscheint von selbst, sobald die Abfrage vollständig ist.", "The result appears by itself as soon as the query is complete.")
+                        } else {
+                            crate::i18n::text("Noch kein Ergebnis. „Ausführen“ zeigt die Zeilen der Abfrage.")
+                        };
+                        ui.label(RichText::new(hint).color(pal.text_weak));
                     });
                 }
                 });
@@ -1817,8 +1821,8 @@ impl TabView for BuilderTab {
             egui::Window::new(crate::i18n::text("Als Sicht speichern")).collapsible(false).resizable(false).anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]).show(ui.ctx(), |ui| {
                 let r = ui.add(crate::widgets::edit(name).hint_text(crate::i18n::text("Name der Sicht")).desired_width(240.0));
                 r.request_focus();
-                ui.horizontal(|ui| {
-                    let ok = ui.button(crate::i18n::text("Speichern")).clicked() || (r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)));
+                crate::widgets::dialog_actions(ui, |ui| {
+                    let ok = crate::widgets::primary(ui, crate::i18n::text("Speichern")).clicked() || (r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)));
                     if ok && !name.trim().is_empty()
                         && let Some(dbc) = cx.db {
                             let create = format!("CREATE OR REPLACE VIEW {} AS {}", db::q(name.trim()), self.query.sql());

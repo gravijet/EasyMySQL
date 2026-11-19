@@ -193,12 +193,11 @@ impl StructureTab {
                         ui.end_row();
                     }
                 });
-                ui.separator();
-                ui.horizontal(|ui| {
-                    if ui.button("OK").clicked() {
+                crate::widgets::dialog_actions(ui, |ui| {
+                    if crate::widgets::primary(ui, crate::i18n::text("Speichern")).clicked() {
                         ok = true;
                     }
-                    if ui.button(crate::i18n::text("Abbrechen")).clicked() {
+                    if ui.button(crate::i18n::text("Abbrechen")).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
                         close = true;
                     }
                 });

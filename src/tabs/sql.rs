@@ -1054,8 +1054,7 @@ impl SqlTab {
                             ui.set_max_width(360.0);
                             ui.label(RichText::new(crate::i18n::tr("Kein Projekt geöffnet", "No project open")).strong());
                             ui.label(RichText::new(crate::i18n::tr("Gespeichert wird immer in einem Projekt oder Ordner. Wähle zuerst einen aus – die Abfrage bleibt dabei offen.", "Files are always saved in a project or folder. Choose one first – the query stays open.")).color(pal_weak()));
-                            ui.add_space(6.0);
-                            ui.horizontal(|ui| {
+                            crate::widgets::dialog_actions(ui, |ui| {
                                 if icons::primary_button(ui, Icon::Folder, crate::i18n::text("Ordner öffnen …")).clicked() {
                                     cx.actions.push(Action::Run(Cmd::OpenFolder));
                                 }
@@ -1076,8 +1075,7 @@ impl SqlTab {
                             if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                                 ok = true;
                             }
-                            ui.add_space(4.0);
-                            ui.horizontal(|ui| {
+                            crate::widgets::dialog_actions(ui, |ui| {
                                 if crate::widgets::primary(ui, crate::i18n::text("Speichern")).clicked() {
                                     ok = true;
                                 }

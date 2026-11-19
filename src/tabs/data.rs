@@ -473,9 +473,9 @@ impl DataTab {
                 ui.add_sized([220.0, 28.0], crate::widgets::edit(&mut d.def.default).vertical_align(egui::Align::Center));
                 ui.end_row();
             });
-            ui.add_space(6.0);
-            ui.horizontal(|ui| {
-                ok = ui.add_enabled(!d.def.name.trim().is_empty() && !d.def.col_type.trim().is_empty(), egui::Button::new("OK")).clicked() || (ui.input(|i| i.key_pressed(egui::Key::Enter)) && !d.def.name.trim().is_empty());
+            crate::widgets::dialog_actions(ui, |ui| {
+                let label = if d.orig.is_some() { crate::i18n::text("Speichern") } else { crate::i18n::tr("Hinzufügen", "Add") };
+                ok = ui.add_enabled_ui(!d.def.name.trim().is_empty() && !d.def.col_type.trim().is_empty(), |ui| crate::widgets::primary(ui, label)).inner.clicked() || (ui.input(|i| i.key_pressed(egui::Key::Enter)) && !d.def.name.trim().is_empty());
                 cancel = ui.button(crate::i18n::text("Abbrechen")).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape));
             });
         });
@@ -556,12 +556,11 @@ impl DataTab {
                         }
                     });
                 });
-                ui.separator();
-                ui.horizontal(|ui| {
-                    if ui.button(crate::i18n::text("Einfügen")).clicked() {
+                crate::widgets::dialog_actions(ui, |ui| {
+                    if crate::widgets::primary(ui, crate::i18n::text("Einfügen")).clicked() {
                         save = true;
                     }
-                    if ui.button(crate::i18n::text("Abbrechen")).clicked() {
+                    if ui.button(crate::i18n::text("Abbrechen")).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
                         cancel = true;
                     }
                 });

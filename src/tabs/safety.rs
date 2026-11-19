@@ -117,7 +117,7 @@ impl SafetyTab {
         let busy = self.job.is_some();
         let connected = cx.db.is_some();
         ui.horizontal_wrapped(|ui| {
-            if ui.add_enabled(!busy && connected, egui::Button::new(crate::i18n::text("Jetzt sichern"))).clicked()
+            if ui.add_enabled_ui(!busy && connected, |ui| crate::icons::primary_button(ui, crate::icons::Icon::Save, crate::i18n::text("Jetzt sichern"))).inner.clicked()
                 && let Some(env) = self.env(cx) {
                     let cfg = self.cfg.clone();
                     self.start(ui.ctx(), crate::i18n::text("Sicherung"), false, move |log| {
@@ -126,20 +126,20 @@ impl SafetyTab {
                         Ok(crate::tr_format!("Sicherung erstellt: {}", "Backup created: {}", dir.display()))
                     });
                 }
-            if ui.button(crate::i18n::text("Ordner öffnen")).clicked() {
+            if crate::icons::text_button(ui, crate::icons::Icon::FolderOpen, crate::i18n::text("Ordner öffnen")).clicked() {
                 let d = self.cfg.dir();
                 let _ = std::fs::create_dir_all(&d);
                 crate::app::open_path(&d);
             }
-            if ui.button(crate::i18n::text("Aktualisieren")).clicked() {
+            if crate::icons::button_sized(ui, crate::icons::Icon::Refresh, crate::i18n::text("Aktualisieren"), 28.0).clicked() {
                 self.refresh(cx);
             }
         });
         let old = self.cfg.clone();
         ui.horizontal_wrapped(|ui| {
-            crate::widgets::check(ui, &mut self.cfg.auto, crate::i18n::text("Automatisch sichern, alle"));
+            crate::widgets::switch(ui, &mut self.cfg.auto, crate::i18n::text("Automatisch sichern, alle"));
             crate::widgets::drag(ui, &mut self.cfg.interval_hours, 1..=168, " h");
-            ui.label(crate::i18n::text("· behalten: die letzten"));
+            ui.label(crate::i18n::tr(", behalten: die letzten", ", keep the last"));
             crate::widgets::drag(ui, &mut self.cfg.keep_count, 1..=200, "");
             ui.label(crate::i18n::text("+ eine pro Tag für"));
             crate::widgets::drag(ui, &mut self.cfg.keep_days, 0..=365, crate::i18n::text(" Tage"));
@@ -164,32 +164,55 @@ impl SafetyTab {
         ui.add_space(4.0);
         style::sunken_frame().show(ui, |ui| {
             ui.set_min_width(ui.available_width());
-            egui::ScrollArea::vertical().id_salt("backuplist").max_height(220.0).show(ui, |ui| {
+            egui::ScrollArea::vertical().id_salt("backuplist").max_height(360.0).show(ui, |ui| {
                 if self.list.is_empty() {
-                    ui.label(RichText::new(crate::i18n::text("Keine Sicherungen")).color(style::pal().null_text));
+                    ui.add_space(8.0);
+                    ui.vertical_centered(|ui| {
+                        ui.label(RichText::new(crate::i18n::tr("Noch keine Sicherung. „Jetzt sichern“ legt die erste an; danach sichert EasyMySQL von selbst.", "No backup yet. “Back up now” creates the first one; after that EasyMySQL backs up by itself.")).color(style::pal().text_weak));
+                    });
+                    ui.add_space(8.0);
                 }
                 let pal = style::pal();
-                for b in self.list.clone() {
-                    egui::Frame::new().fill(pal.face_light).corner_radius(style::RADIUS).inner_margin(egui::Margin::symmetric(12, 8)).show(ui, |ui| {
-                        ui.set_min_width(ui.available_width());
-                        ui.horizontal_wrapped(|ui| {
+                // Eine Zeile je Sicherung: Zeit, Anlass, Datenbanken, Groesse, Aktionen immer am rechten Rand
+                for (i, b) in self.list.clone().into_iter().enumerate() {
+                    let row = ui.available_rect_before_wrap();
+                    let row = egui::Rect::from_min_size(row.min, egui::vec2(row.width(), 36.0));
+                    let hovered = ui.rect_contains_pointer(row);
+                    if hovered {
+                        ui.painter().rect_filled(row, style::RADIUS, pal.hover);
+                    } else if i % 2 == 1 {
+                        ui.painter().rect_filled(row, style::RADIUS, pal.face_light.gamma_multiply(0.5));
+                    }
+                    ui.horizontal(|ui| {
+                        ui.set_min_height(36.0);
+                        ui.spacing_mut().item_spacing.x = 0.0;
+                        ui.add_space(10.0);
+                        crate::widgets::fixed(ui, 160.0, 36.0, |ui| {
                             ui.label(RichText::new(&b.time).strong());
+                        });
+                        crate::widgets::fixed(ui, 130.0, 36.0, |ui| {
                             ui.label(RichText::new(backup::reason_text(&b.reason)).color(pal.text_weak));
-                            let names: Vec<&str> = b.dbs.iter().map(|d| d.0.as_str()).collect();
-                            ui.label(if names.is_empty() { "–".to_string() } else { names.join(", ") });
+                        });
+                        let names: Vec<&str> = b.dbs.iter().map(|d| d.0.as_str()).collect();
+                        let rest = (ui.available_width() - 330.0).max(80.0);
+                        crate::widgets::fixed(ui, rest, 36.0, |ui| {
+                            ui.add(egui::Label::new(if names.is_empty() { "–".to_string() } else { names.join(", ") }).truncate());
+                        });
+                        crate::widgets::fixed(ui, 70.0, 36.0, |ui| {
                             ui.label(RichText::new(backup::human_size(b.total())).color(pal.text_weak));
                         });
-                        ui.horizontal_wrapped(|ui| {
-                            if ui.add_enabled(!busy && connected && !b.dbs.is_empty(), egui::Button::new(crate::i18n::text("Wiederherstellen …"))).clicked() {
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.spacing_mut().item_spacing.x = 6.0;
+                            ui.add_space(6.0);
+                            if ui.add_enabled_ui(!busy, |ui| crate::icons::button_sized(ui, crate::icons::Icon::Trash, crate::i18n::text("Löschen"), 26.0)).inner.clicked() {
+                                self.confirm_delete = Some(b.clone());
+                            }
+                            if ui.add_enabled_ui(!busy && connected && !b.dbs.is_empty(), |ui| crate::icons::text_button(ui, crate::icons::Icon::RotateCcw, crate::i18n::text("Wiederherstellen …"))).inner.clicked() {
                                 let db = b.dbs[0].0.clone();
                                 self.restore = Some(RestoreDlg { target: db.clone(), db, backup: b.clone() });
                             }
-                            if ui.add_enabled(!busy, egui::Button::new(crate::i18n::text("Löschen"))).clicked() {
-                                self.confirm_delete = Some(b.clone());
-                            }
                         });
                     });
-                    ui.add_space(4.0);
                 }
             });
         });
@@ -198,11 +221,18 @@ impl SafetyTab {
     fn repair_ui(&mut self, ui: &mut egui::Ui, cx: &mut Ctx) {
         let busy = self.job.is_some();
         let st = cx.server.state();
-        ui.label(format!("Server: {}", st.text()));
+        ui.horizontal(|ui| {
+            let pal = style::pal();
+            let dot = if st.is_running() { pal.ok_text } else if st.is_busy() { pal.warn_text } else { pal.error_text };
+            let (r, _) = ui.allocate_exact_size(egui::vec2(10.0, 10.0), egui::Sense::hover());
+            ui.painter().circle_filled(r.center(), 4.0, dot);
+            ui.label(format!("Server: {}", st.text()));
+        });
         ui.horizontal_wrapped(|ui| {
             let connected = cx.db.is_some();
             if ui
-                .add_enabled(!busy && connected, egui::Button::new(crate::i18n::text("Alle Tabellen prüfen")))
+                .add_enabled_ui(!busy && connected, |ui| crate::icons::text_button(ui, crate::icons::Icon::Check, crate::i18n::text("Alle Tabellen prüfen")))
+                .inner
                 .clicked()
             {
                 let conn = Self::conn(cx);
@@ -216,7 +246,8 @@ impl SafetyTab {
                 });
             }
             if ui
-                .add_enabled(!busy && connected, egui::Button::new(crate::i18n::text("Prüfen und reparieren")))
+                .add_enabled_ui(!busy && connected, |ui| crate::icons::text_button(ui, crate::icons::Icon::Wizard, crate::i18n::text("Prüfen und reparieren")))
+                .inner
                 .clicked()
             {
                 let conn = Self::conn(cx);
@@ -258,7 +289,8 @@ impl SafetyTab {
                     });
                 }
             if ui
-                .add_enabled(!busy && !st.is_busy() && cx.server.paths().is_some(), egui::Button::new(crate::i18n::text("Server retten …")))
+                .add_enabled_ui(!busy && !st.is_busy() && cx.server.paths().is_some(), |ui| crate::icons::text_button(ui, crate::icons::Icon::Shield, crate::i18n::text("Server retten …")))
+                .inner
                 .clicked()
             {
                 self.confirm_rescue = true;
@@ -299,12 +331,14 @@ impl SafetyTab {
                     } else {
                         ui.label(RichText::new(crate::i18n::text("Wird als neue Datenbank angelegt.")).color(style::pal().ok_text));
                     }
-                    ui.separator();
-                    ui.horizontal(|ui| {
-                        if ui.add_enabled(!dlg.target.trim().is_empty(), egui::Button::new(crate::i18n::text("Wiederherstellen"))).clicked() {
+                    let replaces = cx.databases.contains(&dlg.target);
+                    crate::widgets::dialog_actions(ui, |ui| {
+                        let ok = !dlg.target.trim().is_empty();
+                        let label = crate::i18n::text("Wiederherstellen");
+                        if ui.add_enabled_ui(ok, |ui| if replaces { crate::widgets::danger(ui, label) } else { crate::widgets::primary(ui, label) }).inner.clicked() {
                             go = true;
                         }
-                        if ui.button(crate::i18n::text("Abbrechen")).clicked() {
+                        if ui.button(crate::i18n::text("Abbrechen")).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
                             cancel = true;
                         }
                     });
@@ -337,12 +371,11 @@ impl SafetyTab {
                          Benutzerkonten werden zurückgesetzt (root ohne Passwort).\n\n\
                          Das kann einige Minuten dauern. Fortfahren?"),
                     );
-                    ui.separator();
-                    ui.horizontal(|ui| {
-                        if ui.button(crate::i18n::text("Ja, Server retten")).clicked() {
+                    crate::widgets::dialog_actions(ui, |ui| {
+                        if crate::widgets::danger(ui, crate::i18n::text("Ja, Server retten")).clicked() {
                             go = true;
                         }
-                        if ui.button(crate::i18n::text("Abbrechen")).clicked() {
+                        if ui.button(crate::i18n::text("Abbrechen")).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
                             self.confirm_rescue = false;
                         }
                     });
@@ -371,13 +404,15 @@ impl SafetyTab {
                 .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
                 .show(ctx, |ui| {
                     ui.label(crate::tr_format!("Sicherung vom {} endgültig löschen?", "Permanently delete the backup from {}?", b.time));
-                    ui.horizontal(|ui| {
-                        if ui.button(crate::i18n::text("Löschen")).clicked() {
-                            let _ = std::fs::remove_dir_all(&b.path);
+                    crate::widgets::dialog_actions(ui, |ui| {
+                        if crate::widgets::danger(ui, crate::i18n::text("Löschen")).clicked() {
+                            if let Err(e) = std::fs::remove_dir_all(&b.path) {
+                                cx.error(crate::tr_format!("Die Sicherung ließ sich nicht löschen: {e}", "The backup could not be deleted: {e}"));
+                            }
                             self.confirm_delete = None;
                             self.refresh(cx);
                         }
-                        if ui.button(crate::i18n::text("Abbrechen")).clicked() {
+                        if ui.button(crate::i18n::text("Abbrechen")).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
                             self.confirm_delete = None;
                         }
                     });

@@ -337,9 +337,8 @@ impl UsersTab {
                 crate::widgets::password_field(ui, &mut n.password, "", None);
             });
             crate::widgets::check(ui, &mut n.own_db, tr("Eigene Datenbank mit allen Rechten anlegen", "Create a database of its own with full access"));
-            ui.add_space(6.0);
-            ui.horizontal(|ui| {
-                create = ui.add_enabled(!n.name.trim().is_empty() && !n.host.trim().is_empty(), egui::Button::new(tr("Anlegen", "Create"))).clicked();
+            crate::widgets::dialog_actions(ui, |ui| {
+                create = ui.add_enabled_ui(!n.name.trim().is_empty() && !n.host.trim().is_empty(), |ui| crate::widgets::primary(ui, tr("Anlegen", "Create"))).inner.clicked();
                 cancel = ui.button(tr("Abbrechen", "Cancel")).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape));
             });
         });

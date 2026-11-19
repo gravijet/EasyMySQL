@@ -204,10 +204,35 @@ pub fn add_button(ui: &mut egui::Ui, text: &str) -> Response {
     icons::text_button(ui, Icon::Plus, text.trim_start_matches('+').trim_start())
 }
 
+/// Fokus in dieses Feld, sobald es (wieder) erscheint – z. B. beim Oeffnen eines Dialogs, auch wenn der Editor
+/// dahinter gerade den Fokus hat. Danach bleibt der Fokus, wo der Nutzer ihn hinsetzt.
+pub fn focus_when_shown(ui: &egui::Ui, r: &Response) {
+    let key = r.id.with("zuletzt-gezeigt");
+    let now = ui.ctx().cumulative_pass_nr();
+    let last: Option<u64> = ui.data(|d| d.get_temp(key));
+    if last.is_none_or(|l| l + 2 < now) {
+        r.request_focus();
+    }
+    ui.data_mut(|d| d.insert_temp(key, now));
+}
+
+/// Hauptaktion, die etwas loescht: rot gefuellt
+pub fn danger(ui: &mut egui::Ui, text: &str) -> Response {
+    let fill = if style::pal().dark { Color32::from_rgb(0xB8, 0x3A, 0x3A) } else { Color32::from_rgb(0xC0, 0x33, 0x33) };
+    ui.add(egui::Button::new(egui::RichText::new(text).color(Color32::WHITE)).fill(fill).stroke(Stroke::NONE).min_size(vec2(84.0, CONTROL_H)))
+}
+
+/// Knopfzeile am Ende eines Dialogs: rechtsbuendig. Die zuerst hinzugefuegte Schaltflaeche steht ganz rechts
+/// (die Hauptaktion), weitere links daneben.
+pub fn dialog_actions(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
+    ui.add_space(12.0);
+    ui.allocate_ui_with_layout(vec2(ui.available_width(), CONTROL_H), egui::Layout::right_to_left(egui::Align::Center), add);
+}
+
 /// Hervorgehobene Hauptaktion nur mit Text (Akzentfarbe, weisse Schrift)
 pub fn primary(ui: &mut egui::Ui, text: &str) -> Response {
     let p = style::pal();
-    ui.add(egui::Button::new(egui::RichText::new(text).color(Color32::WHITE)).fill(p.accent).stroke(Stroke::NONE).min_size(vec2(0.0, ui.spacing().interact_size.y)))
+    ui.add(egui::Button::new(egui::RichText::new(text).color(Color32::WHITE)).fill(p.accent).stroke(Stroke::NONE).min_size(vec2(84.0, ui.spacing().interact_size.y)))
 }
 
 // ---------------------------------------------------------------------------
