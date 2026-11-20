@@ -26,6 +26,14 @@ pub trait Zaehler {
     fn spalten(&mut self, _t: &str) -> Vec<String> {
         Vec::new()
     }
+    /// Fehler, den `sql` mit ONLY_FULL_GROUP_BY ausloest (None: laeuft auch streng)
+    fn streng(&mut self, _sql: &str) -> Option<String> {
+        None
+    }
+    /// Datentyp einer Spalte, klein geschrieben ("datetime", "varchar" …)
+    fn typ(&mut self, _t: &str, _c: &str) -> Option<String> {
+        None
+    }
 }
 
 pub struct Server<'a, C: Queryable> {
@@ -76,6 +84,32 @@ impl<C: Queryable> Zaehler for Server<'_, C> {
         rows.into_iter().map(|(c, r, t)| if t.eq_ignore_ascii_case(a) { (c, r) } else { (r, c) }).collect()
     }
 
+    fn streng(&mut self, sql: &str) -> Option<String> {
+        if self.rest == 0 {
+            return None;
+        }
+        self.rest -= 1;
+        let mode: String = self.conn.query_first("SELECT @@SESSION.sql_mode").ok().flatten()?;
+        if mode.to_ascii_uppercase().contains("ONLY_FULL_GROUP_BY") {
+            return None;
+        }
+        let neu = if mode.is_empty() { "ONLY_FULL_GROUP_BY".to_string() } else { format!("{mode},ONLY_FULL_GROUP_BY") };
+        self.conn.exec_drop("SET SESSION sql_mode = ?", (neu,)).ok()?;
+        let q = self.begrenzt(&format!("SELECT 1 FROM ({sql}) AS _p LIMIT 0"));
+        let r = self.conn.query_drop(q);
+        let _ = self.conn.exec_drop("SET SESSION sql_mode = ?", (mode,));
+        r.err().map(crate::db::err_text)
+    }
+
+    fn typ(&mut self, t: &str, c: &str) -> Option<String> {
+        let db = t.split_once('.').map(|(d, _)| d.to_string());
+        self.conn
+            .exec_first::<String, _, _>("SELECT DATA_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = COALESCE(?, DATABASE()) AND TABLE_NAME = ? AND COLUMN_NAME = ?", (db, kurz(t), c))
+            .ok()
+            .flatten()
+            .map(|s| s.to_ascii_lowercase())
+    }
+
     fn spalten(&mut self, t: &str) -> Vec<String> {
         let db = t.split_once('.').map(|(d, _)| d.to_string());
         self.conn.exec("SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = COALESCE(?, DATABASE()) AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION", (db, kurz(t))).unwrap_or_default()
@@ -83,12 +117,12 @@ impl<C: Queryable> Zaehler for Server<'_, C> {
 }
 
 /// Tabellenname ohne Datenbank ("shop.kunde" -> "kunde")
-fn kurz(t: &str) -> &str {
+pub(super) fn kurz(t: &str) -> &str {
     t.rsplit('.').next().unwrap_or(t)
 }
 
 /// Name fuer SQL, auch mit Datenbank ("shop.kunde" -> shop.kunde, Teile einzeln in Backticks falls noetig)
-fn qname(t: &str) -> String {
+pub(super) fn qname(t: &str) -> String {
     t.split('.').map(crate::sqledit::lint::quote_if_needed).collect::<Vec<_>>().join(".")
 }
 
@@ -103,7 +137,7 @@ struct Teile {
     schreibt: bool,
 }
 
-fn top_level(toks: &[Tok]) -> Vec<i32> {
+pub(super) fn top_level(toks: &[Tok]) -> Vec<i32> {
     let mut d = 0;
     toks.iter()
         .map(|t| {
@@ -151,7 +185,7 @@ fn teile(chars: &[char], toks: &[Tok]) -> Option<Teile> {
 }
 
 /// Bedingungen, die mit AND verknuepft sind (Zeichenbereiche); bei OR auf oberster Ebene nur das Ganze
-fn bedingungen(toks: &[Tok], a: usize, b: usize) -> Vec<(usize, usize)> {
+pub(super) fn bedingungen(toks: &[Tok], a: usize, b: usize) -> Vec<(usize, usize)> {
     let inner: Vec<&Tok> = toks.iter().filter(|t| t.start >= a && t.end <= b).collect();
     let mut depth = 0;
     let mut out = Vec::new();
@@ -182,7 +216,7 @@ fn bedingungen(toks: &[Tok], a: usize, b: usize) -> Vec<(usize, usize)> {
     out
 }
 
-fn txt(chars: &[char], (a, b): (usize, usize)) -> String {
+pub(super) fn txt(chars: &[char], (a, b): (usize, usize)) -> String {
     chars[a.min(chars.len())..b.min(chars.len())].iter().collect::<String>().trim().to_string()
 }
 
@@ -192,7 +226,7 @@ fn literal(s: &str) -> String {
 }
 
 /// Inhalt eines '…'-Textes
-fn wert(chars: &[char], t: &Tok) -> String {
+pub(super) fn wert(chars: &[char], t: &Tok) -> String {
     let inner = &chars[(t.start + 1).min(t.end)..t.end.saturating_sub(1).max(t.start + 1)];
     let mut out = String::new();
     let mut i = 0;
@@ -218,7 +252,7 @@ fn einsetzen(chars: &[char], a: usize, b: usize, neu: &str) -> String {
     ersetzt(chars, a, b, &format!(" {neu}{pad}")).trim().to_string()
 }
 
-fn ersetzt(chars: &[char], a: usize, b: usize, neu: &str) -> String {
+pub(super) fn ersetzt(chars: &[char], a: usize, b: usize, neu: &str) -> String {
     let mut v: Vec<char> = chars.to_vec();
     v.splice(a.min(v.len())..b.min(v.len()), neu.chars());
     v.into_iter().collect::<String>()
@@ -356,7 +390,8 @@ pub fn untersuchen(sql: &str, z: &mut dyn Zaehler) -> Vec<Befund> {
     };
     for &(a, b) in &schuld {
         let c = txt(&chars, (a, b));
-        let vorschlaege = korrekturen(&chars, &toks, a, b, &from, z);
+        let mut vorschlaege = korrekturen(&chars, &toks, a, b, &from, z);
+        vorschlaege.splice(0..0, nicht_in(&chars, &toks, a, b));
         let mut erklaert = false;
         for (neu, warum) in vorschlaege {
             let fix = einsetzen(&chars, a, b, &neu);
@@ -414,6 +449,41 @@ pub fn untersuchen(sql: &str, z: &mut dyn Zaehler) -> Vec<Befund> {
         }
     }
     out
+}
+
+/// "x NOT IN (SELECT y FROM t)": liefert die Unterabfrage auch nur ein NULL, ist NOT IN nie wahr.
+/// Korrektur: NULL in der Unterabfrage ausschliessen.
+fn nicht_in(chars: &[char], toks: &[Tok], a: usize, b: usize) -> Option<(String, String)> {
+    let ks: Vec<usize> = (0..toks.len()).filter(|&k| toks[k].start >= a && toks[k].end <= b).collect();
+    let pos = ks.iter().position(|&k| toks[k].is_word("NOT") && toks.get(k + 1).is_some_and(|t| t.is_word("IN")) && toks.get(k + 2).is_some_and(|t| t.kind == Kind::Open) && toks.get(k + 3).is_some_and(|t| t.is_word("SELECT")))?;
+    let open = ks[pos] + 2;
+    // Schliessende Klammer der Unterabfrage
+    let mut d = 0;
+    let close = (open..toks.len()).find(|&k| {
+        match toks[k].kind {
+            Kind::Open => d += 1,
+            Kind::Close => d -= 1,
+            _ => {}
+        }
+        d == 0
+    })?;
+    let inner: Vec<usize> = (open + 1..close).collect();
+    let tief = |k: usize| toks[open + 1..k].iter().fold(0i32, |d, t| d + i32::from(t.kind == Kind::Open) - i32::from(t.kind == Kind::Close));
+    let oben = |w: &str| inner.iter().copied().find(|&k| tief(k) == 0 && toks[k].is_word(w));
+    let from = oben("FROM")?;
+    if ["GROUP", "ORDER", "LIMIT", "UNION", "HAVING"].iter().any(|w| oben(w).is_some()) {
+        return None;
+    }
+    // Genau eine Spalte in der Unterabfrage
+    if (open + 2..from).any(|k| toks[k].kind == Kind::Comma) {
+        return None;
+    }
+    let spalte: String = chars[toks[open + 2].start..toks[from - 1].end].iter().collect();
+    let anfuegen = if oben("WHERE").is_some() { format!(" AND {spalte} IS NOT NULL") } else { format!(" WHERE {spalte} IS NOT NULL") };
+    let vor: String = chars[a..toks[close].start].iter().collect();
+    let nach: String = chars[toks[close].start..b].iter().collect();
+    let neu = format!("{}{anfuegen}{}", vor.trim_end(), nach).trim().to_string();
+    Some((neu, crate::tr_format!("Die Unterabfrage liefert auch NULL – dann ist NOT IN nie wahr. NULL ausschließen", "The subquery also returns NULL – then NOT IN is never true. Exclude NULL")))
 }
 
 /// Zwei Bedingungen wie a = 1 und a = 2 auf dieselbe Spalte
@@ -916,7 +986,9 @@ mod server_tests {
             "CREATE TABLE kunde (id INT PRIMARY KEY, name VARCHAR(50), ort VARCHAR(30));
              INSERT INTO kunde VALUES (1, 'Anna Müller', 'Wien'), (2, 'Ben Hofer', 'Graz'), (3, 'Clara Gruber', 'Wien');
              CREATE TABLE bestellung (id INT PRIMARY KEY, kunde_id INT, am DATETIME, FOREIGN KEY (kunde_id) REFERENCES kunde(id));
-             INSERT INTO bestellung VALUES (10, 1, '2024-03-12 09:30:00'), (11, 3, '2024-03-13 14:00:00');",
+             INSERT INTO bestellung VALUES (10, 1, '2024-03-12 09:30:00'), (11, 3, '2024-03-13 14:00:00');
+             CREATE TABLE notiz2 (id INT PRIMARY KEY, kunde_id INT);
+             INSERT INTO notiz2 VALUES (1, 1), (2, NULL);",
         )
         .unwrap();
         let mut conn = dbc.new_conn().unwrap();
@@ -929,6 +1001,7 @@ mod server_tests {
             ("SELECT * FROM kunde k JOIN bestellung b ON k.id = b.id", "k.id = b.kunde_id"),
             ("SELECT * FROM kunde WHERE ort = 'Wien' AND ort = 'Graz'", "OR"),
             ("DELETE FROM kunde WHERE ort = 'Grz'", "ort = 'Graz'"),
+            ("SELECT * FROM kunde WHERE id NOT IN (SELECT kunde_id FROM notiz2)", "WHERE kunde_id IS NOT NULL"),
         ];
         let mut fehler = Vec::new();
         for (sql, erwartet) in faelle {

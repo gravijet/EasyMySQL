@@ -567,7 +567,13 @@ pub fn vorher_angelegt(before: &str, err: &str) -> Option<usize> {
         let u = sql.trim_start().to_ascii_uppercase();
         ["SELECT", "SHOW", "USE", "SET", "DESCRIBE", "DESC ", "EXPLAIN"].iter().any(|w| u.starts_with(w)) || (u.starts_with("CREATE") && u.contains("IF NOT EXISTS"))
     };
-    stmts[k + 1..].iter().all(|st| harmlos(&st.sql)).then_some(stmts[k].start)
+    // Anweisungen nur auf die fehlende Tabelle (INSERT, UPDATE, DELETE, ALTER, CREATE INDEX) sind ohne sie
+    // gescheitert oder nie gelaufen: sie laufen gefahrlos noch einmal mit
+    let nur_diese = |sql: &str| {
+        let namen = table_names(sql);
+        !namen.is_empty() && namen.iter().all(|n| n.eq_ignore_ascii_case(name))
+    };
+    stmts[k + 1..].iter().all(|st| harmlos(&st.sql) || nur_diese(&st.sql)).then_some(stmts[k].start)
 }
 
 /// Tabellennamen nach FROM, JOIN, INTO, UPDATE, TABLE
@@ -1095,6 +1101,9 @@ mod tests {
         assert_eq!(vorher_angelegt("CREATE TABLE lehrer (id INT);\nSELECT 1;\n", "ERROR 1146 (42S02): Table 'heiltest.lehrer' doesn't exist"), Some(0));
         assert_eq!(vorher_angelegt("CREATE TABLE lehrer (id INT);\nINSERT INTO x VALUES (1);\n", "ERROR 1146 (42S02): Table 'heiltest.lehrer' doesn't exist"), None);
         assert_eq!(vorher_angelegt("CREATE TABLE andere (id INT);\n", "ERROR 1146 (42S02): Table 'heiltest.lehrer' doesn't exist"), None);
+        // Befuellen der fehlenden Tabelle dazwischen laeuft mit; ein SELECT davor auf derselben Zeile stoert nicht
+        let skript = "SELECT 1;CREATE TABLE IF NOT EXISTS kunde (id INT, ort VARCHAR(50));\nINSERT INTO kunde (ort) VALUES ('Wien');\nUPDATE kunde SET ort = 'Graz' WHERE id = 2;\n";
+        assert_eq!(vorher_angelegt(skript, "ERROR 1146 (42S02): Table 'heiltest.kunde' doesn't exist"), Some(9));
         assert_eq!(first("ERROR 1146 (42S02): Table 'person.personen' doesn't exist", "SELECT * FROM personen"), "SELECT * FROM Personen");
         assert_eq!(first("ERROR 1146 (42S02): Table 'person.Persone' doesn't exist", "SELECT * FROM Persone p"), "SELECT * FROM Personen p");
         assert_eq!(first("ERROR 1054 (42S22): Unknown column 'vornme' in 'field list'", "SELECT vornme FROM Personen"), "SELECT vorname FROM Personen");

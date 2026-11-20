@@ -23,6 +23,7 @@ pub mod ai;
 pub mod probe;
 pub mod errfix;
 pub mod leer;
+pub mod pruef;
 pub mod tempo;
 mod schema_fix;
 mod schema_decl;

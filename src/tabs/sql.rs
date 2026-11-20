@@ -72,6 +72,8 @@ struct Leer {
     schreibt: bool,
     /// Zu viele Zeilen: zwei Tabellen ohne Verbindung
     kreuz: bool,
+    /// Zeilen kamen: stimmt das Ergebnis? (Denkfehler, die MariaDB still hinnimmt)
+    pruef: bool,
     befunde: Vec<sqledit::leer::Befund>,
     seit: Instant,
 }
@@ -634,13 +636,14 @@ impl SqlTab {
             let kopf = st.sql.split_whitespace().next().unwrap_or("").to_ascii_uppercase();
             match r.returned {
                 Some(0) => kopf == "SELECT",
-                Some(_) => kopf == "SELECT" && sqledit::leer::kreuzprodukt_moeglich(&st.sql),
+                Some(_) => kopf == "SELECT" || kopf == "(" || kopf.starts_with("(SELECT"),
                 None => (kopf == "UPDATE" || kopf == "DELETE") && r.affected == 0 && st.sql.to_ascii_uppercase().contains("WHERE"),
             }
         });
         let Some((i, (r, st))) = found else { return };
         let schreibt = r.returned.is_none();
-        let kreuz = r.returned.is_some_and(|n| n > 0);
+        let kreuz = r.returned.is_some_and(|n| n > 0) && sqledit::leer::kreuzprodukt_moeglich(&st.sql);
+        let pruef = r.returned.is_some_and(|n| n > 0) && !kreuz;
         let pool = crate::db::Db { pool: dbc.pool.clone(), info: dbc.info.clone(), version: dbc.version.clone() };
         let mariadb = dbc.version.to_ascii_lowercase().contains("mariadb");
         let (database, sql) = (self.database.clone(), st.sql.clone());
@@ -650,7 +653,13 @@ impl SqlTab {
                 Ok(mut conn) => {
                     if database.is_empty() || conn.query_drop(format!("USE {}", db::q(&database))).is_ok() {
                         let mut z = sqledit::leer::Server { conn: &mut conn, mariadb, rest: 40 };
-                        if kreuz { sqledit::leer::kreuzprodukt(&sql, &mut z) } else { sqledit::leer::untersuchen(&sql, &mut z) }
+                        if kreuz {
+                            sqledit::leer::kreuzprodukt(&sql, &mut z)
+                        } else if pruef {
+                            sqledit::pruef::untersuchen(&sql, &mut z)
+                        } else {
+                            sqledit::leer::untersuchen(&sql, &mut z)
+                        }
                     } else {
                         Vec::new()
                     }
@@ -659,7 +668,7 @@ impl SqlTab {
             };
             let _ = tx.send(befunde);
         });
-        self.leer = Some(Leer { rx: Some(rx), result: i, stmt: st.clone(), schreibt, kreuz, befunde: Vec::new(), seit: Instant::now() });
+        self.leer = Some(Leer { rx: Some(rx), result: i, stmt: st.clone(), schreibt, kreuz, pruef, befunde: Vec::new(), seit: Instant::now() });
     }
 
     /// Lief eine Anweisung lange, im Hintergrund per EXPLAIN nach einem fehlenden Index suchen
@@ -840,15 +849,17 @@ impl SqlTab {
             return None;
         }
         let tr = crate::i18n::tr;
-        let titel = if l.kreuz {
+        let titel = if l.pruef {
+            tr("Stimmt das Ergebnis?", "Is the result right?")
+        } else if l.kreuz {
             tr("Zu viele Zeilen?", "Too many rows?")
         } else if l.schreibt {
             tr("Warum nichts geändert wurde", "Why nothing changed")
         } else {
             tr("Warum keine Zeilen kommen", "Why no rows come back")
         };
-        // Beim Kreuzprodukt erst etwas zeigen, wenn es eine Verbindung gibt
-        if l.kreuz && l.rx.is_some() {
+        // Beim Kreuzprodukt und der Ergebnispruefung erst etwas zeigen, wenn es etwas zu zeigen gibt
+        if (l.kreuz || l.pruef) && l.rx.is_some() {
             return None;
         }
         let warten = l.rx.is_some().then(|| tr("Keine Zeilen – ich zähle nach, welche Bedingung alles wegfiltert …", "No rows – counting which condition filters everything out …"));
@@ -1084,14 +1095,18 @@ impl SqlTab {
                 if let Some(d) = crate::sqledit::errfix::created_database(&before) {
                     fixes.push(crate::sqledit::errfix::ErrorFix { label: crate::tr_format!("Zuerst USE {}", "USE {} first", d), sql: format!("USE {};\n{}", db::q(&d), st.sql) });
                 }
+                // Direkt beim Server nachfragen: die Struktur der Datenbanken ist oft noch nicht geladen
                 let names = crate::sqledit::errfix::table_names(&st.sql);
-                let candidates: Vec<String> = cx.databases.iter().filter(|d| !crate::db::SYSTEM_DATABASES.contains(&d.as_str())).take(40).cloned().collect();
-                for d in candidates {
-                    if let Some(s) = cx.schema(&d)
-                        && !names.is_empty()
-                        && names.iter().all(|n| s.tables.iter().any(|t| t.name.eq_ignore_ascii_case(n)))
-                    {
-                        databases.push(d);
+                if !names.is_empty()
+                    && let Some(dbc) = cx.db
+                {
+                    let liste = names.iter().map(|n| format!("'{}'", n.replace('\\', "\\\\").replace('\'', "''"))).collect::<Vec<_>>().join(", ");
+                    let sql = format!(
+                        "SELECT TABLE_SCHEMA FROM information_schema.TABLES WHERE TABLE_NAME IN ({liste}) GROUP BY TABLE_SCHEMA HAVING COUNT(DISTINCT LOWER(TABLE_NAME)) = {} ORDER BY TABLE_SCHEMA LIMIT 8",
+                        names.len()
+                    );
+                    if let Ok(rows) = dbc.rows(&sql, ()) {
+                        databases.extend(rows.into_iter().filter_map(|r| r.into_iter().next().flatten()).filter(|d| !crate::db::SYSTEM_DATABASES.contains(&d.as_str())));
                     }
                 }
             }
@@ -1261,7 +1276,7 @@ impl SqlTab {
                         grid::export_menu(ui, "ergebnis", &set.columns, &set.rows);
                     });
                 });
-                if (set.rows.is_empty() || self.leer.as_ref().is_some_and(|l| l.kreuz))
+                if (set.rows.is_empty() || self.leer.as_ref().is_some_and(|l| l.kreuz || l.pruef))
                     && let Some(k) = Self::leer_panel(self.leer.as_ref(), ui, ri)
                 {
                     act = Some(HistoryAct::LeerFix(k));

@@ -465,6 +465,26 @@ fn check_statement(stmt: &[Tok], env: &Env, tables: &HashMap<String, &TableInfo>
             Some(replace(first, k)),
         ));
     }
+    // Befehl fehlt oder ist zerstueckelt: "* FROM t", "T * FROM t", "name, ort FROM t" – gemeint ist SELECT
+    else if let Some(first) = stmt.first()
+        && !STATEMENTS.contains(&fw)
+        && stmt.iter().any(|t| t.is_word("FROM"))
+        && !stmt.iter().take_while(|t| !t.is_word("FROM")).any(|t| STATEMENTS.contains(&t.upper().as_str()) || t.kind == Kind::Open)
+    {
+        let second = stmt.get(1);
+        let fix = if first.kind == Kind::Op && first.text == "*" {
+            Some(Fix { start: first.start, end: first.start, text: "SELECT ".into() })
+        } else if first.kind == Kind::Word && second.is_some_and(|t| t.kind == Kind::Op && t.text == "*") {
+            Some(replace(first, "SELECT"))
+        } else if first.is_name() && second.is_some_and(|t| t.kind == Kind::Comma || t.is_word("FROM")) {
+            Some(Fix { start: first.start, end: first.start, text: "SELECT ".into() })
+        } else {
+            None
+        };
+        if let Some(fix) = fix {
+            out.push(problem(first, Severity::Error, crate::i18n::tr("Hier fehlt der Befehl – gemeint ist wohl SELECT.", "The command is missing here – you probably mean SELECT.").to_string(), Some(fix)));
+        }
+    }
     check_syntax(stmt, fw, out);
     if !schema_known {
         check_words(stmt, None, &HashSet::new(), false, out);
@@ -1066,6 +1086,9 @@ mod tests {
         assert_eq!(fixed("SELECT * FROM schueler ODER BY id"), "SELECT * FROM schueler ORDER BY id");
         assert_eq!(fixed("SELECT * FROM schueler GRUOP BY id"), "SELECT * FROM schueler GROUP BY id");
         assert_eq!(fixed("SELECT * FROM schueler ORDR BY id"), "SELECT * FROM schueler ORDER BY id");
+        assert_eq!(fixed("T * FROM schueler WHERE id = 1"), "SELECT * FROM schueler WHERE id = 1");
+        assert_eq!(fixed("* FROM schueler"), "SELECT * FROM schueler");
+        assert_eq!(fixed("vorname, nachname FROM schueler"), "SELECT vorname, nachname FROM schueler");
     }
 
     #[test]
