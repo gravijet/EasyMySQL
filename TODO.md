@@ -414,3 +414,23 @@ Sicherungen, Benutzerverwaltung, Git, Suche, Menüs.
 - Leerlauf geprüft: höchstens ein Bild alle paar Sekunden (Serverstatus), kein Dauerneuzeichnen.
 
 **Offen:** Windows/macOS nur per `cargo check`; Andocken und Explorer-Dialoge kopflos nicht erneut geprüft.
+
+## 20. Zehnte Runde (2026-11-20, Version 1.1.23): Auto-Fix für Logik, Daten und Tempo; neues Aussehen
+
+**Erledigt** (Tests und Clippy grün; jede neue Prüfung auch gegen einen echten Server getestet):
+- Aussehen „Tafel/Heft“ (`style.rs`): dunkel Schiefer mit Kreidefarben, hell Papier mit Königsblau; Onest in drei
+  Stärken statt Inter, echte halbfette Überschriften (`Semi`), Hauptaktion in Kreidegelb, weichere Knöpfe, gezeichnete
+  Haken, gleitende Schalter, Kreidestrich an der Aktivitätsleiste, Abschnittstitel ohne Großbuchstaben-Zeile.
+- Leeres Ergebnis (`sqledit/leer.rs`): zählt lesend nach, welche Bedingung alles wegfiltert, und bietet eine
+  geprüfte Korrektur (Schreibweise wie in den Daten, Tippfehler, Umlaute, deutsches Datum, DATE() bei DATETIME,
+  = NULL, LIKE mit * oder ohne %, sich ausschließende Bedingungen, JOIN über den Fremdschlüssel, LIMIT 0); dazu
+  UPDATE/DELETE ohne Treffer und das Kreuzprodukt zweier unverbundener Tabellen.
+- Langsame Abfrage (`sqledit/tempo.rs`): EXPLAIN findet Vollscans, Index-Vorschlag mit einem Klick, Zeit vorher/nachher.
+- Datenbank-Doktor (`doktor.rs`, Registerkarte „Prüfung“): fehlende Primär- und Fremdschlüssel (samt verwaister
+  Zeilen), Datum/Zahlen als Text, Duplikate, Leerzeichen, Zeichensatz, MyISAM; sichert vorher, prüft danach neu.
+  Neu angelegte Tabellen werden nach dem Ausführen gleich mitgeprüft.
+- Strg+Enter auf ein INSERT, dessen CREATE TABLE weiter oben steht: läuft ab dem CREATE statt eine Tabelle zu erfinden.
+- Fehler behoben: jede Abfrage mit `db.tabelle` (auch SELECT) löste vorher eine komplette Sicherung aus; Probeläufe
+  kopierten große Datenbanken samt Inhalt, wenn der Auto-Fix in sie wechselte.
+
+**Offen:** Windows/macOS nur per `cargo check`; die Schrift Onest ist nicht auf echten Windows-Bildschirmen geprüft.

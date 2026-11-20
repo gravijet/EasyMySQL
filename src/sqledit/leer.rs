@@ -345,7 +345,15 @@ pub fn untersuchen(sql: &str, z: &mut dyn Zaehler) -> Vec<Befund> {
             schuld.push((a, b));
         }
     }
-    let ziel = |n: u64| if t.schreibt { crate::tr_format!("{n} Zeile(n) betroffen", "{n} row(s) affected") } else { crate::tr_format!("{n} Zeile(n)", "{n} row(s)") };
+    let ziel = |n: u64| {
+        let z = crate::i18n::tausend(n);
+        match (t.schreibt, n == 1) {
+            (true, true) => crate::i18n::tr("Damit ist 1 Zeile betroffen.", "That affects 1 row.").to_string(),
+            (true, false) => crate::tr_format!("Damit sind {z} Zeilen betroffen.", "That affects {z} rows."),
+            (false, true) => crate::i18n::tr("Damit kommt 1 Zeile.", "That returns 1 row.").to_string(),
+            (false, false) => crate::tr_format!("Damit kommen {z} Zeilen.", "That returns {z} rows."),
+        }
+    };
     for &(a, b) in &schuld {
         let c = txt(&chars, (a, b));
         let vorschlaege = korrekturen(&chars, &toks, a, b, &from, z);
@@ -360,7 +368,7 @@ pub fn untersuchen(sql: &str, z: &mut dyn Zaehler) -> Vec<Befund> {
             let Some(wo2) = teile2 else { continue };
             let n = z.zahl(&format!("SELECT COUNT(*) FROM {from} WHERE {wo2}"));
             if let Some(n) = n.filter(|n| *n > 0) {
-                out.push(Befund { text: format!("{warum} ({})", ziel(n)), fix: Some(fix), zeilen: Some(n) });
+                out.push(Befund { text: format!("{warum}. {}", ziel(n)), fix: Some(fix), zeilen: Some(n) });
                 erklaert = true;
                 break;
             }
@@ -399,7 +407,7 @@ pub fn untersuchen(sql: &str, z: &mut dyn Zaehler) -> Vec<Befund> {
                         crate::tr_format!("Jede Bedingung trifft Zeilen, aber keine Zeile erfüllt „{}“ und „{}“ zugleich.", "Each condition matches rows, but none matches both “{}” and “{}”.", texte[i], texte[j])
                     };
                     let fix = fix.filter(|_| n.is_some_and(|n| n > 0));
-                    out.push(Befund { text: match n.filter(|_| fix.is_some()) { Some(n) => format!("{text} ({})", ziel(n)), None => text }, fix, zeilen: n });
+                    out.push(Befund { text: match n.filter(|_| fix.is_some()) { Some(n) => format!("{text}. {}", ziel(n)), None => text }, fix, zeilen: n });
                     break 'paare;
                 }
             }
