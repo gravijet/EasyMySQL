@@ -136,13 +136,29 @@ pub fn pruefen<C: Queryable>(conn: &mut C, db: &str, status: &dyn Fn(String)) ->
 /// Groesse, bis zu der Daten (nicht nur die Struktur) durchsucht werden
 const DATEN_BIS: u64 = 200_000;
 
+/// Nur bestimmte Tabellen pruefen (z. B. die eben angelegten); Elterntabellen fuer Verweise kommen aus allen
+pub fn pruefen_nur<C: Queryable>(conn: &mut C, db: &str, nur: &[String]) -> Result<Vec<Fund>, String> {
+    conn.query_drop(format!("USE {}", q(db))).map_err(crate::db::err_text)?;
+    let b = bild(conn, db)?;
+    let nur: HashSet<String> = nur.iter().map(|t| t.to_lowercase()).collect();
+    Ok(befunde_fuer(&b, conn, &|_| {}, Some(&nur)))
+}
+
 pub fn befunde(b: &Bild, z: &mut dyn Quelle, status: &dyn Fn(String)) -> Vec<Fund> {
+    befunde_fuer(b, z, status, None)
+}
+
+fn befunde_fuer(b: &Bild, z: &mut dyn Quelle, status: &dyn Fn(String), nur: Option<&HashSet<String>>) -> Vec<Fund> {
     let mut out = Vec::new();
+    let gewaehlt = |t: &str| nur.is_none_or(|n| n.contains(&t.to_lowercase()));
     status(crate::i18n::tr("Suche fehlende Verweise …", "Looking for missing references …").into());
-    let verw = verweise(b, z);
+    let verw: Vec<Fund> = verweise(b, z).into_iter().filter(|f| gewaehlt(&f.tabelle)).collect();
     // Spalten, deren Typ schon der Verweis anpasst
     let skip: HashSet<(String, String)> = verw.iter().filter_map(|f| f.sql.first().filter(|s| s.contains(" MODIFY ")).map(|_| f.spalte.clone())).flatten().collect();
     for (i, t) in b.tabellen.iter().enumerate() {
+        if !gewaehlt(&t.name) {
+            continue;
+        }
         status(crate::tr_format!("Prüfe {} ({} von {}) …", "Checking {} ({} of {}) …", t.name, i + 1, b.tabellen.len()));
         out.extend(engine(t));
         out.extend(zeichensatz(t));

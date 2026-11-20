@@ -45,6 +45,8 @@ enum HistoryAct {
     LeerFix(usize),
     /// Vorgeschlagenen Index anlegen und erneut ausfuehren
     TempoFix(usize),
+    /// Datenbank-Doktor fuer diese Datenbank oeffnen
+    Doktor(String),
 }
 
 /// Langsame Anweisung: im Hintergrund vorgeschlagene Indizes
@@ -170,6 +172,9 @@ pub struct SqlTab {
     wait_run: Option<(String, usize, Instant)>,
     leer: Option<Leer>,
     tempo: Option<Tempo>,
+    /// Neu angelegte Tabellen gleich mitgeprueft: (Datenbank, Befunde) bzw. die laufende Pruefung
+    mitgeprueft: Option<(String, Vec<crate::doktor::Fund>)>,
+    mitpruefung: Option<(String, Receiver<Vec<crate::doktor::Fund>>)>,
     /// Nach dem Anlegen eines Index: Anweisung und Laufzeit vorher (fuer den Vergleich)
     tempo_vorher: Option<(String, std::time::Duration)>,
 }
@@ -240,6 +245,8 @@ impl SqlTab {
             wait_run: None,
             leer: None,
             tempo: None,
+            mitgeprueft: None,
+            mitpruefung: None,
             tempo_vorher: None,
         }
     }
@@ -737,7 +744,53 @@ impl SqlTab {
         t.anlegen = Some(rx);
     }
 
+    /// Hat der Lauf Tabellen angelegt, diese gleich im Hintergrund mit dem Datenbank-Doktor pruefen
+    fn start_mitpruefung(&mut self, dbc: &crate::db::Db, db_before: &str) {
+        self.mitgeprueft = None;
+        let mut neu: Vec<String> = Vec::new();
+        for st in &self.running {
+            let w: Vec<&str> = st.sql.split_whitespace().collect();
+            if w.len() < 3 || !w[0].eq_ignore_ascii_case("CREATE") || !w[1].eq_ignore_ascii_case("TABLE") {
+                continue;
+            }
+            let mut i = 2;
+            if w.get(2).is_some_and(|x| x.eq_ignore_ascii_case("IF")) {
+                i = 5;
+            }
+            if let Some(n) = w.get(i) {
+                let n = n.split('(').next().unwrap_or("").trim_matches('`');
+                let n = n.rsplit('.').next().unwrap_or(n).trim_matches('`');
+                if !n.is_empty() && !n.eq_ignore_ascii_case("LIKE") {
+                    neu.push(n.to_string());
+                }
+            }
+        }
+        let db = if self.database.is_empty() { db_before.to_string() } else { self.database.clone() };
+        if neu.is_empty() || db.is_empty() {
+            return;
+        }
+        let pool = crate::db::Db { pool: dbc.pool.clone(), info: dbc.info.clone(), version: dbc.version.clone() };
+        let (tx, rx) = channel();
+        let d = db.clone();
+        std::thread::spawn(move || {
+            let f = pool.new_conn().and_then(|mut c| crate::doktor::pruefen_nur(&mut c, &d, &neu)).unwrap_or_default();
+            let _ = tx.send(f.into_iter().filter(|f| !f.sql.is_empty()).collect());
+        });
+        self.mitpruefung = Some((db, rx));
+    }
+
     fn poll_leer(&mut self, ctx: &egui::Context) {
+        if let Some((db, rx)) = &self.mitpruefung {
+            match rx.try_recv() {
+                Ok(f) => {
+                    self.mitgeprueft = (!f.is_empty()).then(|| (db.clone(), f));
+                    self.mitpruefung = None;
+                    ctx.request_repaint();
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => self.mitpruefung = None,
+                Err(_) => ctx.request_repaint_after(std::time::Duration::from_millis(200)),
+            }
+        }
         let Some(l) = &mut self.leer else { return };
         let Some(rx) = &l.rx else { return };
         match rx.try_recv() {
@@ -1001,6 +1054,15 @@ impl SqlTab {
         cx.actions.push(Action::History(entries));
         // Fehler: passende Behebungen vorbereiten (korrigierte Anweisung oder andere Datenbank)
         let mut heal_from: Option<(usize, usize)> = None;
+        // Fehlende Tabelle steht weiter oben im Editor (nur die Anweisung darunter lief): ab dort erneut ausfuehren
+        let mut von_oben: Option<usize> = None;
+        if let Some(err) = results.first().and_then(|r| r.error.clone())
+            && let Some(st) = self.running.first()
+            && self.heal_round < MAX_HEALS
+        {
+            let before: String = self.text.chars().take(st.start).collect();
+            von_oben = crate::sqledit::errfix::vorher_angelegt(&before, &err);
+        }
         if let Some((i, err)) = results.iter().enumerate().find_map(|(i, r)| r.error.clone().map(|e| (i, e)))
             && let Some(st) = self.running.get(i).cloned()
         {
@@ -1042,6 +1104,7 @@ impl SqlTab {
         {
             self.start_leer(dbc, &results);
             self.start_tempo(dbc, &results, cx);
+            self.start_mitpruefung(dbc, &db_before);
         }
         self.running.clear();
         let changed_structure = results.iter().any(|r| {
@@ -1060,6 +1123,15 @@ impl SqlTab {
         self.pane = if n_sets > 0 && !results.iter().any(|r| r.error.is_some()) { Pane::Set(n_sets - 1) } else { Pane::Messages };
         self.results = results;
         self.note = note;
+        if let Some(off) = von_oben {
+            self.heal_round += 1;
+            self.heal_run = true;
+            let line = sqledit::line_col(&self.text, off).0;
+            let sql: String = self.text.chars().skip(off).take(self.run_end.saturating_sub(off)).collect();
+            cx.status(crate::tr_format!("Die Tabelle wird in Zeile {} angelegt – von dort ausgeführt.", "The table is created in line {} – running from there.", line + 1));
+            self.run(cx, sql, off);
+            return;
+        }
         // Fehler: im Hintergrund auf Kopien reparieren und sicher Korrigiertes weiter ausfuehren
         if let Some((start, line)) = heal_from
             && sqledit::prefs().auto_fix_run
@@ -1186,6 +1258,15 @@ impl SqlTab {
             Pane::Messages => {
                 if let Some(n) = &self.note {
                     ui.label(RichText::new(n).small().color(pal.text_weak));
+                }
+                if let Some((db, f)) = &self.mitgeprueft {
+                    let titel = crate::tr_format!("Gleich mitgeprüft: {} Verbesserung(en) für die neuen Tabellen", "Checked right away: {} improvement(s) for the new tables", f.len());
+                    let mut liste: String = f.iter().take(5).map(|f| format!("• {}", f.titel)).collect::<Vec<_>>().join("\n");
+                    liste.push_str(crate::i18n::tr("\nAnsehen und mit einem Klick reparieren – vorher wird gesichert.", "\nReview and repair with one click – backed up first."));
+                    let items: Vec<(&str, Option<&str>)> = vec![(liste.as_str(), Some(""))];
+                    if hinweis(ui, ("mitgeprueft", f.len()), &titel, None, &items, crate::i18n::tr("Prüfen und reparieren …", "Check and repair …")).is_some() {
+                        act = Some(HistoryAct::Doktor(db.clone()));
+                    }
                 }
                 let mut jump = None;
                 let mut fixes = Vec::new();
@@ -1777,6 +1858,7 @@ impl TabView for SqlTab {
             Some(HistoryAct::ErrorFix(k)) => self.apply_error_fix(cx, k),
             Some(HistoryAct::LeerFix(k)) => self.apply_leer_fix(cx, k),
             Some(HistoryAct::TempoFix(k)) => self.apply_tempo(cx, k),
+            Some(HistoryAct::Doktor(db)) => cx.actions.push(Action::OpenDoktor(db)),
             Some(HistoryAct::UseDatabase(d)) => {
                 if let Some(f) = self.failed.take() {
                     self.set_database(d);
@@ -1829,11 +1911,9 @@ fn hinweis(ui: &mut egui::Ui, id: impl std::hash::Hash + std::fmt::Debug, titel:
     // Weich einblenden, sobald sich der Inhalt aendert
     let t = ui.ctx().animate_bool_with_time(egui::Id::new(id), true, 0.22);
     ui.add_space(4.0);
-    egui::Frame::new().fill(pal.face_light).corner_radius(style::RADIUS).inner_margin(egui::Margin { left: 14, right: 12, top: 10, bottom: 10 }).show(ui, |ui| {
+    let frame = egui::Frame::new().fill(pal.face_light).corner_radius(style::RADIUS).inner_margin(egui::Margin { left: 14, right: 12, top: 10, bottom: 10 }).show(ui, |ui| {
         ui.set_width(ui.available_width());
         ui.set_opacity(t);
-        let r = ui.max_rect();
-        ui.painter().rect_filled(egui::Rect::from_min_size(egui::pos2(r.left() - 14.0, r.top() - 10.0), egui::vec2(3.0, r.height() + 20.0)), 1.5, pal.accent);
         if let Some(w) = warten {
             ui.horizontal(|ui| {
                 ui.spinner();
@@ -1857,6 +1937,9 @@ fn hinweis(ui: &mut egui::Ui, id: impl std::hash::Hash + std::fmt::Debug, titel:
             ui.add_space(2.0);
         }
     });
+    // Kreidestrich links, so hoch wie das Feld
+    let r = frame.response.rect;
+    ui.painter().rect_filled(egui::Rect::from_min_size(r.min, egui::vec2(3.0, r.height())), egui::CornerRadius { nw: style::RADIUS, sw: style::RADIUS, ne: 0, se: 0 }, pal.accent.gamma_multiply(t));
     pick
 }
 

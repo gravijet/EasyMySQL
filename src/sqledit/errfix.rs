@@ -537,6 +537,39 @@ pub fn created_database(script: &str) -> Option<String> {
     found
 }
 
+/// Fehlt eine Tabelle (1146), die weiter oben im Editor angelegt, aber nicht mit ausgefuehrt wurde: Beginn dieses
+/// CREATE TABLE in `before` (Zeichenindex). Alles zwischen CREATE und der Fehlerstelle muss gefahrlos wiederholbar sein.
+pub fn vorher_angelegt(before: &str, err: &str) -> Option<usize> {
+    if code(err) != Some(1146) {
+        return None;
+    }
+    let name = err.split('\'').nth(1)?;
+    let name = name.rsplit('.').next().unwrap_or(name).trim_matches('`');
+    let stmts = crate::db::split_statements(before);
+    let k = stmts.iter().rposition(|st| {
+        let chars: Vec<char> = st.sql.chars().collect();
+        let toks = lex(&chars).toks;
+        let mut i = 0;
+        if !(toks.first().is_some_and(|t| t.is_word("CREATE")) && toks.get(1).is_some_and(|t| t.is_word("TABLE"))) {
+            return false;
+        }
+        i += 2;
+        if toks.get(i).is_some_and(|t| t.is_word("IF")) {
+            i += 3;
+        }
+        let mut n = toks.get(i);
+        if toks.get(i + 1).is_some_and(|t| t.kind == Kind::Dot) {
+            n = toks.get(i + 2);
+        }
+        n.is_some_and(|n| n.is_name() && n.text.eq_ignore_ascii_case(name))
+    })?;
+    let harmlos = |sql: &str| {
+        let u = sql.trim_start().to_ascii_uppercase();
+        ["SELECT", "SHOW", "USE", "SET", "DESCRIBE", "DESC ", "EXPLAIN"].iter().any(|w| u.starts_with(w)) || (u.starts_with("CREATE") && u.contains("IF NOT EXISTS"))
+    };
+    stmts[k + 1..].iter().all(|st| harmlos(&st.sql)).then_some(stmts[k].start)
+}
+
 /// Tabellennamen nach FROM, JOIN, INTO, UPDATE, TABLE
 pub fn table_names(sql: &str) -> Vec<String> {
     let chars: Vec<char> = sql.chars().collect();
@@ -1059,6 +1092,9 @@ mod tests {
 
     #[test]
     fn similar_names() {
+        assert_eq!(vorher_angelegt("CREATE TABLE lehrer (id INT);\nSELECT 1;\n", "ERROR 1146 (42S02): Table 'heiltest.lehrer' doesn't exist"), Some(0));
+        assert_eq!(vorher_angelegt("CREATE TABLE lehrer (id INT);\nINSERT INTO x VALUES (1);\n", "ERROR 1146 (42S02): Table 'heiltest.lehrer' doesn't exist"), None);
+        assert_eq!(vorher_angelegt("CREATE TABLE andere (id INT);\n", "ERROR 1146 (42S02): Table 'heiltest.lehrer' doesn't exist"), None);
         assert_eq!(first("ERROR 1146 (42S02): Table 'person.personen' doesn't exist", "SELECT * FROM personen"), "SELECT * FROM Personen");
         assert_eq!(first("ERROR 1146 (42S02): Table 'person.Persone' doesn't exist", "SELECT * FROM Persone p"), "SELECT * FROM Personen p");
         assert_eq!(first("ERROR 1054 (42S22): Unknown column 'vornme' in 'field list'", "SELECT vornme FROM Personen"), "SELECT vorname FROM Personen");
