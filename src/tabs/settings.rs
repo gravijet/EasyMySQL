@@ -1723,7 +1723,7 @@ mod tests {
     #[test]
     fn only_the_chosen_page_is_drawn() {
         let ctx = egui::Context::default();
-        style::apply(&ctx, true);
+        style::apply(&ctx, false);
         let mut tab = SettingsTab::new();
         let server = crate::server::Server::new(crate::server::Config::default());
         let mut settings = crate::settings::Settings::default();

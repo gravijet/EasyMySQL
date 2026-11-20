@@ -1881,7 +1881,7 @@ mod tests {
     #[test]
     fn section_header_click_target_is_the_title() {
         let ctx = egui::Context::default();
-        crate::style::apply(&ctx, true);
+        crate::style::apply(&ctx, false);
         let id = egui::Id::new("sec-test");
         let frame = |events: Vec<egui::Event>| {
             let _ = ctx.run_ui(egui::RawInput { events, screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0))), ..Default::default() }, |ui| {
@@ -1906,7 +1906,7 @@ mod tests {
     #[test]
     fn column_menu_search_takes_keys() {
         let ctx = egui::Context::default();
-        crate::style::apply(&ctx, true);
+        crate::style::apply(&ctx, false);
         let mut s = Select { sources: vec![Source::table("kunde")], ..Default::default() };
         let env = Env { schema: None, tables: Vec::new(), ctes: Vec::new(), scope: vec![("kunde".into(), vec!["id".into(), "name".into(), "ort".into()])], depth: 1 };
         let id = egui::Id::new("cm-test");

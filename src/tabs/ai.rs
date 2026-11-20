@@ -1768,7 +1768,7 @@ mod tests {
     #[ignore = "Messung: langer Verlauf"]
     fn langer_verlauf_bleibt_fluessig() {
         let ctx = egui::Context::default();
-        crate::style::apply(&ctx, true);
+        crate::style::apply(&ctx, false);
         let server = crate::server::Server::new(Default::default());
         let mut settings = crate::settings::Settings::default();
         let mut schemas = super::super::SchemaCache::default();
@@ -1800,7 +1800,7 @@ mod tests {
     #[test]
     fn native_chats_zeichnen_auch_in_schmaler_seitenleiste() {
         let ctx = egui::Context::default();
-        crate::style::apply(&ctx, true);
+        crate::style::apply(&ctx, false);
         let server = crate::server::Server::new(Default::default());
         let mut settings = crate::settings::Settings::default();
         let mut schemas = super::super::SchemaCache::default();
