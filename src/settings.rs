@@ -44,6 +44,8 @@ pub struct Settings {
     pub dock: std::collections::BTreeMap<String, String>,
     /// Beim Beenden offene Werkzeuge rechts, unten und in eigenen Fenstern (Namen, kommagetrennt)
     pub dock_open: String,
+    /// Reihenfolge der Werkzeugsymbole in den Leisten (Namen, kommagetrennt; fehlende in der Grundreihenfolge)
+    pub tool_order: String,
     /// Zuletzt gewaehlte Endung im Dialog "Neue Datei"
     pub new_file_ext: String,
     /// Zuletzt gewaehlter Aufbau neuer Java-Projekte
@@ -137,6 +139,7 @@ impl Default for Settings {
             sidebar: true,
             dock: Default::default(),
             dock_open: String::new(),
+            tool_order: String::new(),
             new_file_ext: "sql".into(),
             java_project_kind: "einfach".into(),
             server: crate::server::Config::default(),
@@ -257,6 +260,7 @@ impl Settings {
                 "ai_database" => s.ai.database = unescape(&v),
                 "ai_max_rows" => s.ai.max_rows = v.parse().unwrap_or(200).clamp(1, 5000),
                 "dock_open" => s.dock_open = v,
+                "tool_order" => s.tool_order = v,
                 k if k.starts_with("dock_") && !v.is_empty() => {
                     s.dock.insert(k[5..].to_string(), v);
                 }
@@ -300,7 +304,7 @@ impl Settings {
             b(self.sidebar),
         );
         text.push_str(&format!("new_file_ext={}\njava_project_kind={}\n", self.new_file_ext, self.java_project_kind));
-        text.push_str(&format!("dock_open={}\n", self.dock_open));
+        text.push_str(&format!("dock_open={}\ntool_order={}\n", self.dock_open, self.tool_order));
         for (k, v) in &self.dock {
             text.push_str(&format!("dock_{k}={v}\n"));
         }
@@ -467,8 +471,9 @@ mod tests {
         docked.dock.insert("claude".into(), "rechts".into());
         docked.dock.insert("terminal".into(), "fenster".into());
         docked.dock_open = "claude,git".into();
+        docked.tool_order = "git,explorer".into();
         let back = Settings::from_text(&docked.to_text());
-        assert_eq!((back.dock, back.dock_open), (docked.dock, docked.dock_open));
+        assert_eq!((back.dock, back.dock_open, back.tool_order), (docked.dock, docked.dock_open, docked.tool_order));
         assert_eq!(Settings::from_text("language=invalid").language, crate::i18n::Language::English);
     }
 

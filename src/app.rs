@@ -1406,23 +1406,15 @@ impl eframe::App for EasyApp {
         // Flaches Layout wie IntelliJ IDEA: Leisten und Seitenleiste in der Grundfarbe, Editorflaeche dunkler,
         // getrennt durch feine Linien
         let flat = |fill: egui::Color32, m: egui::Margin| egui::Frame::new().fill(fill).inner_margin(m);
-        egui::Panel::top("menu").show_separator_line(pal.dark).frame(flat(pal.chrome, egui::Margin { left: 10, right: 0, top: 0, bottom: 0 })).show(ui, |ui| {
+        egui::Panel::top("menu").show_separator_line(true).frame(flat(pal.chrome, egui::Margin { left: 10, right: 0, top: 0, bottom: 0 })).show(ui, |ui| {
             self.menu_bar(ui, &mut actions);
         });
-        egui::Panel::left("activity").exact_size(60.0).resizable(false).show_separator_line(false).frame(flat(pal.face, egui::Margin::symmetric(0, 8))).show(ui, |ui| {
-            self.activity_bar(ui);
+        // Symbolleisten links und rechts, dann die Werkzeuge rechts, unten und links (vor dem Editor anlegen)
+        egui::Panel::left("activity").exact_size(dock::STRIPE_W).resizable(false).show_separator_line(false).frame(flat(pal.face, egui::Margin::symmetric(0, 8))).show(ui, |ui| {
+            self.stripe_left(ui);
         });
-        // Rechts und unten vor der linken Leiste und dem Editor anlegen
+        self.stripe_right(ui);
         self.dock_panels(ui, &mut actions);
-        if self.settings.sidebar && self.place_of(self.side_view) == dock::Place::Left {
-            let chat = matches!(self.side_view, SideView::Claude | SideView::Codex);
-            egui::Panel::left(if chat { "sidebar-chat" } else { "sidebar" }).resizable(true).show_separator_line(true).default_size(if chat { 360.0 } else { (ctx.content_rect().width() * 0.22).clamp(200.0, 280.0) }).min_size(if chat { 250.0 } else { 170.0 }).max_size((ctx.content_rect().width() * if chat { 0.7 } else { 0.36 }).max(250.0)).frame(flat(pal.sidebar_bg, egui::Margin::ZERO)).show(ui, |ui| {
-                style::panel_card(ui, pal.sidebar_bg, egui::Margin { left: 4, right: 4, top: 2, bottom: 6 }, |ui| {
-                    let v = self.side_view;
-                    self.tool_ui(ui, v, &mut actions);
-                });
-            });
-        }
         egui::CentralPanel::default().frame(flat(pal.bg, egui::Margin::ZERO)).show(ui, |ui| {
             if !self.tabs.is_empty() {
                 self.tab_bar(ui);

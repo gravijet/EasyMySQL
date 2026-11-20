@@ -143,15 +143,6 @@ impl EasyApp {
         }
     }
 
-    /// Terminal als Leiste unter dem Editor
-    pub(super) fn terminal_panel(&mut self, ui: &mut egui::Ui) {
-        let frame = egui::Frame::new().fill(style::pal().bg);
-        let mut actions = Vec::new();
-        egui::Panel::bottom("terminal-dock").resizable(true).show_separator_line(true).default_size(280.0).min_size(110.0).frame(frame).show(ui, |ui| {
-            self.tool_ui(ui, SideView::Terminal, &mut actions);
-        });
-    }
-
     /// Terminals mit Registerkarten, gleich wo sie stehen (unten, seitlich, eigenes Fenster)
     pub(super) fn terminal_view(&mut self, ui: &mut egui::Ui) {
         let pal = style::pal();
@@ -173,7 +164,7 @@ impl EasyApp {
             let mut child = ui.new_child(egui::UiBuilder::new().max_rect(bar).layout(egui::Layout::left_to_right(egui::Align::Center)));
             child.spacing_mut().item_spacing.x = 0.0;
             child.add_space(10.0);
-            child.label(egui::RichText::new(crate::i18n::text("TERMINAL")).small().color(pal.text_weak));
+            child.add(egui::Label::new(egui::RichText::new(crate::i18n::text("TERMINAL")).small().color(pal.text_weak)).selectable(false));
             child.add_space(10.0);
             let active = self.terminal.active.min(self.terminal.tabs.len().saturating_sub(1));
             for (i, t) in self.terminal.tabs.iter().enumerate() {

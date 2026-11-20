@@ -408,7 +408,7 @@ impl EasyApp {
                 if runnable {
                     divider(ui);
                     let resp = ui
-                        .add_enabled_ui(!busy, |ui| titlebar::tool_button(ui, titlebar::Lead::Icon(Icon::Play, if busy { pal.chrome_weak } else { egui::Color32::from_rgb(0x6F, 0xD8, 0x9F) }), "", pal.chrome_text, false))
+                        .add_enabled_ui(!busy, |ui| titlebar::tool_button(ui, titlebar::Lead::Icon(Icon::Play, if busy { pal.chrome_weak } else { pal.ok_text }), "", pal.chrome_text, false))
                         .inner
                         .on_hover_text(tip_of(Cmd::RunAll));
                     if resp.clicked() {
@@ -437,90 +437,6 @@ impl EasyApp {
         if let Some(c) = cmd {
             self.run_cmd(&ctx, c);
         }
-    }
-
-    // ------------------------------------------------------------------
-    // Aktivitaetsleiste (nur Seitenleisten)
-
-    pub(super) fn activity_bar(&mut self, ui: &mut egui::Ui) {
-        const TILE: f32 = 46.0;
-        const GAP: f32 = 4.0;
-        let pal = style::pal();
-        let ctx = ui.ctx().clone();
-        // Registerleiste: jedes Werkzeug ist ein Register in seiner eigenen Farbe (Symbol und kurze Beschriftung);
-        // das offene ist ganz eingefaerbt. Klick blendet ein/aus, Rechtsklick verschiebt, Ziehen auf eine Zone ebenfalls.
-        let button = |ui: &mut egui::Ui, icon: Icon, hue: egui::Color32, caption: &str, active: bool, tip: String| -> egui::Response {
-            let (slot, resp) = ui.allocate_exact_size(vec2(ui.available_width(), TILE), Sense::click_and_drag());
-            let r = Rect::from_center_size(slot.center(), vec2(slot.width() - 10.0, TILE));
-            let t = ui.ctx().animate_bool_with_time(resp.id.with("offen"), active, 0.2);
-            let hot = ui.ctx().animate_bool_with_time(resp.id.with("hot"), resp.hovered(), 0.12);
-            let p = ui.painter();
-            // Unter der Maus eine leise Flaeche, offen ganz in der Registerfarbe (waechst aus der Mitte)
-            if hot > 0.0 && t < 1.0 {
-                p.rect_filled(r, 8.0, pal.hover.gamma_multiply(hot * (1.0 - t)));
-            }
-            if t > 0.0 {
-                let tile = Rect::from_center_size(r.center(), r.size() * egui::lerp(0.86..=1.0, t));
-                p.rect_filled(tile, 8.0, hue.gamma_multiply(t));
-            }
-            let on = if pal.dark { pal.face } else { egui::Color32::WHITE };
-            let idle = hue.lerp_to_gamma(pal.activity_fg, 0.3 * (1.0 - hot));
-            let fg = idle.lerp_to_gamma(on, t);
-            icons::paint(p, Rect::from_center_size(pos2(r.center().x, r.top() + 17.0), vec2(19.0, 19.0)), icon, fg);
-            let text_c = pal.text_weak.lerp_to_gamma(pal.text, hot).lerp_to_gamma(on, t);
-            p.text(pos2(r.center().x, r.bottom() - 9.5), egui::Align2::CENTER_CENTER, caption, style::medium(10.5), text_c);
-            resp.on_hover_text(tip).on_hover_cursor(egui::CursorIcon::PointingHand)
-        };
-        ui.spacing_mut().item_spacing.y = GAP;
-        let tool = |this: &mut Self, ui: &mut egui::Ui, view: SideView, cmd: Option<Cmd>| {
-            let mut tip = super::dock::tool_title(view).to_string();
-            if let Some(cmd) = cmd {
-                let k = keymap::text(cmd);
-                tip = if k.is_empty() { cmd.label().to_string() } else { format!("{} ({k})", cmd.label()) };
-            }
-            let place = this.place_of(view);
-            if place != super::dock::Place::Left {
-                tip.push_str(&format!(" · {}", place.label()));
-            }
-            tip.push_str(crate::i18n::tr("\nZiehen zum Verschieben oder Abdocken", "\nDrag to move or undock"));
-            let resp = button(ui, super::dock::tool_icon(view), super::dock::tool_hue(view), super::dock::tool_caption(view), this.tool_open(view), tip);
-            if resp.drag_started() {
-                this.dock.start_drag(view, ui.ctx().viewport_id());
-            }
-            if resp.clicked() {
-                let open = this.tool_open(view);
-                this.toggle_tool(view);
-                if !open && view == SideView::Search {
-                    this.search.focus = true;
-                }
-            }
-            egui::Popup::context_menu(&resp).show(|ui| this.tool_place_menu(ui, view));
-        };
-        for (view, cmd) in [
-            (SideView::Explorer, Cmd::ShowExplorer),
-            (SideView::Search, Cmd::ShowSearch),
-            (SideView::Databases, Cmd::ShowDatabases),
-            (SideView::History, Cmd::ShowHistory),
-            (SideView::Git, Cmd::ShowGit),
-        ] {
-            tool(self, ui, view, Some(cmd));
-        }
-        ui.add_space(10.0);
-        for view in [SideView::Claude, SideView::Codex] {
-            tool(self, ui, view, None);
-        }
-        ui.add_space(10.0);
-        tool(self, ui, SideView::Terminal, Some(Cmd::ToggleTerminal));
-        // Einstellungen unten, getrennt von den Ansichten
-        ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
-            ui.add_space(2.0);
-            let k = keymap::text(Cmd::Settings);
-            let tip = if k.is_empty() { Cmd::Settings.label().to_string() } else { format!("{} ({k})", Cmd::Settings.label()) };
-            let open = self.tabs.get(self.active).is_some_and(|t| t.icon() == Some(Icon::Settings));
-            if button(ui, Icon::Settings, pal.text_weak, crate::i18n::tr("Optionen", "Options"), open, tip).clicked() {
-                self.run_cmd(&ctx, Cmd::Settings);
-            }
-        });
     }
 
     // ------------------------------------------------------------------
@@ -603,39 +519,71 @@ impl EasyApp {
         let mut close_right = None;
         let mut close_all = false;
         let mut activate = None;
-        let mut rects: Vec<Rect> = Vec::with_capacity(n);
-        let mut dragging: Option<(usize, f32)> = None;
-        let mut dropped: Option<(usize, f32)> = None;
         let active = self.active;
+        // Reiter haben feste Kennungen (die Adresse ihres Inhalts), damit Ziehen und Gleiten das Umsortieren ueberstehen
+        let keys: Vec<usize> = self.tabs.iter().map(|t| (&**t as *const dyn crate::tabs::TabView).cast::<()>() as usize).collect();
+        let ctx = ui.ctx().clone();
+        let drag_state = egui::Id::new("tab-drag");
+        // Gezogener Reiter (Kennung, Abstand des Zeigers zu seiner linken Kante) und die Mitten vom letzten Bild
+        let drag: Option<(usize, f32)> = ctx.data(|d| d.get_temp(drag_state));
+        let drag_i = drag.and_then(|(k, _)| keys.iter().position(|x| *x == k));
+        let centers: Vec<(usize, f32)> = ctx.data(|d| d.get_temp(drag_state.with("mitten"))).unwrap_or_default();
+        let pointer_x = ctx.pointer_latest_pos().map(|p| p.x);
+        // Wohin der gezogene Reiter gehoert: hinter alle anderen, deren Mitte links von seiner Mitte liegt.
+        // Die anderen machen Platz und gleiten zur Seite.
+        let to = match (drag_i, drag, pointer_x) {
+            (Some(i), Some((_, dx)), Some(px)) => {
+                let mid = px - dx + widths[i] / 2.0;
+                centers.iter().filter(|(k, c)| *k != keys[i] && keys.contains(k) && *c < mid).count()
+            }
+            _ => drag_i.unwrap_or(0),
+        };
+        let mut order: Vec<usize> = (0..n).filter(|k| Some(*k) != drag_i).collect();
+        if let Some(i) = drag_i {
+            order.insert(to.min(order.len()), i);
+        }
+        // Im Bild des Loslassens steht der Reiter schon an seiner neuen Stelle (kein leeres Bild dazwischen)
+        let releasing = drag_i.is_some() && !ctx.input(|i| i.pointer.primary_down());
+        let press_x = ctx.input(|i| i.pointer.press_origin()).map(|p| p.x);
+        let mut new_centers: Vec<(usize, f32)> = Vec::with_capacity(n);
+        let mut dropped = false;
+        let mut started: Option<(usize, f32)> = None;
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(tabs_rect.with_min_x(tabs_rect.left() + 6.0)).layout(egui::Layout::left_to_right(egui::Align::Max)));
         egui::ScrollArea::horizontal().id_salt("tabbar").scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden).show(&mut child, |ui| {
             ui.spacing_mut().item_spacing.x = GAP;
             let time = ui.input(|i| i.time) as f32;
-            for (i, look) in looks.iter().enumerate() {
+            let origin = ui.max_rect().left();
+            for &i in &order {
+                let look = &looks[i];
                 let sel = i == active;
-                let (slot, resp) = ui.allocate_exact_size(vec2(widths[i], BAR_H), Sense::click_and_drag());
+                let (slot, _) = ui.allocate_exact_size(vec2(widths[i], BAR_H), Sense::hover());
                 let r = slot.with_min_y(slot.max.y - PILL_H);
-                rects.push(r);
-                if sel {
+                let resp = ui.interact(r, egui::Id::new(("tab", keys[i])), Sense::click_and_drag());
+                new_centers.push((keys[i], r.center().x));
+                if sel && drag_i.is_none() {
                     resp.scroll_to_me(None);
                 }
-                if resp.dragged() {
-                    if let Some(p) = ui.ctx().pointer_latest_pos() {
-                        dragging = Some((i, p.x));
-                    }
+                // Abstand zur linken Kante dort, wo gedrueckt wurde (das Ziehen beginnt erst nach ein paar Pixeln)
+                if resp.drag_started()
+                    && let Some(px) = press_x.or(pointer_x)
+                {
+                    started = Some((keys[i], (px - r.left()).clamp(0.0, r.width())));
+                }
+                if resp.drag_stopped() {
+                    dropped = true;
+                }
+                // Gleitet zur neuen Stelle (Schliessen, Umsortieren, Platz machen beim Ziehen)
+                let x = ctx.animate_value_with_time(egui::Id::new(("tab-x", keys[i])), r.left() - origin, 0.16);
+                if Some(i) == drag_i && !releasing {
                     continue;
                 }
-                if resp.drag_stopped()
-                    && let Some(p) = ui.ctx().pointer_latest_pos()
-                {
-                    dropped = Some((i, p.x));
-                }
-                let over_close = ui.input(|i| i.pointer.hover_pos()).is_some_and(|p| tab_close_rect(r).contains(p));
-                let hot = ui.ctx().animate_bool_with_time(resp.id.with("hot"), resp.hovered(), 0.12);
-                let lift = ui.ctx().animate_bool_with_time(resp.id.with("sel"), sel, 0.18);
-                paint_tab(ui.painter(), r, look, lift, hot, over_close, time, &font);
+                let shown = r.translate(vec2(origin + x - r.left(), 0.0));
+                let over_close = drag_i.is_none() && ui.input(|i| i.pointer.hover_pos()).is_some_and(|p| tab_close_rect(r).contains(p));
+                let hot = ctx.animate_bool_with_time(resp.id.with("hot"), resp.hovered() && drag_i.is_none(), 0.12);
+                let lift = ctx.animate_bool_with_time(resp.id.with("sel"), sel, 0.18);
+                paint_tab(ui.painter(), shown, look, lift, hot, over_close, time, &font, false);
                 if look.busy {
-                    ui.ctx().request_repaint();
+                    ctx.request_repaint();
                 }
                 if resp.clicked() {
                     if over_close {
@@ -648,7 +596,7 @@ impl EasyApp {
                     close = Some(i);
                 }
                 let cut = widths[i] + 1.0 < desired[i];
-                let resp = if cut { resp.on_hover_text_at_pointer(&look.title) } else { resp };
+                let resp = if cut && drag_i.is_none() { resp.on_hover_text_at_pointer(&look.title) } else { resp };
                 resp.context_menu(|ui| {
                     crate::style::menu_item_look(ui);
                     if ui.button(crate::i18n::text("Schließen")).clicked() {
@@ -683,22 +631,34 @@ impl EasyApp {
                 });
             }
         });
-        // Gezogener Reiter schwebt unter dem Mauszeiger; beim Loslassen wird er dort einsortiert
-        if let Some((i, x)) = dragging {
-            let w = widths[i];
-            let r = Rect::from_center_size(pos2(x.clamp(tabs_rect.left() + w / 2.0, tabs_rect.right() - w / 2.0), tabs_rect.bottom() - PILL_H / 2.0 - 3.0), vec2(w, PILL_H));
-            let painter = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("tab-drag")));
-            painter.add(egui::Shadow { offset: [0, 4], blur: 12, spread: 0, color: egui::Color32::from_black_alpha(50) }.as_shape(r, 6));
-            paint_tab(&painter, r, &looks[i], 1.0, 0.0, false, 0.0, &font);
-            ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
-            self.active = i;
+        ctx.data_mut(|d| d.insert_temp(drag_state.with("mitten"), new_centers));
+        if let Some(s) = started {
+            ctx.data_mut(|d| d.insert_temp(drag_state, s));
         }
-        if let Some((i, x)) = dropped {
-            let to = rects.iter().enumerate().filter(|(k, r)| *k != i && r.center().x < x).count();
-            if to != i {
-                let t = self.tabs.remove(i);
-                self.tabs.insert(to, t);
+        // Gezogener Reiter schwebt mit Schatten unter dem Zeiger; losgelassen landet er in der Luecke
+        if let (Some(i), Some((_, dx))) = (drag_i, drag) {
+            let released = dropped || !ctx.input(|inp| inp.pointer.primary_down());
+            if released {
+                ctx.data_mut(|d| d.remove::<(usize, f32)>(drag_state));
+                let to = to.min(n - 1);
+                if to != i {
+                    let t = self.tabs.remove(i);
+                    self.tabs.insert(to, t);
+                }
                 self.active = to;
+                ctx.request_repaint();
+            } else if let Some(px) = pointer_x {
+                let w = widths[i];
+                let left = (px - dx).clamp(tabs_rect.left(), tabs_rect.right() - w);
+                let r = Rect::from_min_size(pos2(left, tabs_rect.bottom() - PILL_H - 3.0), vec2(w, PILL_H));
+                let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("tab-drag")));
+                painter.add(egui::Shadow { offset: [0, 6], blur: 16, spread: 0, color: egui::Color32::from_black_alpha(if pal.dark { 110 } else { 38 }) }.as_shape(r, 7));
+                paint_tab(&painter, r, &looks[i], 1.0, 0.0, false, 0.0, &font, true);
+                // Der Reiter bleibt waehrend des Ziehens an seiner Stelle sichtbar (die Animation kennt sein Ziel)
+                ctx.animate_value_with_time(egui::Id::new(("tab-x", keys[i])), left - tabs_rect.left(), 0.0);
+                ctx.set_cursor_icon(egui::CursorIcon::Grabbing);
+                self.active = i;
+                ctx.request_repaint();
             }
         }
         if scroll {
@@ -1025,28 +985,32 @@ fn tab_close_rect(r: Rect) -> Rect {
     Rect::from_center_size(pos2(r.right() - 17.0, r.center().y + 1.0), vec2(18.0, 18.0))
 }
 
-/// Reiter als Haengeregister: oben ein Streifen in der Farbe seiner Datenbank. Der aktive Reiter (`sel` 0..1,
-/// animiert) hebt sich als Papier aus der Leiste und geht nahtlos in den Inhalt ueber; `hot` ist das Darueberfahren.
+/// Reiter (`sel` 0..1 animiert, `hot` das Darueberfahren). Der aktive Reiter ist ein Blatt in der Farbe des Inhalts,
+/// das nahtlos in den Inhalt darunter uebergeht, mit feiner Kante und einem schmalen Strich in der Akzentfarbe oben.
+/// Die Farbe der Datenbank steckt nur im Symbol. `floating`: gezogener Reiter, ringsum geschlossen.
 #[allow(clippy::too_many_arguments)]
-fn paint_tab(p: &egui::Painter, r: Rect, look: &TabLook, sel: f32, hot: f32, over_close: bool, time: f32, font: &egui::FontId) {
+fn paint_tab(p: &egui::Painter, r: Rect, look: &TabLook, sel: f32, hot: f32, over_close: bool, time: f32, font: &egui::FontId, floating: bool) {
     let pal = style::pal();
-    let top = egui::CornerRadius { nw: 7, ne: 7, sw: 0, se: 0 };
     if hot > 0.0 && sel < 1.0 {
-        p.rect_filled(r, top, pal.hover.gamma_multiply(hot * (1.0 - sel)));
+        let pill = Rect::from_min_max(pos2(r.left() + 1.0, r.top() + 3.0), pos2(r.right() - 1.0, r.bottom() - 4.0));
+        p.rect_filled(pill, 6.0, pal.hover.gamma_multiply(hot * (1.0 - sel)));
     }
     if sel > 0.0 {
-        // Papier des aktiven Reiters mit farbiger Oberkante, die der Rundung folgt; unten offen zum Inhalt
-        let paper = Rect::from_min_max(r.min, r.max + vec2(0.0, 1.0));
-        p.rect_filled(paper, top, look.hue.gamma_multiply(sel));
-        let inner = Rect::from_min_max(paper.min + vec2(1.0, 2.5), paper.max - vec2(1.0, 0.0));
-        p.rect_filled(inner, egui::CornerRadius { nw: 6, ne: 6, sw: 0, se: 0 }, pal.bg.gamma_multiply(sel));
-        // Seitenkanten wie die Linie unter der Leiste
         let edge = Stroke::new(1.0, pal.border.gamma_multiply(sel));
-        p.vline(paper.left() + 0.5, (paper.top() + 7.0)..=(paper.bottom() - 1.0), edge);
-        p.vline(paper.right() - 0.5, (paper.top() + 7.0)..=(paper.bottom() - 1.0), edge);
+        if floating {
+            p.rect(r, 7.0, pal.bg, edge, egui::StrokeKind::Inside);
+        } else {
+            // Unten offen: Blatt und Kante reichen unter die Leiste, die untere Kante faellt dem Zuschnitt zum Opfer
+            let sheet = Rect::from_min_max(r.min, r.max + vec2(0.0, 10.0));
+            let clip = p.clip_rect().intersect(Rect::from_min_max(pos2(r.left() - 1.0, r.top() - 1.0), pos2(r.right() + 1.0, r.bottom())));
+            let cut = p.with_clip_rect(clip);
+            cut.rect(sheet, egui::CornerRadius { nw: 7, ne: 7, sw: 0, se: 0 }, pal.bg.gamma_multiply(sel), edge, egui::StrokeKind::Inside);
+        }
+        let mark = Rect::from_min_max(pos2(r.left() + 10.0, r.top() + 1.0), pos2(r.right() - 10.0, r.top() + 3.0));
+        p.rect_filled(Rect::from_center_size(mark.center(), vec2(mark.width() * egui::lerp(0.4..=1.0, sel), mark.height())), 1.0, pal.accent.gamma_multiply(sel));
     }
     let cy = r.center().y + 1.0;
-    let color = pal.text_weak.lerp_to_gamma(pal.text, sel.max(hot * 0.7));
+    let color = pal.text_weak.lerp_to_gamma(pal.text, sel.max(hot * 0.8));
     let icon = look.icon.unwrap_or(Icon::File);
     let mut x = r.left() + 12.0;
     match &look.file {
@@ -1069,13 +1033,13 @@ fn paint_tab(p: &egui::Painter, r: Rect, look: &TabLook, sel: f32, hot: f32, ove
         let a = time * 6.0;
         p.add(egui::Shape::line(
             (0..=10).map(|k| cr.center() + vec2((a + k as f32 * 0.45).cos(), (a + k as f32 * 0.45).sin()) * 5.0).collect(),
-            Stroke::new(1.5, look.hue),
+            Stroke::new(1.5, pal.accent),
         ));
     } else if look.modified && !(hot > 0.5 && over_close) {
-        p.circle_filled(cr.center(), 3.5, look.hue);
+        p.circle_filled(cr.center(), 3.5, color);
     } else if sel > 0.5 || hot > 0.0 {
         if over_close {
-            p.rect_filled(cr, style::RADIUS as f32 - 1.0, pal.hover);
+            p.rect_filled(cr, style::RADIUS as f32, pal.hover);
         }
         let c = if over_close { pal.text } else { color.gamma_multiply(sel.max(hot)) };
         icons::paint(p, cr.shrink(4.0), Icon::Close, c);

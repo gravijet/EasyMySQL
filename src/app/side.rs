@@ -246,7 +246,7 @@ pub(super) fn section_header(ui: &mut egui::Ui, title: &str, add_buttons: impl F
             ui.add_space(6.0);
             ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                 ui.add_space(8.0);
-                ui.add(egui::Label::new(RichText::new(title).size(13.0).color(style::pal().text).family(egui::FontFamily::Name("semi".into()))).truncate()).on_hover_text(title);
+                ui.add(egui::Label::new(RichText::new(title).size(13.0).color(style::pal().text).family(egui::FontFamily::Name("semi".into()))).truncate().selectable(false)).on_hover_text(title);
             });
         });
     });
