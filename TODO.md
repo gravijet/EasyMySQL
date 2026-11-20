@@ -390,3 +390,26 @@ Sicherungen, Benutzerverwaltung, Git, Suche, Menüs.
   allein 3/3 grün.
 - Kopflos nicht geprüft: Andocken, Git-Bereich, Explorer-Dialoge nach den Dialog-Änderungen; Windows/macOS nur per
   `cargo check --target x86_64-pc-windows-gnu`.
+
+## 19. Neunte Runde (2026-11-19, Version 1.1.23): Auto-Fix baut, was fehlt; Bedienelemente einheitlich
+
+**Erledigt** (Tests und Clippy grün; Korpus gegen einen echten Server):
+- Auto-Fix legt Fehlendes selbst an (`sqledit/probe/aufbau.rs`): Tabellen aus jeder Verwendung im Skript (Spalten,
+  Typen aus den Werten, Primärschlüssel, Index für Verweise) samt passenden Beispielzeilen – gesuchte Werte kommen
+  darin vor; Tabelle aus einer anderen Datenbank übernehmen bzw. dort arbeiten; fehlende Spalten (im eigenen
+  CREATE TABLE oder per ALTER), Datenbanken, zu kleine Spalten (Text zu lang, Zahl zu groß, Text in Zahlenspalte).
+- Reihenfolge: spätere Anweisungen, die liefern, was fehlt, werden vorgezogen (CREATE TABLE, Elternzeilen, DROP der
+  Kindtabelle, CREATE DATABASE); zählt nicht als Fortschritt, solange der Fehler bleibt.
+- Neue Regeln: AUTO_INCREMENT ohne Schlüssel, zwei Primärschlüssel, TEXT im Schlüssel, Index/Sicht/Prozedur gibt es
+  schon, NOT NULL ohne Wert, Zieltabelle in der Unterabfrage, Unterabfrage ohne Alias, GROUP BY (MySQL),
+  UNION mit ungleicher Spaltenzahl, keine Datenbank gewählt → die Datenbank mit allen benutzten Tabellen.
+- Erfundene Daten in der echten Datenbank nie ungefragt: Beispielzeilen für Abfragen brauchen „Weiter ausführen“.
+- Programme: „Alles einrichten“ füllt neu abgeleitete Tabellen, aus denen der Code nur liest, mit Beispielzeilen.
+- Oberfläche: Symbolknöpfe in Werkzeugleisten mit Rahmen und gleicher Höhe; überall „Keine Datenbank“ statt „–“;
+  die in der Seitenleiste gewählte Datenbank übernimmt eine Abfrage ohne Datenbank; „Neue Tabelle“ neu geordnet
+  (Formularzeilen, feste Spalten, mittige Häkchen, Typ nie abgeschnitten); Seitenleisten-Knöpfe volle Breite;
+  KI-Bereich ohne Begrüßungsfloskel; Struktur mit genauer Zeilenzahl; Benutzer: erster Benutzer gleich offen;
+  Einstellungen ohne die Technik-Stellschrauben „Prüfen nach“/„Speichern nach“.
+- Leerlauf geprüft: höchstens ein Bild alle paar Sekunden (Serverstatus), kein Dauerneuzeichnen.
+
+**Offen:** Windows/macOS nur per `cargo check`; Andocken und Explorer-Dialoge kopflos nicht erneut geprüft.

@@ -181,6 +181,32 @@ fn chosen(problems: &[Problem]) -> Vec<&Problem> {
 /// Vorsilbe aller Probe-Datenbanken (werden nie angezeigt und nach Abstuerzen aufgeraeumt)
 pub const SANDBOX_PREFIX: &str = "easymysql_probe_";
 
+/// Startzeit dieses Prozesses (Sekunden seit 1970): steht im Namen jeder Probe-Datenbank, damit nur alte Reste
+/// aufgeraeumt werden und nie die Kopien eines gleichzeitig laufenden anderen Prozesses
+fn started() -> u64 {
+    static T: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+    *T.get_or_init(|| std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs()))
+}
+
+/// Ist die Probe-Datenbank `name` ein Rest (aelter als eine halbe Stunde bzw. im alten Namensformat)?
+fn stale_sandbox(name: &str, now: u64) -> bool {
+    let Some(rest) = name.strip_prefix(SANDBOX_PREFIX) else { return false };
+    let parts: Vec<&str> = rest.split('_').collect();
+    match parts.as_slice() {
+        [pid, t, _, _] => {
+            let own = pid.parse::<u32>().ok() == Some(std::process::id()) && t.parse::<u64>().ok() == Some(started());
+            // Ein Auto-Fix dauert hoechstens MAX_TIME; ein Prozess kann aber lange laufen und immer wieder probieren
+            !own && t.parse::<u64>().is_ok_and(|t| t + 1800 < now) && !alive_elsewhere(pid)
+        }
+        _ => true,
+    }
+}
+
+/// Laeuft der Prozess noch (nur unter Linux pruefbar; sonst entscheidet allein das Alter)
+fn alive_elsewhere(pid: &str) -> bool {
+    cfg!(target_os = "linux") && std::path::Path::new("/proc").join(pid).exists()
+}
+
 /// Original -> Probe-Datenbank
 #[derive(Default)]
 struct Map {
@@ -196,7 +222,7 @@ impl Map {
     }
 
     fn sandbox(&self, n: usize) -> String {
-        format!("{SANDBOX_PREFIX}{}_{}_{n}", std::process::id(), self.run)
+        format!("{SANDBOX_PREFIX}{}_{}_{}_{n}", std::process::id(), started(), self.run)
     }
 
     fn get(&self, name: &str) -> Option<&str> {
@@ -747,8 +773,12 @@ fn candidates(text: &str, f: &Fail, setup: &Setup, server: &mut dyn Server, sand
                 }
             }
         }
-        // Keine Datenbank gewaehlt: eine anlegen und benutzen (Name aus dem Skript oder der Datei)
+        // Keine Datenbank gewaehlt: die Datenbank mit allen benutzten Tabellen, sonst eine anlegen und benutzen
+        // (Name aus dem Skript oder der Datei)
         Some(1046) => {
+            if let Some(c) = aufbau::datenbank_waehlen(text, f, server) {
+                out.push(c);
+            }
             let name = errfix::created_database(text).or_else(|| {
                 setup.file_stem.as_deref().map(|s| s.chars().map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '_' }).collect::<String>()).filter(|s| !s.is_empty())
             });
@@ -1082,10 +1112,10 @@ pub fn repair(text: &str, setup: &Setup, server: Option<&mut dyn Server>, status
     let current = setup.database.clone().filter(|d| !d.is_empty());
     // Reste eines abgebrochenen Laufs (anderer Prozess, z. B. nach einem Absturz) entfernen
     if let Ok(rows) = server.rows(&format!("SHOW DATABASES LIKE '{}%'", SANDBOX_PREFIX.replace('_', "\\_"))) {
-        let own = format!("{SANDBOX_PREFIX}{}_", std::process::id());
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
         for r in rows {
             if let Some(Some(name)) = r.first()
-                && !name.starts_with(&own)
+                && stale_sandbox(name, now)
             {
                 let _ = server.exec(&format!("DROP DATABASE IF EXISTS {}", db::q(name)));
             }
@@ -1267,6 +1297,17 @@ mod tests {
     }
 
     #[test]
+    fn only_old_leftovers_are_cleaned_up() {
+        let now = started() + 10;
+        // Eigene und frische fremde Kopien bleiben, alte und solche im alten Namensformat gehen
+        assert!(!stale_sandbox(&Map::new().sandbox(1), now));
+        assert!(!stale_sandbox(&format!("{SANDBOX_PREFIX}999999999_{}_1_1", now - 60), now));
+        assert!(stale_sandbox(&format!("{SANDBOX_PREFIX}999999999_{}_1_1", now - 7200), now));
+        assert!(stale_sandbox(&format!("{SANDBOX_PREFIX}123_4_5"), now));
+        assert!(!stale_sandbox("andere_db", now));
+    }
+
+    #[test]
     fn scripts_that_drop_their_database_first_need_no_copy() {
         assert!(dropped_first("DROP DATABASE IF EXISTS schule;\nCREATE DATABASE schule;", "schule"));
         assert!(!dropped_first("USE schule;\nDROP DATABASE schule;", "schule"));
@@ -1347,6 +1388,34 @@ mod heal_tests {
         assert_eq!(r.end, End::Clean, "{:?}", r.end);
         assert!(r.text.starts_with("SELECT name FROM klasse"), "{}", r.text);
         assert!(!adds_destruction(rest, &r.text));
+    }
+}
+
+/// Echter Server: ohne gewaehlte Datenbank findet der Auto-Fix die Datenbank mit den benutzten Tabellen
+/// EASYMYSQL_AUTOFIX_TEST_PORT=3407 cargo test probe_picks -- --ignored --nocapture
+#[cfg(test)]
+mod pick_tests {
+    use super::*;
+
+    #[test]
+    #[ignore]
+    fn probe_picks_the_database_with_the_tables() {
+        let port = std::env::var("EASYMYSQL_AUTOFIX_TEST_PORT").unwrap().parse().unwrap();
+        let info = crate::db::ConnInfo { port, ..Default::default() };
+        let dbc = crate::db::Db::connect(&info).unwrap();
+        let name = format!("pick_test_{}", std::process::id());
+        let table = format!("nur_hier_{}", std::process::id());
+        dbc.exec(&format!("CREATE DATABASE {name}"), ()).unwrap();
+        dbc.exec_in(&name, &format!("CREATE TABLE {table} (id INT PRIMARY KEY, name VARCHAR(10)); INSERT INTO {table} VALUES (1, 'a')")).unwrap();
+        let script = format!("SELECT name FROM {table};");
+        let setup = Setup { database: None, databases: dbc.databases().unwrap(), file_stem: None };
+        let mut live = Live { conn: dbc.new_conn().unwrap(), db: crate::db::Db::connect(&info).unwrap() };
+        let r = repair(&script, &setup, Some(&mut live), &|s| eprintln!("{s}"), &AtomicBool::new(false), None);
+        eprintln!("{}\n{:#?}", r.text, r.changes);
+        let _ = dbc.exec(&format!("DROP DATABASE IF EXISTS {}", db::q(&name)), ());
+        assert_eq!(r.end, End::Clean);
+        assert!(r.text.starts_with(&format!("USE {name};")), "{}", r.text);
+        assert!(r.changes.iter().all(|c| !c.check));
     }
 }
 
@@ -1447,6 +1516,8 @@ mod corpus_tests {
         ("Eltern vor Kind geloescht", "DROP TABLE IF EXISTS klasse;\nDROP TABLE IF EXISTS schueler;\nCREATE TABLE klasse (id INT PRIMARY KEY AUTO_INCREMENT, name VARCHAR(10));\nCREATE TABLE schueler (id INT PRIMARY KEY AUTO_INCREMENT, klasse_id INT, FOREIGN KEY (klasse_id) REFERENCES klasse(id));"),
         ("Sicht gibt es schon", "CREATE VIEW v_schueler AS SELECT name FROM schueler;\nCREATE VIEW v_schueler AS SELECT name, geburt FROM schueler;"),
         ("Index gibt es schon", "CREATE INDEX ix_name ON schueler (name);\nCREATE INDEX ix_name ON schueler (name);"),
+        ("Unterabfrage ohne Alias", "SELECT AVG(n) FROM (SELECT klasse_id, COUNT(*) AS n FROM schueler GROUP BY klasse_id);"),
+        ("UNION ungleich", "SELECT name, geburt FROM schueler UNION SELECT name FROM klasse;"),
         ("Tabelle nur aus Werten", "INSERT INTO tier VALUES (1, 'Bello', '2020-05-01');\nSELECT * FROM tier;"),
     ];
 

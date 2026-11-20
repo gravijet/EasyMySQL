@@ -320,6 +320,24 @@ pub fn for_error(err: &str, sql: &str, schema: Option<&Schema>) -> Vec<ErrorFix>
                 out.push(f);
             }
         }
+        // Abgeleitete Tabelle ohne Namen
+        Some(1248) => {
+            if let Some(f) = alias_derived(&chars, &toks) {
+                out.push(f);
+            }
+        }
+        // Nicht gruppierte Spalte neben einer Zusammenfassung (MySQL mit ONLY_FULL_GROUP_BY)
+        Some(1055 | 1140) => {
+            if let Some(f) = group_by_fix(&chars, &toks) {
+                out.push(f);
+            }
+        }
+        // UNION mit unterschiedlich vielen Spalten: die kuerzeren mit NULL auffuellen
+        Some(1222) => {
+            if let Some(f) = union_pad(&chars, &toks) {
+                out.push(f);
+            }
+        }
         // Fremdschluessel nicht moeglich: Datentyp an die Zielspalte anpassen
         Some(1005 | 1215 | 150) => {
             if let Some(s) = schema
@@ -373,6 +391,10 @@ pub fn syntax_guesses(err: &str, sql: &str) -> Vec<ErrorFix> {
     let toks = lex(&chars).toks;
     let mut out: Vec<ErrorFix> = Vec::new();
     let tr = crate::i18n::tr;
+    // MariaDB meldet eine abgeleitete Tabelle ohne Alias als Syntaxfehler am Ende
+    if let Some(f) = alias_derived(&chars, &toks) {
+        out.push(f);
+    }
     // Leerzeichen zwischen Funktion und Klammer (ueberall in der Anweisung)
     let spaced: Vec<(usize, usize, String)> = toks
         .windows(2)
@@ -720,6 +742,176 @@ fn wrap_self_subqueries(chars: &[char], toks: &[Tok], target: &str) -> Option<Er
     Some(fix(crate::i18n::tr("Unterabfrage zuerst auswerten (abgeleitete Tabelle)", "Evaluate the subquery first (derived table)").into(), edit(chars, edits)))
 }
 
+/// Abgeleitete Tabellen ohne Alias: FROM (SELECT …) -> FROM (SELECT …) AS t1
+fn alias_derived(chars: &[char], toks: &[Tok]) -> Option<ErrorFix> {
+    let mut edits = Vec::new();
+    let mut n = 0;
+    for k in 1..toks.len() {
+        let after_from = toks[k - 1].is_word("FROM") || toks[k - 1].is_word("JOIN") || toks[k - 1].kind == Kind::Comma;
+        if toks[k].kind != Kind::Open || !after_from || !toks.get(k + 1).is_some_and(|t| t.is_word("SELECT")) {
+            continue;
+        }
+        let end = group_end(toks, k)?;
+        let named = toks.get(end + 1).is_some_and(|t| t.is_word("AS") || (t.is_name() && !super::lint::known_word(&t.upper())));
+        if !named {
+            n += 1;
+            edits.push((toks[end].end, toks[end].end, format!(" AS t{n}")));
+        }
+    }
+    if edits.is_empty() {
+        return None;
+    }
+    Some(fix(crate::i18n::tr("Unterabfrage benennen (AS t1)", "Name the subquery (AS t1)").into(), edit(chars, edits)))
+}
+
+/// Bereich der SELECT-Liste ab `from_k`: (Index von SELECT, Ende der Liste, Eintraege)
+type SelectList = (usize, usize, Vec<(usize, usize)>);
+
+fn select_list(toks: &[Tok], from_k: usize, to: usize) -> Option<SelectList> {
+    let s = (from_k..to).find(|&k| toks[k].is_word("SELECT"))?;
+    let mut depth = 0i32;
+    let mut end = to;
+    for (k, t) in toks.iter().enumerate().take(to).skip(s + 1) {
+        match t.kind {
+            Kind::Open => depth += 1,
+            Kind::Close => depth -= 1,
+            _ if depth == 0 && (t.is_word("FROM") || t.is_word("UNION") || t.is_word("EXCEPT") || t.is_word("INTERSECT") || t.kind == Kind::Semi) => {
+                end = k;
+                break;
+            }
+            _ => {}
+        }
+    }
+    let mut a = s + 1;
+    while toks.get(a).is_some_and(|t| t.is_word("DISTINCT") || t.is_word("ALL") || t.is_word("DISTINCTROW")) {
+        a += 1;
+    }
+    let mut out = Vec::new();
+    let mut depth = 0i32;
+    let mut start = a;
+    for (k, t) in toks.iter().enumerate().take(end).skip(a) {
+        match t.kind {
+            Kind::Open => depth += 1,
+            Kind::Close => depth -= 1,
+            Kind::Comma if depth == 0 => {
+                out.push((start, k));
+                start = k + 1;
+            }
+            _ => {}
+        }
+    }
+    if start < end {
+        out.push((start, end));
+    }
+    Some((s, end, out))
+}
+
+/// Nicht zusammengefasste Spalten der SELECT-Liste ins GROUP BY aufnehmen (bzw. GROUP BY anlegen)
+fn group_by_fix(chars: &[char], toks: &[Tok]) -> Option<ErrorFix> {
+    const AGG: [&str; 9] = ["COUNT", "SUM", "AVG", "MIN", "MAX", "GROUP_CONCAT", "STD", "STDDEV", "VARIANCE"];
+    let (_, from, list) = select_list(toks, 0, toks.len())?;
+    let text = |a: usize, b: usize| chars[toks[a].start..toks[b - 1].end].iter().collect::<String>();
+    let norm = |x: &str| x.chars().filter(|c| !c.is_whitespace() && *c != '`').collect::<String>().to_lowercase();
+    let mut wanted: Vec<String> = Vec::new();
+    for (a, b) in list {
+        let item = &toks[a..b];
+        if item.windows(2).any(|w| w[1].kind == Kind::Open && AGG.iter().any(|g| w[0].is_word(g))) {
+            continue;
+        }
+        if item.iter().all(|t| matches!(t.kind, Kind::Str | Kind::Num) || t.kind == Kind::Op) {
+            continue;
+        }
+        // Ausdruck ohne Alias (AS x bzw. nachgestellter Name)
+        let mut e = b;
+        if let Some(p) = (a..b).rev().find(|&k| toks[k].is_word("AS")) {
+            e = p;
+        } else if b - a >= 2 && toks[b - 1].is_name() && !toks[b - 2].is_word("AS") && toks[b - 2].kind != Kind::Dot && toks[b - 2].kind != Kind::Op {
+            e = b - 1;
+        }
+        if e > a {
+            wanted.push(text(a, e));
+        }
+    }
+    // Vorhandenes GROUP BY und wo die Liste endet
+    let mut depth = 0i32;
+    let mut group: Option<usize> = None;
+    let mut tail: Option<usize> = None;
+    for k in from..toks.len() {
+        match toks[k].kind {
+            Kind::Open => depth += 1,
+            Kind::Close => depth -= 1,
+            _ if depth == 0 && toks[k].is_word("GROUP") && toks.get(k + 1).is_some_and(|t| t.is_word("BY")) => group = Some(k + 2),
+            _ if depth == 0 && (["HAVING", "ORDER", "LIMIT", "WINDOW", "UNION"].iter().any(|w| toks[k].is_word(w)) || toks[k].kind == Kind::Semi) => {
+                tail = Some(k);
+                break;
+            }
+            _ => {}
+        }
+    }
+    let tail = tail.unwrap_or(toks.len());
+    let have: Vec<String> = match group {
+        Some(g) => {
+            let mut v = Vec::new();
+            let mut st = g;
+            for (k, t) in toks.iter().enumerate().take(tail).skip(g) {
+                if t.kind == Kind::Comma {
+                    if st < k {
+                        v.push(norm(&text(st, k)));
+                    }
+                    st = k + 1;
+                }
+            }
+            if st < tail {
+                v.push(norm(&text(st, tail)));
+            }
+            v
+        }
+        None => Vec::new(),
+    };
+    let missing: Vec<String> = wanted.into_iter().filter(|w| !have.contains(&norm(w))).collect();
+    if missing.is_empty() {
+        return None;
+    }
+    let at = toks[tail - 1].end;
+    let ins = if group.is_some() { format!(", {}", missing.join(", ")) } else { format!(" GROUP BY {}", missing.join(", ")) };
+    Some(fix(crate::tr_format!("Nach {} gruppieren", "Group by {}", missing.join(", ")), edit(chars, vec![(at, at, ins)])))
+}
+
+/// UNION/EXCEPT/INTERSECT: kuerzere SELECT-Listen mit NULL auf dieselbe Spaltenzahl bringen
+fn union_pad(chars: &[char], toks: &[Tok]) -> Option<ErrorFix> {
+    let mut parts: Vec<(usize, usize)> = Vec::new();
+    let mut depth = 0i32;
+    let mut st = 0;
+    for (k, t) in toks.iter().enumerate() {
+        match t.kind {
+            Kind::Open => depth += 1,
+            Kind::Close => depth -= 1,
+            _ if depth == 0 && (t.is_word("UNION") || t.is_word("EXCEPT") || t.is_word("INTERSECT")) => {
+                parts.push((st, k));
+                st = k + 1;
+            }
+            _ => {}
+        }
+    }
+    parts.push((st, toks.len()));
+    if parts.len() < 2 {
+        return None;
+    }
+    let lists: Vec<(usize, usize, usize)> = parts.iter().filter_map(|&(a, b)| select_list(toks, a, b).map(|(_, end, l)| (end, l.len(), l.last().map_or(0, |x| x.1)))).collect();
+    let max = lists.iter().map(|l| l.1).max()?;
+    let mut edits = Vec::new();
+    for (_, n, last) in &lists {
+        if *n < max && *last > 0 {
+            let at = toks[last - 1].end;
+            edits.push((at, at, ", NULL".repeat(max - n)));
+        }
+    }
+    if edits.is_empty() {
+        return None;
+    }
+    Some(fix(crate::i18n::tr("Fehlende Spalten mit NULL auffüllen", "Fill the missing columns with NULL").into(), edit(chars, edits)))
+}
+
 /// Typ einer Spalte ohne Anzeigebreite: "int(11) unsigned" -> "INT UNSIGNED"
 pub(super) fn norm_type(t: &str) -> String {
     let t = t.to_ascii_uppercase();
@@ -835,6 +1027,20 @@ mod tests {
         assert_eq!(first("ERROR 1051 (42S02): Unknown table 'person.x'", "DROP TABLE x"), "DROP TABLE IF EXISTS x");
         assert_eq!(first("ERROR 1091 (42000): Can't DROP COLUMN `a`; check that it exists", "ALTER TABLE t DROP COLUMN a"), "ALTER TABLE t DROP COLUMN IF EXISTS a");
         assert_eq!(first("ERROR 1060 (42S21): Duplicate column name 'a'", "ALTER TABLE t ADD a INT"), "ALTER TABLE t ADD IF NOT EXISTS a INT");
+    }
+
+    #[test]
+    fn grouping_aliases_and_unions() {
+        assert_eq!(first("ERROR 1248 (42000): Every derived table must have its own alias", "SELECT * FROM (SELECT id FROM t)"), "SELECT * FROM (SELECT id FROM t) AS t1");
+        assert_eq!(
+            first("ERROR 1140 (42000): In aggregated query without GROUP BY, expression #1 of SELECT list contains nonaggregated column 'db.t.klasse'", "SELECT klasse, COUNT(*) AS n FROM t ORDER BY n"),
+            "SELECT klasse, COUNT(*) AS n FROM t GROUP BY klasse ORDER BY n"
+        );
+        assert_eq!(
+            first("ERROR 1055 (42000): Expression #2 of SELECT list is not in GROUP BY clause", "SELECT k.name, s.ort AS o, COUNT(*) FROM t s JOIN k ON 1 GROUP BY k.name;"),
+            "SELECT k.name, s.ort AS o, COUNT(*) FROM t s JOIN k ON 1 GROUP BY k.name, s.ort;"
+        );
+        assert_eq!(first("ERROR 1222 (21000): The used SELECT statements have a different number of columns", "SELECT a, b FROM x UNION SELECT c FROM y"), "SELECT a, b FROM x UNION SELECT c, NULL FROM y");
     }
 
     #[test]

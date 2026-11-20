@@ -149,6 +149,42 @@ pub(super) fn datenbank(text: &str, f: &Fail, setup: &Setup) -> Vec<Cand> {
     out
 }
 
+/// Keine Datenbank gewaehlt (1046): gibt es alle benutzten Tabellen in genau einer Datenbank, dort arbeiten
+pub(super) fn datenbank_waehlen(text: &str, f: &Fail, server: &mut dyn Server) -> Option<Cand> {
+    let angelegt: Vec<String> = created_tables(text).iter().map(|t| t.to_ascii_lowercase()).collect();
+    let mut namen: Vec<String> = crate::sqledit::nutzung(text, &|_| None)
+        .into_iter()
+        .filter(|n| n.datenbank.is_none())
+        .map(|n| n.tabelle.to_ascii_lowercase())
+        .filter(|t| !angelegt.contains(t))
+        .collect();
+    namen.dedup();
+    if namen.is_empty() || namen.len() > 30 {
+        return None;
+    }
+    let liste: Vec<String> = namen.iter().map(|n| str_lit(n)).collect();
+    let rows = server
+        .rows(&format!(
+            "SELECT TABLE_SCHEMA FROM information_schema.TABLES WHERE LOWER(TABLE_NAME) IN ({}) GROUP BY TABLE_SCHEMA HAVING COUNT(DISTINCT LOWER(TABLE_NAME)) = {}",
+            liste.join(", "),
+            namen.len()
+        ))
+        .ok()?;
+    let treffer: Vec<String> = rows.into_iter().filter_map(|r| r.into_iter().next().flatten()).filter(|d| !is_system(d) && !d.starts_with(SANDBOX_PREFIX)).collect();
+    let [d] = treffer.as_slice() else { return None };
+    let schreibt = db::split_statements(text).iter().any(|s| {
+        let k = head(&s.sql).0;
+        !(k == "SELECT" || k == "WITH" || k == "SHOW" || k == "SET")
+    });
+    let sql = format!("USE {};\n", quote_if_needed(d));
+    Some(cand(
+        insert_before(text, &f.stmt, &sql),
+        crate::tr_format!("In der Datenbank „{d}“ arbeiten – dort gibt es alle benutzten Tabellen", "Work in the database “{d}” – all tables used are there"),
+        schreibt,
+        &sql,
+    ))
+}
+
 // ---------------------------------------------------------------------------
 // Werte im Skript
 

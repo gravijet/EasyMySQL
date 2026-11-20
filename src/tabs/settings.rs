@@ -1294,18 +1294,6 @@ fn editor_settings(ui: &mut egui::Ui, s: &mut crate::settings::Settings) {
             }
         });
     });
-    crate::widgets::row(ui, crate::i18n::tr("Prüfen nach", "Check after"), |ui| {
-        ui.horizontal(|ui| {
-            crate::widgets::drag(ui, &mut e.lint_delay_ms, 0..=5000, " ms");
-            ui.label(RichText::new(crate::i18n::tr("Pause beim Tippen", "pause in typing")).small().color(style::pal().text_weak));
-        });
-    });
-    crate::widgets::row(ui, crate::i18n::tr("Speichern nach", "Save after"), |ui| {
-        ui.horizontal(|ui| {
-            crate::widgets::drag(ui, &mut s.autosave_ms, 200..=60_000, " ms");
-            ui.label(RichText::new(crate::i18n::tr("ohne Tippen (wenn automatisches Speichern an ist)", "without typing (when auto-save is on)")).small().color(style::pal().text_weak));
-        });
-    });
 }
 
 /// Version des eigenen MariaDB-Servers, Suche nach Updates und Update ohne Administratorrechte
@@ -1549,12 +1537,6 @@ fn lsp_settings(ui: &mut egui::Ui, ctx: &egui::Context, s: &mut crate::settings:
     }
     crate::widgets::row(ui, crate::i18n::tr("Speicher für Java", "Memory for Java"), |ui| {
         crate::widgets::drag(ui, &mut d.lsp_java_memory_mb, 256..=16384, " MB");
-    });
-    crate::widgets::row(ui, crate::i18n::tr("Prüfen nach", "Check after"), |ui| {
-        ui.horizontal(|ui| {
-            crate::widgets::drag(ui, &mut d.lsp_delay_ms, 50..=5000, " ms");
-            ui.label(RichText::new(crate::i18n::tr("Pause beim Tippen", "pause in typing")).small().color(pal.text_weak));
-        });
     });
     let running = lsp::running();
     crate::widgets::row(ui, crate::i18n::tr("Laufend", "Running"), |ui| {

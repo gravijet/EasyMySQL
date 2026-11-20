@@ -532,7 +532,7 @@ impl TabView for ErTab {
                 self.schema_changed(&self.db.clone(), cx);
             }
             ui.separator();
-            if ui.button(crate::i18n::text("Anordnen")).clicked() {
+            if crate::icons::text_button(ui, crate::icons::Icon::Diagram, crate::i18n::text("Anordnen")).clicked() {
                 self.auto_layout();
                 self.fit_pending = true;
                 self.save_layout();
@@ -543,7 +543,9 @@ impl TabView for ErTab {
             }
             ui.separator();
             let before = (self.notation, self.collapse_nm, self.rel_labels);
-            ui.menu_button(crate::i18n::text("Ansicht"), |ui| {
+            let ansicht = crate::icons::text_button(ui, crate::icons::Icon::Settings, crate::i18n::text("Ansicht"));
+            egui::Popup::menu(&ansicht).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
+                crate::style::menu_item_look(ui);
                 ui.label(RichText::new("Notation").small().color(style::pal().text_weak));
                 for n in Notation::ALL {
                     ui.radio_value(&mut self.notation, n, n.label());
@@ -564,7 +566,9 @@ impl TabView for ErTab {
                 }
                 self.save_view();
             }
-            ui.menu_button("Export", |ui| {
+            let export = crate::icons::text_button(ui, crate::icons::Icon::Download, "Export");
+            egui::Popup::menu(&export).show(|ui| {
+                crate::style::menu_item_look(ui);
                 if ui.button(crate::i18n::text("Als SVG speichern …")).clicked() {
                     ui.close();
                     if let Some(p) = rfd::FileDialog::new().add_filter(crate::i18n::text("SVG-Grafik"), &["svg"]).set_file_name(format!("{}-er-diagramm.svg", self.db)).save_file()
@@ -583,7 +587,7 @@ impl TabView for ErTab {
                 }
             });
             ui.separator();
-            if ui.button(format!("{:.0}\u{a0}%", self.zoom * 100.0)).clicked() {
+            if ui.button(format!("{:.0}\u{a0}%", self.zoom * 100.0)).on_hover_text(crate::i18n::tr("Ganzes Diagramm zeigen", "Fit the whole diagram")).clicked() {
                 self.fit_pending = true;
             }
         });
