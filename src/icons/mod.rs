@@ -304,7 +304,7 @@ pub fn file_glyph(name: &str) -> FileGlyph {
         "md" | "markdown" => Sym(Icon::FileText, Color32::from_rgb(0x51, 0x9A, 0xBA)),
         "txt" | "log" => Sym(Icon::FileText, Color32::from_rgb(0x8A, 0x93, 0x9E)),
         "csv" | "tsv" | "xlsx" | "xls" | "ods" => Sym(Icon::FileSheet, Color32::from_rgb(0x4C, 0xAF, 0x50)),
-        "json" | "jsonc" => Sym(Icon::Braces, Color32::from_rgb(0xD6, 0xB8, 0x4E)),
+        "json" | "jsonc" => Sym(Icon::Braces, style::pal().orange),
         "xml" | "yml" | "yaml" => Sym(Icon::Code, Color32::from_rgb(0xC0, 0x8F, 0x4E)),
         "png" | "jpg" | "jpeg" | "jfif" | "gif" | "bmp" | "webp" | "ico" | "svg" => Sym(Icon::FileImage, Color32::from_rgb(0xA0, 0x7C, 0xD6)),
         "pdf" => Badge("P", Color32::from_rgb(0xD9, 0x4B, 0x43), white),
@@ -322,14 +322,15 @@ pub fn paint_file(p: &egui::Painter, r: Rect, name: &str) {
     }
 }
 
-/// Farbe eines Ordners: Quellen blau, Tests gruen, Ressourcen gelb (wie in IntelliJ IDEA), sonst neutral
+/// Farbe eines Ordners aus der Palette: Quellen blau, Tests gruen, Ressourcen orange, Ausgaben grau, sonst petrol
 pub fn folder_color(name: &str) -> Color32 {
+    let p = style::pal();
     match name {
-        "src" | "java" | "main" => Color32::from_rgb(0x5C, 0x9D, 0xE8),
-        "test" | "tests" | "__tests__" | "spec" => Color32::from_rgb(0x5F, 0xB8, 0x65),
-        "resources" | "assets" | "static" | "public" => Color32::from_rgb(0xD6, 0xB8, 0x4E),
-        "lib" | "libs" | "target" | "build" | "bin" | "out" | "dist" => Color32::from_rgb(0xA0, 0x8A, 0x70),
-        _ => Color32::from_rgb(0xDC, 0xB6, 0x7A),
+        "src" | "java" | "main" => p.blue,
+        "test" | "tests" | "__tests__" | "spec" => p.green,
+        "resources" | "assets" | "static" | "public" => p.orange,
+        "lib" | "libs" | "target" | "build" | "bin" | "out" | "dist" => p.text_weak,
+        _ => p.teal,
     }
 }
 

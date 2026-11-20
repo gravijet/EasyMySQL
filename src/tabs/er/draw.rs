@@ -308,9 +308,9 @@ impl ErTab {
                     let is_fk = raw.is_fk_column(&t.name, &c.name);
                     let x0 = r.left() + 8.0 * z;
                     if c.is_pk() {
-                        clip.text(pos2(x0, y), Align2::LEFT_CENTER, "PK", small.clone(), PK_COLOR);
+                        clip.text(pos2(x0, y), Align2::LEFT_CENTER, "PK", small.clone(), pal.orange);
                     } else if is_fk {
-                        clip.text(pos2(x0, y), Align2::LEFT_CENTER, "FK", small.clone(), FK_COLOR);
+                        clip.text(pos2(x0, y), Align2::LEFT_CENTER, "FK", small.clone(), pal.blue);
                     }
                     let mut label = c.name.clone();
                     if !c.nullable && !c.is_pk() {

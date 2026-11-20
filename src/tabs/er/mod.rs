@@ -40,8 +40,6 @@ fn qsize(size: f32) -> f32 {
 }
 
 const LINE_HI: Color32 = Color32::from_rgb(0xE0, 0x6C, 0x00);
-const PK_COLOR: Color32 = Color32::from_rgb(0xB0, 0x80, 0x00);
-const FK_COLOR: Color32 = Color32::from_rgb(0x20, 0x60, 0xC0);
 
 #[derive(Clone, PartialEq)]
 enum Drag {

@@ -884,9 +884,9 @@ impl EasyApp {
                                         ui.horizontal(|ui| {
                                             let (r, _) = ui.allocate_exact_size(vec2(14.0, 14.0), Sense::hover());
                                             if c.is_pk() {
-                                                icons::paint(ui.painter(), r, Icon::Key, Color32::from_rgb(0xD9, 0xA4, 0x1E));
+                                                icons::paint(ui.painter(), r, Icon::Key, pal.orange);
                                             } else if schema.is_fk_column(&t.name, &c.name) {
-                                                icons::paint(ui.painter(), r, Icon::Link, Color32::from_rgb(0x4F, 0x8F, 0xE0));
+                                                icons::paint(ui.painter(), r, Icon::Link, pal.blue);
                                             }
                                             ui.label(RichText::new(&c.name).small());
                                             ui.label(RichText::new(&c.col_type).small().color(pal.text_weak));
