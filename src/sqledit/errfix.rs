@@ -292,6 +292,28 @@ pub fn for_error(err: &str, sql: &str, schema: Option<&Schema>) -> Vec<ErrorFix>
                 out.push(fix(label.into(), edit(&chars, vec![(at, at, word.into())])));
             }
         }
+        // AUTO_INCREMENT auf einer Spalte, die keine ganze Zahl ist (VARCHAR, DECIMAL …): INT verwenden
+        Some(1063) => {
+            if let Some(col) = quoted_after(err, "column '")
+                && let Some((a, b)) = column_type_range(&toks, col)
+            {
+                out.push(fix(crate::tr_format!("{} als ganze Zahl (INT) anlegen", "Create {} as a whole number (INT)", col), edit(&chars, vec![(a, b, "INT".into())])));
+            }
+        }
+        // Ungueltiger Standardwert (bzw. Standardwert bei TEXT/BLOB in MySQL): den Standardwert weglassen
+        Some(1067 | 1101) => {
+            if let Some(col) = quoted_after(err, "for '").or_else(|| quoted_after(err, "column '"))
+                && let Some((a, b)) = default_range(&toks, col)
+            {
+                out.push(fix(crate::tr_format!("Standardwert von {} weglassen", "Drop the default value of {}", col), edit(&chars, vec![(a, b, String::new())]).replace("  ", " ")));
+            }
+        }
+        // Unterabfrage mit mehreren Spalten, wo eine erwartet wird (IN, =): nur die erste Spalte behalten
+        Some(1241) => {
+            if let Some(f) = first_column_only(&chars, &toks) {
+                out.push(f);
+            }
+        }
         // Zwei Primaerschluessel: zu einem gemeinsamen zusammenfassen
         Some(1068) => {
             if let Some(f) = one_primary_key(&chars, &toks) {
@@ -574,6 +596,80 @@ pub fn vorher_angelegt(before: &str, err: &str) -> Option<usize> {
         !namen.is_empty() && namen.iter().all(|n| n.eq_ignore_ascii_case(name))
     };
     stmts[k + 1..].iter().all(|st| harmlos(&st.sql) || nur_diese(&st.sql)).then_some(stmts[k].start)
+}
+
+/// Zeichenbereich des Datentyps einer Spalte in CREATE/ALTER ("name VARCHAR(20) ..." -> "VARCHAR(20)")
+fn column_type_range(toks: &[Tok], col: &str) -> Option<(usize, usize)> {
+    let k = (0..toks.len()).find(|&k| {
+        toks[k].is_name()
+            && toks[k].text.eq_ignore_ascii_case(col)
+            && toks.get(k + 1).is_some_and(|t| t.kind == Kind::Word)
+            && k.checked_sub(1).is_none_or(|p| matches!(toks[p].kind, Kind::Open | Kind::Comma) || toks[p].is_word("COLUMN") || toks[p].is_word("ADD") || toks[p].is_word("MODIFY"))
+    })?;
+    let ty = k + 1;
+    let mut end = toks[ty].end;
+    if toks.get(ty + 1).is_some_and(|t| t.kind == Kind::Open) {
+        let close = (ty + 2..toks.len()).find(|&i| toks[i].kind == Kind::Close)?;
+        end = toks[close].end;
+    }
+    Some((toks[ty].start, end))
+}
+
+/// Bereich "DEFAULT wert" in der Spaltendefinition von `col` (mit Leerraum davor)
+fn default_range(toks: &[Tok], col: &str) -> Option<(usize, usize)> {
+    let (_, type_end) = column_type_range(toks, col)?;
+    let start = toks.iter().position(|t| t.start >= type_end)?;
+    let mut tiefe = 0;
+    for k in start..toks.len() {
+        match toks[k].kind {
+            Kind::Open => tiefe += 1,
+            Kind::Close if tiefe == 0 => return None,
+            Kind::Close => tiefe -= 1,
+            Kind::Comma if tiefe == 0 => return None,
+            _ => {}
+        }
+        if tiefe == 0 && toks[k].is_word("DEFAULT") {
+            let v = toks.get(k + 1)?;
+            let mut end = v.end;
+            if toks.get(k + 2).is_some_and(|t| t.kind == Kind::Open) {
+                let close = (k + 3..toks.len()).find(|&i| toks[i].kind == Kind::Close)?;
+                end = toks[close].end;
+            } else if v.kind == Kind::Op && toks.get(k + 2).is_some_and(|t| t.kind == Kind::Num) {
+                end = toks[k + 2].end;
+            }
+            let from = toks.get(k.checked_sub(1)?).map_or(toks[k].start, |p| p.end);
+            return Some((from, end));
+        }
+    }
+    None
+}
+
+/// "x IN (SELECT a, b FROM t)": nur die erste Spalte der Unterabfrage behalten
+fn first_column_only(chars: &[char], toks: &[Tok]) -> Option<ErrorFix> {
+    for k in 0..toks.len() {
+        if toks[k].kind != Kind::Open || !toks.get(k + 1).is_some_and(|t| t.is_word("SELECT")) {
+            continue;
+        }
+        let mut tiefe = 0;
+        let mut first_comma = None;
+        for i in k + 2..toks.len() {
+            match toks[i].kind {
+                Kind::Open => tiefe += 1,
+                Kind::Close => tiefe -= 1,
+                Kind::Comma if tiefe == 0 && first_comma.is_none() => first_comma = Some(i),
+                _ => {}
+            }
+            if tiefe == 0 && toks[i].is_word("FROM") {
+                let c = first_comma?;
+                let label = crate::i18n::tr("Unterabfrage liefert nur die erste Spalte", "Subquery returns only the first column").to_string();
+                return Some(fix(label, edit(chars, vec![(toks[c].start, toks[i].start, " ".into())])));
+            }
+            if tiefe < 0 {
+                break;
+            }
+        }
+    }
+    None
 }
 
 /// Tabellennamen nach FROM, JOIN, INTO, UPDATE, TABLE
@@ -1080,6 +1176,14 @@ mod tests {
             "SELECT k.name, s.ort AS o, COUNT(*) FROM t s JOIN k ON 1 GROUP BY k.name, s.ort;"
         );
         assert_eq!(first("ERROR 1222 (21000): The used SELECT statements have a different number of columns", "SELECT a, b FROM x UNION SELECT c FROM y"), "SELECT a, b FROM x UNION SELECT c, NULL FROM y");
+    }
+
+    #[test]
+    fn column_definitions() {
+        assert_eq!(first("ERROR 1063 (42000): Incorrect column specifier for column 'id'", "CREATE TABLE t (id VARCHAR(10) AUTO_INCREMENT PRIMARY KEY, n INT)"), "CREATE TABLE t (id INT AUTO_INCREMENT PRIMARY KEY, n INT)");
+        assert_eq!(first("ERROR 1067 (42000): Invalid default value for 'am'", "CREATE TABLE t (id INT, am DATETIME NOT NULL DEFAULT '0000-00-00 00:00:00', n INT)"), "CREATE TABLE t (id INT, am DATETIME NOT NULL, n INT)");
+        assert_eq!(first("ERROR 1067 (42000): Invalid default value for 'n'", "CREATE TABLE t (n INT DEFAULT 'abc')"), "CREATE TABLE t (n INT)");
+        assert_eq!(first("ERROR 1241 (21000): Operand should contain 1 column(s)", "SELECT * FROM k WHERE id IN (SELECT kid, name FROM b)"), "SELECT * FROM k WHERE id IN (SELECT kid FROM b)");
     }
 
     #[test]

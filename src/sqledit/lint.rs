@@ -476,6 +476,9 @@ fn check_statement(stmt: &[Tok], env: &Env, tables: &HashMap<String, &TableInfo>
             Some(Fix { start: first.start, end: first.start, text: "SELECT ".into() })
         } else if first.kind == Kind::Word && second.is_some_and(|t| t.kind == Kind::Op && t.text == "*") {
             Some(replace(first, "SELECT"))
+        } else if first.kind == Kind::Word && first.text.chars().count() <= 6 && second.is_some_and(Tok::is_name) && stmt.get(2).is_some_and(|t| t.kind == Kind::Comma || t.kind == Kind::Dot || t.is_word("FROM")) {
+            // Rest eines Befehls vor der ersten Spalte ("T name FROM t")
+            Some(replace(first, "SELECT"))
         } else if first.is_name() && second.is_some_and(|t| t.kind == Kind::Comma || t.is_word("FROM")) {
             Some(Fix { start: first.start, end: first.start, text: "SELECT ".into() })
         } else {
@@ -1088,6 +1091,7 @@ mod tests {
         assert_eq!(fixed("SELECT * FROM schueler ORDR BY id"), "SELECT * FROM schueler ORDER BY id");
         assert_eq!(fixed("T * FROM schueler WHERE id = 1"), "SELECT * FROM schueler WHERE id = 1");
         assert_eq!(fixed("* FROM schueler"), "SELECT * FROM schueler");
+        assert_eq!(fixed("T name FROM schueler"), "SELECT name FROM schueler");
         assert_eq!(fixed("vorname, nachname FROM schueler"), "SELECT vorname, nachname FROM schueler");
     }
 

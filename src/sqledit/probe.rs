@@ -1545,6 +1545,11 @@ mod corpus_tests {
         ("Unterabfrage ohne Alias", "SELECT AVG(n) FROM (SELECT klasse_id, COUNT(*) AS n FROM schueler GROUP BY klasse_id);"),
         ("UNION ungleich", "SELECT name, geburt FROM schueler UNION SELECT name FROM klasse;"),
         ("Tabelle nur aus Werten", "INSERT INTO tier VALUES (1, 'Bello', '2020-05-01');\nSELECT * FROM tier;"),
+        ("AUTO_INCREMENT auf Text", "CREATE TABLE raum (id VARCHAR(10) AUTO_INCREMENT PRIMARY KEY, name VARCHAR(20));"),
+        ("Falscher Standardwert", "CREATE TABLE raum (id INT PRIMARY KEY, plaetze INT DEFAULT 'viele');"),
+        ("IN mit zwei Spalten", "SELECT * FROM klasse WHERE id IN (SELECT klasse_id, name FROM schueler);"),
+        ("SELECT fehlt", "* FROM schueler;"),
+        ("SELECT zerstueckelt", "T name FROM schueler WHERE klasse_id = 1;"),
     ];
 
     #[test]
