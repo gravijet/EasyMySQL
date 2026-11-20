@@ -1,4 +1,4 @@
-// Aussehen: dunkles (Standard, "Tafel") oder helles Design ("Heft"); flache Flaechen mit feinen Trennlinien.
+// Aussehen "Registratur": helles (Standard) oder dunkles Design; flache Flaechen mit feinen Trennlinien.
 
 use eframe::egui::{
     self, Color32, CornerRadius, FontData, FontDefinitions, FontFamily, FontId, Margin, Shadow,
@@ -22,6 +22,14 @@ pub struct Pal {
     pub accent: Color32,
     /// Schrift auf einer Flaeche in Akzentfarbe
     pub on_accent: Color32,
+    /// Hauptaktion (Ausfuehren, Anlegen): Reitergelb in beiden Designs
+    pub primary: Color32,
+    pub on_primary: Color32,
+    /// Titelleiste: Flaeche, Schrift, schwache Schrift, Flaeche unter der Maus
+    pub chrome: Color32,
+    pub chrome_text: Color32,
+    pub chrome_weak: Color32,
+    pub chrome_hover: Color32,
     pub null_text: Color32,
     pub error_text: Color32,
     pub warn_text: Color32,
@@ -35,7 +43,6 @@ pub struct Pal {
     pub lilac: Color32,
     pub teal: Color32,
     pub activity_fg: Color32,
-    pub activity_active: Color32,
     pub sidebar_bg: Color32,
     pub current_line: Color32,
     pub selection: Color32,
@@ -76,127 +83,186 @@ const fn rgb(r: u8, g: u8, b: u8) -> Color32 {
     Color32::from_rgb(r, g, b)
 }
 
-// Zwei Welten aus dem Ort, an dem SQL gelernt und benutzt wird:
-// dunkel = "Tafel" (Schiefer, Kreideweiss, farbige Kreiden), hell = "Heft" (Papier, Tinte, Textmarker).
+// "Registratur": die App als Aktenregistratur. Jede Datenbank ist ein Ordner mit eigener Rueckenfarbe,
+// Reiter stecken wie Haengeregister in der Farbe ihrer Datenbank, Ergebnisse werden gestempelt.
+// Hell (Standard): weisses Papier, graue Aktendeckel, reitergelbe Titelleiste. Dunkel: dieselbe Registratur bei Nacht.
 pub static DARK_PAL: Pal = Pal {
     dark: true,
-    face: rgb(0x0F, 0x15, 0x13),
-    bg: rgb(0x16, 0x1E, 0x1B),
-    face_light: rgb(0x1D, 0x26, 0x22),
-    text: rgb(0xE9, 0xEC, 0xE4),
-    text_weak: rgb(0x95, 0xA2, 0x9B),
-    border: rgb(0x26, 0x32, 0x2D),
-    // Gelbe Kreide: Hauptaktion, Fokus, aktive Markierung
-    accent: rgb(0xF2, 0xD1, 0x5C),
-    on_accent: rgb(0x1A, 0x17, 0x08),
-    null_text: rgb(0x6B, 0x79, 0x73),
-    error_text: rgb(0xF2, 0x8B, 0x7E),
-    warn_text: rgb(0xF0, 0xB0, 0x60),
-    ok_text: rgb(0x93, 0xD5, 0x8A),
-    blue: rgb(0x86, 0xBE, 0xEB),
-    green: rgb(0x93, 0xD5, 0x8A),
-    orange: rgb(0xF0, 0xB0, 0x60),
-    coral: rgb(0xF2, 0x8B, 0x7E),
-    pink: rgb(0xEE, 0x9A, 0xC4),
-    lilac: rgb(0xB7, 0xA6, 0xEE),
-    teal: rgb(0x6F, 0xD3, 0xC4),
-    activity_fg: rgb(0x7F, 0x8C, 0x86),
-    activity_active: rgb(0xF2, 0xF4, 0xEE),
-    sidebar_bg: rgb(0x12, 0x19, 0x17),
-    current_line: rgb(0x1B, 0x24, 0x20),
-    exec_bg: rgb(0x47, 0x40, 0x17),
-    exec_fg: rgb(0xF2, 0xD1, 0x5C),
-    breakpoint_fg: rgb(0xF0, 0x6A, 0x6A),
-    diff_add_bg: rgb(0x1C, 0x3A, 0x28),
-    diff_del_bg: rgb(0x45, 0x23, 0x1F),
-    selection: rgb(0x2A, 0x42, 0x56),
-    find_match: rgb(0x5C, 0x4E, 0x1C),
-    bracket: rgb(0x2E, 0x4A, 0x3A),
-    hover: rgb(0x23, 0x2E, 0x2A),
-    er_canvas: rgb(0x13, 0x1A, 0x17),
-    er_box: rgb(0x1C, 0x25, 0x21),
-    er_header: rgb(0x22, 0x37, 0x48),
-    er_view_header: rgb(0x25, 0x3E, 0x2E),
-    er_line: rgb(0x86, 0xBE, 0xEB),
-    er_line_dim: rgb(0x33, 0x42, 0x3C),
-    er_type: rgb(0x95, 0xA2, 0x9B),
-    syn_keyword: rgb(0x86, 0xBE, 0xEB),
-    syn_function: rgb(0xEE, 0x9A, 0xC4),
-    syn_string: rgb(0x9C, 0xD6, 0x8F),
-    syn_number: rgb(0xF0, 0xB0, 0x60),
-    syn_comment: rgb(0x74, 0x85, 0x7D),
-    syn_ident: rgb(0xD9, 0xE6, 0xDF),
-    syn_type: rgb(0xB7, 0xA6, 0xEE),
-    syn_const: rgb(0xF2, 0xD1, 0x5C),
-    syn_variable: rgb(0xF2, 0x8B, 0x7E),
-    syn_op: rgb(0x9A, 0xA7, 0xA0),
-    syn_text: rgb(0xE6, 0xE9, 0xE1),
-    syn_gutter: rgb(0x5A, 0x67, 0x61),
+    face: rgb(0x13, 0x15, 0x1A),
+    bg: rgb(0x19, 0x1C, 0x22),
+    face_light: rgb(0x20, 0x24, 0x2C),
+    text: rgb(0xEC, 0xEE, 0xF2),
+    text_weak: rgb(0x9C, 0xA3, 0xB0),
+    border: rgb(0x2B, 0x30, 0x3A),
+    accent: rgb(0x8E, 0xA4, 0xFF),
+    on_accent: rgb(0x0B, 0x12, 0x40),
+    primary: rgb(0xFF, 0xC6, 0x29),
+    on_primary: rgb(0x16, 0x13, 0x0A),
+    chrome: rgb(0x0F, 0x11, 0x15),
+    chrome_text: rgb(0xEC, 0xEE, 0xF2),
+    chrome_weak: rgb(0x9C, 0xA3, 0xB0),
+    chrome_hover: rgb(0x23, 0x27, 0x30),
+    null_text: rgb(0x6C, 0x73, 0x81),
+    error_text: rgb(0xFF, 0x8A, 0x8F),
+    warn_text: rgb(0xF4, 0xA5, 0x5A),
+    ok_text: rgb(0x7F, 0xD6, 0xA6),
+    blue: rgb(0x8E, 0xA4, 0xFF),
+    green: rgb(0x7F, 0xD6, 0xA6),
+    orange: rgb(0xF4, 0xA5, 0x5A),
+    coral: rgb(0xFF, 0x8A, 0x8F),
+    pink: rgb(0xF2, 0x8D, 0xBF),
+    lilac: rgb(0xB7, 0x9C, 0xFF),
+    teal: rgb(0x6F, 0xD0, 0xDC),
+    activity_fg: rgb(0x80, 0x87, 0x94),
+    sidebar_bg: rgb(0x16, 0x19, 0x1E),
+    current_line: rgb(0x1F, 0x23, 0x2B),
+    exec_bg: rgb(0x47, 0x3C, 0x12),
+    exec_fg: rgb(0xFF, 0xC6, 0x29),
+    breakpoint_fg: rgb(0xFF, 0x6B, 0x72),
+    diff_add_bg: rgb(0x17, 0x38, 0x2A),
+    diff_del_bg: rgb(0x47, 0x21, 0x25),
+    selection: rgb(0x2C, 0x3A, 0x6B),
+    find_match: rgb(0x5E, 0x4C, 0x14),
+    bracket: rgb(0x26, 0x44, 0x37),
+    hover: rgb(0x25, 0x29, 0x32),
+    er_canvas: rgb(0x15, 0x18, 0x1D),
+    er_box: rgb(0x1F, 0x23, 0x2B),
+    er_header: rgb(0x26, 0x31, 0x5C),
+    er_view_header: rgb(0x1D, 0x40, 0x33),
+    er_line: rgb(0x8E, 0xA4, 0xFF),
+    er_line_dim: rgb(0x34, 0x3A, 0x46),
+    er_type: rgb(0x9C, 0xA3, 0xB0),
+    syn_keyword: rgb(0x8E, 0xA4, 0xFF),
+    syn_function: rgb(0xF2, 0x8D, 0xBF),
+    syn_string: rgb(0x7F, 0xD6, 0xA6),
+    syn_number: rgb(0xF4, 0xA5, 0x5A),
+    syn_comment: rgb(0x70, 0x77, 0x85),
+    syn_ident: rgb(0xDC, 0xE0, 0xE8),
+    syn_type: rgb(0x6F, 0xD0, 0xDC),
+    syn_const: rgb(0xFF, 0xC6, 0x29),
+    syn_variable: rgb(0xFF, 0x8A, 0x8F),
+    syn_op: rgb(0x9C, 0xA3, 0xB0),
+    syn_text: rgb(0xE6, 0xE9, 0xEF),
+    syn_gutter: rgb(0x58, 0x5F, 0x6D),
 };
 
 pub static LIGHT_PAL: Pal = Pal {
     dark: false,
-    face: rgb(0xEE, 0xF2, 0xF0),
+    // Aktendeckel: kuehles Grau fuer Leisten, Papierweiss fuer den Inhalt
+    face: rgb(0xEB, 0xED, 0xF1),
     bg: rgb(0xFF, 0xFF, 0xFF),
-    face_light: rgb(0xF7, 0xF9, 0xF8),
-    text: rgb(0x18, 0x20, 0x1C),
-    text_weak: rgb(0x56, 0x62, 0x5C),
-    border: rgb(0xD9, 0xE0, 0xDC),
-    // Koenigsblaue Tinte
-    accent: rgb(0x23, 0x40, 0xB8),
+    face_light: rgb(0xF5, 0xF6, 0xF9),
+    text: rgb(0x14, 0x16, 0x1B),
+    text_weak: rgb(0x56, 0x5C, 0x68),
+    border: rgb(0xD6, 0xDA, 0xE2),
+    // Kobalt: Fokus, Auswahl, Verweise
+    accent: rgb(0x27, 0x47, 0xD6),
     on_accent: rgb(0xFF, 0xFF, 0xFF),
-    null_text: rgb(0x80, 0x8B, 0x85),
-    error_text: rgb(0xC2, 0x36, 0x2B),
-    warn_text: rgb(0x99, 0x58, 0x00),
-    ok_text: rgb(0x1D, 0x7A, 0x3A),
-    blue: rgb(0x1F, 0x5F, 0xC4),
-    green: rgb(0x1D, 0x7A, 0x3A),
-    orange: rgb(0xB0, 0x4A, 0x00),
-    coral: rgb(0xC2, 0x36, 0x2B),
-    pink: rgb(0xA3, 0x24, 0x7A),
-    lilac: rgb(0x5E, 0x45, 0xB5),
-    teal: rgb(0x0A, 0x74, 0x72),
-    activity_fg: rgb(0x6A, 0x75, 0x70),
-    activity_active: rgb(0x18, 0x20, 0x1C),
-    sidebar_bg: rgb(0xF5, 0xF7, 0xF6),
-    current_line: rgb(0xF4, 0xF7, 0xF5),
+    // Reitergelb: Hauptaktion und Titelleiste
+    primary: rgb(0xFF, 0xC6, 0x29),
+    on_primary: rgb(0x16, 0x13, 0x0A),
+    chrome: rgb(0xFF, 0xC6, 0x29),
+    chrome_text: rgb(0x16, 0x13, 0x0A),
+    chrome_weak: rgb(0x5C, 0x47, 0x00),
+    chrome_hover: rgb(0xF0, 0xB2, 0x00),
+    null_text: rgb(0x8A, 0x90, 0x9B),
+    error_text: rgb(0xC4, 0x1E, 0x33),
+    warn_text: rgb(0xA0, 0x52, 0x00),
+    ok_text: rgb(0x0B, 0x7A, 0x50),
+    blue: rgb(0x27, 0x47, 0xD6),
+    green: rgb(0x0F, 0x7F, 0x55),
+    orange: rgb(0xC2, 0x5A, 0x06),
+    coral: rgb(0xC9, 0x28, 0x3A),
+    pink: rgb(0xC2, 0x24, 0x6E),
+    lilac: rgb(0x63, 0x40, 0xCF),
+    teal: rgb(0x0A, 0x75, 0x84),
+    activity_fg: rgb(0x64, 0x6B, 0x78),
+    sidebar_bg: rgb(0xF5, 0xF6, 0xF9),
+    current_line: rgb(0xF4, 0xF6, 0xFC),
     exec_bg: rgb(0xFF, 0xF1, 0xB8),
-    exec_fg: rgb(0xA6, 0x74, 0x00),
-    breakpoint_fg: rgb(0xD3, 0x34, 0x3A),
-    diff_add_bg: rgb(0xE1, 0xF5, 0xE5),
-    diff_del_bg: rgb(0xFC, 0xE6, 0xE3),
-    selection: rgb(0xD5, 0xDE, 0xFA),
+    exec_fg: rgb(0x8B, 0x69, 0x00),
+    breakpoint_fg: rgb(0xD2, 0x28, 0x3C),
+    diff_add_bg: rgb(0xDD, 0xF6, 0xE8),
+    diff_del_bg: rgb(0xFF, 0xE4, 0xE2),
+    selection: rgb(0xDC, 0xE4, 0xFF),
     // Textmarker
     find_match: rgb(0xFF, 0xE5, 0x8A),
-    bracket: rgb(0xD3, 0xEE, 0xD9),
-    hover: rgb(0xE7, 0xEC, 0xE9),
-    er_canvas: rgb(0xF8, 0xFA, 0xF9),
+    bracket: rgb(0xD4, 0xF1, 0xE2),
+    hover: rgb(0xE2, 0xE5, 0xEC),
+    er_canvas: rgb(0xF7, 0xF8, 0xFA),
     er_box: rgb(0xFF, 0xFF, 0xFF),
-    er_header: rgb(0xDF, 0xE6, 0xFB),
-    er_view_header: rgb(0xDD, 0xF2, 0xE2),
-    er_line: rgb(0x23, 0x40, 0xB8),
-    er_line_dim: rgb(0xC6, 0xCF, 0xCA),
-    er_type: rgb(0x5E, 0x6A, 0x64),
-    syn_keyword: rgb(0x23, 0x40, 0xB8),
-    syn_function: rgb(0xA3, 0x24, 0x7A),
-    syn_string: rgb(0x1E, 0x7A, 0x3C),
-    syn_number: rgb(0xB0, 0x4A, 0x00),
-    syn_comment: rgb(0x6E, 0x79, 0x73),
-    syn_ident: rgb(0x18, 0x20, 0x1C),
-    syn_type: rgb(0x0A, 0x74, 0x72),
-    syn_const: rgb(0x8A, 0x5A, 0x00),
-    syn_variable: rgb(0xB3, 0x36, 0x1F),
-    syn_op: rgb(0x4D, 0x56, 0x52),
-    syn_text: rgb(0x18, 0x20, 0x1C),
-    syn_gutter: rgb(0x9C, 0xA6, 0xA1),
+    er_header: rgb(0xE3, 0xEA, 0xFF),
+    er_view_header: rgb(0xDD, 0xF6, 0xE8),
+    er_line: rgb(0x27, 0x47, 0xD6),
+    er_line_dim: rgb(0xC9, 0xCE, 0xD8),
+    er_type: rgb(0x5E, 0x64, 0x70),
+    syn_keyword: rgb(0x27, 0x47, 0xD6),
+    syn_function: rgb(0xC2, 0x24, 0x6E),
+    syn_string: rgb(0x0F, 0x7F, 0x55),
+    syn_number: rgb(0xC2, 0x5A, 0x06),
+    syn_comment: rgb(0x7A, 0x80, 0x8C),
+    syn_ident: rgb(0x14, 0x16, 0x1B),
+    syn_type: rgb(0x0A, 0x75, 0x84),
+    syn_const: rgb(0x8B, 0x69, 0x00),
+    syn_variable: rgb(0xC9, 0x28, 0x3A),
+    syn_op: rgb(0x4D, 0x53, 0x5E),
+    syn_text: rgb(0x14, 0x16, 0x1B),
+    syn_gutter: rgb(0xA0, 0xA6, 0xB1),
 };
+
+static DB_FARBEN: std::sync::Mutex<Vec<(String, usize)>> = std::sync::Mutex::new(Vec::new());
+
+fn db_hash(name: &str) -> usize {
+    name.bytes().fold(0x811c_9dc5u32, |h, b| (h ^ b as u32).wrapping_mul(0x0100_0193)) as usize
+}
+
+/// Farben fuer die bekannten Datenbanken verteilen: jede nimmt die Farbe ihres Namens, ist die schon
+/// vergeben, die naechste freie (solange es freie gibt). So haben wenige Datenbanken nie dieselbe Farbe.
+pub fn set_databases(names: &[String]) {
+    let mut sorted: Vec<&String> = names.iter().filter(|n| !crate::tabs::is_system_db(n)).collect();
+    sorted.sort();
+    let mut used = [false; DB_HUES];
+    let mut out = Vec::with_capacity(sorted.len());
+    for n in sorted {
+        let mut i = db_hash(n) % DB_HUES;
+        if used.iter().any(|u| !u) {
+            while used[i] {
+                i = (i + 1) % DB_HUES;
+            }
+        }
+        used[i] = true;
+        out.push((n.clone(), i));
+    }
+    if let Ok(mut m) = DB_FARBEN.lock() {
+        *m = out;
+    }
+}
+
+const DB_HUES: usize = 7;
+
+/// Rueckenfarbe einer Datenbank: bleibt je Name gleich; Systemdatenbanken sind grau.
+pub fn db_color(name: &str) -> Color32 {
+    let p = pal();
+    if name.is_empty() || crate::tabs::is_system_db(name) {
+        return p.text_weak;
+    }
+    let hues: [Color32; DB_HUES] = [p.blue, p.green, p.orange, p.pink, p.teal, p.lilac, p.exec_fg];
+    let known = DB_FARBEN.lock().ok().and_then(|m| m.iter().find(|(n, _)| n == name).map(|(_, i)| *i));
+    hues[known.unwrap_or(db_hash(name) % DB_HUES)]
+}
+
+/// Weiche Flaeche in einer Farbe (Hintergrund von Reitern, Kennzeichen, Kopfbaendern)
+pub fn soft(c: Color32) -> Color32 {
+    let p = pal();
+    p.bg.lerp_to_gamma(c, if p.dark { 0.22 } else { 0.13 })
+}
 
 /// Grundradius der Bedienelemente (Schaltflaechen, Eingabefelder, Listeneintraege)
 pub const RADIUS: u8 = 4;
 /// Radius der grossen Flaechen (Seitenleiste, Inhalt, Karten)
 pub const PANEL_RADIUS: u8 = 6;
 
-static DARK: AtomicBool = AtomicBool::new(true);
+static DARK: AtomicBool = AtomicBool::new(false);
 
 pub fn pal() -> &'static Pal {
     if DARK.load(Ordering::Relaxed) { &DARK_PAL } else { &LIGHT_PAL }
@@ -331,7 +397,7 @@ fn visuals(p: &Pal) -> Visuals {
     v.extreme_bg_color = p.bg;
     // Eingabefelder: im dunklen Design eine vertiefte Schieferflaeche, im hellen weisses Papier
     v.text_edit_bg_color = Some(field_fill(p));
-    v.faint_bg_color = if p.dark { rgb(0x1A, 0x23, 0x1F) } else { rgb(0xF4, 0xF7, 0xF5) };
+    v.faint_bg_color = if p.dark { rgb(0x1C, 0x20, 0x27) } else { rgb(0xF6, 0xF7, 0xFA) };
     v.code_bg_color = p.bg;
     v.hyperlink_color = if p.dark { p.blue } else { p.accent };
     v.selection.bg_fill = p.selection;
@@ -347,8 +413,8 @@ fn visuals(p: &Pal) -> Visuals {
     let w = &mut v.widgets;
     // Knoepfe: weiche Flaeche ohne harte Kante; die feine Linie zeichnet nur Eingabefelder sichtbar nach
     let (btn, btn_hover, btn_active) = button_fills(p);
-    let edge = Stroke::new(1.0, if p.dark { rgb(0x2A, 0x36, 0x31) } else { rgb(0xCF, 0xD7, 0xD3) });
-    let edge_hover = Stroke::new(1.0, if p.dark { rgb(0x3A, 0x48, 0x42) } else { rgb(0xB3, 0xBE, 0xB8) });
+    let edge = Stroke::new(1.0, if p.dark { rgb(0x2D, 0x32, 0x3C) } else { rgb(0xCF, 0xD4, 0xDD) });
+    let edge_hover = Stroke::new(1.0, if p.dark { rgb(0x3C, 0x43, 0x50) } else { rgb(0xB2, 0xB9, 0xC5) });
     w.noninteractive.bg_fill = p.face;
     w.noninteractive.weak_bg_fill = p.face;
     w.noninteractive.bg_stroke = Stroke::new(1.0, p.border);
@@ -371,25 +437,31 @@ fn visuals(p: &Pal) -> Visuals {
 
 /// Flaeche von Eingabefeldern
 pub fn field_fill(p: &Pal) -> Color32 {
-    if p.dark { rgb(0x0E, 0x14, 0x12) } else { Color32::WHITE }
+    if p.dark { rgb(0x10, 0x12, 0x17) } else { Color32::WHITE }
 }
 
 /// Flaechen normaler Knoepfe: ruhend, unter der Maus, gedrueckt
 pub fn button_fills(p: &Pal) -> (Color32, Color32, Color32) {
     if p.dark {
-        (rgb(0x22, 0x2C, 0x28), rgb(0x2B, 0x37, 0x32), rgb(0x33, 0x41, 0x3B))
+        (rgb(0x24, 0x28, 0x31), rgb(0x2C, 0x31, 0x3C), rgb(0x35, 0x3B, 0x47))
     } else {
-        (rgb(0xED, 0xF1, 0xEF), rgb(0xE3, 0xE9, 0xE6), rgb(0xD8, 0xE0, 0xDC))
+        (rgb(0xFF, 0xFF, 0xFF), rgb(0xF1, 0xF3, 0xF7), rgb(0xE4, 0xE7, 0xED))
     }
+}
+
+/// Feine Kante der Hauptaktion: Gelb allein hebt sich im hellen Design zu wenig vom Papier ab
+pub fn primary_edge() -> Stroke {
+    let p = pal();
+    if p.dark { Stroke::NONE } else { Stroke::new(1.0, p.primary.lerp_to_gamma(Color32::BLACK, 0.22)) }
 }
 
 /// Flaeche der Hauptaktion je nach Zustand (gedrueckt etwas dunkler, unter der Maus etwas heller)
 pub fn accent_fill(hot: f32, down: bool) -> Color32 {
     let p = pal();
     if down {
-        p.accent.lerp_to_gamma(Color32::BLACK, 0.12)
+        p.primary.lerp_to_gamma(Color32::BLACK, 0.10)
     } else {
-        p.accent.lerp_to_gamma(Color32::WHITE, if p.dark { 0.16 } else { 0.10 } * hot)
+        p.primary.lerp_to_gamma(Color32::WHITE, 0.18 * hot)
     }
 }
 
@@ -452,4 +524,25 @@ pub fn nav_item(ui: &mut egui::Ui, title: &str, active: bool, indent: f32) -> eg
     ui.painter().galley(rect.min + egui::vec2(indent + 14.0, 7.0), text, color);
     response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, ui.is_enabled(), active, title));
     response
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Wenige Datenbanken bekommen nie dieselbe Rueckenfarbe, und die Farbe haengt nicht an der Reihenfolge
+    #[test]
+    fn database_colours_are_distinct_and_stable() {
+        let names: Vec<String> = ["heiltest", "schule1", "shop", "kunden", "lager", "mysql"].iter().map(|s| s.to_string()).collect();
+        set_databases(&names);
+        let farben: Vec<Color32> = names[..5].iter().map(|n| db_color(n)).collect();
+        for (i, a) in farben.iter().enumerate() {
+            assert!(farben[i + 1..].iter().all(|b| b != a), "{farben:?}");
+        }
+        assert_eq!(db_color("mysql"), pal().text_weak);
+        let mut rev = names.clone();
+        rev.reverse();
+        set_databases(&rev);
+        assert_eq!(names[..5].iter().map(|n| db_color(n)).collect::<Vec<_>>(), farben);
+    }
 }

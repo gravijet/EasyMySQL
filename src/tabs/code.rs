@@ -992,7 +992,7 @@ impl CodeTab {
                 (e, w) => crate::tr_format!("{e} Fehler, {w} Hinweis(e)", "{e} error(s), {w} warning(s)"),
             };
             ui.label(RichText::new(summary).small().color(color));
-            if fixable > 0 && icons::text_button(ui, Icon::Sparkles, crate::i18n::text("Korrigieren")).on_hover_text(crate::keymap::text(Cmd::FixAll)).clicked() {
+            if fixable > 0 && icons::text_button(ui, Icon::Wrench, crate::i18n::text("Korrigieren")).on_hover_text(crate::keymap::text(Cmd::FixAll)).clicked() {
                 self.fix_all(cx);
             }
         }
@@ -1518,7 +1518,7 @@ impl CodeTab {
                     }
                     if fixable.len() > 1 {
                         ui.add_space(4.0);
-                        if icons::primary_button(ui, Icon::Sparkles, &crate::tr_format!("Alle {} beheben", "Fix all {}", fixable.len())).clicked() {
+                        if icons::primary_button(ui, Icon::Wrench, &crate::tr_format!("Alle {} beheben", "Fix all {}", fixable.len())).clicked() {
                             apply = fixable.clone();
                         }
                     }

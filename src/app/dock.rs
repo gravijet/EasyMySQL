@@ -70,6 +70,35 @@ pub fn tool_icon(v: SideView) -> Icon {
     }
 }
 
+/// Registerfarbe eines Werkzeugs (Kachel in der Registerleiste und Kopfband der Seitenleiste)
+pub fn tool_hue(v: SideView) -> Color32 {
+    let p = crate::style::pal();
+    match v {
+        SideView::Explorer => p.blue,
+        SideView::Search => p.lilac,
+        SideView::Databases => p.teal,
+        SideView::History => p.orange,
+        SideView::Git => p.coral,
+        SideView::Claude => p.orange,
+        SideView::Codex => p.lilac,
+        SideView::Terminal => p.green,
+    }
+}
+
+/// Kurze Beschriftung unter dem Symbol in der Registerleiste
+pub fn tool_caption(v: SideView) -> &'static str {
+    match v {
+        SideView::Explorer => crate::i18n::tr("Dateien", "Files"),
+        SideView::Search => crate::i18n::tr("Suchen", "Search"),
+        SideView::Databases => crate::i18n::tr("Daten", "Data"),
+        SideView::History => crate::i18n::tr("Verlauf", "History"),
+        SideView::Git => "Git",
+        SideView::Claude => "Claude",
+        SideView::Codex => "Codex",
+        SideView::Terminal => "Terminal",
+    }
+}
+
 pub fn tool_title(v: SideView) -> &'static str {
     match v {
         SideView::Explorer => "Explorer",
@@ -289,6 +318,14 @@ impl EasyApp {
             ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
         }
         egui::Popup::context_menu(&grip).show(|ui| self.tool_place_menu(ui, v));
+        // Kopfband in der Registerfarbe: verbindet die Seitenleiste mit ihrer Kachel in der Registerleiste
+        if v != SideView::Terminal {
+            let outer = ui.clip_rect();
+            let band = Rect::from_min_max(outer.min, egui::pos2(outer.right(), outer.top() + 36.0));
+            let hue = tool_hue(v);
+            ui.painter().rect_filled(band, 0.0, crate::style::soft(hue));
+            ui.painter().rect_filled(Rect::from_min_max(band.min, egui::pos2(band.right(), band.top() + 3.0)), 0.0, hue);
+        }
         if v == SideView::Terminal {
             self.terminal_view(ui);
         } else {

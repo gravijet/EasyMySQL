@@ -851,7 +851,7 @@ impl EasyApp {
                     continue;
                 }
                 let title = if *d == self.current_db { RichText::new(d).semi() } else { RichText::new(d) };
-                let (hr, _) = tree_node(ui, ui.make_persistent_id(("db", d)), Icon::Database, pal.accent, title, |ui| {
+                let (hr, _) = tree_node(ui, ui.make_persistent_id(("db", d)), Icon::Database, style::db_color(d), title, |ui| {
                     let schema = self.schemas.get_arc(Some(dbc), d).cloned();
                     let loading = self.schemas.is_loading(d);
                     match schema {

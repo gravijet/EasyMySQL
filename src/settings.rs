@@ -118,7 +118,7 @@ impl Default for Settings {
             conn: ConnInfo::default(),
             ssh: Default::default(),
             language: crate::i18n::Language::English,
-            dark: true,
+            dark: false,
             save_password: false,
             show_system_dbs: false,
             auto_install: false,
@@ -457,7 +457,7 @@ mod tests {
     fn defaults_legacy_settings_and_language_roundtrip() {
         let defaults = Settings::from_text("host=localhost\nport=3307\n");
         assert_eq!(defaults.language, crate::i18n::Language::English);
-        assert!(defaults.dark);
+        assert!(!defaults.dark);
         assert_eq!(defaults.conn.port, 3307);
         let custom = Settings::from_text("language=de\ndark=0\neditor_font=18\nauto_install=1\n");
         assert_eq!(custom.language, crate::i18n::Language::German);

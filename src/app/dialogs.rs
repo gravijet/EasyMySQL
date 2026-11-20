@@ -84,7 +84,7 @@ impl EasyApp {
                             ui.ctx().copy_text(text.clone());
                         }
                         ui.allocate_ui_with_layout(egui::vec2(ui.available_width(), 28.0), egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui.add(egui::Button::new(RichText::new("OK").color(pal.on_accent)).fill(pal.accent).min_size(egui::vec2(84.0, 28.0))).clicked() || ui.input(|i| i.key_pressed(Key::Enter)) {
+                            if ui.add(egui::Button::new(RichText::new("OK").color(pal.on_primary)).fill(pal.primary).stroke(crate::style::primary_edge()).min_size(egui::vec2(84.0, 28.0))).clicked() || ui.input(|i| i.key_pressed(Key::Enter)) {
                                 close = true;
                             }
                         });

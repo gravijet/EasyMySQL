@@ -56,7 +56,7 @@ pub enum Icon {
     Alert,
     Check,
     Info,
-    Sparkles,
+    Wrench,
     Claude,
     Codex,
     Layers,
@@ -147,7 +147,7 @@ impl Icon {
             Icon::Alert => "circle-alert",
             Icon::Check => "circle-check",
             Icon::Info => "info",
-            Icon::Sparkles => "sparkles",
+            Icon::Wrench => "wrench",
             Icon::Claude => "claude",
             Icon::Codex => "codex",
             Icon::Layers => "layers",
@@ -340,7 +340,7 @@ pub fn tint(icon: Icon) -> Color32 {
         Icon::History | Icon::Key | Icon::Package | Icon::FolderInput | Icon::NewFolder | Icon::Folder | Icon::FolderOpen | Icon::Coffee => p.orange,
         Icon::Play | Icon::Check | Icon::Save | Icon::Download | Icon::CloudDownload | Icon::Upload | Icon::CloudUpload | Icon::Plus | Icon::Terminal | Icon::Flask | Icon::FileSheet => p.green,
         Icon::Trash | Icon::Stop | Icon::Bug | Icon::Alert | Icon::Power | Icon::GitBranch | Icon::GitCommit | Icon::GitMerge | Icon::GitPullRequest | Icon::CircleDot => p.coral,
-        Icon::Sparkles | Icon::Wizard | Icon::Lock | Icon::Shield | Icon::FileJson => if p.dark { p.accent } else { p.orange },
+        Icon::Wrench | Icon::Wizard | Icon::Lock | Icon::Shield | Icon::FileJson => if p.dark { p.accent } else { p.orange },
         Icon::Users | Icon::Edit => p.pink,
         Icon::StepOver | Icon::StepInto | Icon::StepOut | Icon::ArrowRight | Icon::ArrowLeft | Icon::Undo | Icon::Redo | Icon::RotateCcw => p.blue,
         Icon::Github | Icon::Settings | Icon::Copy | Icon::Clipboard | Icon::Scissors | Icon::Refresh => p.text_weak.lerp_to_gamma(p.text, 0.35),
@@ -478,13 +478,20 @@ fn labelled_button_tinted(ui: &mut egui::Ui, icon: Icon, text: &str, primary: bo
     let down = resp.is_pointer_button_down_on();
     let hot = ui.ctx().animate_bool_with_time(resp.id.with("hot"), resp.hovered(), 0.12);
     let (fill, fg) = if primary && enabled {
-        (style::accent_fill(hot, down), pal.on_accent)
+        (style::accent_fill(hot, down), pal.on_primary)
     } else {
-        (visuals.weak_bg_fill, if enabled { visuals.fg_stroke.color } else { pal.text_weak })
+        let (rest, over, _) = style::button_fills(pal);
+        (rest.lerp_to_gamma(over, hot), if enabled { visuals.fg_stroke.color } else { pal.text_weak })
     };
-    // Beim Druecken minimal kleiner (Rueckmeldung ohne Verzoegerung)
-    let r = if down && enabled { r.shrink(0.6) } else { r };
-    ui.painter().rect(r, style::RADIUS as f32, fill, if primary && enabled { Stroke::NONE } else { visuals.bg_stroke }, egui::StrokeKind::Inside);
+    // Taste: eine dunklere Unterkante gibt Tiefe; gedrueckt sinkt die Taste um diese Kante ein
+    let sink = if down && enabled { 1.5 } else { 0.0 };
+    let base = Rect::from_min_max(r.min + vec2(0.0, 1.5), r.max);
+    let r = Rect::from_min_max(r.min + vec2(0.0, sink), r.max - vec2(0.0, 1.5 - sink));
+    let edge = if primary && enabled { pal.primary.lerp_to_gamma(Color32::BLACK, 0.28) } else { pal.border.lerp_to_gamma(pal.text_weak, 0.25) };
+    if enabled && sink == 0.0 {
+        ui.painter().rect_filled(base, style::RADIUS as f32 + 1.0, edge);
+    }
+    ui.painter().rect(r, style::RADIUS as f32 + 1.0, fill, if primary && enabled { style::primary_edge() } else { visuals.bg_stroke }, egui::StrokeKind::Inside);
     let (icon_x, text_x) = if icon_right { (r.right() - 17.0, r.left() + 10.0) } else { (r.left() + 17.0, r.left() + 31.0) };
     let icon_color = if !enabled { fg } else if primary { tint.unwrap_or(fg) } else { tint.unwrap_or_else(|| self::tint(icon)) };
     paint(ui.painter(), Rect::from_center_size(pos2(icon_x, r.center().y), vec2(14.0, 14.0)), icon, icon_color);
@@ -507,7 +514,7 @@ mod tests {
             Files, Search, Database, History, Diagram, Wizard, Close, Plus, Refresh, NewFile, NewFolder, ChevronDown, ChevronRight, ChevronLeft, Play,
             More, Trash, Up, Down, Collapse, ZoomIn, ZoomOut, Fit, External, Folder, FolderOpen, File, FileText, FileCode, FileImage, FileSheet,
             FileJson, Table, Columns, Key, Link, Settings, Book, Terminal, Shield, Save, Download, Alert, Check, Info,
-            Sparkles, Layers, ArrowLeft, ArrowRight, Undo, Redo, Explain, Upload, Users, ArrowUp, ArrowDown, Lock, Edit, Copy, Coffee, Package, Minus,
+            Wrench, Layers, ArrowLeft, ArrowRight, Undo, Redo, Explain, Upload, Users, ArrowUp, ArrowDown, Lock, Edit, Copy, Coffee, Package, Minus,
             Bug, Flask, Braces, StepOver, StepInto, StepOut, Stop, GitBranch, GitCommit, GitPullRequest, Github, CloudUpload, CloudDownload, GitMerge, CircleDot, RotateCcw,
             Code, Scissors, Clipboard, FolderInput, Power, Mouse,
         ] {
@@ -533,7 +540,7 @@ mod tests {
             Files, Search, Database, History, Diagram, Wizard, Close, Plus, Refresh, NewFile, NewFolder, ChevronDown, ChevronRight, ChevronLeft, Play,
             More, Trash, Up, Down, Collapse, ZoomIn, ZoomOut, Fit, External, Folder, FolderOpen, File, FileText, FileCode, FileImage, FileSheet,
             FileJson, Table, Columns, Key, Link, Settings, Book, Terminal, Shield, Save, Download, Alert, Check, Info,
-            Sparkles, Layers, ArrowLeft, ArrowRight, Undo, Redo, Explain, Upload, Users, ArrowUp, ArrowDown, Lock, Edit, Copy, Coffee, Package, Minus,
+            Wrench, Layers, ArrowLeft, ArrowRight, Undo, Redo, Explain, Upload, Users, ArrowUp, ArrowDown, Lock, Edit, Copy, Coffee, Package, Minus,
             Bug, Flask, Braces, StepOver, StepInto, StepOut, Stop, GitBranch, GitCommit, GitPullRequest, Github, CloudUpload, CloudDownload, GitMerge, CircleDot, RotateCcw,
         ];
         const CELL: usize = 96;

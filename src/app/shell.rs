@@ -166,7 +166,7 @@ impl EasyApp {
         // Duenne senkrechte Trennlinie zwischen Gruppen
         let divider = |ui: &mut egui::Ui| {
             let (r, _) = ui.allocate_exact_size(vec2(9.0, 18.0), Sense::hover());
-            ui.painter().vline(r.center().x, r.y_range(), Stroke::new(1.0, pal.border));
+            ui.painter().vline(r.center().x, r.y_range(), Stroke::new(1.0, pal.chrome_weak.gamma_multiply(0.35)));
         };
         let mut left_end = bar.left();
         let mut right_start = bar.right();
@@ -175,9 +175,22 @@ impl EasyApp {
                 ui.set_min_height(titlebar::HEIGHT);
                 ui.spacing_mut().item_spacing.x = 2.0;
                 // Zeichen des Programms
-                let (r, _) = ui.allocate_exact_size(vec2(22.0, 22.0), Sense::hover());
-                ui.painter().rect_filled(r, 6.0, pal.accent);
-                icons::paint(ui.painter(), Rect::from_center_size(r.center(), vec2(14.0, 14.0)), Icon::Database, pal.on_accent);
+                // Menues in den Farben der Leiste (Schrift, Flaeche unter der Maus und bei offenem Menue)
+                {
+                    let v = ui.visuals_mut();
+                    v.override_text_color = Some(pal.chrome_text);
+                    for w in [&mut v.widgets.hovered, &mut v.widgets.open, &mut v.widgets.active] {
+                        w.weak_bg_fill = pal.chrome_hover;
+                        w.bg_fill = pal.chrome_hover;
+                        w.bg_stroke = Stroke::NONE;
+                        w.fg_stroke.color = pal.chrome_text;
+                    }
+                }
+                // Zeichen des Programms: Etikett eines Ordnerrueckens
+                let (r, _) = ui.allocate_exact_size(vec2(24.0, 24.0), Sense::hover());
+                let (sq, glyph) = if pal.dark { (pal.primary, pal.on_primary) } else { (pal.chrome_text, pal.primary) };
+                ui.painter().rect_filled(r, 5.0, sq);
+                icons::paint(ui.painter(), Rect::from_center_size(r.center(), vec2(15.0, 15.0)), Icon::Database, glyph);
                 ui.add_space(6.0);
                 ui.spacing_mut().button_padding = vec2(8.0, 5.0);
                 ui.spacing_mut().item_spacing.x = 0.0;
@@ -285,9 +298,9 @@ impl EasyApp {
                 Some(p) => {
                     let name = workspace::dir_name(p);
                     let (initials, color) = titlebar::project_badge(&name);
-                    titlebar::tool_button(ui, titlebar::Lead::Badge(initials, color), &name, pal.text, true).on_hover_text(p.display().to_string())
+                    titlebar::tool_button(ui, titlebar::Lead::Badge(initials, color), &name, pal.chrome_text, true).on_hover_text(p.display().to_string())
                 }
-                None => titlebar::tool_button(ui, titlebar::Lead::Icon(Icon::Folder, pal.accent), crate::i18n::tr("Projekt öffnen …", "Open project …"), pal.text, true)
+                None => titlebar::tool_button(ui, titlebar::Lead::Icon(Icon::Folder, pal.chrome_text), crate::i18n::tr("Projekt öffnen …", "Open project …"), pal.chrome_text, true)
                     .on_hover_text(crate::i18n::tr("Gespeichert wird immer in einem Projekt oder Ordner", "Files are always saved in a project or folder")),
             };
             egui::Popup::menu(&resp).show(|ui| {
@@ -336,7 +349,7 @@ impl EasyApp {
             // Branch (nur in Git-Projekten); Klick oeffnet die Git-Ansicht
             if let Some(st) = self.git_status_now()
                 && !st.branch.is_empty()
-                && titlebar::tool_button(ui, titlebar::Lead::Icon(Icon::GitBranch, pal.text_weak), &st.branch, pal.text, true).on_hover_text(Cmd::ShowGit.label()).clicked()
+                && titlebar::tool_button(ui, titlebar::Lead::Icon(Icon::GitBranch, pal.chrome_weak), &st.branch, pal.chrome_text, true).on_hover_text(Cmd::ShowGit.label()).clicked()
             {
                 cmd = Some(Cmd::ShowGit);
             }
@@ -370,7 +383,7 @@ impl EasyApp {
                     Some(d) => format!("Server {} – {} (MariaDB {})", st.text(), d.info.label(), d.version.split('-').next().unwrap_or("")),
                     None => format!("Server {}", st.text()),
                 };
-                let resp = titlebar::tool_button(ui, titlebar::Lead::Dot(color), if bar_w >= 1000.0 { &text } else { "" }, pal.text_weak, bar_w >= 1000.0).on_hover_text(tip);
+                let resp = titlebar::tool_button(ui, titlebar::Lead::Dot(color), if bar_w >= 1000.0 { &text } else { "" }, pal.chrome_text, bar_w >= 1000.0).on_hover_text(tip);
                 egui::Popup::menu(&resp).show(|ui| {
                     crate::style::menu_item_look(ui);
                     ui.set_min_width(220.0);
@@ -380,11 +393,11 @@ impl EasyApp {
                 // Werkzeuge
                 let tools: &[(Icon, Cmd)] = if bar_w >= 820.0 { &[(Icon::Diagram, Cmd::ErDiagram), (Icon::Wizard, Cmd::QueryBuilder)] } else { &[] };
                 for &(icon, c) in tools {
-                    if titlebar::tool_button(ui, titlebar::Lead::Icon(icon, pal.text_weak), "", pal.text, false).on_hover_text(tip_of(c)).clicked() {
+                    if titlebar::tool_button(ui, titlebar::Lead::Icon(icon, pal.chrome_text), "", pal.chrome_text, false).on_hover_text(tip_of(c)).clicked() {
                         cmd = Some(c);
                     }
                 }
-                if titlebar::tool_button(ui, titlebar::Lead::Icon(Icon::Plus, pal.text_weak), if bar_w >= 1100.0 { crate::i18n::tr("Abfrage", "Query") } else { "" }, pal.text, false)
+                if titlebar::tool_button(ui, titlebar::Lead::Icon(Icon::Plus, pal.chrome_text), if bar_w >= 1100.0 { crate::i18n::tr("Abfrage", "Query") } else { "" }, pal.chrome_text, false)
                     .on_hover_text(tip_of(Cmd::NewQuery))
                     .clicked()
                 {
@@ -395,7 +408,7 @@ impl EasyApp {
                 if runnable {
                     divider(ui);
                     let resp = ui
-                        .add_enabled_ui(!busy, |ui| titlebar::tool_button(ui, titlebar::Lead::Icon(Icon::Play, if busy { pal.text_weak } else { pal.ok_text }), "", pal.text, false))
+                        .add_enabled_ui(!busy, |ui| titlebar::tool_button(ui, titlebar::Lead::Icon(Icon::Play, if busy { pal.chrome_weak } else if pal.dark { pal.ok_text } else { pal.chrome_text }), "", pal.chrome_text, false))
                         .inner
                         .on_hover_text(tip_of(Cmd::RunAll));
                     if resp.clicked() {
@@ -413,7 +426,7 @@ impl EasyApp {
             let r = Rect::from_center_size(pos2(cx, bar.center().y), vec2(w, titlebar::TOOL_H));
             // Wie die Befehlszentrale von VS Code: mit Projekt die Dateisuche (">" wechselt zu den Befehlen), sonst die Befehle
             let (c, hint) = if self.project.is_some() {
-                (Cmd::QuickOpen, crate::i18n::tr("Dateien suchen  ·  > für Befehle", "Search files  ·  > for commands"))
+                (Cmd::QuickOpen, crate::i18n::tr("Dateien suchen, mit > Befehle", "Search files, > for commands"))
             } else {
                 (Cmd::CommandPalette, crate::i18n::tr("Befehle suchen", "Search commands"))
             };
@@ -430,31 +443,37 @@ impl EasyApp {
     // Aktivitaetsleiste (nur Seitenleisten)
 
     pub(super) fn activity_bar(&mut self, ui: &mut egui::Ui) {
-        const BTN: f32 = 32.0;
-        const GAP: f32 = 6.0;
+        const TILE: f32 = 46.0;
+        const GAP: f32 = 4.0;
         let pal = style::pal();
         let ctx = ui.ctx().clone();
-        // Ein Knopf der Leiste (wie die Werkzeugfenster-Leiste von IntelliJ IDEA): quadratische Flaeche, Symbol mittig.
-        // Klick blendet ein/aus, Rechtsklick verschiebt, Ziehen auf eine Zone verschiebt ebenfalls.
-        let button = |ui: &mut egui::Ui, icon: Icon, active: bool, tip: String| -> egui::Response {
-            let (slot, resp) = ui.allocate_exact_size(vec2(ui.available_width(), BTN), Sense::click_and_drag());
-            let r = Rect::from_center_size(slot.center(), vec2(BTN, BTN));
-            let radius = style::RADIUS as f32 + 1.0;
-            // Offene Ansicht: ruhige Flaeche und ein Kreidestrich am Rand, der beim Oeffnen aus der Mitte waechst
-            let t = ui.ctx().animate_bool_with_time(resp.id.with("offen"), active, 0.18);
-            if active || resp.hovered() {
-                ui.painter().rect_filled(r, radius, pal.hover);
+        let strip_right = ui.max_rect().right() + 1.0;
+        // Registerleiste: jedes Werkzeug ist ein Register in seiner eigenen Farbe (Symbol und kurze Beschriftung).
+        // Das offene Register ist ganz eingefaerbt und laeuft als Lasche bis an die Seitenleiste, deren Kopfband
+        // dieselbe Farbe traegt. Klick blendet ein/aus, Rechtsklick verschiebt, Ziehen auf eine Zone ebenfalls.
+        let button = |ui: &mut egui::Ui, icon: Icon, hue: egui::Color32, caption: &str, active: bool, docked_left: bool, tip: String| -> egui::Response {
+            let (slot, resp) = ui.allocate_exact_size(vec2(ui.available_width(), TILE), Sense::click_and_drag());
+            let r = Rect::from_center_size(slot.center(), vec2(slot.width() - 10.0, TILE));
+            let t = ui.ctx().animate_bool_with_time(resp.id.with("offen"), active, 0.2);
+            let hot = ui.ctx().animate_bool_with_time(resp.id.with("hot"), resp.hovered(), 0.12);
+            let p = ui.painter();
+            if hot > 0.0 && t < 1.0 {
+                p.rect_filled(r, 7.0, style::soft(hue).gamma_multiply(hot * (1.0 - t)));
             }
             if t > 0.0 {
-                let h = (BTN - 12.0) * t;
-                let bar = Rect::from_center_size(pos2(slot.left() + 1.5, slot.center().y), vec2(3.0, h));
-                ui.painter().rect_filled(bar, 1.5, pal.accent);
+                // Lasche: waechst beim Oeffnen von links nach rechts bis an die Seitenleiste
+                let right = if docked_left { egui::lerp(r.right()..=strip_right, t) } else { r.right() };
+                let tab = Rect::from_min_max(pos2(egui::lerp(r.center().x..=r.left(), t), r.top()), pos2(right.max(r.center().x), r.bottom()));
+                let cr = if docked_left && t > 0.95 { egui::CornerRadius { nw: 7, sw: 7, ne: 0, se: 0 } } else { egui::CornerRadius::same(7) };
+                p.rect_filled(tab, cr, hue.gamma_multiply(t));
             }
-            // Farbige Symbole; ruhig, solange die Ansicht nicht offen ist
-            let own = icons::tint(icon);
-            let color = if active { own.lerp_to_gamma(pal.activity_active, if pal.dark { 0.15 } else { 0.0 }) } else if resp.hovered() { own } else { own.lerp_to_gamma(pal.activity_fg, 0.45) };
-            icons::paint(ui.painter(), Rect::from_center_size(r.center(), vec2(20.0, 20.0)), icon, color);
-            resp.on_hover_text(tip)
+            let on = if pal.dark { pal.face } else { egui::Color32::WHITE };
+            let idle = hue.lerp_to_gamma(pal.activity_fg, 0.3 * (1.0 - hot));
+            let fg = idle.lerp_to_gamma(on, t);
+            icons::paint(p, Rect::from_center_size(pos2(r.center().x, r.top() + 17.0), vec2(19.0, 19.0)), icon, fg);
+            let text_c = pal.text_weak.lerp_to_gamma(pal.text, hot).lerp_to_gamma(on, t);
+            p.text(pos2(r.center().x, r.bottom() - 9.5), egui::Align2::CENTER_CENTER, caption, style::medium(10.5), text_c);
+            resp.on_hover_text(tip).on_hover_cursor(egui::CursorIcon::PointingHand)
         };
         ui.spacing_mut().item_spacing.y = GAP;
         let tool = |this: &mut Self, ui: &mut egui::Ui, view: SideView, cmd: Option<Cmd>| {
@@ -468,7 +487,8 @@ impl EasyApp {
                 tip.push_str(&format!(" · {}", place.label()));
             }
             tip.push_str(crate::i18n::tr("\nZiehen zum Verschieben oder Abdocken", "\nDrag to move or undock"));
-            let resp = button(ui, super::dock::tool_icon(view), this.tool_open(view), tip);
+            let docked_left = place == super::dock::Place::Left && this.settings.sidebar;
+            let resp = button(ui, super::dock::tool_icon(view), super::dock::tool_hue(view), super::dock::tool_caption(view), this.tool_open(view), docked_left, tip);
             if resp.drag_started() {
                 this.dock.start_drag(view, ui.ctx().viewport_id());
             }
@@ -490,11 +510,11 @@ impl EasyApp {
         ] {
             tool(self, ui, view, Some(cmd));
         }
-        ui.add_space(6.0);
+        ui.add_space(10.0);
         for view in [SideView::Claude, SideView::Codex] {
             tool(self, ui, view, None);
         }
-        ui.add_space(6.0);
+        ui.add_space(10.0);
         tool(self, ui, SideView::Terminal, Some(Cmd::ToggleTerminal));
         // Einstellungen unten, getrennt von den Ansichten
         ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
@@ -502,7 +522,7 @@ impl EasyApp {
             let k = keymap::text(Cmd::Settings);
             let tip = if k.is_empty() { Cmd::Settings.label().to_string() } else { format!("{} ({k})", Cmd::Settings.label()) };
             let open = self.tabs.get(self.active).is_some_and(|t| t.icon() == Some(Icon::Settings));
-            if button(ui, Icon::Settings, open, tip).clicked() {
+            if button(ui, Icon::Settings, pal.text_weak, crate::i18n::tr("Optionen", "Options"), open, false, tip).clicked() {
                 self.run_cmd(&ctx, Cmd::Settings);
             }
         });
@@ -512,25 +532,37 @@ impl EasyApp {
     // Registerkarten
 
     pub(super) fn tab_bar(&mut self, ui: &mut egui::Ui) {
-        const BAR_H: f32 = 38.0;
-        const PILL_H: f32 = BAR_H;
-        const GAP: f32 = 0.0;
-        const MAX_W: f32 = 216.0;
-        const ACTIVE_W: f32 = 190.0;
-        const MIN_W: f32 = 132.0;
-        const ICON_W: f32 = 42.0;
+        const BAR_H: f32 = 40.0;
+        // Reiter stehen unten auf der Leiste; oben bleibt Luft, damit die Laschen als Laschen erkennbar sind
+        const PILL_H: f32 = 34.0;
+        const GAP: f32 = 2.0;
+        const MAX_W: f32 = 220.0;
+        const ACTIVE_W: f32 = 200.0;
+        const MIN_W: f32 = 112.0;
         const LIST_W: f32 = 34.0;
         let pal = style::pal();
         let font = style::medium(13.0);
         let (bar, _) = ui.allocate_exact_size(vec2(ui.available_width(), BAR_H), Sense::hover());
         block_autoscroll(bar);
-        // Untere Kante der Reiterleiste; der aktive Reiter liegt mit seinem Unterstrich darauf
+        // Haengeregister: graue Leiste, darauf die Reiter; der aktive geht nahtlos in das Papier darunter ueber
+        ui.painter().rect_filled(bar, 0.0, pal.face);
         ui.painter().hline(bar.x_range(), bar.bottom() - 0.5, Stroke::new(1.0, pal.border));
         let n = self.tabs.len();
         let mut looks: Vec<TabLook> = self
             .tabs
             .iter()
-            .map(|t| TabLook { title: t.title(), icon: t.icon(), file: t.file().and_then(|f| f.file_name()).map(|n| n.to_string_lossy().into_owned()), hint: String::new(), busy: t.busy(), modified: t.modified() })
+            .map(|t| TabLook {
+                title: t.title(),
+                icon: t.icon(),
+                file: t.file().and_then(|f| f.file_name()).map(|n| n.to_string_lossy().into_owned()),
+                hint: String::new(),
+                busy: t.busy(),
+                modified: t.modified(),
+                hue: match t.database() {
+                    Some(d) if !d.is_empty() => style::db_color(&d),
+                    _ => t.icon().map(icons::tint).unwrap_or(pal.text_weak),
+                },
+            })
             .collect();
         // Gleichnamige Dateien: Ordner dahinter (wie in VS Code)
         for i in 0..looks.len() {
@@ -538,11 +570,11 @@ impl EasyApp {
                 looks[i].hint = self.tabs[i].file().and_then(|f| f.parent()).and_then(|d| d.file_name()).map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
             }
         }
-        // Wunschbreite je Reiter. Passen nicht alle, schrumpfen zuerst die langen Titel, dann die
-        // inaktiven Reiter bis auf ihr Symbol; der aktive behaelt seinen Titel.
+        // Wunschbreite je Reiter. Passen nicht alle, schrumpfen zuerst die langen Titel bis auf eine lesbare
+        // Mindestbreite; reicht das nicht, laesst sich die Leiste verschieben (und die Liste zeigt alle).
         let desired: Vec<f32> = looks
             .iter()
-            .map(|l| (ui.painter().layout_no_wrap(format!("{}  {}", l.title, l.hint), font.clone(), pal.text).size().x + 52.0 + 22.0).clamp(90.0, MAX_W))
+.map(|l| (ui.painter().layout_no_wrap(format!("{}  {}", l.title, l.hint), font.clone(), pal.text).size().x + 52.0 + 22.0).clamp(MIN_W, MAX_W))
             .collect();
         let gaps = GAP * n.saturating_sub(1) as f32;
         let avail = bar.width() - 4.0;
@@ -562,11 +594,7 @@ impl EasyApp {
                 }
                 desired.iter().enumerate().map(|(i, d)| if i == active_i { d.min(ACTIVE_W) } else { d.min(lo).max(floor.min(*d)) }).collect()
             };
-            let readable = level(MIN_W);
-            if readable.iter().sum::<f32>() + gaps <= avail + 0.5 {
-                return readable;
-            }
-            desired.iter().enumerate().map(|(i, d)| if i == active_i { d.min(ACTIVE_W) } else { ICON_W }).collect()
+            level(MIN_W)
         };
         let mut widths = fit(avail);
         let scroll = widths.iter().sum::<f32>() + gaps > avail + 0.5;
@@ -584,13 +612,14 @@ impl EasyApp {
         let mut dragging: Option<(usize, f32)> = None;
         let mut dropped: Option<(usize, f32)> = None;
         let active = self.active;
-        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(tabs_rect).layout(egui::Layout::left_to_right(egui::Align::Center)));
+        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(tabs_rect.with_min_x(tabs_rect.left() + 6.0)).layout(egui::Layout::left_to_right(egui::Align::Max)));
         egui::ScrollArea::horizontal().id_salt("tabbar").scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden).show(&mut child, |ui| {
             ui.spacing_mut().item_spacing.x = GAP;
             let time = ui.input(|i| i.time) as f32;
             for (i, look) in looks.iter().enumerate() {
                 let sel = i == active;
-                let (r, resp) = ui.allocate_exact_size(vec2(widths[i], PILL_H), Sense::click_and_drag());
+                let (slot, resp) = ui.allocate_exact_size(vec2(widths[i], BAR_H), Sense::click_and_drag());
+                let r = slot.with_min_y(slot.max.y - PILL_H);
                 rects.push(r);
                 if sel {
                     resp.scroll_to_me(None);
@@ -606,8 +635,10 @@ impl EasyApp {
                 {
                     dropped = Some((i, p.x));
                 }
-                let over_close = r.width() >= 100.0 && ui.input(|i| i.pointer.hover_pos()).is_some_and(|p| tab_close_rect(r).contains(p));
-                paint_tab(ui.painter(), r, look, sel, resp.hovered(), over_close, time, &font);
+                let over_close = ui.input(|i| i.pointer.hover_pos()).is_some_and(|p| tab_close_rect(r).contains(p));
+                let hot = ui.ctx().animate_bool_with_time(resp.id.with("hot"), resp.hovered(), 0.12);
+                let lift = ui.ctx().animate_bool_with_time(resp.id.with("sel"), sel, 0.18);
+                paint_tab(ui.painter(), r, look, lift, hot, over_close, time, &font);
                 if look.busy {
                     ui.ctx().request_repaint();
                 }
@@ -621,7 +652,7 @@ impl EasyApp {
                 if resp.middle_clicked() {
                     close = Some(i);
                 }
-                let cut = widths[i] < 100.0 || widths[i] + 1.0 < desired[i];
+                let cut = widths[i] + 1.0 < desired[i];
                 let resp = if cut { resp.on_hover_text_at_pointer(&look.title) } else { resp };
                 resp.context_menu(|ui| {
                     crate::style::menu_item_look(ui);
@@ -660,11 +691,10 @@ impl EasyApp {
         // Gezogener Reiter schwebt unter dem Mauszeiger; beim Loslassen wird er dort einsortiert
         if let Some((i, x)) = dragging {
             let w = widths[i];
-            let r = Rect::from_center_size(pos2(x.clamp(tabs_rect.left() + w / 2.0, tabs_rect.right() - w / 2.0), tabs_rect.center().y), vec2(w, PILL_H));
+            let r = Rect::from_center_size(pos2(x.clamp(tabs_rect.left() + w / 2.0, tabs_rect.right() - w / 2.0), tabs_rect.bottom() - PILL_H / 2.0 - 3.0), vec2(w, PILL_H));
             let painter = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("tab-drag")));
-            painter.rect_filled(r.translate(vec2(0.0, 2.0)), style::RADIUS as f32, egui::Color32::from_black_alpha(60));
-            painter.rect_filled(r, style::RADIUS as f32, pal.face_light);
-            paint_tab(&painter, r, &looks[i], true, false, false, 0.0, &font);
+            painter.add(egui::Shadow { offset: [0, 4], blur: 12, spread: 0, color: egui::Color32::from_black_alpha(50) }.as_shape(r, 6));
+            paint_tab(&painter, r, &looks[i], 1.0, 0.0, false, 0.0, &font);
             ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
             self.active = i;
         }
@@ -711,7 +741,9 @@ impl EasyApp {
         }
     }
 
-    /// Keine Registerkarte offen: die wichtigsten Befehle als klickbare Zeilen mit Kuerzel (wie in IntelliJ IDEA)
+    /// Keine Registerkarte offen: das Ordnerregal. Jede Datenbank steht als Ordnerruecken in ihrer Farbe da
+    /// (Klick: neue Abfrage darin), daneben ein leerer Ruecken fuer eine neue Datenbank. Darunter die
+    /// wichtigsten Befehle mit Kuerzel und, ohne Projekt, die zuletzt geoeffneten Ordner.
     pub(super) fn empty_area(&mut self, ui: &mut egui::Ui) {
         let pal = style::pal();
         let rect = ui.available_rect_before_wrap();
@@ -720,44 +752,137 @@ impl EasyApp {
         cmds.push(if self.project.is_some() { Cmd::QuickOpen } else { Cmd::OpenFolder });
         cmds.extend([Cmd::NewFile, Cmd::CommandPalette, Cmd::ToggleTerminal]);
         let recent: Vec<PathBuf> = if self.project.is_none() { self.settings.recent.iter().filter(|p| p.is_dir()).take(4).cloned().collect() } else { Vec::new() };
-        const ROW: f32 = 34.0;
-        let w = (rect.width() - 48.0).clamp(240.0, 400.0);
-        // Hoehe des ganzen Blocks: Kopf, Befehle, letzte Projekte – senkrecht mittig, bei wenig Platz oben
-        let head_h = 92.0;
-        let recent_h = if recent.is_empty() { 0.0 } else { 34.0 + recent.len() as f32 * 42.0 };
-        let total = head_h + cmds.len() as f32 * ROW + recent_h;
-        let top = (rect.center().y - total / 2.0).max(rect.top() + 16.0);
+        let dbs = if self.db.is_some() { self.user_databases() } else { Vec::new() };
+        const ROW: f32 = 32.0;
+        const SPINE_W: f32 = 58.0;
+        const SPINE_H: f32 = 200.0;
+        const SPINE_GAP: f32 = 10.0;
+        let w = (rect.width() - 64.0).clamp(280.0, 760.0);
+        let per_row = (((w + SPINE_GAP) / (SPINE_W + SPINE_GAP)).floor() as usize).max(1);
+        let spines = dbs.len() + usize::from(self.db.is_some());
+        let shelf_rows = if spines == 0 { 0 } else { spines.div_ceil(per_row).min(2) };
+        let shelf_h = shelf_rows as f32 * (SPINE_H + 30.0);
+        let list_h = 30.0 + cmds.len() as f32 * ROW + if recent.is_empty() { 0.0 } else { 34.0 + recent.len() as f32 * 42.0 };
+        let head_h = 64.0;
+        let total = head_h + shelf_h + list_h;
+        let top = (rect.center().y - total / 2.0).max(rect.top() + 20.0);
         let x0 = rect.center().x - w / 2.0;
         let p = ui.painter().clone();
-        // Zeichen und Name
-        let logo = Rect::from_min_size(pos2(x0 + 4.0, top), vec2(48.0, 48.0));
-        p.rect_filled(logo, 12.0, pal.accent);
-        p.rect_filled(Rect::from_min_max(logo.min, pos2(logo.max.x, logo.center().y)), egui::CornerRadius { nw: 12, ne: 12, sw: 0, se: 0 }, egui::Color32::from_white_alpha(14));
-        icons::paint(&p, Rect::from_center_size(logo.center(), vec2(28.0, 28.0)), Icon::Database, pal.on_accent);
-        p.text(pos2(logo.right() + 14.0, logo.center().y - 9.0), egui::Align2::LEFT_CENTER, "EasyMySQL", crate::style::semi(22.0), pal.text);
-        p.text(pos2(logo.right() + 14.0, logo.center().y + 13.0), egui::Align2::LEFT_CENTER, crate::tr_format!("Version {}", "Version {}", env!("CARGO_PKG_VERSION")), egui::FontId::proportional(12.0), pal.text_weak);
-        let mut y = top + head_h - 18.0;
-        p.text(pos2(x0 + 4.0, y), egui::Align2::LEFT_CENTER, crate::i18n::tr("Starten", "Start"), crate::style::semi(12.5), pal.text_weak);
-        y += 12.0;
+        // Kopf: Etikett des Programms, daneben Verbindung bzw. Version
+        let logo = Rect::from_min_size(pos2(x0, top), vec2(40.0, 40.0));
+        let (sq, glyph) = if pal.dark { (pal.primary, pal.on_primary) } else { (pal.text, pal.primary) };
+        p.rect_filled(logo, 9.0, sq);
+        icons::paint(&p, Rect::from_center_size(logo.center(), vec2(24.0, 24.0)), Icon::Database, glyph);
+        p.text(pos2(logo.right() + 14.0, logo.center().y - 9.0), egui::Align2::LEFT_CENTER, "EasyMySQL", crate::style::semi(21.0), pal.text);
+        let sub = match &self.db {
+            Some(d) => crate::tr_format!("Verbunden mit {}", "Connected to {}", d.info.label()),
+            None => crate::tr_format!("Version {}", "Version {}", env!("CARGO_PKG_VERSION")),
+        };
+        p.text(pos2(logo.right() + 14.0, logo.center().y + 12.0), egui::Align2::LEFT_CENTER, sub, egui::FontId::proportional(12.5), pal.text_weak);
         let mut run = None;
+        let mut open_db: Option<String> = None;
+        let mut new_db = false;
+        let mut y = top + head_h;
+        if shelf_rows > 0 {
+            let now = ui.input(|i| i.time);
+            let mut items: Vec<Option<&String>> = dbs.iter().map(Some).collect();
+            items.push(None);
+            for (row, chunk) in items.chunks(per_row).take(2).enumerate() {
+                let base = y + row as f32 * (SPINE_H + 30.0) + SPINE_H;
+                for (k, it) in chunk.iter().enumerate() {
+                    let x = x0 + k as f32 * (SPINE_W + SPINE_GAP);
+                    let slot = Rect::from_min_max(pos2(x, base - SPINE_H - 12.0), pos2(x + SPINE_W, base));
+                    let id = egui::Id::new(("regal", row, k, it.map(|s| s.as_str()).unwrap_or("+")));
+                    let r = ui.interact(slot, id, Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
+                    // Herausziehen: der Ruecken hebt sich unter der Maus; beim ersten Zeichnen stehen alle
+                    // nacheinander auf (kurz versetzt, von links nach rechts)
+                    let lift = ui.ctx().animate_bool_with_time(id.with("lift"), r.hovered(), 0.16) * 12.0;
+                    let born = ui.ctx().data_mut(|d| *d.get_temp_mut_or_insert_with(egui::Id::new("regal-start"), || now));
+                    let appear = (((now - born) as f32 - (row * per_row + k) as f32 * 0.035) / 0.32).clamp(0.0, 1.0);
+                    if appear < 1.0 {
+                        ui.ctx().request_repaint();
+                    }
+                    let ease = 1.0 - (1.0 - appear).powi(3);
+                    let drop = (1.0 - ease) * 24.0;
+                    let spine = Rect::from_min_size(pos2(x, base - SPINE_H - lift + drop), vec2(SPINE_W, SPINE_H));
+                    let alpha = ease;
+                    match it {
+                        Some(name) => {
+                            let hue = style::db_color(name);
+                            if lift > 0.5 {
+                                p.add(egui::Shadow { offset: [0, 6], blur: 14, spread: 0, color: egui::Color32::from_black_alpha((40.0 * lift / 12.0) as u8) }.as_shape(spine, 6));
+                            }
+                            p.rect_filled(spine, 6.0, hue.gamma_multiply(alpha));
+                            // Kante des Rueckens (Pappe) etwas dunkler
+                            p.rect_filled(Rect::from_min_size(spine.min, vec2(5.0, SPINE_H)), egui::CornerRadius { nw: 6, sw: 6, ne: 0, se: 0 }, hue.lerp_to_gamma(egui::Color32::BLACK, 0.18).gamma_multiply(alpha));
+                            // Etikett mit dem Namen, von unten nach oben gelesen
+                            let pocket = Rect::from_min_max(pos2(spine.left() + 11.0, spine.top() + 14.0), pos2(spine.right() - 7.0, spine.top() + 138.0));
+                            p.rect_filled(pocket, 3.0, pal.bg.gamma_multiply(alpha));
+                            let mut job = egui::text::LayoutJob::simple_singleline(name.to_string(), crate::style::semi(14.0), pal.text);
+                            job.wrap = egui::text::TextWrapping { max_width: pocket.height() - 14.0, max_rows: 1, break_anywhere: true, overflow_character: Some('…') };
+                            let g = p.layout_job(job);
+                            let origin = pos2(pocket.center().x - g.size().y / 2.0, pocket.center().y + g.size().x / 2.0);
+                            p.add(egui::epaint::TextShape::new(origin, g, pal.text.gamma_multiply(alpha)).with_angle(-std::f32::consts::FRAC_PI_2));
+                            // Griffloch
+                            let hole = pos2(spine.center().x + 2.0, spine.bottom() - 36.0);
+                            p.circle_filled(hole, 10.0, hue.lerp_to_gamma(egui::Color32::BLACK, 0.35).gamma_multiply(alpha));
+                            p.circle_stroke(hole, 10.0, Stroke::new(1.5, hue.lerp_to_gamma(egui::Color32::WHITE, 0.35).gamma_multiply(alpha)));
+                            let r = r.on_hover_text(crate::tr_format!("Neue Abfrage in {}", "New query in {}", name));
+                            if r.clicked() {
+                                open_db = Some(name.to_string());
+                            }
+                        }
+                        None => {
+                            // Leerer Ruecken: neue Datenbank anlegen
+                            let c = pal.text_weak.lerp_to_gamma(pal.text, lift / 12.0).gamma_multiply(alpha);
+                            let pts = [spine.left_top(), spine.right_top(), spine.right_bottom(), spine.left_bottom(), spine.left_top()];
+                            for seg in pts.windows(2) {
+                                p.extend(egui::Shape::dashed_line(&[seg[0], seg[1]], Stroke::new(1.5, c), 6.0, 4.0));
+                            }
+                            icons::paint(&p, Rect::from_center_size(pos2(spine.center().x, spine.top() + 30.0), vec2(20.0, 20.0)), Icon::Plus, c);
+                            let g = p.layout_no_wrap(crate::i18n::tr("Neue Datenbank", "New database").to_string(), crate::style::medium(13.0), c);
+                            let origin = pos2(spine.center().x - g.size().y / 2.0, spine.top() + 60.0 + g.size().x);
+                            p.add(egui::epaint::TextShape::new(origin, g, c).with_angle(-std::f32::consts::FRAC_PI_2));
+                            if r.clicked() {
+                                new_db = true;
+                            }
+                        }
+                    }
+                }
+                // Regalbrett
+                let row_w = (chunk.len() as f32 * (SPINE_W + SPINE_GAP) - SPINE_GAP).max(420.0).min(w);
+                let board = Rect::from_min_max(pos2(x0 - 10.0, base), pos2(x0 + row_w + 10.0, base + 6.0));
+                p.rect_filled(board, 2.0, pal.border.lerp_to_gamma(pal.text_weak, 0.2));
+            }
+            y += shelf_h;
+            if dbs.len() + 1 > per_row * 2 {
+                p.text(pos2(x0, y - 12.0), egui::Align2::LEFT_CENTER, crate::tr_format!("Weitere {} Datenbanken in der Seitenleiste", "{} more databases in the sidebar", dbs.len() + 1 - per_row * 2), egui::FontId::proportional(12.5), pal.text_weak);
+            }
+        }
+        // Befehle als Zeilen mit Kuerzel
+        y += 6.0;
+        p.text(pos2(x0, y), egui::Align2::LEFT_CENTER, crate::i18n::tr("Starten", "Start"), crate::style::semi(13.0), pal.text);
+        y += 14.0;
+        let lw = w.min(420.0);
         let n_cmds = cmds.len();
         for (i, cmd) in cmds.into_iter().enumerate() {
-            let r = Rect::from_min_size(pos2(x0, y + i as f32 * ROW), vec2(w, ROW - 2.0));
+            let r = Rect::from_min_size(pos2(x0 - 8.0, y + i as f32 * ROW), vec2(lw + 8.0, ROW - 2.0));
             let row = ui.interact(r, egui::Id::new(("empty-cmd", i)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
-            if row.hovered() {
-                p.rect_filled(r, style::RADIUS as f32, pal.hover);
+            let hot = ui.ctx().animate_bool_with_time(row.id.with("hot"), row.hovered(), 0.12);
+            if hot > 0.0 {
+                p.rect_filled(r, style::RADIUS as f32 + 1.0, pal.hover.gamma_multiply(hot));
             }
             let cy = r.center().y;
-            let c = if row.hovered() { pal.text } else { pal.text_weak };
             if let Some(icon) = cmd_icon(cmd) {
-                icons::paint(&p, Rect::from_center_size(pos2(r.left() + 16.0, cy), vec2(16.0, 16.0)), icon, if row.hovered() { pal.accent } else { pal.text_weak });
+                icons::paint(&p, Rect::from_center_size(pos2(r.left() + 18.0, cy), vec2(16.0, 16.0)), icon, icons::tint(icon));
             }
-            p.text(pos2(r.left() + 36.0, cy), egui::Align2::LEFT_CENTER, cmd.label(), egui::FontId::proportional(13.0), c);
+            p.text(pos2(r.left() + 38.0, cy), egui::Align2::LEFT_CENTER, cmd.label(), style::medium(13.0), pal.text);
             let k = keymap::text(cmd);
-            if !k.is_empty() && w >= 300.0 {
-                let g = p.layout_no_wrap(k, egui::FontId::proportional(12.5), pal.text_weak);
+            if !k.is_empty() && lw >= 300.0 {
+                let g = p.layout_no_wrap(k, egui::FontId::proportional(12.0), pal.text_weak);
                 let kr = Rect::from_min_size(pos2(r.right() - 10.0 - g.size().x - 12.0, cy - 10.0), vec2(g.size().x + 12.0, 20.0));
-                p.rect(kr, 4.0, pal.face_light, Stroke::new(1.0, pal.border), egui::StrokeKind::Inside);
+                p.rect_filled(kr.translate(vec2(0.0, 1.5)), 4.0, pal.border);
+                p.rect(kr, 4.0, pal.bg, Stroke::new(1.0, pal.border), egui::StrokeKind::Inside);
                 p.galley(pos2(kr.left() + 6.0, cy - g.size().y / 2.0), g, pal.text_weak);
             }
             if row.clicked() {
@@ -767,9 +892,9 @@ impl EasyApp {
         y += ROW * n_cmds as f32;
         if !recent.is_empty() {
             y += 18.0;
-            p.text(pos2(x0 + 4.0, y), egui::Align2::LEFT_CENTER, crate::i18n::text("Zuletzt geöffnet"), crate::style::semi(12.5), pal.text_weak);
+            p.text(pos2(x0, y), egui::Align2::LEFT_CENTER, crate::i18n::text("Zuletzt geöffnet"), crate::style::semi(13.0), pal.text);
             y += 12.0;
-            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(Rect::from_min_size(pos2(x0, y), vec2(w, recent.len() as f32 * 42.0))).layout(egui::Layout::top_down_justified(egui::Align::Min)));
+            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(Rect::from_min_size(pos2(x0 - 8.0, y), vec2(lw + 8.0, recent.len() as f32 * 42.0))).layout(egui::Layout::top_down_justified(egui::Align::Min)));
             child.spacing_mut().item_spacing.y = 2.0;
             for path in recent {
                 if super::side::recent_row(&mut child, &path).clicked() {
@@ -779,6 +904,13 @@ impl EasyApp {
         }
         if resp.double_clicked() {
             run = Some(Cmd::NewQuery);
+        }
+        if new_db {
+            self.dialogs.push(Dialog::NewDatabase { name: String::new(), collation: COLLATIONS[0].into() });
+        }
+        if let Some(db) = open_db {
+            self.current_db = db.clone();
+            self.handle_actions(vec![Action::OpenSql { db: Some(db), sql: String::new(), run: false }]);
         }
         if let Some(c) = run {
             self.run_cmd(&ui.ctx().clone(), c);
@@ -832,6 +964,8 @@ struct TabLook {
     hint: String,
     busy: bool,
     modified: bool,
+    /// Reiterfarbe: Farbe der Datenbank, sonst die Farbe der Art
+    hue: egui::Color32,
 }
 
 /// Symbol eines Befehls in Menues
@@ -869,7 +1003,7 @@ pub(super) fn cmd_icon(c: Cmd) -> Option<Icon> {
         Cmd::Import => Icon::Upload,
         Cmd::Export => Icon::Download,
         Cmd::Users => Icon::Users,
-        Cmd::Format => Icon::Sparkles,
+        Cmd::Format => Icon::Wrench,
         Cmd::FixAll => Icon::Wizard,
         Cmd::CopyJava => Icon::Coffee,
         Cmd::Find | Cmd::Replace => Icon::Search,
@@ -894,45 +1028,41 @@ fn self_file(tabs: &[Box<dyn TabView>], i: usize) -> Option<PathBuf> {
 
 /// Klickflaeche des Schliessen-Kreuzes (rechts im Reiter)
 fn tab_close_rect(r: Rect) -> Rect {
-    Rect::from_center_size(pos2(r.right() - 17.0, r.center().y - 0.5), vec2(18.0, 18.0))
+    Rect::from_center_size(pos2(r.right() - 17.0, r.center().y + 1.0), vec2(18.0, 18.0))
 }
 
-/// Reiter wie in IntelliJ IDEA: flach, der aktive mit Unterstrich in der Akzentfarbe
+/// Reiter als Haengeregister: oben ein Streifen in der Farbe seiner Datenbank. Der aktive Reiter (`sel` 0..1,
+/// animiert) hebt sich als Papier aus der Leiste und geht nahtlos in den Inhalt ueber; `hot` ist das Darueberfahren.
 #[allow(clippy::too_many_arguments)]
-fn paint_tab(p: &egui::Painter, r: Rect, look: &TabLook, sel: bool, hovered: bool, over_close: bool, time: f32, font: &egui::FontId) {
+fn paint_tab(p: &egui::Painter, r: Rect, look: &TabLook, sel: f32, hot: f32, over_close: bool, time: f32, font: &egui::FontId) {
     let pal = style::pal();
-    if sel {
-        p.rect_filled(r, 0.0, pal.current_line);
-        p.rect_filled(Rect::from_min_max(pos2(r.left(), r.bottom() - 2.0), r.max), 0.0, pal.accent);
-    } else if hovered {
-        p.rect_filled(r.shrink2(vec2(0.0, 0.0)), 0.0, pal.hover.gamma_multiply(0.7));
+    let top = egui::CornerRadius { nw: 7, ne: 7, sw: 0, se: 0 };
+    if sel > 0.0 {
+        // Papier des aktiven Reiters (reicht 1 px ueber die Kante der Leiste, deckt sie ab)
+        let paper = Rect::from_min_max(pos2(r.left(), r.top() + 3.0 * (1.0 - sel)), r.max + vec2(0.0, 1.0));
+        p.rect_filled(paper, top, pal.bg.gamma_multiply(sel));
+        p.rect_stroke(paper, top, Stroke::new(1.0, pal.border.gamma_multiply(sel)), egui::StrokeKind::Inside);
+        p.rect_filled(Rect::from_min_max(pos2(r.left() + 1.0, r.bottom() - 1.0), pos2(r.right() - 1.0, r.bottom() + 1.0)), 0.0, pal.bg.gamma_multiply(sel));
     }
-    // Mittellinie fuer Symbol, Text und Kreuz (1 px ueber der Mitte, wegen des Unterstrichs)
-    let cy = r.center().y - 0.5;
-    let color = if sel { pal.text } else { pal.text_weak };
+    if hot > 0.0 && sel < 1.0 {
+        p.rect_filled(r, top, pal.hover.gamma_multiply(hot * (1.0 - sel)));
+    }
+    // Farbiger Reiterstreifen: beim aktiven ueber die ganze Breite, sonst ein kurzes Stueck links
+    let band_w = egui::lerp(28.0..=r.width() - 2.0, sel);
+    let band = Rect::from_min_size(pos2(r.left() + 1.0, r.top() + 3.0 * (1.0 - sel)), vec2(band_w, 3.0));
+    p.rect_filled(band, egui::CornerRadius { nw: 6, ne: if sel > 0.9 { 6 } else { 2 }, sw: 0, se: 2 }, look.hue.gamma_multiply(0.55 + 0.45 * sel.max(hot)));
+    let cy = r.center().y + 1.0;
+    let color = pal.text_weak.lerp_to_gamma(pal.text, sel.max(hot * 0.7));
     let icon = look.icon.unwrap_or(Icon::File);
-    // Zu schmal fuer den Titel: nur das Symbol (Titel im Tooltip)
-    if r.width() < 100.0 {
-        let c = if sel { pal.accent } else if hovered { pal.text } else { pal.text_weak };
-        match &look.file {
-            Some(f) => icons::paint_file(p, Rect::from_center_size(pos2(r.center().x, cy), vec2(16.0, 16.0)), f),
-            None => icons::paint(p, Rect::from_center_size(pos2(r.center().x, cy), vec2(16.0, 16.0)), icon, c),
-        }
-        if look.busy {
-            p.circle_filled(r.right_top() + vec2(-8.0, 9.0), 3.0, pal.accent);
-        } else if look.modified {
-            p.circle_filled(r.right_top() + vec2(-8.0, 9.0), 3.0, pal.text_weak);
-        }
-        return;
-    }
     let mut x = r.left() + 12.0;
     match &look.file {
         Some(f) => icons::paint_file(p, Rect::from_center_size(pos2(x + 7.0, cy), vec2(15.0, 15.0)), f),
-        None => icons::paint(p, Rect::from_center_size(pos2(x + 7.0, cy), vec2(14.0, 14.0)), icon, if sel { pal.accent } else { pal.text_weak }),
+        None => icons::paint(p, Rect::from_center_size(pos2(x + 7.0, cy), vec2(14.0, 14.0)), icon, look.hue),
     }
     x += 22.0;
     let max_w = (r.right() - 30.0 - x).max(10.0);
-    let mut job = egui::text::LayoutJob::simple_singleline(look.title.clone(), font.clone(), color);
+    let font = if sel > 0.5 { style::semi(font.size) } else { font.clone() };
+    let mut job = egui::text::LayoutJob::simple_singleline(look.title.clone(), font, color);
     if !look.hint.is_empty() {
         job.append(&format!("  {}", look.hint), 0.0, egui::TextFormat::simple(egui::FontId::proportional(12.5), pal.text_weak));
     }
@@ -945,14 +1075,15 @@ fn paint_tab(p: &egui::Painter, r: Rect, look: &TabLook, sel: bool, hovered: boo
         let a = time * 6.0;
         p.add(egui::Shape::line(
             (0..=10).map(|k| cr.center() + vec2((a + k as f32 * 0.45).cos(), (a + k as f32 * 0.45).sin()) * 5.0).collect(),
-            Stroke::new(1.5, pal.accent),
+            Stroke::new(1.5, look.hue),
         ));
-    } else if look.modified && !(hovered && over_close) {
-        p.circle_filled(cr.center(), 3.5, color);
-    } else if sel || hovered {
+    } else if look.modified && !(hot > 0.5 && over_close) {
+        p.circle_filled(cr.center(), 3.5, look.hue);
+    } else if sel > 0.5 || hot > 0.0 {
         if over_close {
-            p.rect_filled(cr, style::RADIUS as f32 - 1.0, pal.hover.gamma_multiply(1.6));
+            p.rect_filled(cr, style::RADIUS as f32 - 1.0, pal.hover);
         }
-        icons::paint(p, cr.shrink(4.0), Icon::Close, if over_close { pal.text } else { color });
+        let c = if over_close { pal.text } else { color.gamma_multiply(sel.max(hot)) };
+        icons::paint(p, cr.shrink(4.0), Icon::Close, c);
     }
 }

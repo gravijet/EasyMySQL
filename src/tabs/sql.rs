@@ -355,6 +355,10 @@ impl SqlTab {
 
     /// Auswahl des Servers dieser Datei: der globale (Standard) oder ein gespeicherter
     fn server_combo(&mut self, ui: &mut egui::Ui, cx: &mut Ctx) {
+        // Nur ein Server eingerichtet: nichts zu waehlen, die Leiste bleibt frei
+        if self.server.is_none() && crate::profiles::all().is_empty() {
+            return;
+        }
         let default = crate::i18n::tr("Standard-Server", "Default server");
         let shown = self.server.clone().unwrap_or_else(|| default.to_string());
         let mut pick: Option<Option<String>> = None;
@@ -957,7 +961,7 @@ impl SqlTab {
                     }
                     End::Clean if n == 0 => (Icon::Check, pal.ok_text, tr("Alles in Ordnung: Das Skript läuft im Probelauf ohne Fehler.", "All good: the script runs without errors in a trial run.").to_string()),
                     End::Clean => (Icon::Check, pal.ok_text, crate::tr_format!("{n} Änderung(en) – das Skript läuft jetzt im Probelauf ohne Fehler.", "{n} change(s) – the script now runs without errors in a trial run.")),
-                    End::Offline => (Icon::Sparkles, pal.warn_text, crate::tr_format!("{n} Stelle(n) korrigiert (ohne Server kein Probelauf).", "{n} place(s) corrected (no trial run without a server).")),
+                    End::Offline => (Icon::Wrench, pal.warn_text, crate::tr_format!("{n} Stelle(n) korrigiert (ohne Server kein Probelauf).", "{n} place(s) corrected (no trial run without a server).")),
                     End::Stuck { line, error } => (Icon::Alert, pal.error_text, crate::tr_format!("Zeile {}: {} – dafür gibt es keine sichere Korrektur.", "Line {}: {} – there is no safe fix for this.", line + 1, error.lines().next().unwrap_or(""))),
                     End::Cancelled => (Icon::Alert, pal.warn_text, tr("Abgebrochen.", "Cancelled.").to_string()),
                     End::Failed(e) => (Icon::Alert, pal.error_text, crate::tr_format!("Probelauf nicht möglich: {e}", "Trial run not possible: {e}")),
@@ -1164,7 +1168,7 @@ impl SqlTab {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 2.0;
             for (i, &(ri, _, rows)) in sets.iter().enumerate() {
-                let label = crate::tr_format!("Ergebnis {} · Z. {} ({})", "Result {} · Ln {} ({})", i + 1, self.results[ri].line + 1, rows);
+                let label = crate::tr_format!("Ergebnis {} (Z. {}): {}", "Result {} (ln {}): {}", i + 1, self.results[ri].line + 1, crate::i18n::tausend(rows as u64));
                 let c = super::chip(ui, &label, None, pane == Pane::Set(i));
                 if c.clicked {
                     pane = Pane::Set(i);
@@ -1238,12 +1242,24 @@ impl SqlTab {
                 let (ri, si, _) = sets[tab.min(n_sets - 1)];
                 let set = &self.results[ri].sets[si];
                 ui.horizontal(|ui| {
-                    let mut info = crate::tr_format!("{} Zeile(n)", "{} row(s)", set.rows.len());
+                    // Ergebnis als Stempel: Zeilenzahl, daneben Dauer und ob gekuerzt wurde
+                    let n = set.rows.len();
+                    let text = match n {
+                        0 => crate::i18n::tr("Keine Zeilen", "No rows").to_string(),
+                        1 => crate::i18n::tr("1 Zeile", "1 row").to_string(),
+                        n => crate::tr_format!("{} Zeilen", "{} rows", crate::i18n::tausend(n as u64)),
+                    };
+                    let hue = if n == 0 { pal.warn_text } else { pal.ok_text };
+                    let r = &self.results[ri];
+                    crate::widgets::stamp(ui, self.editor.id.with(("stempel", ri, si, r.elapsed.as_nanos())), &text, hue);
+                    let mut info = crate::tr_format!("in {}", "in {}", crate::i18n::sekunden(r.elapsed));
                     if set.truncated {
-                        info.push_str(&crate::tr_format!(" (die ersten {})", " (first {})", db::max_rows()));
+                        info.push_str(&crate::tr_format!(", gekürzt auf die ersten {}", ", cut to the first {}", crate::i18n::tausend(db::max_rows() as u64)));
                     }
                     ui.label(RichText::new(info).color(pal.text_weak));
-                    grid::export_menu(ui, "ergebnis", &set.columns, &set.rows);
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        grid::export_menu(ui, "ergebnis", &set.columns, &set.rows);
+                    });
                 });
                 if (set.rows.is_empty() || self.leer.as_ref().is_some_and(|l| l.kreuz))
                     && let Some(k) = Self::leer_panel(self.leer.as_ref(), ui, ri)
@@ -1743,7 +1759,7 @@ impl TabView for SqlTab {
             let (errors, warnings, _) = self.editor.lint_summary();
             let busy = self.autofix.as_ref().is_some_and(|a| a.rx.is_some());
             if ui
-                .add_enabled_ui(!busy && self.job.is_none() && !self.text.trim().is_empty(), |ui| icons::text_button(ui, Icon::Sparkles, "Auto-Fix"))
+                .add_enabled_ui(!busy && self.job.is_none() && !self.text.trim().is_empty(), |ui| icons::text_button(ui, Icon::Wrench, "Auto-Fix"))
                 .inner
                 .on_hover_text(crate::tr_format!(
                     "Alle Fehler beheben und das Skript in einer Kopie der Datenbank probelaufen lassen, bis es ohne Fehler läuft ({})",

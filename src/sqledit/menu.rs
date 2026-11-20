@@ -400,7 +400,7 @@ impl SqlEditor {
                 action = Some(EditAction::IntroduceVariable);
             }
             if java || sql {
-                if item(ui, Icon::Sparkles, pal.accent, crate::i18n::tr("Formatieren", "Format"), Some(Cmd::Format)) {
+                if item(ui, Icon::Wrench, pal.accent, crate::i18n::tr("Formatieren", "Format"), Some(Cmd::Format)) {
                     command = Some(Cmd::Format);
                 }
                 if item(ui, Icon::Wizard, pal.warn_text, Cmd::FixAll.label(), Some(Cmd::FixAll)) {

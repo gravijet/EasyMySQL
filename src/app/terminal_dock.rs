@@ -646,7 +646,7 @@ fn fix_bar(ui: &mut egui::Ui, fixes: &[crate::dev::autofix::Suggestion], applied
         }
         if open.len() > 1 || exited {
             ui.horizontal(|ui| {
-                if open.len() > 1 && icons::primary_button(ui, Icon::Sparkles, crate::i18n::tr("Alle beheben", "Fix all")).clicked() {
+                if open.len() > 1 && icons::primary_button(ui, Icon::Wrench, crate::i18n::tr("Alle beheben", "Fix all")).clicked() {
                     apply.extend(open.iter().copied());
                 }
                 if exited && !wartet && icons::run_button(ui, crate::i18n::tr("Erneut ausführen", "Run again")).clicked() {

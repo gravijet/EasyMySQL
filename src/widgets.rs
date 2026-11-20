@@ -26,12 +26,12 @@ pub fn check(ui: &mut egui::Ui, on: &mut bool, label: impl Into<egui::WidgetText
     let b = Rect::from_min_size(pos2(rect.left(), rect.center().y - box_s / 2.0), vec2(box_s, box_s));
     let painter = ui.painter();
     if *on {
-        painter.rect_filled(b, 3.5, style::accent_fill(if resp.hovered() { 1.0 } else { 0.0 }, false));
+        painter.rect_filled(b, 3.5, if resp.hovered() { p.accent.lerp_to_gamma(p.text, 0.15) } else { p.accent });
         // Haken als Strich (das Symbol "Check" hat einen Kreis, zu viel fuer 16 px)
         let q = |x: f32, y: f32| pos2(b.left() + x * b.width(), b.top() + y * b.height());
         painter.add(egui::Shape::line(vec![q(0.24, 0.52), q(0.43, 0.70), q(0.77, 0.32)], Stroke::new(2.0, p.on_accent)));
     } else {
-        let edge = if resp.hovered() { p.text_weak } else if p.dark { Color32::from_rgb(0x4A, 0x58, 0x52) } else { Color32::from_rgb(0xA9, 0xB4, 0xAE) };
+        let edge = if resp.hovered() { p.text_weak } else if p.dark { Color32::from_rgb(0x4B, 0x53, 0x61) } else { Color32::from_rgb(0xA8, 0xAF, 0xBB) };
         painter.rect(b, 3.5, style::field_fill(p), Stroke::new(1.0, edge), StrokeKind::Inside);
     }
     if has_label {
@@ -59,7 +59,7 @@ pub fn switch(ui: &mut egui::Ui, on: &mut bool, label: &str) -> Response {
     let track = Rect::from_min_size(pos2(rect.left(), rect.center().y - track_h / 2.0), vec2(track_w, track_h));
     // Weicher Wechsel: Knopf gleitet, Spur faerbt sich mit
     let t = ui.ctx().animate_bool_with_time(resp.id.with("an"), *on, 0.16);
-    let off = if p.dark { Color32::from_rgb(0x36, 0x44, 0x3E) } else { Color32::from_rgb(0xC4, 0xCE, 0xC9) };
+    let off = if p.dark { Color32::from_rgb(0x3A, 0x41, 0x4E) } else { Color32::from_rgb(0xC3, 0xC9, 0xD3) };
     let fill = off.lerp_to_gamma(p.accent, t);
     let fill = if resp.hovered() { fill.lerp_to_gamma(if p.dark { Color32::WHITE } else { Color32::BLACK }, 0.08) } else { fill };
     ui.painter().rect_filled(track, track_h / 2.0, fill);
@@ -96,7 +96,7 @@ pub fn segmented<T: PartialEq + Clone>(ui: &mut egui::Ui, value: &mut T, items: 
         let resp = ui.interact(seg, ui.id().with(label), Sense::click());
         let selected = value == v;
         if selected {
-            ui.painter().rect(seg, style::RADIUS as f32 - 1.0, raised, Stroke::new(1.0, if p.dark { Color32::from_rgb(0x3A, 0x48, 0x42) } else { p.border }), StrokeKind::Inside);
+            ui.painter().rect(seg, style::RADIUS as f32 - 1.0, raised, Stroke::new(1.0, if p.dark { Color32::from_rgb(0x3C, 0x43, 0x50) } else { p.border }), StrokeKind::Inside);
         } else if resp.hovered() {
             ui.painter().rect_filled(seg, style::RADIUS as f32 - 1.0, p.hover);
         }
@@ -127,7 +127,7 @@ pub fn keycap(ui: &mut egui::Ui, text: &str, state: Keycap) -> Response {
         Keycap::Recording => (p.accent.gamma_multiply(0.25), p.accent, p.text),
         Keycap::Conflict => (p.error_text.gamma_multiply(0.12), p.error_text, p.error_text),
         Keycap::Normal if resp.hovered() => (p.hover, p.accent, p.text),
-        Keycap::Normal => (style::button_fills(p).0, if p.dark { Color32::from_rgb(0x3A, 0x48, 0x42) } else { Color32::from_rgb(0xC4, 0xCE, 0xC9) }, p.text),
+        Keycap::Normal => (style::button_fills(p).0, if p.dark { Color32::from_rgb(0x3C, 0x43, 0x50) } else { Color32::from_rgb(0xC3, 0xC9, 0xD3) }, p.text),
     };
     let r = rect.shrink2(vec2(0.0, 1.0));
     ui.painter().rect_filled(r, 5.0, fill);
@@ -179,7 +179,7 @@ pub fn slider<N: egui::emath::Numeric>(ui: &mut egui::Ui, value: &mut N, range: 
     let kx = x0 + t * (x1 - x0);
     let rail = Rect::from_min_max(pos2(x0, cy - 2.0), pos2(x1, cy + 2.0));
     let painter = ui.painter();
-    painter.rect_filled(rail, 2.0, if p.dark { Color32::from_rgb(0x30, 0x3D, 0x37) } else { Color32::from_rgb(0xD0, 0xD8, 0xD4) });
+    painter.rect_filled(rail, 2.0, if p.dark { Color32::from_rgb(0x33, 0x39, 0x45) } else { Color32::from_rgb(0xD0, 0xD5, 0xDE) });
     painter.rect_filled(Rect::from_min_max(rail.min, pos2(kx, rail.max.y)), 2.0, p.accent);
     let hot = resp.hovered() || resp.dragged();
     painter.circle(pos2(kx, cy), if hot { 7.5 } else { 7.0 }, if p.dark { p.text } else { Color32::WHITE }, Stroke::new(if hot { 2.0 } else { 1.5 }, p.accent));
@@ -242,13 +242,13 @@ pub fn block_button(ui: &mut egui::Ui, text: &str) -> Response {
 /// Hauptaktion ueber die ganze Breite (Seitenleisten)
 pub fn block_primary(ui: &mut egui::Ui, text: &str) -> Response {
     let p = style::pal();
-    ui.add_sized([ui.available_width(), CONTROL_H], egui::Button::new(egui::RichText::new(text).color(p.on_accent)).fill(p.accent).stroke(Stroke::NONE))
+    ui.add_sized([ui.available_width(), CONTROL_H], egui::Button::new(egui::RichText::new(text).color(p.on_primary)).fill(p.primary).stroke(style::primary_edge()))
 }
 
 /// Hervorgehobene Hauptaktion nur mit Text (Akzentfarbe, weisse Schrift)
 pub fn primary(ui: &mut egui::Ui, text: &str) -> Response {
     let p = style::pal();
-    ui.add(egui::Button::new(egui::RichText::new(text).color(p.on_accent)).fill(p.accent).stroke(Stroke::NONE).min_size(vec2(84.0, ui.spacing().interact_size.y)))
+    ui.add(egui::Button::new(egui::RichText::new(text).color(p.on_primary)).fill(p.primary).stroke(style::primary_edge()).min_size(vec2(84.0, ui.spacing().interact_size.y)))
 }
 
 // ---------------------------------------------------------------------------
@@ -445,4 +445,40 @@ fn append_quoted(job: &mut egui::text::LayoutJob, line: &str, fmt: &egui::TextFo
 pub fn error_label(ui: &mut egui::Ui, text: &str) -> Response {
     let job = error_job(text, ui.available_width());
     ui.add(egui::Label::new(job).selectable(true))
+}
+
+/// Stempel: Ergebnis oder Erfolg als schraeg aufgedruckter Abdruck (Rahmen und Schrift in `hue`). Beim ersten
+/// Erscheinen (je `id`) wird er aufgedrueckt: kommt gross und durchsichtig, setzt kurz zu tief auf und liegt dann.
+pub fn stamp(ui: &mut egui::Ui, id: egui::Id, text: &str, hue: Color32) -> Response {
+    let font = style::semi(13.0);
+    let galley = ui.painter().layout_no_wrap(text.to_string(), font.clone(), hue);
+    let size = vec2(galley.size().x + 20.0, 24.0);
+    let (rect, resp) = ui.allocate_exact_size(size + vec2(4.0, 2.0), Sense::hover());
+    let now = ui.input(|i| i.time);
+    let key = id.with("stempel");
+    let t0 = ui.ctx().data_mut(|d| *d.get_temp_mut_or_insert_with(key, || now));
+    let reduced = ui.style().animation_time <= 0.0;
+    let t = if reduced { 1.0 } else { ((now - t0) / 0.26).clamp(0.0, 1.0) as f32 };
+    if t < 1.0 {
+        ui.ctx().request_repaint();
+    }
+    // Aufdruecken: 1.5 -> 0.96 (bis 75 %) -> 1.0; Deckkraft folgt schnell
+    let scale = if t < 0.75 { egui::lerp(1.5..=0.96, 1.0 - (1.0 - t / 0.75).powi(3)) } else { egui::lerp(0.96..=1.0, (t - 0.75) / 0.25) };
+    let alpha = (t * 2.5).min(1.0);
+    let angle = -0.045_f32;
+    let c = rect.center();
+    let (sin, cos) = angle.sin_cos();
+    let rot = |v: egui::Vec2| c + vec2(v.x * cos - v.y * sin, v.x * sin + v.y * cos) * scale;
+    let (hw, hh) = (size.x / 2.0, size.y / 2.0);
+    let corners = [vec2(-hw, -hh), vec2(hw, -hh), vec2(hw, hh), vec2(-hw, hh)];
+    let p = ui.painter();
+    let ink = hue.gamma_multiply(alpha);
+    // Leichte Farbflaeche wie ein Stempelkissen, darauf doppelter Rahmen
+    p.add(egui::Shape::convex_polygon(corners.iter().map(|v| rot(*v)).collect(), style::soft(hue).gamma_multiply(alpha), Stroke::new(1.6, ink)));
+    let inner = [vec2(-hw + 3.0, -hh + 3.0), vec2(hw - 3.0, -hh + 3.0), vec2(hw - 3.0, hh - 3.0), vec2(-hw + 3.0, hh - 3.0)];
+    p.add(egui::Shape::closed_line(inner.iter().map(|v| rot(*v)).collect(), Stroke::new(0.8, hue.gamma_multiply(0.55 * alpha))));
+    let g = ui.painter().layout_no_wrap(text.to_string(), egui::FontId::new(font.size * scale, font.family.clone()), ink);
+    let origin = rot(vec2(-g.size().x / 2.0 / scale, -g.size().y / 2.0 / scale));
+    ui.painter().add(egui::epaint::TextShape::new(origin, g, ink).with_angle(angle));
+    resp
 }

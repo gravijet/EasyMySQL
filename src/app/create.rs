@@ -470,7 +470,7 @@ impl EasyApp {
             ui.add_space(12.0);
             ui.allocate_ui_with_layout(vec2(ui.available_width(), 30.0), egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let can = problem.is_none();
-                if ui.add_enabled(can, egui::Button::new(RichText::new(crate::i18n::tr("Anlegen", "Create")).color(pal.on_accent)).fill(pal.accent).min_size(vec2(84.0, 28.0))).clicked() {
+                if ui.add_enabled(can, egui::Button::new(RichText::new(crate::i18n::tr("Anlegen", "Create")).color(pal.on_primary)).fill(pal.primary).stroke(crate::style::primary_edge()).min_size(vec2(84.0, 28.0))).clicked() {
                     ok = true;
                 }
                 if ui.add(egui::Button::new(crate::i18n::text("Abbrechen")).min_size(vec2(84.0, 28.0))).clicked() {
@@ -699,7 +699,7 @@ impl EasyApp {
             ui.add_space(10.0);
             ui.allocate_ui_with_layout(vec2(ui.available_width(), 30.0), egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let can = problem.is_none() && !busy;
-                if ui.add_enabled(can, egui::Button::new(RichText::new(crate::i18n::tr("Anlegen", "Create")).color(pal.on_accent)).fill(pal.accent).min_size(vec2(84.0, 28.0))).clicked() {
+                if ui.add_enabled(can, egui::Button::new(RichText::new(crate::i18n::tr("Anlegen", "Create")).color(pal.on_primary)).fill(pal.primary).stroke(crate::style::primary_edge()).min_size(vec2(84.0, 28.0))).clicked() {
                     create = true;
                 }
                 if ui.add_enabled(!busy, egui::Button::new(crate::i18n::text("Abbrechen")).min_size(vec2(84.0, 28.0))).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {

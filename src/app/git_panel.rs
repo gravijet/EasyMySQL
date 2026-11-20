@@ -484,7 +484,7 @@ impl EasyApp {
         ui.horizontal(|ui| {
             let label = if self.git.amend { crate::i18n::tr("Commit ändern", "Amend") } else if staged.is_empty() && git::config().auto_stage { crate::i18n::tr("Alles committen", "Commit all") } else { "Commit" };
             let can = self.git.busy.is_none() && (self.git.amend || !st.files.is_empty()) && (self.git.amend || !self.git.message.trim().is_empty());
-            if ui.add_enabled(can, egui::Button::new(RichText::new(label).color(pal.on_accent)).fill(pal.accent).min_size(vec2(ui.available_width(), 26.0))).on_hover_text(crate::keymap::text(Cmd::GitCommit)).clicked() {
+            if ui.add_enabled(can, egui::Button::new(RichText::new(label).color(pal.on_primary)).fill(pal.primary).stroke(crate::style::primary_edge()).min_size(vec2(ui.available_width(), 26.0))).on_hover_text(crate::keymap::text(Cmd::GitCommit)).clicked() {
                 self.git_commit();
             }
         });

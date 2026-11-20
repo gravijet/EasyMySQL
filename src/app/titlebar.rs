@@ -62,10 +62,10 @@ pub fn controls(ui: &mut egui::Ui) {
         let (r, resp) = ui.allocate_exact_size(vec2(BUTTON_W, HEIGHT), Sense::click());
         let danger = kind == Kind::Close;
         if resp.hovered() {
-            let fill = if danger { Color32::from_rgb(0xE8, 0x11, 0x23) } else if pal.dark { Color32::from_white_alpha(18) } else { Color32::from_black_alpha(16) };
+            let fill = if danger { Color32::from_rgb(0xE8, 0x11, 0x23) } else { pal.chrome_hover };
             ui.painter().rect_filled(r, 0.0, fill);
         }
-        let color = if danger && resp.hovered() { Color32::WHITE } else { pal.text };
+        let color = if danger && resp.hovered() { Color32::WHITE } else { pal.chrome_text };
         paint_glyph(ui.painter(), r.center(), kind, color);
         if resp.on_hover_text(tip).clicked() {
             ctx.send_viewport_cmd(cmd);
@@ -108,10 +108,11 @@ pub fn tool_button(ui: &mut egui::Ui, lead: Lead, text: &str, color: Color32, ch
     let content = lead_w + gap + text_w + chev_w;
     let (r, resp) = ui.allocate_exact_size(vec2((content + 2.0 * pad).max(TOOL_H), TOOL_H), Sense::click());
     let p = ui.painter();
-    if resp.is_pointer_button_down_on() {
-        p.rect_filled(r, style::RADIUS as f32, pal.hover.gamma_multiply(1.3));
-    } else if resp.hovered() {
-        p.rect_filled(r, style::RADIUS as f32, pal.hover);
+    // Weiche Flaeche unter der Maus (blendet ein und aus), gedrueckt etwas kraeftiger
+    let hot = ui.ctx().animate_bool_with_time(resp.id.with("hot"), resp.hovered(), 0.12);
+    if hot > 0.0 {
+        let fill = if resp.is_pointer_button_down_on() { pal.chrome_hover.lerp_to_gamma(Color32::BLACK, 0.08) } else { pal.chrome_hover };
+        p.rect_filled(r, style::RADIUS as f32, fill.gamma_multiply(hot));
     }
     let cy = r.center().y;
     // Inhalt waagrecht mittig (bei reinen Symbolknoepfen ist die Flaeche quadratisch)
@@ -124,6 +125,7 @@ pub fn tool_button(ui: &mut egui::Ui, lead: Lead, text: &str, color: Color32, ch
         }
         Lead::Dot(c) => {
             p.circle_filled(pos2(x + 4.0, cy), 4.0, c);
+            p.circle_stroke(pos2(x + 4.0, cy), 4.5, Stroke::new(1.0, pal.chrome_text.gamma_multiply(0.35)));
         }
     }
     x += lead_w + gap;
@@ -132,7 +134,7 @@ pub fn tool_button(ui: &mut egui::Ui, lead: Lead, text: &str, color: Color32, ch
         x += text_w;
     }
     if chevron {
-        icons::paint(p, Rect::from_center_size(pos2(x + 4.0 + 6.0, cy), vec2(12.0, 12.0)), Icon::ChevronDown, pal.text_weak);
+        icons::paint(p, Rect::from_center_size(pos2(x + 4.0 + 6.0, cy), vec2(12.0, 12.0)), Icon::ChevronDown, pal.chrome_weak);
     }
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
@@ -141,9 +143,12 @@ pub fn tool_button(ui: &mut egui::Ui, lead: Lead, text: &str, color: Color32, ch
 pub fn search_box(ui: &mut egui::Ui, r: Rect, hint: &str, keys: &str) -> egui::Response {
     let pal = style::pal();
     let resp = ui.interact(r, ui.id().with("titlebar-search"), Sense::click());
-    let fill = if resp.hovered() { pal.face_light } else { pal.bg };
+    // Weisses Feld auf der Titelleiste; unter der Maus eine kraeftigere Kante
+    let hot = ui.ctx().animate_bool_with_time(resp.id.with("hot"), resp.hovered(), 0.12);
+    let edge = if pal.dark { pal.border } else { pal.chrome.lerp_to_gamma(Color32::BLACK, 0.2) };
+    let edge = edge.lerp_to_gamma(pal.chrome_text, 0.35 * hot);
     let p = ui.painter();
-    p.rect(r, style::RADIUS as f32 + 1.0, fill, Stroke::new(1.0, pal.border), egui::StrokeKind::Inside);
+    p.rect(r, style::RADIUS as f32 + 1.0, pal.bg, Stroke::new(1.0, edge), egui::StrokeKind::Inside);
     let cy = r.center().y;
     icons::paint(p, Rect::from_center_size(pos2(r.left() + 18.0, cy), vec2(14.0, 14.0)), Icon::Search, pal.text_weak);
     let keys_g = p.layout_no_wrap(keys.to_string(), egui::FontId::proportional(12.0), pal.text_weak);

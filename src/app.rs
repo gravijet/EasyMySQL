@@ -489,7 +489,10 @@ impl EasyApp {
         self.schemas.clear();
         if let Some(db) = &self.db {
             match db.databases() {
-                Ok(d) => self.databases = d,
+                Ok(d) => {
+                    style::set_databases(&d);
+                    self.databases = d;
+                }
                 Err(e) => self.toast_error(e),
             }
         }
@@ -1403,10 +1406,10 @@ impl eframe::App for EasyApp {
         // Flaches Layout wie IntelliJ IDEA: Leisten und Seitenleiste in der Grundfarbe, Editorflaeche dunkler,
         // getrennt durch feine Linien
         let flat = |fill: egui::Color32, m: egui::Margin| egui::Frame::new().fill(fill).inner_margin(m);
-        egui::Panel::top("menu").show_separator_line(true).frame(flat(pal.face, egui::Margin { left: 10, right: 0, top: 0, bottom: 0 })).show(ui, |ui| {
+        egui::Panel::top("menu").show_separator_line(pal.dark).frame(flat(pal.chrome, egui::Margin { left: 10, right: 0, top: 0, bottom: 0 })).show(ui, |ui| {
             self.menu_bar(ui, &mut actions);
         });
-        egui::Panel::left("activity").exact_size(44.0).resizable(false).show_separator_line(true).frame(flat(pal.face, egui::Margin::symmetric(0, 6))).show(ui, |ui| {
+        egui::Panel::left("activity").exact_size(60.0).resizable(false).show_separator_line(false).frame(flat(pal.face, egui::Margin::symmetric(0, 8))).show(ui, |ui| {
             self.activity_bar(ui);
         });
         // Rechts und unten vor der linken Leiste und dem Editor anlegen
