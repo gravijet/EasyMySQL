@@ -332,28 +332,19 @@ pub fn folder_color(name: &str) -> Color32 {
 /// Eigene Farbe je Symbol, damit Menues, Knoepfe und Leisten farbig und leicht unterscheidbar sind. Reine
 /// Steuerzeichen (Schliessen, Pfeile, Mehr) bleiben neutral. Im hellen Design etwas dunkler fuer guten Kontrast.
 pub fn tint(icon: Icon) -> Color32 {
-    let pal = style::pal();
-    let c = |r: u8, g: u8, b: u8| {
-        let c = Color32::from_rgb(r, g, b);
-        if pal.dark { c } else { c.lerp_to_gamma(Color32::BLACK, 0.28) }
-    };
+    let p = style::pal();
     match icon {
-        Icon::Files | Icon::File | Icon::FileText | Icon::NewFile | Icon::Book | Icon::Info | Icon::Link | Icon::External => c(0x5B, 0x9C, 0xF8),
-        Icon::Database | Icon::Table | Icon::Columns | Icon::Layers => c(0x2F, 0xC1, 0xB8),
-        Icon::Search | Icon::Diagram | Icon::Braces | Icon::Code | Icon::FileCode | Icon::Explain => c(0xB4, 0x8C, 0xF2),
-        Icon::History | Icon::Key | Icon::Package | Icon::FolderInput | Icon::NewFolder | Icon::Folder | Icon::FolderOpen => c(0xF0, 0xA0, 0x4B),
-        Icon::Coffee => c(0xE0, 0x7A, 0x4A),
-        Icon::Play | Icon::Check | Icon::Save | Icon::Download | Icon::CloudDownload | Icon::Upload | Icon::CloudUpload | Icon::Plus | Icon::Terminal | Icon::Flask => c(0x6C, 0xCB, 0x75),
-        Icon::Trash | Icon::Stop | Icon::Bug | Icon::Alert | Icon::Power => c(0xF0, 0x71, 0x78),
-        Icon::Sparkles | Icon::Wizard | Icon::Lock | Icon::Shield => c(0xE8, 0xC5, 0x47),
-        Icon::GitBranch | Icon::GitCommit | Icon::GitMerge | Icon::GitPullRequest | Icon::CircleDot => c(0xF0, 0x6A, 0x45),
-        Icon::Users | Icon::Edit => c(0xE8, 0x79, 0xB9),
-        Icon::StepOver | Icon::StepInto | Icon::StepOut | Icon::ArrowRight | Icon::ArrowLeft | Icon::Undo | Icon::Redo | Icon::RotateCcw => c(0x6F, 0xA8, 0xF0),
-        Icon::FileImage => c(0xA0, 0x7C, 0xD6),
-        Icon::FileSheet => c(0x4C, 0xAF, 0x50),
-        Icon::FileJson => c(0xD6, 0xB8, 0x4E),
-        Icon::Github | Icon::Settings | Icon::Copy | Icon::Clipboard | Icon::Scissors | Icon::Refresh => pal.text_weak.lerp_to_gamma(pal.text, 0.35),
-        _ => pal.text_weak,
+        Icon::Files | Icon::File | Icon::FileText | Icon::NewFile | Icon::Book | Icon::Info | Icon::Link | Icon::External => p.blue,
+        Icon::Database | Icon::Table | Icon::Columns | Icon::Layers => p.teal,
+        Icon::Search | Icon::Diagram | Icon::Braces | Icon::Code | Icon::FileCode | Icon::Explain | Icon::FileImage => p.lilac,
+        Icon::History | Icon::Key | Icon::Package | Icon::FolderInput | Icon::NewFolder | Icon::Folder | Icon::FolderOpen | Icon::Coffee => p.orange,
+        Icon::Play | Icon::Check | Icon::Save | Icon::Download | Icon::CloudDownload | Icon::Upload | Icon::CloudUpload | Icon::Plus | Icon::Terminal | Icon::Flask | Icon::FileSheet => p.green,
+        Icon::Trash | Icon::Stop | Icon::Bug | Icon::Alert | Icon::Power | Icon::GitBranch | Icon::GitCommit | Icon::GitMerge | Icon::GitPullRequest | Icon::CircleDot => p.coral,
+        Icon::Sparkles | Icon::Wizard | Icon::Lock | Icon::Shield | Icon::FileJson => if p.dark { p.accent } else { p.orange },
+        Icon::Users | Icon::Edit => p.pink,
+        Icon::StepOver | Icon::StepInto | Icon::StepOut | Icon::ArrowRight | Icon::ArrowLeft | Icon::Undo | Icon::Redo | Icon::RotateCcw => p.blue,
+        Icon::Github | Icon::Settings | Icon::Copy | Icon::Clipboard | Icon::Scissors | Icon::Refresh => p.text_weak.lerp_to_gamma(p.text, 0.35),
+        _ => p.text_weak,
     }
 }
 
@@ -413,7 +404,7 @@ pub fn menu_heading(ui: &mut egui::Ui, text: &str) {
     ui.add_space(4.0);
     ui.horizontal(|ui| {
         ui.add_space(10.0);
-        ui.label(egui::RichText::new(text.to_uppercase()).size(11.5).color(pal.text_weak));
+        ui.label(egui::RichText::new(text).size(12.0).color(pal.text_weak).family(egui::FontFamily::Name("semi".into())));
     });
     ui.add_space(1.0);
 }
@@ -461,10 +452,9 @@ pub fn text_button_right(ui: &mut egui::Ui, icon: Icon, text: &str) -> Response 
     labelled_button(ui, icon, text, false, true)
 }
 
-/// Ausfuehren: die Hauptaktion, gruen gefuellt mit weissem Startsymbol
+/// Ausfuehren: die Hauptaktion in Akzentfarbe mit Startsymbol
 pub fn run_button(ui: &mut egui::Ui, text: &str) -> Response {
-    let green = if style::pal().dark { Color32::from_rgb(0x2F, 0x7D, 0x4A) } else { Color32::from_rgb(0x23, 0x7A, 0x45) };
-    labelled_button_filled(ui, Icon::Play, text, green)
+    labelled_button(ui, Icon::Play, text, true, false)
 }
 
 /// Hervorgehobene Hauptaktion (blau gefuellt)
@@ -476,51 +466,33 @@ fn labelled_button(ui: &mut egui::Ui, icon: Icon, text: &str, primary: bool, ico
     labelled_button_tinted(ui, icon, text, primary, icon_right, None)
 }
 
-/// Gefuellter Knopf in eigener Farbe (weisse Schrift); gesperrt wie ein normaler Knopf
-fn labelled_button_filled(ui: &mut egui::Ui, icon: Icon, text: &str, color: Color32) -> Response {
-    if !ui.is_enabled() {
-        return labelled_button_tinted(ui, icon, text, false, false, None);
-    }
-    let galley = ui.painter().layout_no_wrap(text.to_string(), egui::FontId::proportional(13.0), Color32::WHITE);
-    let size = vec2(galley.size().x + 41.0, ui.spacing().interact_size.y.max(24.0));
-    let (r, resp) = ui.allocate_exact_size(size, Sense::click());
-    let t = ui.ctx().animate_bool_with_time(resp.id.with("hot"), resp.hovered(), 0.12);
-    let fill = if resp.is_pointer_button_down_on() { color.gamma_multiply(0.85) } else { color.lerp_to_gamma(Color32::WHITE, 0.12 * t) };
-    // Beim Druecken minimal kleiner (Rueckmeldung ohne Verzoegerung)
-    let r = if resp.is_pointer_button_down_on() { r.shrink(0.6) } else { r };
-    ui.painter().rect_filled(r, style::RADIUS as f32, fill);
-    paint(ui.painter(), Rect::from_center_size(pos2(r.left() + 17.0, r.center().y), vec2(14.0, 14.0)), icon, Color32::WHITE);
-    ui.painter().galley_with_override_text_color(pos2(r.left() + 31.0, r.center().y - galley.size().y / 2.0), galley, Color32::WHITE);
-    if resp.has_focus() {
-        ui.painter().rect_stroke(r.expand(1.5), style::RADIUS as f32 + 1.5, Stroke::new(1.5, color.lerp_to_gamma(Color32::WHITE, 0.4)), egui::StrokeKind::Outside);
-    }
-    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
-}
-
 /// `tint`: eigene Farbe des Symbols (nur wenn der Knopf bedienbar ist)
 fn labelled_button_tinted(ui: &mut egui::Ui, icon: Icon, text: &str, primary: bool, icon_right: bool, tint: Option<Color32>) -> Response {
     let pal = style::pal();
-    let galley = ui.painter().layout_no_wrap(text.to_string(), egui::FontId::proportional(13.0), pal.text);
+    let galley = ui.painter().layout_no_wrap(text.to_string(), style::medium(13.0), pal.text);
     // Innenabstand links und rechts je 10, Symbol 14, Abstand Symbol–Text 7
     let size = vec2(galley.size().x + 41.0, ui.spacing().interact_size.y.max(24.0));
     let (r, resp) = ui.allocate_exact_size(size, Sense::click());
     let enabled = ui.is_enabled();
     let visuals = *ui.style().interact(&resp);
+    let down = resp.is_pointer_button_down_on();
+    let hot = ui.ctx().animate_bool_with_time(resp.id.with("hot"), resp.hovered(), 0.12);
     let (fill, fg) = if primary && enabled {
-        let fill = if resp.is_pointer_button_down_on() { pal.accent.gamma_multiply(0.8) } else if resp.hovered() { pal.accent.lerp_to_gamma(Color32::WHITE, 0.14) } else { pal.accent };
-        (fill, Color32::WHITE)
+        (style::accent_fill(hot, down), pal.on_accent)
     } else {
         (visuals.weak_bg_fill, if enabled { visuals.fg_stroke.color } else { pal.text_weak })
     };
-    ui.painter().rect(r, style::RADIUS as f32, fill, if primary { Stroke::NONE } else { visuals.bg_stroke }, egui::StrokeKind::Inside);
+    // Beim Druecken minimal kleiner (Rueckmeldung ohne Verzoegerung)
+    let r = if down && enabled { r.shrink(0.6) } else { r };
+    ui.painter().rect(r, style::RADIUS as f32, fill, if primary && enabled { Stroke::NONE } else { visuals.bg_stroke }, egui::StrokeKind::Inside);
     let (icon_x, text_x) = if icon_right { (r.right() - 17.0, r.left() + 10.0) } else { (r.left() + 17.0, r.left() + 31.0) };
     let icon_color = if !enabled { fg } else if primary { tint.unwrap_or(fg) } else { tint.unwrap_or_else(|| self::tint(icon)) };
     paint(ui.painter(), Rect::from_center_size(pos2(icon_x, r.center().y), vec2(14.0, 14.0)), icon, icon_color);
     ui.painter().galley_with_override_text_color(pos2(text_x, r.center().y - galley.size().y / 2.0), galley, fg);
     if resp.has_focus() {
-        ui.painter().rect_stroke(r, style::RADIUS as f32, Stroke::new(1.0, pal.accent), egui::StrokeKind::Outside);
+        ui.painter().rect_stroke(r.expand(1.5), style::RADIUS as f32 + 1.5, Stroke::new(1.5, pal.accent), egui::StrokeKind::Outside);
     }
-    resp
+    if enabled { resp.on_hover_cursor(egui::CursorIcon::PointingHand) } else { resp }
 }
 
 #[cfg(test)]

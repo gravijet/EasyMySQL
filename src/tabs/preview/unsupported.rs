@@ -1,5 +1,6 @@
 // Dateien, die sich nicht anzeigen lassen (kein Text, Bild oder PDF): nur ein Hinweis mit der erkannten Dateiart.
 
+use crate::style::Semi;
 use crate::icons::{self, Icon};
 use crate::style;
 use eframe::egui::{self, RichText};
@@ -56,7 +57,7 @@ impl Unsupported {
             let (r, _) = ui.allocate_exact_size(egui::vec2(48.0, 48.0), egui::Sense::hover());
             icons::paint(ui.painter(), r, Icon::File, pal.text_weak);
             ui.add_space(8.0);
-            ui.label(RichText::new(crate::workspace::dir_name(path)).strong());
+            ui.label(RichText::new(crate::workspace::dir_name(path)).semi());
             ui.label(RichText::new(crate::i18n::text("Diese Datei kann nicht angezeigt werden.")).color(pal.text_weak));
             ui.add_space(8.0);
             if icons::text_button(ui, Icon::External, crate::i18n::text("Mit dem Standardprogramm öffnen")).clicked() {

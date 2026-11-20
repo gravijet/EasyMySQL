@@ -18,6 +18,7 @@ pub mod structure;
 pub mod transfer;
 pub mod users;
 
+use crate::style::Semi;
 use crate::db::{Db, Schema};
 use crate::keymap::Cmd;
 use eframe::egui;
@@ -385,7 +386,7 @@ pub trait TabView {
 /// Abschnittsueberschrift einer Seite: kleiner, abgesetzter Text mit einheitlichem Abstand
 pub fn section_title(ui: &mut egui::Ui, text: &str) {
     ui.add_space(12.0);
-    ui.label(egui::RichText::new(text).size(12.5).strong().color(crate::style::pal().text_weak));
+    ui.label(egui::RichText::new(text).size(12.5).semi().color(crate::style::pal().text_weak));
     ui.add_space(4.0);
 }
 

@@ -1,5 +1,6 @@
 // Registerkarte "Sicherungen & Reparatur".
 
+use crate::style::Semi;
 use crate::sperre::Sperre;
 use super::{Action, Ctx, TabView};
 use crate::backup::{self, BackupInfo, Config};
@@ -188,7 +189,7 @@ impl SafetyTab {
                         ui.spacing_mut().item_spacing.x = 0.0;
                         ui.add_space(10.0);
                         crate::widgets::fixed(ui, 160.0, 36.0, |ui| {
-                            ui.label(RichText::new(&b.time).strong());
+                            ui.label(RichText::new(&b.time).semi());
                         });
                         crate::widgets::fixed(ui, 130.0, 36.0, |ui| {
                             ui.label(RichText::new(backup::reason_text(&b.reason)).color(pal.text_weak));
@@ -464,7 +465,7 @@ impl TabView for SafetyTab {
             if let Some(job) = &self.job {
                 ui.horizontal(|ui| {
                     ui.spinner();
-                    ui.label(RichText::new(crate::tr_format!("{} läuft ...", "{} is running ...", job.title)).strong());
+                    ui.label(RichText::new(crate::tr_format!("{} läuft ...", "{} is running ...", job.title)).semi());
                 });
             }
             if let Some(r) = &self.result {

@@ -1,6 +1,7 @@
 // Weitere Server neben dem globalen: jede Datei kann einen gespeicherten Server waehlen (siehe `profiles`).
 // Verbunden wird erst, wenn eine Registerkarte den Server braucht; Datenbankliste und Strukturen gehoeren zum Server.
 
+use crate::style::Semi;
 use super::*;
 use crate::profiles::Profile;
 use crate::tabs::SchemaCache;
@@ -96,7 +97,7 @@ impl EasyApp {
                     ui.label(RichText::new(crate::tr_format!("Verbinde mit {name} …", "Connecting to {name} …")).size(15.0));
                 }
                 Some(r) => {
-                    ui.label(RichText::new(crate::tr_format!("Keine Verbindung zu {name}", "Not connected to {name}")).size(16.0).strong());
+                    ui.label(RichText::new(crate::tr_format!("Keine Verbindung zu {name}", "Not connected to {name}")).size(16.0).semi());
                     ui.add_space(6.0);
                     ui.label(RichText::new(r.error.clone().unwrap_or_default()).color(pal.error_text));
                     ui.add_space(14.0);
@@ -115,7 +116,7 @@ impl EasyApp {
                     });
                 }
                 None => {
-                    ui.label(RichText::new(crate::tr_format!("Der Server „{name}“ existiert nicht mehr.", "The server “{name}” no longer exists.")).size(16.0).strong());
+                    ui.label(RichText::new(crate::tr_format!("Der Server „{name}“ existiert nicht mehr.", "The server “{name}” no longer exists.")).size(16.0).semi());
                     ui.add_space(14.0);
                     ui.horizontal(|ui| {
                         ui.add_space(((ui.available_width() - 260.0) / 2.0).max(0.0));

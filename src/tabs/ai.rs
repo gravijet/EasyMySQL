@@ -1,6 +1,7 @@
 // Native Chat-Fenster fuer Claude und Codex, aufgebaut wie die Chat-Apps der Anbieter:
 // Kopfzeile mit Konto, Verlauf als eigene Ansicht, Nachrichten als Blasen bzw. Fliesstext,
 // Eingabekarte mit Projektordner, Berechtigung und Modellwahl.
+use crate::style::Semi;
 use crate::sperre::Sperre;
 use super::{Action, Ctx, TabView};
 use crate::ai::{Anfrage, Auftrag, Auswahl, Befehl, Konfig, Konto, Modell, Nachricht, Rolle, Sitzung, Stand};
@@ -498,7 +499,7 @@ impl AiTab {
             ui.spacing_mut().item_spacing.x = 6.0;
             ui.add_space(8.0);
             logo(ui, self.icon(), akzent, 18.0);
-            ui.label(RichText::new(kurzname(self.ziel)).strong().size(13.0));
+            ui.label(RichText::new(kurzname(self.ziel)).semi().size(13.0));
             // Zustand als Punkt: gruen bereit, gelb verbindet, grau aus
             let verbindet = self.verbindung.as_ref().is_some_and(|_| !self.live.bereit && !self.live.beendet);
             let (punkt, text) = if !installiert {
@@ -572,7 +573,7 @@ impl AiTab {
                 ui.horizontal(|ui| {
                     logo(ui, self.icon(), akzent, 26.0);
                     ui.vertical(|ui| {
-                        ui.label(RichText::new(self.ziel.label()).strong());
+                        ui.label(RichText::new(self.ziel.label()).semi());
                         let (text, farbe) = match (&self.konto, installiert) {
                             (_, false) => (tr("Nicht installiert", "Not installed").to_string(), pal.text_weak),
                             (Some(Konto { angemeldet: Some(true), art }), _) => (crate::tr_format!("Angemeldet · {art}", "Signed in · {art}"), pal.ok_text),
@@ -640,7 +641,7 @@ impl AiTab {
                 if kopf_knopf(ui, Icon::ArrowLeft, false, tr("Zurück zum Chat", "Back to chat")).clicked() {
                     self.ansicht = Ansicht::Chat;
                 }
-                ui.label(RichText::new(tr("Chats", "Chats")).strong().size(15.0));
+                ui.label(RichText::new(tr("Chats", "Chats")).semi().size(15.0));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if pill(ui, Some(Icon::Plus), tr("Neuer Chat", "New chat"), farbe(self.ziel), false).clicked() {
                         self.neuer_chat();
@@ -677,7 +678,7 @@ impl AiTab {
                     if g != gruppe {
                         gruppe = g;
                         ui.add_space(8.0);
-                        ui.label(RichText::new(g).size(11.5).strong().color(pal.text_weak));
+                        ui.label(RichText::new(g).size(11.5).semi().color(pal.text_weak));
                         ui.add_space(2.0);
                     }
                     match chat_zeile(ui, e, e.pfad == self.speicher) {
@@ -1380,7 +1381,7 @@ fn hinweis_karte(ui: &mut egui::Ui, icon: Icon, titel: String, text: &str, knopf
                 icons::paint(ui.painter(), r, icon, akzent);
                 ui.add_space(4.0);
                 ui.vertical(|ui| {
-                    ui.label(RichText::new(titel).strong());
+                    ui.label(RichText::new(titel).semi());
                     ui.add(egui::Label::new(RichText::new(text).size(11.5).color(pal.text_weak)).wrap());
                     if let Some(k) = knopf {
                         ui.add_space(6.0);
@@ -1598,7 +1599,7 @@ fn eintrag(ui: &mut egui::Ui, nutzer: bool, n: &Nachricht, ziel: Target, nach_nu
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
             logo(ui, if ziel == Target::Claude { Icon::Claude } else { Icon::Codex }, akzent, 20.0);
-            ui.label(RichText::new(kurzname(ziel)).strong().size(12.5));
+            ui.label(RichText::new(kurzname(ziel)).semi().size(12.5));
         });
         ui.add_space(2.0);
     }

@@ -2,6 +2,7 @@
 // sortieren, Auswahl erweitern, neue Zeile darunter/darueber, Blockkommentar, Rechtsklickmenue und Umbenennen
 // in der Datei (wenn kein Sprachserver hilft).
 
+use crate::style::Semi;
 use super::refactor::{self, Generate, Surround};
 use super::*;
 use crate::dev::java::outline;
@@ -282,7 +283,7 @@ impl SqlEditor {
         let area = egui::Area::new(self.id.with("picker")).order(egui::Order::Foreground).fixed_pos(pos).show(ctx, |ui| {
             egui::Frame::popup(&ctx.global_style()).inner_margin(egui::Margin::same(4)).show(ui, |ui| {
                 ui.set_min_width(260.0);
-                ui.label(RichText::new(if filter.is_empty() { title.to_string() } else { filter.clone() }).strong().color(if filter.is_empty() { pal.text_weak } else { pal.accent }));
+                ui.label(RichText::new(if filter.is_empty() { title.to_string() } else { filter.clone() }).semi().color(if filter.is_empty() { pal.text_weak } else { pal.accent }));
                 ui.add_space(2.0);
                 egui::ScrollArea::vertical().max_height(26.0 * 14.0).show(ui, |ui| {
                     for (i, l) in labels.iter().enumerate() {

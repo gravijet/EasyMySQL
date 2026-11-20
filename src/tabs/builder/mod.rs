@@ -4,6 +4,7 @@
 mod dml;
 pub mod model;
 
+use crate::style::Semi;
 use super::{Action, Ctx, TabView};
 use crate::db::{self, ResultSet, Schema};
 use crate::grid::{self, GridState};
@@ -141,7 +142,7 @@ fn nested_frame<R>(ui: &mut egui::Ui, depth: usize, add: impl FnOnce(&mut egui::
 }
 
 fn keyword(ui: &mut egui::Ui, kw: &str) {
-    ui.label(RichText::new(kw).monospace().strong().color(style::pal().syn_keyword));
+    ui.label(RichText::new(kw).monospace().semi().color(style::pal().syn_keyword));
 }
 
 fn remove_button(ui: &mut egui::Ui) -> bool {
@@ -354,7 +355,7 @@ fn column_picker(ui: &mut egui::Ui, id: egui::Id, src: &mut String, col: &mut St
     let text = if src.is_empty() { col.clone() } else { format!("{src}.{col}") };
     crate::widgets::combo(id).selected_text(RichText::new(text).monospace()).width(150.0).height(400.0).show_ui(ui, |ui| {
         for (s, cols) in &env.scope {
-            ui.label(RichText::new(s).small().strong().color(style::pal().text_weak));
+            ui.label(RichText::new(s).small().semi().color(style::pal().text_weak));
             if stars && ui.selectable_label(src == s && col == "*", format!("  {s}.*")).clicked() {
                 *src = s.clone();
                 *col = "*".into();
@@ -999,7 +1000,7 @@ fn column_menu(ui: &mut egui::Ui, s: &mut Select, env: &Env, id: egui::Id) {
         ui.add_space(4.0);
         egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
             for (src, cols) in env.scope.iter().take(s.sources.len()) {
-                ui.label(RichText::new(src).small().strong().color(style::pal().text_weak));
+                ui.label(RichText::new(src).small().semi().color(style::pal().text_weak));
                 let mut entries: Vec<&str> = vec!["*"];
                 entries.extend(cols.iter().map(|c| c.as_str()));
                 for c in entries {
@@ -1234,7 +1235,7 @@ fn query_ui(ui: &mut egui::Ui, qr: &mut Query, env: &Env, id: egui::Id) {
         ui.push_id(("part", i), |ui| {
             if i > 0 {
                 ui.horizontal(|ui| {
-                    crate::widgets::combo(id.with(("setop", i))).selected_text(RichText::new(part.op.sql()).monospace().strong().color(style::pal().syn_keyword)).width(130.0).show_ui(ui, |ui| {
+                    crate::widgets::combo(id.with(("setop", i))).selected_text(RichText::new(part.op.sql()).monospace().semi().color(style::pal().syn_keyword)).width(130.0).show_ui(ui, |ui| {
                         for op in SetOp::ALL {
                             ui.selectable_value(&mut part.op, op, op.sql()).on_hover_text(op.hint());
                         }
@@ -1745,7 +1746,7 @@ impl TabView for BuilderTab {
             .show(ui, |ui| {
                 egui::Panel::left(egui::Id::new(("builder-sql", &self.id))).resizable(true).default_size(ui.available_width() * 0.4).frame(egui::Frame::new().inner_margin(egui::Margin { left: 0, right: 4, top: 0, bottom: 0 })).show(ui, |ui| pane_card(ui, |ui| {
                     ui.horizontal(|ui| {
-                        ui.label(RichText::new("SQL").small().strong().color(pal.text_weak));
+                        ui.label(RichText::new("SQL").small().semi().color(pal.text_weak));
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             if icons::button(ui, Icon::Copy, crate::i18n::text("Kopieren")).clicked() {
                                 ui.ctx().copy_text(sql.clone());
@@ -1880,6 +1881,7 @@ mod tests {
     #[test]
     fn section_header_click_target_is_the_title() {
         let ctx = egui::Context::default();
+        crate::style::apply(&ctx, true);
         let id = egui::Id::new("sec-test");
         let frame = |events: Vec<egui::Event>| {
             let _ = ctx.run_ui(egui::RawInput { events, screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0))), ..Default::default() }, |ui| {
@@ -1904,6 +1906,7 @@ mod tests {
     #[test]
     fn column_menu_search_takes_keys() {
         let ctx = egui::Context::default();
+        crate::style::apply(&ctx, true);
         let mut s = Select { sources: vec![Source::table("kunde")], ..Default::default() };
         let env = Env { schema: None, tables: Vec::new(), ctes: Vec::new(), scope: vec![("kunde".into(), vec!["id".into(), "name".into(), "ort".into()])], depth: 1 };
         let id = egui::Id::new("cm-test");

@@ -3,6 +3,7 @@
 // Definition, Umbenennen), SQL-Pruefung in Zeichenketten und Vorlagen fuer Tabellen.
 // Dazu Gradle-Skripte, XML, JSON, .properties und Text.
 
+use crate::style::Semi;
 use crate::sperre::Sperre;
 use super::{Action, Ctx, TabView};
 use crate::dev::java::{self, run as jrun, source};
@@ -628,7 +629,7 @@ impl CodeTab {
         let mut cancel = false;
         egui::Modal::new(self.editor.id.with("rename")).show(ctx, |ui| {
             ui.set_width(360.0);
-            ui.label(RichText::new(crate::i18n::tr("Umbenennen", "Rename")).strong());
+            ui.label(RichText::new(crate::i18n::tr("Umbenennen", "Rename")).semi());
             ui.label(RichText::new(crate::i18n::tr("Ändert den Namen überall im Projekt.", "Changes the name everywhere in the project.")).small().color(style::pal().text_weak));
             ui.add_space(6.0);
             let r = ui.add(crate::widgets::edit(name).desired_width(f32::INFINITY));
@@ -1194,7 +1195,7 @@ impl CodeTab {
             ui.horizontal(|ui| {
                 let (r, _) = ui.allocate_exact_size(egui::vec2(18.0, 18.0), egui::Sense::hover());
                 icons::paint(ui.painter(), r, Icon::Package, pal.accent);
-                ui.label(RichText::new(crate::tr_format!("Bibliothek einbinden ({})", "Add library ({})", d.eco.label())).strong().size(15.0));
+                ui.label(RichText::new(crate::tr_format!("Bibliothek einbinden ({})", "Add library ({})", d.eco.label())).semi().size(15.0));
             });
             ui.label(RichText::new(d.target.describe()).small().color(pal.text_weak));
             ui.add_space(8.0);
@@ -1235,7 +1236,7 @@ impl CodeTab {
                         for h in hits {
                             ui.horizontal(|ui| {
                                 ui.vertical(|ui| {
-                                    ui.label(RichText::new(&h.id).monospace().strong());
+                                    ui.label(RichText::new(&h.id).monospace().semi());
                                     let desc = if h.description.is_empty() { h.version.clone() } else { format!("{} · {}", h.version, h.description) };
                                     ui.add(egui::Label::new(RichText::new(desc).small().color(pal.text_weak)).truncate());
                                 });
@@ -1361,7 +1362,7 @@ impl CodeTab {
                         debug::Status::Paused { method, line, .. } => (crate::tr_format!("Angehalten in {method}, Zeile {}", "Paused in {method}, line {}", line + 1), pal.warn_text),
                         debug::Status::Ended => (crate::i18n::tr("Beendet", "Ended").to_string(), pal.text_weak),
                     };
-                    ui.label(RichText::new(label).strong().color(color));
+                    ui.label(RichText::new(label).semi().color(color));
                     let paused = matches!(st.status, debug::Status::Paused { .. });
                     let running = st.status != debug::Status::Ended;
                     ui.add_space(8.0);
@@ -1390,7 +1391,7 @@ impl CodeTab {
                     ui.label(RichText::new(e).color(pal.error_text));
                 }
                 ui.columns(2, |cols| {
-                    cols[0].label(RichText::new(crate::i18n::tr("Variablen", "Variables")).small().strong());
+                    cols[0].label(RichText::new(crate::i18n::tr("Variablen", "Variables")).small().semi());
                     egui::ScrollArea::vertical().id_salt(self.editor.id.with("dbg-vars")).max_height(cols[0].available_height() - 30.0).auto_shrink([false, false]).show(&mut cols[0], |ui| {
                         for (name, value) in &st.locals {
                             ui.horizontal(|ui| {
@@ -1403,7 +1404,7 @@ impl CodeTab {
                             });
                         }
                     });
-                    cols[1].label(RichText::new(crate::i18n::tr("Aufrufe", "Call stack")).small().strong());
+                    cols[1].label(RichText::new(crate::i18n::tr("Aufrufe", "Call stack")).small().semi());
                     egui::ScrollArea::vertical().id_salt(self.editor.id.with("dbg-stack")).max_height(cols[1].available_height() * 0.45).auto_shrink([false, false]).show(&mut cols[1], |ui| {
                         for f in &st.stack {
                             let label = match f.line {
@@ -1454,7 +1455,7 @@ impl CodeTab {
             egui::Frame::new().fill(pal.bg).stroke(egui::Stroke::new(1.0, pal.border)).corner_radius(style::RADIUS + 1).inner_margin(egui::Margin::symmetric(10, 6)).show(ui, |ui| {
                 ui.set_min_size(ui.available_size());
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new(&f.message).strong().color(pal.error_text));
+                    ui.label(RichText::new(&f.message).semi().color(pal.error_text));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if icons::button(ui, Icon::Close, crate::i18n::text("Schließen")).clicked() {
                             self.show_output = false;

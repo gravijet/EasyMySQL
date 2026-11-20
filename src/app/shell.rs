@@ -177,7 +177,7 @@ impl EasyApp {
                 // Zeichen des Programms
                 let (r, _) = ui.allocate_exact_size(vec2(22.0, 22.0), Sense::hover());
                 ui.painter().rect_filled(r, 6.0, pal.accent);
-                icons::paint(ui.painter(), Rect::from_center_size(r.center(), vec2(14.0, 14.0)), Icon::Database, egui::Color32::WHITE);
+                icons::paint(ui.painter(), Rect::from_center_size(r.center(), vec2(14.0, 14.0)), Icon::Database, pal.on_accent);
                 ui.add_space(6.0);
                 ui.spacing_mut().button_padding = vec2(8.0, 5.0);
                 ui.spacing_mut().item_spacing.x = 0.0;
@@ -434,10 +434,15 @@ impl EasyApp {
             let (slot, resp) = ui.allocate_exact_size(vec2(ui.available_width(), BTN), Sense::click_and_drag());
             let r = Rect::from_center_size(slot.center(), vec2(BTN, BTN));
             let radius = style::RADIUS as f32 + 1.0;
-            if active {
-                ui.painter().rect_filled(r, radius, pal.selection.gamma_multiply(if pal.dark { 0.75 } else { 0.9 }));
-            } else if resp.hovered() {
+            // Offene Ansicht: ruhige Flaeche und ein Kreidestrich am Rand, der beim Oeffnen aus der Mitte waechst
+            let t = ui.ctx().animate_bool_with_time(resp.id.with("offen"), active, 0.18);
+            if active || resp.hovered() {
                 ui.painter().rect_filled(r, radius, pal.hover);
+            }
+            if t > 0.0 {
+                let h = (BTN - 12.0) * t;
+                let bar = Rect::from_center_size(pos2(slot.left() + 1.5, slot.center().y), vec2(3.0, h));
+                ui.painter().rect_filled(bar, 1.5, pal.accent);
             }
             // Farbige Symbole; ruhig, solange die Ansicht nicht offen ist
             let own = icons::tint(icon);
@@ -510,7 +515,7 @@ impl EasyApp {
         const ICON_W: f32 = 42.0;
         const LIST_W: f32 = 34.0;
         let pal = style::pal();
-        let font = egui::FontId::proportional(13.0);
+        let font = style::medium(13.0);
         let (bar, _) = ui.allocate_exact_size(vec2(ui.available_width(), BAR_H), Sense::hover());
         block_autoscroll(bar);
         // Untere Kante der Reiterleiste; der aktive Reiter liegt mit seinem Unterstrich darauf
@@ -722,11 +727,11 @@ impl EasyApp {
         let logo = Rect::from_min_size(pos2(x0 + 4.0, top), vec2(48.0, 48.0));
         p.rect_filled(logo, 12.0, pal.accent);
         p.rect_filled(Rect::from_min_max(logo.min, pos2(logo.max.x, logo.center().y)), egui::CornerRadius { nw: 12, ne: 12, sw: 0, se: 0 }, egui::Color32::from_white_alpha(14));
-        icons::paint(&p, Rect::from_center_size(logo.center(), vec2(28.0, 28.0)), Icon::Database, egui::Color32::WHITE);
-        p.text(pos2(logo.right() + 14.0, logo.center().y - 9.0), egui::Align2::LEFT_CENTER, "EasyMySQL", egui::FontId::proportional(22.0), pal.text);
+        icons::paint(&p, Rect::from_center_size(logo.center(), vec2(28.0, 28.0)), Icon::Database, pal.on_accent);
+        p.text(pos2(logo.right() + 14.0, logo.center().y - 9.0), egui::Align2::LEFT_CENTER, "EasyMySQL", crate::style::semi(22.0), pal.text);
         p.text(pos2(logo.right() + 14.0, logo.center().y + 13.0), egui::Align2::LEFT_CENTER, crate::tr_format!("Version {}", "Version {}", env!("CARGO_PKG_VERSION")), egui::FontId::proportional(12.0), pal.text_weak);
         let mut y = top + head_h - 18.0;
-        p.text(pos2(x0 + 4.0, y), egui::Align2::LEFT_CENTER, crate::i18n::tr("STARTEN", "START"), egui::FontId::proportional(11.5), pal.text_weak);
+        p.text(pos2(x0 + 4.0, y), egui::Align2::LEFT_CENTER, crate::i18n::tr("Starten", "Start"), crate::style::semi(12.5), pal.text_weak);
         y += 12.0;
         let mut run = None;
         let n_cmds = cmds.len();
@@ -756,7 +761,7 @@ impl EasyApp {
         y += ROW * n_cmds as f32;
         if !recent.is_empty() {
             y += 18.0;
-            p.text(pos2(x0 + 4.0, y), egui::Align2::LEFT_CENTER, crate::i18n::text("Zuletzt geöffnet").to_uppercase(), egui::FontId::proportional(11.5), pal.text_weak);
+            p.text(pos2(x0 + 4.0, y), egui::Align2::LEFT_CENTER, crate::i18n::text("Zuletzt geöffnet"), crate::style::semi(12.5), pal.text_weak);
             y += 12.0;
             let mut child = ui.new_child(egui::UiBuilder::new().max_rect(Rect::from_min_size(pos2(x0, y), vec2(w, recent.len() as f32 * 42.0))).layout(egui::Layout::top_down_justified(egui::Align::Min)));
             child.spacing_mut().item_spacing.y = 2.0;

@@ -1,6 +1,7 @@
 // Registerkarte "Hilfe": Handbuch mit Inhaltsverzeichnis, Suche, aktuellen Tastenkuerzeln und
 // Knoepfen, die das Beschriebene direkt oeffnen.
 
+use crate::style::Semi;
 use crate::sperre::Sperre;
 use super::help_content::{B, CHAPTERS, Section, Target};
 use super::{Action, Ctx, TabView};
@@ -178,7 +179,7 @@ fn toc_chapter(ui: &mut egui::Ui, title: &str, open: bool) -> egui::Response {
 fn section_ui(ui: &mut egui::Ui, s: &Section, cx: &mut Ctx, goto: &mut Option<String>, words: &[String]) {
     let pal = style::pal();
     ui.add_space(10.0);
-    let r = ui.label(marked(crate::i18n::text(s.title), words, egui::FontId::proportional(20.0), pal.text, None));
+    let r = ui.label(marked(crate::i18n::text(s.title), words, crate::style::semi(20.0), pal.text, None));
     if goto.as_deref() == Some(s.id) {
         r.scroll_to_me_animation(Some(egui::Align::TOP), egui::style::ScrollAnimation::none());
         *goto = None;
@@ -196,7 +197,7 @@ fn section_ui(ui: &mut egui::Ui, s: &Section, cx: &mut Ctx, goto: &mut Option<St
             }
             B::Steps(items) => {
                 for (i, it) in items.iter().enumerate() {
-                    hanging(ui, RichText::new(format!("{}.", i + 1)).strong().color(pal.accent), crate::i18n::text(it), words);
+                    hanging(ui, RichText::new(format!("{}.", i + 1)).semi().color(pal.accent), crate::i18n::text(it), words);
                 }
             }
             B::Shell(cmd) => {
@@ -212,7 +213,7 @@ fn section_ui(ui: &mut egui::Ui, s: &Section, cx: &mut Ctx, goto: &mut Option<St
             B::Table(rows) => {
                 let list: Vec<(&str, &str)> = rows.to_vec();
                 self::rows(ui, list.len(), |ui, i| {
-                    left_cell(ui, 150.0, RichText::new(crate::i18n::text(list[i].0)).strong());
+                    left_cell(ui, 150.0, RichText::new(crate::i18n::text(list[i].0)).semi());
                     ui.label(marked(crate::i18n::text(list[i].1), words, egui::FontId::proportional(13.0), pal.text, None));
                 });
             }
@@ -413,7 +414,7 @@ impl TabView for HelpTab {
                     return;
                 }
                 let c = &CHAPTERS[self.chapter.min(CHAPTERS.len() - 1)];
-                ui.label(RichText::new(crate::i18n::text(c.title)).size(24.0));
+                ui.label(RichText::new(crate::i18n::text(c.title)).size(24.0).semi());
                 ui.add_space(10.0);
                 for s in c.sections {
                     headings.push((s.id, ui.cursor().top()));

@@ -1,5 +1,6 @@
 // Ergebnis-/Datentabelle mit Gitterlinien und optionaler Zellbearbeitung.
 
+use crate::style::Semi;
 use crate::db::Row;
 use crate::style;
 use eframe::egui::{self, Key, RichText, Sense, Stroke};
@@ -170,10 +171,10 @@ pub fn show(
                     cell_frame(ui, true);
                     let mut inner = |ui: &mut egui::Ui| {
                     if edit != Edit::CellsAndColumns {
-                        ui.label(RichText::new(c).strong());
+                        ui.label(RichText::new(c).semi());
                         return;
                     }
-                    let resp = ui.add(egui::Label::new(RichText::new(c).strong()).selectable(false).truncate().sense(Sense::click()));
+                    let resp = ui.add(egui::Label::new(RichText::new(c).semi()).selectable(false).truncate().sense(Sense::click()));
                     let tip = crate::i18n::tr("Klicken für Spaltenmenü", "Click for column menu");
                     let resp = resp.on_hover_text(tip).on_hover_cursor(egui::CursorIcon::PointingHand);
                     if resp.hovered() || resp.is_pointer_button_down_on() {

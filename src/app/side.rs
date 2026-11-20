@@ -1,5 +1,6 @@
 // Seitenleisten: Explorer (Projektordner), Suchen in Dateien, Datenbanken, Verlauf.
 
+use crate::style::Semi;
 use crate::sperre::Sperre;
 use super::*;
 use crate::db::q;
@@ -245,7 +246,7 @@ pub(super) fn section_header(ui: &mut egui::Ui, title: &str, add_buttons: impl F
             ui.add_space(6.0);
             ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                 ui.add_space(8.0);
-                ui.add(egui::Label::new(RichText::new(title).size(12.0).color(style::pal().text_weak)).truncate()).on_hover_text(title);
+                ui.add(egui::Label::new(RichText::new(title).size(13.0).color(style::pal().text).family(egui::FontFamily::Name("semi".into()))).truncate()).on_hover_text(title);
             });
         });
     });
@@ -350,7 +351,7 @@ impl EasyApp {
     fn explorer(&mut self, ui: &mut egui::Ui) {
         self.rescan_tree();
         let Some(project) = self.project.clone() else {
-            section_header(ui, "EXPLORER", |_| {});
+            section_header(ui, "Explorer", |_| {});
             // Wie die Willkommensseite von IntelliJ IDEA: Aktionen als Zeilen mit Symbol, darunter die letzten Projekte
             // Gemeinsame linke Kante: 8 px wie die Ueberschrift der Seitenleiste
             egui::Frame::new().inner_margin(egui::Margin::symmetric(0, 2)).show(ui, |ui| {
@@ -371,7 +372,7 @@ impl EasyApp {
                 let recent: Vec<PathBuf> = self.settings.recent.iter().filter(|p| p.is_dir()).cloned().collect();
                 if !recent.is_empty() {
                     ui.add_space(10.0);
-                    section_header(ui, &crate::i18n::text("Zuletzt geöffnet").to_uppercase(), |_| {});
+                    section_header(ui, crate::i18n::text("Zuletzt geöffnet"), |_| {});
                     for p in recent {
                         if recent_row(ui, &p).clicked() {
                             self.switch_project(Some(p));
@@ -395,7 +396,7 @@ impl EasyApp {
         let target = self.explorer.target_dir(&project);
         let connected = self.db.is_some();
         let can_paste = self.explorer.clip.is_some();
-        let title = workspace::dir_name(&project).to_uppercase();
+        let title = workspace::dir_name(&project);
         section_header(ui, &title, |ui| {
             let more = icons::button(ui, Icon::More, crate::i18n::text("Projekt"));
             egui::Popup::menu(&more).show(|ui| {
@@ -612,7 +613,7 @@ impl EasyApp {
     // Suchen in Dateien
 
     fn search_side(&mut self, ui: &mut egui::Ui, actions: &mut Vec<Action>) {
-        section_header(ui, crate::i18n::text("SUCHEN"), |_| {});
+        section_header(ui, crate::i18n::tr("Suchen", "Search"), |_| {});
         let Some(tree) = (self.rescan_tree(), self.tree.clone()).1 else {
             egui::Frame::new().inner_margin(egui::Margin::symmetric(8, 4)).show(ui, |ui| {
                 if crate::widgets::block_button(ui, crate::i18n::text("Ordner öffnen")).clicked() {
@@ -695,7 +696,7 @@ impl EasyApp {
         egui::ScrollArea::vertical().id_salt("searchres").auto_shrink([false, false]).show(ui, |ui| {
             for (f, hits) in &self.search.results {
                 let rel = f.strip_prefix(&project).unwrap_or(f).to_string_lossy().replace('\\', "/");
-                egui::CollapsingHeader::new(RichText::new(format!("{rel}  ({})", hits.len())).strong()).id_salt(("sr", f)).default_open(true).show(ui, |ui| {
+                egui::CollapsingHeader::new(RichText::new(format!("{rel}  ({})", hits.len())).semi()).id_salt(("sr", f)).default_open(true).show(ui, |ui| {
                     for (line, text) in hits {
                         let r = ui.add(egui::Label::new(RichText::new(format!("{:>4}  {text}", line + 1)).monospace().small()).truncate().sense(Sense::click()));
                         if r.hovered() {
@@ -715,7 +716,7 @@ impl EasyApp {
 
     fn history_side(&mut self, ui: &mut egui::Ui, actions: &mut Vec<Action>) {
         let mut clear = false;
-        section_header(ui, crate::i18n::text("VERLAUF"), |ui| {
+        section_header(ui, crate::i18n::text("Verlauf"), |ui| {
             if icons::button(ui, Icon::Trash, crate::i18n::text("Verlauf leeren")).clicked() {
                 clear = true;
             }
@@ -785,7 +786,7 @@ impl EasyApp {
     fn databases_side(&mut self, ui: &mut egui::Ui, actions: &mut Vec<Action>) {
         let mut new_db = false;
         let mut refresh = false;
-        section_header(ui, crate::i18n::text("DATENBANKEN"), |ui| {
+        section_header(ui, crate::i18n::text("Datenbanken"), |ui| {
             if icons::button(ui, Icon::Refresh, crate::i18n::text("Aktualisieren")).clicked() {
                 refresh = true;
             }
@@ -849,7 +850,7 @@ impl EasyApp {
                 if sys && !show_sys {
                     continue;
                 }
-                let title = if *d == self.current_db { RichText::new(d).strong() } else { RichText::new(d) };
+                let title = if *d == self.current_db { RichText::new(d).semi() } else { RichText::new(d) };
                 let (hr, _) = tree_node(ui, ui.make_persistent_id(("db", d)), Icon::Database, pal.accent, title, |ui| {
                     let schema = self.schemas.get_arc(Some(dbc), d).cloned();
                     let loading = self.schemas.is_loading(d);
@@ -1090,7 +1091,7 @@ impl EasyApp {
                 };
                 let (r, _) = ui.allocate_exact_size(vec2(18.0, 18.0), Sense::hover());
                 icons::paint(ui.painter(), r, icon, if danger { pal.error_text } else { pal.accent });
-                ui.label(RichText::new(title).strong().size(15.0));
+                ui.label(RichText::new(title).semi().size(15.0));
             });
             ui.add_space(10.0);
             match dlg {
@@ -1117,8 +1118,8 @@ impl EasyApp {
             ui.add_space(14.0);
             ui.allocate_ui_with_layout(vec2(ui.available_width(), 30.0), egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let ok_text = if danger { crate::i18n::text("Löschen") } else { "OK" };
-                let fill = if danger { pal.error_text } else { pal.accent };
-                if ui.add(egui::Button::new(RichText::new(ok_text).color(Color32::WHITE)).fill(fill).min_size(vec2(84.0, 28.0))).clicked() {
+                let pressed = if danger { crate::widgets::danger(ui, ok_text) } else { crate::widgets::primary(ui, ok_text) };
+                if pressed.clicked() {
                     ok = true;
                 }
                 if ui.add(egui::Button::new(crate::i18n::text("Abbrechen")).min_size(vec2(84.0, 28.0))).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {

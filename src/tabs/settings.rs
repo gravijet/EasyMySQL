@@ -1,5 +1,6 @@
 // Registerkarte "Einstellungen": alle Einstellungen an einem Ort, inkl. Tastenkuerzel.
 
+use crate::style::Semi;
 use crate::sperre::Sperre;
 use super::{Action, Ctx, TabView};
 use crate::db::ConnInfo;
@@ -135,7 +136,7 @@ impl SettingsTab {
             let (r, _) = ui.allocate_exact_size(egui::vec2(22.0, 22.0), egui::Sense::hover());
             crate::icons::paint(ui.painter(), r, section_icon(id), style::pal().accent);
             ui.add_space(4.0);
-            ui.label(RichText::new(title).size(19.0));
+            ui.label(RichText::new(title).size(19.0).semi());
         });
         ui.add_space(12.0);
     }
@@ -186,7 +187,7 @@ impl SettingsTab {
                 continue;
             }
             ui.add_space(12.0);
-            ui.label(RichText::new(crate::i18n::text(group)).strong().color(pal.text_weak));
+            ui.label(RichText::new(crate::i18n::text(group)).semi().color(pal.text_weak));
             ui.add_space(4.0);
             crate::widgets::card().inner_margin(egui::Margin::symmetric(16, 4)).show(ui, |ui| {
                 ui.set_min_width(ui.available_width());
@@ -295,7 +296,7 @@ impl TabView for SettingsTab {
                         ui.add_space(8.0);
                         ui.horizontal(|ui| {
                             ui.add_space(10.0);
-                            ui.label(RichText::new(crate::i18n::text(group).to_uppercase()).size(11.5).color(pal.text_weak));
+                            ui.label(RichText::new(crate::i18n::text(group)).size(12.0).color(pal.text_weak).family(egui::FontFamily::Name("semi".into())));
                         });
                         ui.add_space(2.0);
                         for id in *ids {
@@ -662,7 +663,7 @@ impl TabView for SettingsTab {
                     });
 
                     ui.add_space(14.0);
-                    ui.label(RichText::new(crate::i18n::tr("Weitere Server", "More servers")).strong());
+                    ui.label(RichText::new(crate::i18n::tr("Weitere Server", "More servers")).semi());
                     ui.label(RichText::new(crate::i18n::tr("Jede SQL-Datei kann einen dieser Server wählen. Ohne Auswahl gilt der Server oben.", "Each SQL file can pick one of these servers. Without a choice the server above is used.")).small().color(pal.text_weak));
                     ui.add_space(4.0);
                     let mut delete = None;
@@ -672,7 +673,7 @@ impl TabView for SettingsTab {
                             ui.set_min_width(ui.available_width());
                             ui.horizontal(|ui| {
                                 ui.vertical(|ui| {
-                                    ui.label(RichText::new(&p.name).strong());
+                                    ui.label(RichText::new(&p.name).semi());
                                     ui.label(RichText::new(p.label()).small().color(pal.text_weak));
                                 });
                                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

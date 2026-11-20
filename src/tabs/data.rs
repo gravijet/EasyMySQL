@@ -1,5 +1,6 @@
 // Tabelleninhalt anzeigen, Werte einfuegen, aendern und loeschen.
 
+use crate::style::Semi;
 use super::{Action, Ctx, TabView};
 use crate::db::{self, Row, TableInfo, q};
 use crate::db::ColDef;
@@ -418,7 +419,7 @@ impl DataTab {
                     });
                     if !s.top.is_empty() {
                         ui.add_space(8.0);
-                        ui.label(RichText::new(t("Häufigste Werte", "Most frequent values")).strong());
+                        ui.label(RichText::new(t("Häufigste Werte", "Most frequent values")).semi());
                         let most = s.top.first().map(|x| x.1).unwrap_or(1).max(1);
                         for (v, n) in &s.top {
                             let (r, resp) = ui.allocate_exact_size(egui::vec2(380.0, 22.0), egui::Sense::click());
@@ -691,7 +692,7 @@ impl TabView for DataTab {
             self.undo(cx);
         }
         ui.horizontal(|ui| {
-            ui.label(RichText::new(format!("{}.{}", self.db, self.table)).strong());
+            ui.label(RichText::new(format!("{}.{}", self.db, self.table)).semi());
             ui.add_space(6.0);
             let w = (ui.available_width() - 46.0 - if self.order.is_empty() { 0.0 } else { 150.0 }).clamp(160.0, 560.0);
             let r = ui.add_sized([w, 28.0], crate::widgets::edit(&mut self.filter).vertical_align(egui::Align::Center).hint_text(crate::i18n::tr("WHERE-Bedingung", "WHERE condition")));

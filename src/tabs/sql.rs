@@ -1,5 +1,6 @@
 // SQL-Editor-Registerkarte: eine Datei (oder unbenannte Abfrage), auf Wunsch automatisch gespeichert.
 
+use crate::style::Semi;
 use super::{Action, Ctx, TabView};
 use crate::db::{self, Stmt, StmtResult};
 use crate::grid::{self, GridState};
@@ -40,6 +41,19 @@ enum HistoryAct {
     ErrorFix(usize),
     /// In dieser Datenbank erneut ausfuehren
     UseDatabase(String),
+    /// Korrektur fuer ein leeres Ergebnis uebernehmen (Index in `Leer::befunde`)
+    LeerFix(usize),
+}
+
+/// Leeres Ergebnis (bzw. UPDATE/DELETE ohne Treffer): im Hintergrund gesuchte Gruende und Korrekturen
+struct Leer {
+    rx: Option<Receiver<Vec<sqledit::leer::Befund>>>,
+    /// Index des Ergebnisses in `results`
+    result: usize,
+    stmt: Stmt,
+    schreibt: bool,
+    befunde: Vec<sqledit::leer::Befund>,
+    seit: Instant,
 }
 
 /// Zuletzt fehlgeschlagene Anweisung samt Behebungen
@@ -136,6 +150,7 @@ pub struct SqlTab {
     heal_run: bool,
     /// Ausfuehren ohne Verbindung: laeuft, sobald der Server bereit ist (SQL, Position, seit wann)
     wait_run: Option<(String, usize, Instant)>,
+    leer: Option<Leer>,
 }
 
 /// So oft repariert ein Lauf sich hoechstens selbst, bevor der Nutzer wieder entscheidet
@@ -202,6 +217,7 @@ impl SqlTab {
             heal_round: 0,
             heal_run: false,
             wait_run: None,
+            leer: None,
         }
     }
 
@@ -578,6 +594,121 @@ impl SqlTab {
         self.autofix = Some(AutoFix { rx: Some(rx), status, cancel, before: self.text.clone(), report: None, after: String::new(), heal, region: None, ran: false });
     }
 
+    /// Lieferte eine Anweisung nichts, im Hintergrund nur lesend nachzaehlen, woran es liegt
+    fn start_leer(&mut self, dbc: &crate::db::Db, results: &[StmtResult]) {
+        let found = results.iter().zip(self.running.iter()).enumerate().find(|(_, (r, st))| {
+            let kopf = st.sql.split_whitespace().next().unwrap_or("").to_ascii_uppercase();
+            match r.returned {
+                Some(0) => kopf == "SELECT",
+                None => (kopf == "UPDATE" || kopf == "DELETE") && r.affected == 0 && st.sql.to_ascii_uppercase().contains("WHERE"),
+                _ => false,
+            }
+        });
+        let Some((i, (r, st))) = found else { return };
+        let schreibt = r.returned.is_none();
+        let pool = crate::db::Db { pool: dbc.pool.clone(), info: dbc.info.clone(), version: dbc.version.clone() };
+        let mariadb = dbc.version.to_ascii_lowercase().contains("mariadb");
+        let (database, sql) = (self.database.clone(), st.sql.clone());
+        let (tx, rx) = channel();
+        std::thread::spawn(move || {
+            let befunde = match pool.new_conn() {
+                Ok(mut conn) => {
+                    if database.is_empty() || conn.query_drop(format!("USE {}", db::q(&database))).is_ok() {
+                        let mut z = sqledit::leer::Server { conn: &mut conn, mariadb, rest: 40 };
+                        sqledit::leer::untersuchen(&sql, &mut z)
+                    } else {
+                        Vec::new()
+                    }
+                }
+                Err(_) => Vec::new(),
+            };
+            let _ = tx.send(befunde);
+        });
+        self.leer = Some(Leer { rx: Some(rx), result: i, stmt: st.clone(), schreibt, befunde: Vec::new(), seit: Instant::now() });
+    }
+
+    fn poll_leer(&mut self, ctx: &egui::Context) {
+        let Some(l) = &mut self.leer else { return };
+        let Some(rx) = &l.rx else { return };
+        match rx.try_recv() {
+            Ok(b) => {
+                l.befunde = b;
+                l.rx = None;
+                l.seit = Instant::now();
+                ctx.request_repaint();
+            }
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => l.rx = None,
+            Err(_) => ctx.request_repaint_after(std::time::Duration::from_millis(120)),
+        }
+    }
+
+    /// Korrektur fuer das leere Ergebnis einsetzen; eine Leseabfrage laeuft gleich neu, Aenderungen erst auf Klick
+    fn apply_leer_fix(&mut self, cx: &mut Ctx, k: usize) {
+        let Some(l) = self.leer.take() else { return };
+        let Some(new) = l.befunde.get(k).and_then(|b| b.fix.clone()) else { return };
+        let chars: Vec<char> = self.text.chars().collect();
+        let seg: String = chars[l.stmt.start.min(chars.len())..l.stmt.end.min(chars.len())].iter().collect();
+        let old = l.stmt.sql.trim().trim_end_matches(';').trim_end().to_string();
+        let Some(pos) = seg.find(&old) else {
+            cx.status(crate::i18n::tr("Die Anweisung wurde inzwischen geändert – bitte erneut ausführen.", "The statement has changed since – please run it again."));
+            return;
+        };
+        let a = l.stmt.start + seg[..pos].chars().count();
+        let b = a + old.chars().count();
+        let mut out = chars;
+        out.splice(a..b, new.chars());
+        self.text = out.into_iter().collect();
+        self.last_edit = Instant::now();
+        if l.schreibt {
+            cx.status(crate::i18n::tr("Korrektur eingesetzt – zum Ändern der Daten erneut ausführen.", "Fix inserted – run again to change the data."));
+        } else {
+            self.run(cx, new, a);
+        }
+    }
+
+    /// Gruende fuer ein leeres Ergebnis mit Korrektur zum Uebernehmen
+    fn leer_panel(leer: Option<&Leer>, ui: &mut egui::Ui, result: usize) -> Option<usize> {
+        let l = leer.filter(|l| l.result == result)?;
+        if l.rx.is_none() && l.befunde.is_empty() {
+            return None;
+        }
+        let pal = style::pal();
+        let mut pick = None;
+        // Weich einblenden, sobald die Gruende da sind
+        let t = ui.ctx().animate_bool_with_time(egui::Id::new(("leer", result, l.befunde.len())), true, 0.22);
+        ui.add_space(4.0);
+        egui::Frame::new().fill(pal.face_light).corner_radius(style::RADIUS).inner_margin(egui::Margin { left: 14, right: 12, top: 10, bottom: 10 }).show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.set_opacity(t);
+            let r = ui.max_rect();
+            ui.painter().rect_filled(egui::Rect::from_min_size(egui::pos2(r.left() - 14.0, r.top() - 10.0), egui::vec2(3.0, r.height() + 20.0)), 1.5, pal.accent);
+            if l.rx.is_some() {
+                ui.horizontal(|ui| {
+                    ui.spinner();
+                    ui.label(RichText::new(crate::i18n::tr("Keine Zeilen – ich zähle nach, welche Bedingung alles wegfiltert …", "No rows – counting which condition filters everything out …")).color(pal.text_weak));
+                });
+                return;
+            }
+            ui.label(RichText::new(if l.schreibt { crate::i18n::tr("Warum nichts geändert wurde", "Why nothing changed") } else { crate::i18n::tr("Warum keine Zeilen kommen", "Why no rows come back") }).semi());
+            ui.add_space(4.0);
+            for (k, b) in l.befunde.iter().enumerate() {
+                ui.label(&b.text);
+                if let Some(fix) = &b.fix {
+                    ui.horizontal(|ui| {
+                        let label = if l.schreibt { crate::i18n::tr("Übernehmen", "Apply") } else { crate::i18n::tr("Übernehmen und ausführen", "Apply and run") };
+                        if crate::icons::primary_button(ui, Icon::Wizard, label).clicked() {
+                            pick = Some(k);
+                        }
+                        let one: String = fix.split_whitespace().collect::<Vec<_>>().join(" ");
+                        ui.add(egui::Label::new(RichText::new(one).monospace().color(pal.text_weak)).truncate());
+                    });
+                }
+                ui.add_space(2.0);
+            }
+        });
+        pick
+    }
+
     /// Ergebnis des Auto-Fix uebernehmen
     fn poll_autofix(&mut self, cx: &mut Ctx) {
         let Some(a) = &mut self.autofix else { return };
@@ -802,6 +933,12 @@ impl SqlTab {
                 self.failed = Some(Failed { start: st.start, end: st.end, sql: st.sql.clone(), run_end: self.run_end, fixes, databases });
             }
         }
+        self.leer = None;
+        if !results.iter().any(|r| r.error.is_some())
+            && let Some(dbc) = cx.db
+        {
+            self.start_leer(dbc, &results);
+        }
         self.running.clear();
         let changed_structure = results.iter().any(|r| {
             let u = r.preview.to_uppercase();
@@ -932,6 +1069,11 @@ impl SqlTab {
                     ui.label(RichText::new(info).color(pal.text_weak));
                     grid::export_menu(ui, "ergebnis", &set.columns, &set.rows);
                 });
+                if set.rows.is_empty()
+                    && let Some(k) = Self::leer_panel(self.leer.as_ref(), ui, ri)
+                {
+                    act = Some(HistoryAct::LeerFix(k));
+                }
                 grid::show(ui, ("sqlgrid", self.editor.id, tab), &set.columns, &set.rows, grid::Edit::View, &mut self.grid);
             }
             Pane::Messages => {
@@ -942,7 +1084,7 @@ impl SqlTab {
                 let mut fixes = Vec::new();
                 let mut fix_pick: Option<HistoryAct> = None;
                 egui::ScrollArea::vertical().id_salt(self.editor.id.with("msgs")).auto_shrink([false, false]).show(ui, |ui| {
-                    for r in &self.results {
+                    for (ri, r) in self.results.iter().enumerate() {
                         let (ok, msg) = match &r.error {
                             Some(e) => (false, e.clone()),
                             None if r.returned.is_some() => (true, crate::tr_format!("{} Zeile(n) geliefert", "{} row(s) returned", r.returned.unwrap_or(0))),
@@ -961,6 +1103,11 @@ impl SqlTab {
                         egui::Frame::new().inner_margin(egui::Margin { left: 16, right: 0, top: 0, bottom: 6 }).show(ui, |ui| {
                             if ok {
                                 ui.label(RichText::new(msg).color(color));
+                                if r.returned.is_none()
+                                    && let Some(k) = Self::leer_panel(self.leer.as_ref(), ui, ri)
+                                {
+                                    fix_pick = Some(HistoryAct::LeerFix(k));
+                                }
                             } else {
                                 crate::widgets::error_label(ui, &msg);
                                 // Eindeutige Korrekturen der Anweisung: ein Klick setzt sie ein und fuehrt weiter aus
@@ -1064,7 +1211,7 @@ impl SqlTab {
                         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
                         .show(ctx, |ui| {
                             ui.set_max_width(360.0);
-                            ui.label(RichText::new(crate::i18n::tr("Kein Projekt geöffnet", "No project open")).strong());
+                            ui.label(RichText::new(crate::i18n::tr("Kein Projekt geöffnet", "No project open")).semi());
                             ui.label(RichText::new(crate::i18n::tr("Gespeichert wird immer in einem Projekt oder Ordner. Wähle zuerst einen aus – die Abfrage bleibt dabei offen.", "Files are always saved in a project or folder. Choose one first – the query stays open.")).color(pal_weak()));
                             crate::widgets::dialog_actions(ui, |ui| {
                                 if icons::primary_button(ui, Icon::Folder, crate::i18n::text("Ordner öffnen …")).clicked() {
@@ -1321,6 +1468,7 @@ impl TabView for SqlTab {
     fn ui(&mut self, ui: &mut egui::Ui, cx: &mut Ctx) {
         self.poll(cx);
         self.poll_autofix(cx);
+        self.poll_leer(ui.ctx());
         if let Some((_, _, since)) = &self.wait_run {
             if cx.db.is_some() {
                 if let Some((sql, offset, _)) = self.wait_run.take() {
@@ -1514,6 +1662,7 @@ impl TabView for SqlTab {
             Some(HistoryAct::Run(sql)) => self.run(cx, sql, 0),
             Some(HistoryAct::Fix(f)) => cx.actions.push(Action::AutoFix(f)),
             Some(HistoryAct::ErrorFix(k)) => self.apply_error_fix(cx, k),
+            Some(HistoryAct::LeerFix(k)) => self.apply_leer_fix(cx, k),
             Some(HistoryAct::UseDatabase(d)) => {
                 if let Some(f) = self.failed.take() {
                     self.set_database(d);

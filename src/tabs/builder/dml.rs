@@ -1,5 +1,6 @@
 // Daten aendern im Assistenten: INSERT (Werte oder Abfrage), UPDATE und DELETE mit denselben Bedingungen wie bei SELECT.
 
+use crate::style::Semi;
 use super::model::{Query, Select, Source, value_sql};
 use super::{Env, cond_group_ui, query_ui, section};
 use crate::db::q;
@@ -178,7 +179,7 @@ pub fn ui(ui: &mut egui::Ui, dml: &mut Dml, mode: Mode, query: &mut Query, env: 
                     let mut remove = None;
                     egui::Grid::new(id.with("grid")).num_columns(n + 1).spacing([6.0, 4.0]).show(ui, |ui| {
                         for c in &dml.cols {
-                            ui.label(RichText::new(c).strong());
+                            ui.label(RichText::new(c).semi());
                         }
                         ui.label("");
                         ui.end_row();

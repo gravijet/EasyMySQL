@@ -112,7 +112,7 @@ impl TabView for DiffTab {
             if self.path.is_file() && ui.button(crate::i18n::tr("Datei öffnen", "Open file")).clicked() {
                 cx.actions.push(super::Action::OpenFileAt { path: self.path.clone(), line: 0 });
             }
-            ui.checkbox(&mut self.compact, crate::i18n::tr("Nur Änderungen", "Changes only"));
+            crate::widgets::check(ui, &mut self.compact, crate::i18n::tr("Nur Änderungen", "Changes only"));
             if matches!(self.source, Source::File(..))
                 && crate::icons::button(ui, crate::icons::Icon::Refresh, crate::i18n::text("Aktualisieren")).clicked()
                 && let Err(e) = self.reload()

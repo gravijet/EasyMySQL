@@ -9,6 +9,7 @@
 // Darf das Programm nicht in seinen Ordner schreiben (Programme), fragt Windows einmal nach
 // der Freigabe und ein kurzer Helfer (`--apply-update`) tauscht die Datei aus.
 
+use crate::style::Semi;
 use eframe::egui;
 use semver::Version;
 use serde::Deserialize;
@@ -660,7 +661,7 @@ impl Updater {
                         ui.horizontal(|ui| {
                             let (r, _) = ui.allocate_exact_size(egui::vec2(10.0, 18.0), egui::Sense::hover());
                             ui.painter().circle_filled(r.center(), 4.0, color);
-                            ui.label(egui::RichText::new(title).strong());
+                            ui.label(egui::RichText::new(title).semi());
                         });
                         ui.add_space(6.0);
                         let body = match card {

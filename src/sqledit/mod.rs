@@ -22,6 +22,7 @@ pub mod block;
 pub mod ai;
 pub mod probe;
 pub mod errfix;
+pub mod leer;
 mod schema_fix;
 mod schema_decl;
 mod schema_jpa;

@@ -2,6 +2,7 @@
 // Variablen, Klassen, Enum-Werte mit Javadoc) und SQL (Tabellen mit Spalten, Spalten mit Typ und Schluesseln,
 // Funktionen). Der Java-Sprachserver ergaenzt, sobald er bereit ist.
 
+use crate::style::Semi;
 use super::Lang;
 use super::highlight::is_word_char;
 use crate::db::Schema;
@@ -81,7 +82,7 @@ pub fn card_info(ctx: &egui::Context, layer: egui::LayerId, id: egui::Id, info: 
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 6.0;
                         if !badge.is_empty() {
-                            ui.label(egui::RichText::new(badge).font(egui::FontId::proportional(10.0)).strong().color(color).background_color(color.gamma_multiply(0.14)));
+                            ui.label(egui::RichText::new(badge).font(egui::FontId::proportional(10.0)).semi().color(color).background_color(color.gamma_multiply(0.14)));
                         }
                         ui.label(egui::RichText::new(name).font(mono.clone()).color(pal.text));
                     });

@@ -1,5 +1,6 @@
 // Zeichnen und Mausbedienung der Zeichenflaeche.
 
+use crate::style::Semi;
 use super::*;
 
 impl ErTab {
@@ -360,7 +361,7 @@ impl ErTab {
         let mut close_menu = false;
         resp.context_menu(|ui| match &menu {
             Some(Menu::Table(t)) => {
-                ui.label(RichText::new(t).strong());
+                ui.label(RichText::new(t).semi());
                 if ui.button(crate::i18n::text("Daten anzeigen")).clicked() {
                     cx.actions.push(Action::OpenData { db: db.clone(), table: t.clone() });
                     ui.close();
@@ -382,7 +383,7 @@ impl ErTab {
             Some(Menu::Fk(i)) if schema.fks.get(*i).is_some_and(|fk| self.nm.contains_key(&fk_key(fk))) => {
                 let fk = &schema.fks[*i];
                 let j = self.nm[&fk_key(fk)].clone();
-                ui.label(RichText::new(crate::tr_format!("{} ↔ {}  (n:m über {j})", "{} ↔ {}  (n:m through {j})", fk.table, fk.ref_table)).strong());
+                ui.label(RichText::new(crate::tr_format!("{} ↔ {}  (n:m über {j})", "{} ↔ {}  (n:m through {j})", fk.table, fk.ref_table)).semi());
                 if ui.button(crate::i18n::text("Daten der Zwischentabelle")).clicked() {
                     cx.actions.push(Action::OpenData { db: db.clone(), table: j.clone() });
                     ui.close();
@@ -399,7 +400,7 @@ impl ErTab {
             }
             Some(Menu::Fk(i)) => {
                 if let Some(fk) = schema.fks.get(*i) {
-                    ui.label(RichText::new(format!("{}.{} → {}.{}", fk.table, fk.columns.join(","), fk.ref_table, fk.ref_columns.join(","))).strong());
+                    ui.label(RichText::new(format!("{}.{} → {}.{}", fk.table, fk.columns.join(","), fk.ref_table, fk.ref_columns.join(","))).semi());
                     if ui.button(crate::i18n::text("Beziehung löschen …")).clicked() {
                         cx.actions.push(self.delete_action(fk));
                         close_menu = true;

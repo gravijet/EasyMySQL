@@ -1,11 +1,12 @@
 // Neue Datei (Name links, Dateiendung fest rechts daneben) und neues Projekt (Java).
 
+use crate::style::Semi;
 use super::*;
 use crate::dev::java::{self, Driver, project};
 use crate::dev;
 use crate::icons::{self, Icon};
 use crate::workspace;
-use eframe::egui::{Color32, Margin, Sense, Stroke, vec2};
+use eframe::egui::{Margin, Sense, Stroke, vec2};
 
 // ---------------------------------------------------------------------------
 // Neue Datei
@@ -401,7 +402,7 @@ impl EasyApp {
         let max_w = (ctx.content_rect().width() - 64.0).max(260.0);
         egui::Modal::new(egui::Id::new("new-file-dlg")).frame(frame).show(ctx, |ui| {
             ui.set_width(480.0f32.min(max_w));
-            ui.label(RichText::new(crate::i18n::text("Neue Datei")).strong().size(15.0));
+            ui.label(RichText::new(crate::i18n::text("Neue Datei")).semi().size(15.0));
             ui.add_space(10.0);
 
             // Ein Feld fuer den ganzen Namen; der Hinweis zeigt, wie man die Endung tippt
@@ -469,7 +470,7 @@ impl EasyApp {
             ui.add_space(12.0);
             ui.allocate_ui_with_layout(vec2(ui.available_width(), 30.0), egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let can = problem.is_none();
-                if ui.add_enabled(can, egui::Button::new(RichText::new(crate::i18n::tr("Anlegen", "Create")).color(Color32::WHITE)).fill(pal.accent).min_size(vec2(84.0, 28.0))).clicked() {
+                if ui.add_enabled(can, egui::Button::new(RichText::new(crate::i18n::tr("Anlegen", "Create")).color(pal.on_accent)).fill(pal.accent).min_size(vec2(84.0, 28.0))).clicked() {
                     ok = true;
                 }
                 if ui.add(egui::Button::new(crate::i18n::text("Abbrechen")).min_size(vec2(84.0, 28.0))).clicked() {
@@ -613,7 +614,7 @@ impl EasyApp {
             ui.horizontal(|ui| {
                 let (r, _) = ui.allocate_exact_size(vec2(20.0, 20.0), Sense::hover());
                 icons::paint(ui.painter(), r, dlg.lang.icon(), pal.accent);
-                ui.label(RichText::new(crate::i18n::tr("Neues Projekt", "New project")).strong().size(15.0));
+                ui.label(RichText::new(crate::i18n::tr("Neues Projekt", "New project")).semi().size(15.0));
             });
             ui.add_space(10.0);
             ui.add_enabled_ui(!busy, |ui| {
@@ -698,7 +699,7 @@ impl EasyApp {
             ui.add_space(10.0);
             ui.allocate_ui_with_layout(vec2(ui.available_width(), 30.0), egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let can = problem.is_none() && !busy;
-                if ui.add_enabled(can, egui::Button::new(RichText::new(crate::i18n::tr("Anlegen", "Create")).color(Color32::WHITE)).fill(pal.accent).min_size(vec2(84.0, 28.0))).clicked() {
+                if ui.add_enabled(can, egui::Button::new(RichText::new(crate::i18n::tr("Anlegen", "Create")).color(pal.on_accent)).fill(pal.accent).min_size(vec2(84.0, 28.0))).clicked() {
                     create = true;
                 }
                 if ui.add_enabled(!busy, egui::Button::new(crate::i18n::text("Abbrechen")).min_size(vec2(84.0, 28.0))).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {

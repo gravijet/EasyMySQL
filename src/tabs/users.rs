@@ -1,5 +1,6 @@
 // Benutzer und Rechte: Konten anlegen, Passwort aendern, Rechte je Datenbank oder Tabelle vergeben.
 
+use crate::style::Semi;
 use super::{Action, Ctx, TabView};
 use crate::db::{Account, Scope, diff_sql, lit, q};
 use crate::i18n::tr;
@@ -183,7 +184,7 @@ impl UsersTab {
             if self.narrow && icons::tool_button(ui, Icon::ArrowLeft, tr("Zurück zur Liste", "Back to the list")).clicked() {
                 self.show_detail = false;
             }
-            ui.label(RichText::new(acc.label()).size(16.0).strong());
+            ui.label(RichText::new(acc.label()).size(16.0).semi());
             ui.add_space(8.0);
             if icons::text_button(ui, Icon::Lock, tr("Passwort ändern", "Change password")).clicked() {
                 self.password = if self.password.is_some() { None } else { Some(String::new()) };
@@ -212,7 +213,7 @@ impl UsersTab {
 
         // Wo hat der Benutzer Rechte? (Klick wechselt die Ebene)
         let mut jump: Option<Scope> = None;
-        ui.label(RichText::new(tr("Rechte", "Privileges")).strong());
+        ui.label(RichText::new(tr("Rechte", "Privileges")).semi());
         style::group_frame().show(ui, |ui| {
             ui.set_min_width(ui.available_width());
             let shown: Vec<&(Scope, Vec<String>)> = self.grants.iter().filter(|(_, p)| !p.is_empty()).collect();
@@ -316,7 +317,7 @@ impl UsersTab {
         let sql = diff_sql(&acc, &scope, &current, &self.wanted);
         ui.add_space(6.0);
         ui.horizontal(|ui| {
-            let r = ui.add_enabled(!sql.is_empty(), egui::Button::new(RichText::new(tr("Übernehmen", "Apply")).strong()));
+            let r = ui.add_enabled(!sql.is_empty(), egui::Button::new(RichText::new(tr("Übernehmen", "Apply")).semi()));
             if r.on_hover_text(sql.join(";\n")).clicked() && self.run(cx, &sql) {
                 cx.status(tr("Rechte geändert.", "Privileges changed."));
                 self.load_grants(cx);

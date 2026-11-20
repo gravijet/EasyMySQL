@@ -1,6 +1,7 @@
 // Seitenleiste "Quellcodeverwaltung": Git fuer den Projektordner und GitHub (Anmeldung, Repository
 // veroeffentlichen, klonen, Pull Requests, Issues, Actions). Alles, was dauert, laeuft im Hintergrund.
 
+use crate::style::Semi;
 use crate::sperre::Sperre;
 use super::*;
 use crate::git::{self, Change, FileStatus, github};
@@ -293,7 +294,7 @@ impl EasyApp {
             self.git.user_job = Some(spawn(&ctx(), github::user));
         }
 
-        super::side::section_header(ui, crate::i18n::tr("QUELLCODEVERWALTUNG", "SOURCE CONTROL"), |ui| {
+        super::side::section_header(ui, crate::i18n::tr("Quellcodeverwaltung", "Source control"), |ui| {
             if icons::button(ui, Icon::Refresh, crate::i18n::text("Aktualisieren")).clicked() {
                 self.git.reload_diffs = true;
                 self.git_refresh();
@@ -359,7 +360,7 @@ impl EasyApp {
         ui.horizontal(|ui| {
             let (r, _) = ui.allocate_exact_size(vec2(16.0, 16.0), Sense::hover());
             icons::paint(ui.painter(), r, Icon::GitBranch, pal.text_weak);
-            let resp = ui.add(egui::Button::new(RichText::new(&st.branch).strong()).frame(false)).on_hover_text(crate::i18n::tr("Branch wechseln", "Switch branch"));
+            let resp = ui.add(egui::Button::new(RichText::new(&st.branch).semi()).frame(false)).on_hover_text(crate::i18n::tr("Branch wechseln", "Switch branch"));
             if resp.clicked() && self.git.branches.is_none() {
                 self.git.branches = git::branches(root).ok();
             }
@@ -439,7 +440,7 @@ impl EasyApp {
                         }
                         ui.close();
                     }
-                    if ui.checkbox(&mut self.git.amend, crate::i18n::tr("Letzten Commit ändern (amend)", "Amend last commit")).clicked() {
+                    if crate::widgets::check(ui, &mut self.git.amend, crate::i18n::tr("Letzten Commit ändern (amend)", "Amend last commit")).clicked() {
                         ui.close();
                     }
                     if git::remote_url(root).is_none() && ui.button(crate::i18n::tr("Auf GitHub veröffentlichen …", "Publish to GitHub …")).clicked() {
@@ -483,7 +484,7 @@ impl EasyApp {
         ui.horizontal(|ui| {
             let label = if self.git.amend { crate::i18n::tr("Commit ändern", "Amend") } else if staged.is_empty() && git::config().auto_stage { crate::i18n::tr("Alles committen", "Commit all") } else { "Commit" };
             let can = self.git.busy.is_none() && (self.git.amend || !st.files.is_empty()) && (self.git.amend || !self.git.message.trim().is_empty());
-            if ui.add_enabled(can, egui::Button::new(RichText::new(label).color(egui::Color32::WHITE)).fill(pal.accent).min_size(vec2(ui.available_width(), 26.0))).on_hover_text(crate::keymap::text(Cmd::GitCommit)).clicked() {
+            if ui.add_enabled(can, egui::Button::new(RichText::new(label).color(pal.on_accent)).fill(pal.accent).min_size(vec2(ui.available_width(), 26.0))).on_hover_text(crate::keymap::text(Cmd::GitCommit)).clicked() {
                 self.git_commit();
             }
         });
@@ -496,7 +497,7 @@ impl EasyApp {
             }
             ui.add_space(4.0);
             ui.horizontal(|ui| {
-                ui.label(RichText::new(title).small().strong().color(pal.text_weak));
+                ui.label(RichText::new(title).small().semi().color(pal.text_weak));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if staged_list {
                         if icons::button(ui, Icon::Minus, crate::i18n::tr("Alle zurücknehmen", "Unstage all")).clicked() {
@@ -659,7 +660,7 @@ impl EasyApp {
         ui.horizontal(|ui| {
             let (r, _) = ui.allocate_exact_size(vec2(14.0, 14.0), Sense::hover());
             icons::paint(ui.painter(), r, Icon::GitPullRequest, pal.text_weak);
-            ui.label(RichText::new(crate::tr_format!("Pull Requests ({})", "Pull requests ({})", d.pulls.len())).small().strong());
+            ui.label(RichText::new(crate::tr_format!("Pull Requests ({})", "Pull requests ({})", d.pulls.len())).small().semi());
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if branch != d.default_branch && icons::button(ui, Icon::Plus, crate::i18n::tr("Pull Request erstellen", "Create pull request")).clicked() {
                     let title = self.git.message.lines().next().unwrap_or("").to_string();
@@ -694,7 +695,7 @@ impl EasyApp {
         ui.horizontal(|ui| {
             let (r, _) = ui.allocate_exact_size(vec2(14.0, 14.0), Sense::hover());
             icons::paint(ui.painter(), r, Icon::CircleDot, pal.text_weak);
-            ui.label(RichText::new(crate::tr_format!("Issues ({})", "Issues ({})", d.issues.len())).small().strong());
+            ui.label(RichText::new(crate::tr_format!("Issues ({})", "Issues ({})", d.issues.len())).small().semi());
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if icons::button(ui, Icon::Plus, crate::i18n::tr("Issue anlegen", "New issue")).clicked() {
                     self.git.dialog = Some(GitDialog::Issue { title: String::new(), body: String::new(), job: None });
@@ -709,7 +710,7 @@ impl EasyApp {
         // Actions
         if !d.runs.is_empty() {
             ui.add_space(4.0);
-            ui.label(RichText::new("Actions").small().strong());
+            ui.label(RichText::new("Actions").small().semi());
             for r in d.runs.iter().take(6) {
                 let (mark, color) = match (r.status.as_str(), r.conclusion.as_str()) {
                     ("completed", "success") => ("✓", pal.ok_text),
@@ -739,7 +740,7 @@ impl EasyApp {
             ui.horizontal(|ui| {
                 let (r, _) = ui.allocate_exact_size(vec2(18.0, 18.0), Sense::hover());
                 icons::paint(ui.painter(), r, icon, pal.accent);
-                ui.label(RichText::new(t).strong().size(15.0));
+                ui.label(RichText::new(t).semi().size(15.0));
             });
             ui.add_space(8.0);
         };
@@ -956,7 +957,7 @@ impl EasyApp {
                     }
                     ui.add(crate::widgets::edit(t).hint_text(crate::i18n::tr("Titel", "Title")).desired_width(f32::INFINITY));
                     ui.add(egui::TextEdit::multiline(body).hint_text(crate::i18n::tr("Beschreibung (Markdown)", "Description (Markdown)")).desired_rows(6).desired_width(f32::INFINITY));
-                    ui.checkbox(draft, crate::i18n::tr("Als Entwurf", "As draft"));
+                    crate::widgets::check(ui, draft, crate::i18n::tr("Als Entwurf", "As draft"));
                     if let Some(rx) = job
                         && let Ok(r) = rx.try_recv()
                     {

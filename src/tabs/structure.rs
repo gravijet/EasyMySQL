@@ -1,5 +1,6 @@
 // Struktur einer Tabelle: Spalten, Indizes, Fremdschluessel bearbeiten.
 
+use crate::style::Semi;
 use super::designer::{ref_field, type_field};
 use super::{Action, Ctx, TabView};
 use crate::db::{ColDef, ForeignKey, IndexInfo, TableInfo, q};
@@ -303,7 +304,7 @@ impl StructureTab {
                 ui.painter().rect_filled(r, 0.0, pal.face_light);
                 ui.painter().hline(r.x_range(), r.bottom() - 0.5, egui::Stroke::new(1.0, pal.border));
                 ui.add_space(PAD);
-                ui.label(RichText::new(t).strong());
+                ui.label(RichText::new(t).semi());
             };
             TableBuilder::new(ui)
                 .id_salt(("cols", &self.table))
@@ -337,7 +338,7 @@ impl StructureTab {
                             ui.add_space(PAD);
                             let mut name = RichText::new(&c.name);
                             if c.is_pk() {
-                                name = name.strong();
+                                name = name.semi();
                             }
                             ui.add(egui::Label::new(name).selectable(false).truncate());
                         });
@@ -450,7 +451,7 @@ impl TabView for StructureTab {
             return;
         };
         ui.horizontal(|ui| {
-            ui.label(RichText::new(format!("{}.{}", self.db, self.table)).size(15.0).strong());
+            ui.label(RichText::new(format!("{}.{}", self.db, self.table)).size(15.0).semi());
             let mut desc = String::from(if info.is_view { crate::i18n::text("Sicht") } else { crate::i18n::text("Tabelle") });
             if !info.engine.is_empty() {
                 desc.push_str(&format!(" · {}", info.engine));
@@ -556,7 +557,7 @@ impl TabView for StructureTab {
                 let mut drop = None;
                 for ix in &self.indexes {
                     let kind = if ix.name == "PRIMARY" { crate::i18n::text("Primärschlüssel") } else if ix.unique { crate::i18n::text("Eindeutig") } else { "Index" };
-                    let cells = [(RichText::new(&ix.name).strong(), 190.0), (RichText::new(kind).color(style::pal().text_weak), 150.0), (RichText::new(ix.columns.join(", ")), 0.0)];
+                    let cells = [(RichText::new(&ix.name).semi(), 190.0), (RichText::new(kind).color(style::pal().text_weak), 150.0), (RichText::new(ix.columns.join(", ")), 0.0)];
                     if list_row(ui, cells, !info.is_view) {
                         drop = Some(ix.name.clone());
                     }
@@ -580,7 +581,7 @@ impl TabView for StructureTab {
                 let mut drop = None;
                 for f in &self.fks_out {
                     let cells = [
-                        (RichText::new(&f.name).strong(), 190.0),
+                        (RichText::new(&f.name).semi(), 190.0),
                         (RichText::new(format!("{}.({}) → {}.({})", f.table, f.columns.join(","), f.ref_table, f.ref_columns.join(","))), 340.0),
                         (RichText::new(format!("ON DELETE {} / ON UPDATE {}", f.on_delete, f.on_update)).color(style::pal().text_weak), 0.0),
                     ];
@@ -593,7 +594,7 @@ impl TabView for StructureTab {
                         ui.set_min_height(30.0);
                         ui.spacing_mut().item_spacing.x = 0.0;
                         crate::widgets::fixed(ui, 190.0, 30.0, |ui| {
-                            ui.add(egui::Label::new(RichText::new(&f.name).strong()).truncate());
+                            ui.add(egui::Label::new(RichText::new(&f.name).semi()).truncate());
                         });
                         crate::widgets::fixed(ui, 340.0, 30.0, |ui| {
                             if ui.link(format!("{}.({}) → {}.({})", f.table, f.columns.join(","), f.ref_table, f.ref_columns.join(","))).on_hover_text(crate::i18n::tr("Struktur dieser Tabelle öffnen", "Open this table's structure")).clicked() {
@@ -614,7 +615,7 @@ impl TabView for StructureTab {
 
             ui.add_space(12.0);
             ui.horizontal(|ui| {
-                ui.label(RichText::new(crate::i18n::text("CREATE-Anweisung")).size(12.5).strong().color(style::pal().text_weak));
+                ui.label(RichText::new(crate::i18n::text("CREATE-Anweisung")).size(12.5).semi().color(style::pal().text_weak));
                 if crate::icons::button(ui, crate::icons::Icon::Copy, crate::i18n::text("Kopieren")).clicked() {
                     ui.ctx().copy_text(self.create.clone());
                 }
