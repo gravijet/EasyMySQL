@@ -43,7 +43,23 @@ enum HistoryAct {
     UseDatabase(String),
     /// Korrektur fuer ein leeres Ergebnis uebernehmen (Index in `Leer::befunde`)
     LeerFix(usize),
+    /// Vorgeschlagenen Index anlegen und erneut ausfuehren
+    TempoFix(usize),
 }
+
+/// Langsame Anweisung: im Hintergrund vorgeschlagene Indizes
+struct Tempo {
+    rx: Option<Receiver<Vec<sqledit::tempo::Vorschlag>>>,
+    result: usize,
+    stmt: Stmt,
+    vorher: std::time::Duration,
+    vorschlaege: Vec<sqledit::tempo::Vorschlag>,
+    /// Index wird gerade angelegt
+    anlegen: Option<Receiver<Result<(), String>>>,
+}
+
+/// Ab dieser Laufzeit wird nach einem fehlenden Index gesucht
+const LANGSAM: std::time::Duration = std::time::Duration::from_millis(300);
 
 /// Leeres Ergebnis (bzw. UPDATE/DELETE ohne Treffer): im Hintergrund gesuchte Gruende und Korrekturen
 struct Leer {
@@ -151,6 +167,9 @@ pub struct SqlTab {
     /// Ausfuehren ohne Verbindung: laeuft, sobald der Server bereit ist (SQL, Position, seit wann)
     wait_run: Option<(String, usize, Instant)>,
     leer: Option<Leer>,
+    tempo: Option<Tempo>,
+    /// Nach dem Anlegen eines Index: Anweisung und Laufzeit vorher (fuer den Vergleich)
+    tempo_vorher: Option<(String, std::time::Duration)>,
 }
 
 /// So oft repariert ein Lauf sich hoechstens selbst, bevor der Nutzer wieder entscheidet
@@ -218,6 +237,8 @@ impl SqlTab {
             heal_run: false,
             wait_run: None,
             leer: None,
+            tempo: None,
+            tempo_vorher: None,
         }
     }
 
@@ -627,6 +648,92 @@ impl SqlTab {
         self.leer = Some(Leer { rx: Some(rx), result: i, stmt: st.clone(), schreibt, befunde: Vec::new(), seit: Instant::now() });
     }
 
+    /// Lief eine Anweisung lange, im Hintergrund per EXPLAIN nach einem fehlenden Index suchen
+    fn start_tempo(&mut self, dbc: &crate::db::Db, results: &[StmtResult], cx: &mut Ctx) {
+        // Zweiter Lauf nach dem Anlegen eines Index: Zeiten vergleichen
+        if let Some((sql, vorher)) = self.tempo_vorher.take()
+            && let Some(r) = results.iter().zip(self.running.iter()).find(|(_, st)| st.sql == sql).map(|(r, _)| r)
+        {
+            cx.status(crate::tr_format!("Index angelegt: {} → {}", "Index created: {} → {}", crate::i18n::sekunden(vorher), crate::i18n::sekunden(r.elapsed)));
+            return;
+        }
+        let found = results.iter().zip(self.running.iter()).enumerate().find(|(_, (r, st))| {
+            let kopf = st.sql.split_whitespace().next().unwrap_or("").to_ascii_uppercase();
+            r.elapsed >= LANGSAM && ["SELECT", "UPDATE", "DELETE"].contains(&kopf.as_str())
+        });
+        let Some((i, (r, st))) = found else { return };
+        let pool = crate::db::Db { pool: dbc.pool.clone(), info: dbc.info.clone(), version: dbc.version.clone() };
+        let (database, sql) = (self.database.clone(), st.sql.clone());
+        let (tx, rx) = channel();
+        std::thread::spawn(move || {
+            let v = match pool.new_conn() {
+                Ok(mut conn) => {
+                    if database.is_empty() || conn.query_drop(format!("USE {}", db::q(&database))).is_ok() {
+                        sqledit::tempo::untersuchen(&sql, &mut conn)
+                    } else {
+                        Vec::new()
+                    }
+                }
+                Err(_) => Vec::new(),
+            };
+            let _ = tx.send(v);
+        });
+        self.tempo = Some(Tempo { rx: Some(rx), result: i, stmt: st.clone(), vorher: r.elapsed, vorschlaege: Vec::new(), anlegen: None });
+    }
+
+    fn poll_tempo(&mut self, cx: &mut Ctx, ctx: &egui::Context) {
+        let Some(t) = &mut self.tempo else { return };
+        if let Some(rx) = &t.rx {
+            match rx.try_recv() {
+                Ok(v) => {
+                    t.vorschlaege = v;
+                    t.rx = None;
+                    ctx.request_repaint();
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => t.rx = None,
+                Err(_) => ctx.request_repaint_after(std::time::Duration::from_millis(150)),
+            }
+        }
+        if let Some(rx) = &t.anlegen {
+            match rx.try_recv() {
+                Ok(Ok(())) => {
+                    let (sql, start, vorher) = (t.stmt.sql.clone(), t.stmt.start, t.vorher);
+                    self.tempo = None;
+                    if !self.database.is_empty() {
+                        cx.actions.push(Action::SchemaChanged(self.database.clone()));
+                    }
+                    self.tempo_vorher = Some((sql.clone(), vorher));
+                    self.run(cx, sql, start);
+                }
+                Ok(Err(e)) => {
+                    self.tempo = None;
+                    cx.error(e);
+                }
+                Err(_) => ctx.request_repaint_after(std::time::Duration::from_millis(150)),
+            }
+        }
+    }
+
+    /// Vorgeschlagenen Index im Hintergrund anlegen; danach laeuft die Anweisung erneut
+    fn apply_tempo(&mut self, cx: &mut Ctx, k: usize) {
+        let Some(dbc) = cx.db else { return };
+        let Some(t) = &mut self.tempo else { return };
+        let Some(v) = t.vorschlaege.get(k).cloned() else { return };
+        let pool = crate::db::Db { pool: dbc.pool.clone(), info: dbc.info.clone(), version: dbc.version.clone() };
+        let database = self.database.clone();
+        let (tx, rx) = channel();
+        std::thread::spawn(move || {
+            let r = pool.new_conn().and_then(|mut c| {
+                if !database.is_empty() {
+                    c.query_drop(format!("USE {}", db::q(&database))).map_err(db::err_text)?;
+                }
+                c.query_drop(&v.sql).map_err(db::err_text)
+            });
+            let _ = tx.send(r);
+        });
+        t.anlegen = Some(rx);
+    }
+
     fn poll_leer(&mut self, ctx: &egui::Context) {
         let Some(l) = &mut self.leer else { return };
         let Some(rx) = &l.rx else { return };
@@ -672,41 +779,21 @@ impl SqlTab {
         if l.rx.is_none() && l.befunde.is_empty() {
             return None;
         }
-        let pal = style::pal();
-        let mut pick = None;
-        // Weich einblenden, sobald die Gruende da sind
-        let t = ui.ctx().animate_bool_with_time(egui::Id::new(("leer", result, l.befunde.len())), true, 0.22);
-        ui.add_space(4.0);
-        egui::Frame::new().fill(pal.face_light).corner_radius(style::RADIUS).inner_margin(egui::Margin { left: 14, right: 12, top: 10, bottom: 10 }).show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            ui.set_opacity(t);
-            let r = ui.max_rect();
-            ui.painter().rect_filled(egui::Rect::from_min_size(egui::pos2(r.left() - 14.0, r.top() - 10.0), egui::vec2(3.0, r.height() + 20.0)), 1.5, pal.accent);
-            if l.rx.is_some() {
-                ui.horizontal(|ui| {
-                    ui.spinner();
-                    ui.label(RichText::new(crate::i18n::tr("Keine Zeilen – ich zähle nach, welche Bedingung alles wegfiltert …", "No rows – counting which condition filters everything out …")).color(pal.text_weak));
-                });
-                return;
-            }
-            ui.label(RichText::new(if l.schreibt { crate::i18n::tr("Warum nichts geändert wurde", "Why nothing changed") } else { crate::i18n::tr("Warum keine Zeilen kommen", "Why no rows come back") }).semi());
-            ui.add_space(4.0);
-            for (k, b) in l.befunde.iter().enumerate() {
-                ui.label(&b.text);
-                if let Some(fix) = &b.fix {
-                    ui.horizontal(|ui| {
-                        let label = if l.schreibt { crate::i18n::tr("Übernehmen", "Apply") } else { crate::i18n::tr("Übernehmen und ausführen", "Apply and run") };
-                        if crate::icons::primary_button(ui, Icon::Wizard, label).clicked() {
-                            pick = Some(k);
-                        }
-                        let one: String = fix.split_whitespace().collect::<Vec<_>>().join(" ");
-                        ui.add(egui::Label::new(RichText::new(one).monospace().color(pal.text_weak)).truncate());
-                    });
-                }
-                ui.add_space(2.0);
-            }
-        });
-        pick
+        let tr = crate::i18n::tr;
+        let titel = if l.schreibt { tr("Warum nichts geändert wurde", "Why nothing changed") } else { tr("Warum keine Zeilen kommen", "Why no rows come back") };
+        let warten = l.rx.is_some().then(|| tr("Keine Zeilen – ich zähle nach, welche Bedingung alles wegfiltert …", "No rows – counting which condition filters everything out …"));
+        let knopf = if l.schreibt { tr("Übernehmen", "Apply") } else { tr("Übernehmen und ausführen", "Apply and run") };
+        let items: Vec<(&str, Option<&str>)> = l.befunde.iter().map(|b| (b.text.as_str(), b.fix.as_deref())).collect();
+        hinweis(ui, ("leer", result, l.befunde.len()), titel, warten, &items, knopf)
+    }
+
+    fn tempo_panel(tempo: Option<&Tempo>, ui: &mut egui::Ui, result: usize) -> Option<usize> {
+        let t = tempo.filter(|t| t.result == result && (t.anlegen.is_some() || !t.vorschlaege.is_empty()))?;
+        let tr = crate::i18n::tr;
+        let titel = crate::tr_format!("Schneller machen (dauerte {})", "Make it faster (took {})", crate::i18n::sekunden(t.vorher));
+        let warten = t.anlegen.is_some().then(|| tr("Index wird angelegt …", "Creating the index …"));
+        let items: Vec<(&str, Option<&str>)> = t.vorschlaege.iter().map(|v| (v.text.as_str(), Some(v.sql.as_str()))).collect();
+        hinweis(ui, ("tempo", result, t.vorschlaege.len()), &titel, warten, &items, tr("Index anlegen und erneut ausführen", "Create index and run again"))
     }
 
     /// Ergebnis des Auto-Fix uebernehmen
@@ -934,10 +1021,14 @@ impl SqlTab {
             }
         }
         self.leer = None;
+        if self.tempo.as_ref().is_none_or(|t| t.anlegen.is_none()) {
+            self.tempo = None;
+        }
         if !results.iter().any(|r| r.error.is_some())
             && let Some(dbc) = cx.db
         {
             self.start_leer(dbc, &results);
+            self.start_tempo(dbc, &results, cx);
         }
         self.running.clear();
         let changed_structure = results.iter().any(|r| {
@@ -1074,6 +1165,9 @@ impl SqlTab {
                 {
                     act = Some(HistoryAct::LeerFix(k));
                 }
+                if let Some(k) = Self::tempo_panel(self.tempo.as_ref(), ui, ri) {
+                    act = Some(HistoryAct::TempoFix(k));
+                }
                 grid::show(ui, ("sqlgrid", self.editor.id, tab), &set.columns, &set.rows, grid::Edit::View, &mut self.grid);
             }
             Pane::Messages => {
@@ -1107,6 +1201,11 @@ impl SqlTab {
                                     && let Some(k) = Self::leer_panel(self.leer.as_ref(), ui, ri)
                                 {
                                     fix_pick = Some(HistoryAct::LeerFix(k));
+                                }
+                                if r.returned.is_none()
+                                    && let Some(k) = Self::tempo_panel(self.tempo.as_ref(), ui, ri)
+                                {
+                                    fix_pick = Some(HistoryAct::TempoFix(k));
                                 }
                             } else {
                                 crate::widgets::error_label(ui, &msg);
@@ -1469,6 +1568,7 @@ impl TabView for SqlTab {
         self.poll(cx);
         self.poll_autofix(cx);
         self.poll_leer(ui.ctx());
+        self.poll_tempo(cx, &ui.ctx().clone());
         if let Some((_, _, since)) = &self.wait_run {
             if cx.db.is_some() {
                 if let Some((sql, offset, _)) = self.wait_run.take() {
@@ -1663,6 +1763,7 @@ impl TabView for SqlTab {
             Some(HistoryAct::Fix(f)) => cx.actions.push(Action::AutoFix(f)),
             Some(HistoryAct::ErrorFix(k)) => self.apply_error_fix(cx, k),
             Some(HistoryAct::LeerFix(k)) => self.apply_leer_fix(cx, k),
+            Some(HistoryAct::TempoFix(k)) => self.apply_tempo(cx, k),
             Some(HistoryAct::UseDatabase(d)) => {
                 if let Some(f) = self.failed.take() {
                     self.set_database(d);
@@ -1704,6 +1805,46 @@ impl TabView for SqlTab {
         let ctx = ui.ctx().clone();
         self.dialogs(&ctx, cx);
     }
+}
+
+
+/// Hinweisfeld unter einem Ergebnis: Kreidestrich links, Titel, Eintraege mit Korrektur zum Uebernehmen.
+/// `warten`: Text waehrend der Suche im Hintergrund. Gibt den gewaehlten Eintrag zurueck.
+fn hinweis(ui: &mut egui::Ui, id: impl std::hash::Hash + std::fmt::Debug, titel: &str, warten: Option<&str>, items: &[(&str, Option<&str>)], knopf: &str) -> Option<usize> {
+    let pal = style::pal();
+    let mut pick = None;
+    // Weich einblenden, sobald sich der Inhalt aendert
+    let t = ui.ctx().animate_bool_with_time(egui::Id::new(id), true, 0.22);
+    ui.add_space(4.0);
+    egui::Frame::new().fill(pal.face_light).corner_radius(style::RADIUS).inner_margin(egui::Margin { left: 14, right: 12, top: 10, bottom: 10 }).show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        ui.set_opacity(t);
+        let r = ui.max_rect();
+        ui.painter().rect_filled(egui::Rect::from_min_size(egui::pos2(r.left() - 14.0, r.top() - 10.0), egui::vec2(3.0, r.height() + 20.0)), 1.5, pal.accent);
+        if let Some(w) = warten {
+            ui.horizontal(|ui| {
+                ui.spinner();
+                ui.label(RichText::new(w).color(pal.text_weak));
+            });
+            return;
+        }
+        ui.label(RichText::new(titel).semi());
+        ui.add_space(4.0);
+        for (k, (text, fix)) in items.iter().enumerate() {
+            ui.label(*text);
+            if let Some(fix) = fix {
+                ui.horizontal(|ui| {
+                    if crate::icons::primary_button(ui, Icon::Wizard, knopf).clicked() {
+                        pick = Some(k);
+                    }
+                    let one: String = fix.split_whitespace().collect::<Vec<_>>().join(" ");
+                    ui.add(egui::Label::new(RichText::new(one).monospace().color(pal.text_weak)).truncate());
+                });
+            }
+            ui.add_space(2.0);
+        }
+    });
+    pick
 }
 
 #[cfg(test)]

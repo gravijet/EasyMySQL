@@ -774,6 +774,7 @@ impl Language {
             "Auch ohne Klick: Schlägt beim Ausführen eine Anweisung fehl, repariert EasyMySQL den Rest des Skripts von selbst auf Kopien. Löscht die Korrektur nichts zusätzlich und enthält sie keine Platzhalter, läuft das Skript ab der Fehlerstelle gleich weiter; sonst steht oben „Weiter ausführen“ zum Ansehen und Bestätigen. Abschaltbar unter Einstellungen → Editor → Fehler beim Ausführen." => "No click needed: if a statement fails while running, EasyMySQL repairs the rest of the script by itself on copies. If the fix deletes nothing extra and contains no placeholders, the script continues from the failed statement right away; otherwise “Continue” appears at the top to review and confirm. Can be turned off under Settings → Editor → Errors while running.",
             "Erkannt werden unter anderem fehlende Kommas (zwischen Spalten, Werten und SET-Zuweisungen), vertippte Schlüsselwörter (LIMT, DECS, FORM), DELETE *, COUNT (*), reservierte Wörter als Namen (order, group, key), VARCHAR ohne Länge, typografische Anführungszeichen, Apostroph im Text (O'Brien), Datum ohne Anführungszeichen, Text ohne Anführungszeichen nach =, Tabellenname statt Alias und Aggregate in WHERE (wird HAVING)." => "Among other things it recognises missing commas (between columns, values and SET assignments), misspelt keywords (LIMT, DECS, FORM), DELETE *, COUNT (*), reserved words as names (order, group, key), VARCHAR without a length, typographic quotes, an apostrophe inside text (O'Brien), a date without quotes, text without quotes after =, a table name instead of its alias and aggregates in WHERE (becomes HAVING).",
             "Leeres Ergebnis: Liefert ein SELECT keine Zeilen oder trifft ein UPDATE bzw. DELETE nichts, zählt EasyMySQL im Hintergrund nur lesend nach, welche Bedingung alles wegfiltert, und zeigt eine geprüfte Korrektur samt Zeilenzahl: Schreibweise wie in den Daten (Wein → Wien, Mueller → Müller), deutsches Datum, Datum gegen eine Spalte mit Uhrzeit, = NULL statt IS NULL, LIKE mit * oder ohne %, zwei Bedingungen, die sich ausschließen (wird ODER), und eine JOIN-Bedingung, die nie passt (über den Fremdschlüssel). Leseabfragen laufen mit einem Klick neu, Änderungen an Daten erst nach erneutem Ausführen." => "Empty result: if a SELECT returns no rows or an UPDATE or DELETE matches nothing, EasyMySQL counts in the background (read only) which condition filters everything out and shows a verified fix with its row count: spelling as in the data (Wein → Wien, Mueller → Müller), German dates, a date against a column with a time, = NULL instead of IS NULL, LIKE with * or without %, two conditions that exclude each other (becomes OR), and a JOIN condition that never matches (via the foreign key). Queries rerun with one click, data changes only when you run them again.",
+            "Langsame Abfrage: Dauert eine Anweisung spürbar, prüft EasyMySQL im Hintergrund mit EXPLAIN, ob eine Tabelle ganz durchsucht wird, und schlägt einen passenden Index vor (zuerst die Spalten mit =, dann eine Bereichsspalte). Ein Klick legt ihn an, führt die Abfrage erneut aus und zeigt die Zeit vorher und nachher." => "Slow query: if a statement takes noticeably long, EasyMySQL checks in the background with EXPLAIN whether a table is scanned completely and proposes a fitting index (columns compared with = first, then one range column). One click creates it, runs the query again and shows the time before and after.",
             "Datenbank prüfen und reparieren (Rechtsklick auf eine Datenbank oder Menü Datenbank): Der Datenbank-Doktor untersucht alle Tabellen und schlägt fertige Reparaturen vor – fehlende Primärschlüssel, fehlende Fremdschlüssel (erkannt an Spalten wie kunde_id, verwaiste Zeilen inklusive), Datum, Zahlen und Kommazahlen, die als Text gespeichert sind (auch 12.03.2024 und 3,50), doppelte Zeilen, Leerzeichen am Rand, alte Zeichensätze und MyISAM-Tabellen. Was nur die Struktur ändert, ist vorausgewählt; was Daten ändert, ist markiert. Vor dem Reparieren wird die Datenbank gesichert, danach wird sie gleich erneut geprüft." => "Check and repair a database (right-click a database or the Database menu): the database doctor examines every table and proposes ready repairs – missing primary keys, missing foreign keys (recognised from columns such as kunde_id, orphaned rows included), dates, numbers and decimals stored as text (also 12.03.2024 and 3,50), duplicate rows, surrounding spaces, old character sets and MyISAM tables. Structure-only repairs are preselected; repairs that change data are marked. The database is backed up before repairing and checked again right after.",
             "Fehlt etwas, baut der Auto-Fix es selbst: Tabellen, die das Skript benutzt, aber nirgends anlegt, leitet er aus jeder Verwendung ab (Spalten, Typen aus den Werten, Primärschlüssel, Index für Verweise wie kunde_id) und füllt sie bei Abfragen mit passenden Beispieldaten – gesuchte Werte wie ort = 'Wien' kommen darin vor. Gibt es die Tabelle in einer anderen Datenbank, arbeitet er dort bzw. übernimmt sie samt Daten. Fehlende Spalten und Datenbanken legt er an, zu kleine Spalten vergrößert er (Text zu lang, Zahl zu groß, Telefonnummer als Zahl), und Anweisungen in falscher Reihenfolge (INSERT vor CREATE TABLE, Kind- vor Elternzeile, DROP der Elterntabelle zuerst) zieht er an die richtige Stelle. Erfundene Daten in der echten Datenbank legt er nie ungefragt an." => "If something is missing, Auto-Fix builds it: tables the script uses but never creates are derived from every use (columns, types from the values, primary key, an index for references such as kunde_id) and, for queries, filled with fitting sample data – searched values such as ort = 'Wien' appear in it. If the table exists in another database, it works there or copies the table with its data. Missing columns and databases are created, columns that are too small are widened (text too long, number too large, phone number stored as a number), and statements in the wrong order (INSERT before CREATE TABLE, child before parent row, dropping the parent table first) are moved to the right place. It never adds invented data to the real database without asking.",
             "Ebenso von selbst nach einem Absturz des Programms: Ist der eigene Server gestoppt, wird er gestartet; fehlt der JDBC-Treiber oder das JDK, wird es geladen; verlangt der MariaDB-Treiber Verschlüsselung, bekommen Adressen auf diesen PC ?sslMode=disable. Danach wird neu übersetzt und das Programm startet noch einmal." => "Also automatic after a program crash: a stopped own server is started; a missing JDBC driver or JDK is downloaded; if the MariaDB driver insists on encryption, URLs to this PC get ?sslMode=disable. Then the program is rebuilt and starts once more.",
@@ -1541,5 +1542,34 @@ mod tests {
         assert_eq!(Language::English.text("Einstellungen"), "Settings");
         assert_eq!(Language::German.text("Einstellungen"), "Einstellungen");
         assert_eq!(Language::English.text("customer_table"), "customer_table");
+    }
+}
+
+/// Ganze Zahl mit Tausendertrennzeichen in der Sprache der Oberflaeche (1.496.250 bzw. 1,496,250)
+pub fn tausend(n: u64) -> String {
+    let s = n.to_string();
+    let sep = if is_english() { ',' } else { '.' };
+    let mut out = String::new();
+    for (i, c) in s.chars().enumerate() {
+        if i > 0 && (s.len() - i).is_multiple_of(3) {
+            out.push(sep);
+        }
+        out.push(c);
+    }
+    out
+}
+
+/// Sekunden mit Nachkommastellen in der Sprache der Oberflaeche (0,57 s bzw. 0.57 s)
+pub fn sekunden(d: std::time::Duration) -> String {
+    let s = if d.as_secs_f64() < 0.1 { format!("{:.3}", d.as_secs_f64()) } else { format!("{:.2}", d.as_secs_f64()) };
+    if is_english() { format!("{s} s") } else { format!("{} s", s.replace('.', ",")) }
+}
+
+#[cfg(test)]
+mod zahl_tests {
+    #[test]
+    fn tausender() {
+        assert_eq!(super::tausend(1_496_250).replace(',', "."), "1.496.250");
+        assert_eq!(super::tausend(999), "999");
     }
 }

@@ -424,7 +424,7 @@ impl DataTab {
                         for (v, n) in &s.top {
                             let (r, resp) = ui.allocate_exact_size(egui::vec2(380.0, 22.0), egui::Sense::click());
                             let w = (r.width() * *n as f32 / most as f32).max(2.0);
-                            ui.painter().rect_filled(egui::Rect::from_min_size(r.min, egui::vec2(w, r.height())), 3.0, pal.accent.gamma_multiply(if resp.hovered() { 0.55 } else { 0.35 }));
+                            ui.painter().rect_filled(egui::Rect::from_min_size(r.min, egui::vec2(w, r.height())), 3.0, pal.blue.gamma_multiply(if resp.hovered() { 0.45 } else { 0.28 }));
                             let label = v.clone().map(|x| x.chars().take(40).collect::<String>()).unwrap_or_else(|| "NULL".into());
                             ui.painter().text(egui::pos2(r.left() + 6.0, r.center().y), egui::Align2::LEFT_CENTER, label, egui::FontId::proportional(13.0), pal.text);
                             ui.painter().text(egui::pos2(r.right() - 6.0, r.center().y), egui::Align2::RIGHT_CENTER, n.to_string(), egui::FontId::proportional(12.0), pal.text);

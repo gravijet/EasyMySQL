@@ -264,7 +264,7 @@ impl ErTab {
         // Atlas an, den egui nie verkleinert (stufenloses Zoomen liesse den Speicher anwachsen).
         let pal = style::pal();
         let font = FontId::proportional(qsize(12.0 * z));
-        let bold = FontId::proportional(qsize(12.5 * z));
+        let bold = crate::style::semi(qsize(12.5 * z));
         let small = FontId::proportional(qsize(9.5 * z));
         let radius = (6.0 * z).clamp(1.0, 8.0) as u8;
         let round = egui::CornerRadius::same(radius);

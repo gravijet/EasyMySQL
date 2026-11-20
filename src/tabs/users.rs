@@ -148,7 +148,7 @@ impl UsersTab {
                 let sel = self.sel == Some(i);
                 let (r, resp) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 26.0), egui::Sense::click());
                 if sel {
-                    ui.painter().rect_filled(r, 4.0, pal.accent.gamma_multiply(0.28));
+                    ui.painter().rect_filled(r, 4.0, pal.selection);
                 } else if resp.hovered() {
                     ui.painter().rect_filled(r, 4.0, pal.hover);
                 }

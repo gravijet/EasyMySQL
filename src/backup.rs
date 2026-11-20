@@ -402,41 +402,47 @@ pub fn import_file(env: &Env, file: &Path, db: Option<&str>) -> Result<(), Strin
 /// `current` = aktuell gewaehlte Datenbank.
 pub fn destructive_targets(sql: &str, current: Option<&str>) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
-    let upper = sql.to_uppercase();
-    let words: Vec<&str> = sql.split(|c: char| c.is_whitespace() || c == ';' || c == '(').filter(|w| !w.is_empty()).collect();
-    let uw: Vec<String> = words.iter().map(|w| w.to_uppercase()).collect();
-    let clean = |w: &str| w.trim_matches('`').to_string();
-    for i in 0..uw.len() {
-        // DROP DATABASE x / DROP SCHEMA x
-        if uw[i] == "DROP" && i + 2 < uw.len() && (uw[i + 1] == "DATABASE" || uw[i + 1] == "SCHEMA") {
-            let mut j = i + 2;
-            if uw[j] == "IF" {
-                j += 2;
+    // Je Anweisung: nur was wirklich loescht, zaehlt (ein SELECT auf db.tabelle sichert nichts)
+    for st in crate::db::split_statements(sql) {
+        let sql = st.sql.as_str();
+        let upper = sql.to_uppercase();
+        let words: Vec<&str> = sql.split(|c: char| c.is_whitespace() || c == ';' || c == '(').filter(|w| !w.is_empty()).collect();
+        let uw: Vec<String> = words.iter().map(|w| w.to_uppercase()).collect();
+        let clean = |w: &str| w.trim_matches('`').to_string();
+        // UPDATE/DELETE nur ohne WHERE (dann ist die ganze Tabelle betroffen)
+        let no_where = !upper.contains("WHERE");
+        let first = uw.first().map(String::as_str).unwrap_or("");
+        let risky = ["DROP TABLE", "DROP VIEW", "TRUNCATE"].iter().any(|k| upper.contains(k))
+            || (first == "ALTER" && upper.contains("DROP"))
+            || (no_where && (first == "DELETE" || first == "UPDATE"));
+        for i in 0..uw.len() {
+            // DROP DATABASE x / DROP SCHEMA x
+            if uw[i] == "DROP" && i + 2 < uw.len() && (uw[i + 1] == "DATABASE" || uw[i + 1] == "SCHEMA") {
+                let mut j = i + 2;
+                if uw[j] == "IF" {
+                    j += 2;
+                }
+                if let Some(w) = words.get(j) {
+                    out.push(clean(w));
+                }
             }
-            if let Some(w) = words.get(j) {
-                out.push(clean(w));
-            }
-        }
-        // db.tabelle in DROP TABLE / TRUNCATE / DELETE / ALTER
-        if matches!(uw[i].as_str(), "TABLE" | "TRUNCATE" | "FROM" | "INTO") && i + 1 < words.len() {
-            let w = words[i + 1];
-            if let Some((d, _)) = w.split_once('.') {
-                let d = clean(d);
-                if !d.is_empty() {
-                    out.push(d);
+            // db.tabelle in DROP TABLE / TRUNCATE / DELETE / UPDATE / ALTER
+            if risky && matches!(uw[i].as_str(), "TABLE" | "TRUNCATE" | "FROM" | "UPDATE" | "VIEW") && i + 1 < words.len() {
+                let w = words[i + 1];
+                if let Some((d, _)) = w.split_once('.') {
+                    let d = clean(d);
+                    if !d.is_empty() {
+                        out.push(d);
+                    }
                 }
             }
         }
-    }
-    // UPDATE/DELETE nur ohne WHERE (dann ist die ganze Tabelle betroffen)
-    let no_where = !upper.contains("WHERE");
-    let risky = ["DROP TABLE", "DROP VIEW", "TRUNCATE"].iter().any(|k| upper.contains(k))
-        || (upper.contains("ALTER TABLE") && upper.contains("DROP"))
-        || (no_where && (upper.contains("DELETE ") || upper.contains("UPDATE ")));
-    if risky
-        && let Some(c) = current.filter(|c| !c.is_empty()) {
+        if risky
+            && let Some(c) = current.filter(|c| !c.is_empty())
+        {
             out.push(c.to_string());
         }
+    }
     out.retain(|d| !SYSTEM_DATABASES.contains(&d.to_lowercase().as_str()));
     out.sort();
     out.dedup();
@@ -459,6 +465,11 @@ mod tests {
         assert_eq!(destructive_targets("DELETE FROM kunde", Some("shop")), vec!["shop"]);
         assert_eq!(destructive_targets("ALTER TABLE kunde DROP COLUMN email", Some("shop")), vec!["shop"]);
         assert!(destructive_targets("DROP DATABASE mysql", None).is_empty());
+        // Lesen und gezieltes Aendern mit Datenbanknamen loest keine Sicherung aus
+        assert!(destructive_targets("SELECT * FROM messwerte.messung WHERE sensor = 1", Some("shop")).is_empty());
+        assert!(destructive_targets("INSERT INTO schule.note VALUES (1)", Some("shop")).is_empty());
+        assert!(destructive_targets("DELETE FROM schule.note WHERE id = 3", Some("shop")).is_empty());
+        assert_eq!(destructive_targets("SELECT 1; DELETE FROM schule.note", Some("shop")), vec!["schule", "shop"]);
     }
 
     #[test]

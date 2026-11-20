@@ -420,6 +420,8 @@ impl Probe<'_> {
         }
         let tables = self.server.rows(&format!("SELECT TABLE_NAME, TABLE_TYPE FROM information_schema.TABLES WHERE TABLE_SCHEMA = {}", str_lit(orig)))?;
         let schema = if self.copy_data { self.server.schema(orig) } else { None };
+        // Auch eine spaeter hinzukommende Datenbank wird nur mit Inhalt kopiert, wenn sie klein ist
+        let gross = schema.as_ref().is_some_and(|s| s.tables.iter().map(|t| t.rows.unwrap_or(0)).sum::<u64>() > COPY_ROWS);
         let mut out = Vec::new();
         for r in &tables {
             let name = r.first().cloned().flatten().unwrap_or_default();
@@ -427,7 +429,7 @@ impl Probe<'_> {
             let rows = self.server.rows(&format!("SHOW CREATE {} {}.{}", if view { "VIEW" } else { "TABLE" }, db::q(orig), db::q(&name)))?;
             let Some(ddl) = rows.first().and_then(|r| r.get(1).cloned().flatten()) else { continue };
             let cols = match schema.as_ref().and_then(|s| s.tables.iter().find(|t| t.name == name)) {
-                Some(t) if !view => t.columns.iter().filter(|c| !c.is_generated()).map(|c| db::q(&c.name)).collect(),
+                Some(t) if !view && !gross => t.columns.iter().filter(|c| !c.is_generated()).map(|c| db::q(&c.name)).collect(),
                 _ => Vec::new(),
             };
             out.push(Item { name, ddl, view, cols });
@@ -1417,6 +1419,28 @@ mod pick_tests {
         assert!(r.text.starts_with(&format!("USE {name};")), "{}", r.text);
         assert!(r.changes.iter().all(|c| !c.check));
     }
+
+    /// Grosse Tabelle in einer anderen Datenbank (nur die Struktur wird kopiert)
+    #[test]
+    #[ignore]
+    fn probe_picks_a_big_database() {
+        let port = std::env::var("EASYMYSQL_AUTOFIX_TEST_PORT").unwrap().parse().unwrap();
+        let info = crate::db::ConnInfo { port, ..Default::default() };
+        let dbc = crate::db::Db::connect(&info).unwrap();
+        let name = format!("pick_big_{}", std::process::id());
+        dbc.exec(&format!("CREATE DATABASE {name}"), ()).unwrap();
+        dbc.exec_in(&name, "CREATE TABLE riesig (id INT PRIMARY KEY AUTO_INCREMENT, sensor INT); INSERT INTO riesig (sensor) SELECT seq % 50 FROM seq_1_to_60000; ANALYZE TABLE riesig").unwrap();
+        let other = format!("pick_other_{}", std::process::id());
+        dbc.exec(&format!("CREATE DATABASE {other}"), ()).unwrap();
+        let setup = Setup { database: Some(other.clone()), databases: dbc.databases().unwrap(), file_stem: None };
+        let mut live = Live { conn: dbc.new_conn().unwrap(), db: crate::db::Db::connect(&info).unwrap() };
+        let r = repair("SELECT sensor FROM riesig WHERE sensor = 4;", &setup, Some(&mut live), &|s| eprintln!("{s}"), &AtomicBool::new(false), None);
+        eprintln!("{}\n{:#?}\n{:?}", r.text, r.changes, r.end);
+        let _ = dbc.exec(&format!("DROP DATABASE IF EXISTS {}", db::q(&name)), ());
+        let _ = dbc.exec(&format!("DROP DATABASE IF EXISTS {}", db::q(&other)), ());
+        assert_eq!(r.end, End::Clean);
+        assert!(r.changes.iter().all(|c| !c.check), "{:?}", r.changes);
+    }
 }
 
 #[cfg(test)]
@@ -1556,3 +1580,4 @@ mod corpus_tests {
         assert!(failed.is_empty(), "{failed:?}");
     }
 }
+
