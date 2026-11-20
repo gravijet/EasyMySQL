@@ -410,6 +410,7 @@ Sicherungen, Benutzerverwaltung, Git, Suche, Menüs.
   (Formularzeilen, feste Spalten, mittige Häkchen, Typ nie abgeschnitten); Seitenleisten-Knöpfe volle Breite;
   KI-Bereich ohne Begrüßungsfloskel; Struktur mit genauer Zeilenzahl; Benutzer: erster Benutzer gleich offen;
   Einstellungen ohne die Technik-Stellschrauben „Prüfen nach“/„Speichern nach“.
+- Auto-Fix erweitert ENUM-Listen um neue Werte und stellt Tabellen für Emoji auf utf8mb4 um; Korpus 59/59.
 - Leerlauf geprüft: höchstens ein Bild alle paar Sekunden (Serverstatus), kein Dauerneuzeichnen.
 
 **Offen:** Windows/macOS nur per `cargo check`; Andocken und Explorer-Dialoge kopflos nicht erneut geprüft.
