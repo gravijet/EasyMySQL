@@ -1510,6 +1510,8 @@ mod corpus_tests {
         ("Verweis auf fehlende Tabelle", "CREATE TABLE note (id INT PRIMARY KEY AUTO_INCREMENT, wert INT, fach_id INT, FOREIGN KEY (fach_id) REFERENCES fach(id));\nINSERT INTO note (wert, fach_id) VALUES (1, 1);"),
         ("Zahl zu gross", "CREATE TABLE raum (nr TINYINT PRIMARY KEY);\nINSERT INTO raum VALUES (301);"),
         ("Telefon als Zahl", "CREATE TABLE kontakt (id INT PRIMARY KEY AUTO_INCREMENT, telefon INT);\nINSERT INTO kontakt (telefon) VALUES ('0664 1234567');"),
+        ("Emoji in latin1", "CREATE TABLE kommentar (id INT PRIMARY KEY AUTO_INCREMENT, text VARCHAR(200)) CHARACTER SET latin1;\nINSERT INTO kommentar (text) VALUES ('Super 👍');"),
+        ("ENUM-Wert fehlt", "CREATE TABLE auftrag (id INT PRIMARY KEY AUTO_INCREMENT, status ENUM('offen','erledigt') NOT NULL);\nINSERT INTO auftrag (status) VALUES ('offen'), ('storniert');"),
         ("AUTO_INCREMENT ohne Schluessel", "CREATE TABLE raum (id INT AUTO_INCREMENT, nummer VARCHAR(5));"),
         ("Zwei Primaerschluessel", "CREATE TABLE raum (id INT PRIMARY KEY, nummer VARCHAR(5) PRIMARY KEY);"),
         ("TEXT als Schluessel", "CREATE TABLE raum (name TEXT PRIMARY KEY);"),

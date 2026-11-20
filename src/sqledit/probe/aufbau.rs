@@ -1166,8 +1166,46 @@ fn groesserer_typ(code: u32, spalte: &str, alt: &str, ws: &[Wert]) -> Option<Str
             let p = (vor + s).max(p.unwrap_or(10) + 2).min(65);
             Some(format!("DECIMAL({p},{s})"))
         }
+        // Wert fehlt in der ENUM-Liste: Liste um die neuen Werte erweitern
+        1265 | 1366 if a.starts_with("ENUM(") && !texte.is_empty() => {
+            let mut liste = enum_werte(alt);
+            for t in texte {
+                if !liste.iter().any(|l| l.eq_ignore_ascii_case(t)) {
+                    liste.push(t.to_string());
+                }
+            }
+            if liste.len() == enum_werte(alt).len() {
+                return None;
+            }
+            Some(format!("ENUM({})", liste.iter().map(|w| format!("'{}'", w.replace('\'', "''"))).collect::<Vec<_>>().join(",")))
+        }
         _ => None,
     }
+}
+
+/// Werte einer ENUM-Definition wie `enum('a','b''c')`
+fn enum_werte(def: &str) -> Vec<String> {
+    let innen = def.split_once('(').map_or("", |(_, r)| r.rsplit_once(')').map_or(r, |(i, _)| i));
+    let mut out = Vec::new();
+    let mut cs = innen.chars().peekable();
+    while let Some(c) = cs.next() {
+        if c != '\'' {
+            continue;
+        }
+        let mut w = String::new();
+        while let Some(c) = cs.next() {
+            if c != '\'' {
+                w.push(c);
+            } else if cs.peek() == Some(&'\'') {
+                cs.next();
+                w.push(c);
+            } else {
+                break;
+            }
+        }
+        out.push(w);
+    }
+    out
 }
 
 /// Spalte zu klein (1406, 1264) oder vom falschen Typ (1366): im CREATE TABLE des Skripts bzw. per ALTER aendern
@@ -1181,6 +1219,13 @@ pub(super) fn typ_anpassen(text: &str, f: &Fail) -> Vec<Cand> {
     let Some(info) = tab.as_deref().and_then(|t| schema.table(t)) else { return out };
     let Some(spalte) = info.columns.iter().find(|c| c.name.eq_ignore_ascii_case(&col)) else { return out };
     let (chars, toks) = lexed(&f.stmt.sql);
+    // Emoji oder andere 4-Byte-Zeichen in einer Tabelle mit altem Zeichensatz
+    if code == 1366 && f.error.contains("Incorrect string value") {
+        let def = format!("ALTER TABLE {} CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;\n", quote_if_needed(&info.name));
+        let label = crate::tr_format!("Tabelle „{}“ auf utf8mb4 umgestellt, damit alle Zeichen passen", "Converted the table “{}” to utf8mb4 so every character fits", info.name);
+        out.push(cand(insert_before(text, &f.stmt, &def), label, false, &def));
+        return out;
+    }
     let ws = geschrieben(&chars, &toks, &spalte.name, Some(info));
     let Some(neu) = groesserer_typ(code, &spalte.name, &spalte.col_type, &ws) else { return out };
     let label = crate::tr_format!("Spalte „{}.{}“ auf {neu} geändert, damit die Werte passen", "Changed the column “{}.{}” to {neu} so the values fit", info.name, spalte.name);
@@ -1351,6 +1396,8 @@ mod tests {
         assert_eq!(groesserer_typ(1264, "telefon", "int(11)", &[Wert::Zahl("06641234567".into())]).as_deref(), Some("VARCHAR(50)"));
         assert_eq!(groesserer_typ(1366, "plz", "int(11)", &[txt("A-1010")]).as_deref(), Some("VARCHAR(50)"));
         assert_eq!(groesserer_typ(1366, "plz", "int(11)", &[txt("1010")]), None);
+        assert_eq!(groesserer_typ(1265, "status", "enum('aktiv','inaktiv')", &[txt("gesperrt"), txt("AKTIV")]).as_deref(), Some("ENUM('aktiv','inaktiv','gesperrt')"));
+        assert_eq!(groesserer_typ(1265, "status", "enum('a''b')", &[txt("a'b")]), None);
         assert_eq!(spalte_aus("ERROR 1366 (22007): Incorrect integer value: 'A-1010' for column `db`.`kunde`.`plz` at row 1"), Some((Some("kunde".into()), "plz".into())));
         assert_eq!(spalte_aus("ERROR 1406 (22001): Data too long for column 'name' at row 1"), Some((None, "name".into())));
     }
