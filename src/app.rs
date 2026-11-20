@@ -719,6 +719,7 @@ impl EasyApp {
                 Action::OpenImport => self.open_transfer(crate::tabs::transfer::Mode::Import, None),
                 Action::OpenExport { db, only, format } => self.open_transfer(crate::tabs::transfer::Mode::Export, Some((db, only, format))),
                 Action::OpenUsers => self.open_tab(Box::new(crate::tabs::users::UsersTab::new())),
+                Action::OpenDoktor(db) => self.open_tab(Box::new(crate::tabs::doktor::DoktorTab::new(db))),
                 Action::FilesChanged => self.tree_scan = None,
                 Action::OpenFileAt { path, line } => {
                     self.open_file(&path);

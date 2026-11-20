@@ -6,6 +6,7 @@ pub mod code;
 pub mod data;
 pub mod designer;
 pub mod diff;
+pub mod doktor;
 pub mod er;
 pub mod help;
 mod help_content;
@@ -53,6 +54,8 @@ pub enum Action {
     /// Export einer Datenbank (optional nur einzelne Tabellen)
     OpenExport { db: String, only: Option<Vec<String>>, format: crate::transfer::export::Format },
     OpenUsers,
+    /// Datenbank pruefen und reparieren (Datenbank-Doktor)
+    OpenDoktor(String),
     /// Dateien im Projekt haben sich geaendert (Explorer neu einlesen)
     FilesChanged,
     /// Datei oeffnen und zu einer Zeile (0-basiert) springen

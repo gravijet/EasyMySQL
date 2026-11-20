@@ -5,6 +5,7 @@ mod app;
 mod ai;
 mod backup;
 mod repair;
+mod doktor;
 mod db;
 mod grid;
 #[cfg_attr(not(windows), allow(dead_code))] // ausserhalb von Windows nur fuer Tests und build.rs

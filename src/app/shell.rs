@@ -242,6 +242,12 @@ impl EasyApp {
                         item(ui, crate::i18n::text("ER-Diagramm"), Cmd::ErDiagram, &mut cmd);
                         item(ui, crate::i18n::text("Abfrage-Assistent"), Cmd::QueryBuilder, &mut cmd);
                     });
+                    if ui.add_enabled_ui(connected, |ui| icons::menu_item(ui, Some(Icon::Shield), crate::i18n::tr("Prüfen und reparieren …", "Check and repair …"), "")).inner.clicked() {
+                        if let Some(d) = self.need_db() {
+                            actions.push(Action::OpenDoktor(d));
+                        }
+                        ui.close();
+                    }
                     ui.separator();
                     ui.add_enabled_ui(connected, |ui| {
                         item(ui, crate::i18n::text("Exportieren …"), Cmd::Export, &mut cmd);

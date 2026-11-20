@@ -993,6 +993,10 @@ impl EasyApp {
                         actions.push(Action::OpenBuilder(Some(d.clone())));
                         ui.close();
                     }
+                    if icons::menu_item(ui, Some(Icon::Shield), crate::i18n::tr("Prüfen und reparieren …", "Check and repair …"), "").clicked() {
+                        actions.push(Action::OpenDoktor(d.clone()));
+                        ui.close();
+                    }
                     ui.separator();
                     if icons::menu_item(ui, Some(Icon::Download), crate::i18n::text("Exportieren …"), "").clicked() {
                         actions.push(Action::OpenExport { db: d.clone(), only: None, format: crate::transfer::export::Format::Sql });
