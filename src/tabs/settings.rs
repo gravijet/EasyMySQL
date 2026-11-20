@@ -49,7 +49,7 @@ const GROUPS: &[(&str, &[&str])] = &[
 fn section_icon(id: &str) -> crate::icons::Icon {
     use crate::icons::Icon;
     match id {
-        "darstellung" => Icon::Wrench,
+        "darstellung" => Icon::Palette,
         "start" => Icon::Play,
         "updates" => Icon::CloudDownload,
         "editor" => Icon::Edit,
@@ -66,7 +66,7 @@ fn section_icon(id: &str) -> crate::icons::Icon {
         "server" => Icon::Database,
         "sicherungen" => Icon::Shield,
         "tastenkuerzel" => Icon::Key,
-        "ki" => Icon::Wrench,
+        "ki" => Icon::Bot,
         _ => Icon::Settings,
     }
 }

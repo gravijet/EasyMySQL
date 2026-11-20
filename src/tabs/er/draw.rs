@@ -275,13 +275,25 @@ impl ErTab {
                 continue;
             }
             let focused = focus_table.as_deref() == Some(t.name.as_str());
-            let head_color = if t.is_view { pal.er_view_header } else { pal.er_header };
+            // Karteikarte: jede Tabelle mit eigener Reiterfarbe (bleibt je Name gleich), Sichten gruen
+            let hues = [pal.blue, pal.pink, pal.orange, pal.teal, pal.lilac, pal.green, pal.coral];
+            let hue = if t.is_view { pal.green } else { hues[t.name.bytes().fold(7usize, |h, b| h.wrapping_mul(31).wrapping_add(b as usize)) % hues.len()] };
+            let head_color = crate::style::soft(hue);
             if z >= 0.3 {
                 painter.rect_filled(r.translate(vec2(0.0, 2.0) * z).expand(1.0 * z), round, Color32::from_black_alpha(if pal.dark { 60 } else { 26 }));
             }
             painter.rect_filled(r, round, pal.er_box);
             let head = Rect::from_min_size(r.min, vec2(r.width(), (HEADER_H * z).max(2.0)));
             painter.rect_filled(head, round_top, head_color);
+            painter.rect_filled(Rect::from_min_size(head.min, vec2(head.width(), (3.0 * z).max(1.0))), round_top, hue);
+            // Linien der Karteikarte unter jeder Zeile, unter dem Kopf ein kraeftigerer Strich in der Reiterfarbe
+            if z >= 0.45 {
+                painter.hline(head.x_range(), head.bottom(), Stroke::new(1.2 * z.min(1.5), hue.gamma_multiply(0.7)));
+                for i in 1..t.columns.len() {
+                    let y = r.top() + (HEADER_H + 3.0 + ROW_H * i as f32) * z;
+                    painter.hline((r.left() + 6.0 * z)..=(r.right() - 6.0 * z), y, Stroke::new(1.0, pal.border.gamma_multiply(0.55)));
+                }
+            }
             let outline = if focused { Stroke::new(1.8, LINE_HI) } else { Stroke::new(1.0, pal.border) };
             let clip = painter.with_clip_rect(r.intersect(rect));
             let title = if t.is_view { crate::tr_format!("{} (Sicht)", "{} (View)", t.name) } else { t.name.clone() };

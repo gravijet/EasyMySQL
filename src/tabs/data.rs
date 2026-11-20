@@ -692,7 +692,7 @@ impl TabView for DataTab {
             self.undo(cx);
         }
         ui.horizontal(|ui| {
-            ui.label(RichText::new(format!("{}.{}", self.db, self.table)).semi());
+            super::table_title(ui, &self.db, &self.table);
             ui.add_space(6.0);
             let w = (ui.available_width() - 46.0 - if self.order.is_empty() { 0.0 } else { 150.0 }).clamp(160.0, 560.0);
             let r = ui.add_sized([w, 28.0], crate::widgets::edit(&mut self.filter).vertical_align(egui::Align::Center).hint_text(crate::i18n::tr("WHERE-Bedingung", "WHERE condition")));

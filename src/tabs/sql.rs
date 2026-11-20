@@ -977,10 +977,17 @@ impl SqlTab {
                     End::Cancelled => (Icon::Alert, pal.warn_text, tr("Abgebrochen.", "Cancelled.").to_string()),
                     End::Failed(e) => (Icon::Alert, pal.error_text, crate::tr_format!("Probelauf nicht möglich: {e}", "Trial run not possible: {e}")),
                 };
+                // Erfolgreich behoben: Stempel statt Symbol (wird beim Erscheinen aufgedrueckt)
+                let stempel = matches!(r.end, End::Clean) && a.heal.is_none() || a.ran;
                 ui.horizontal(|ui| {
-                    let (rect, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
-                    icons::paint(ui.painter(), rect, icon, color);
-                    ui.add(egui::Label::new(RichText::new(head).color(color)).wrap());
+                    if stempel {
+                        let text = if n == 0 { tr("Geprüft", "Checked") } else { tr("Behoben", "Fixed") };
+                        crate::widgets::stamp(ui, egui::Id::new(("autofix-stempel", a.after.len(), n)), text, pal.ok_text);
+                    } else {
+                        let (rect, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
+                        icons::paint(ui.painter(), rect, icon, color);
+                    }
+                    ui.add(egui::Label::new(RichText::new(head).color(if stempel { pal.text } else { color })).wrap());
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if icons::button(ui, Icon::Close, tr("Schließen", "Close")).clicked() {
                             act = Some(FixAct::Close);

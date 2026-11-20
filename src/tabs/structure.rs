@@ -451,7 +451,7 @@ impl TabView for StructureTab {
             return;
         };
         ui.horizontal(|ui| {
-            ui.label(RichText::new(format!("{}.{}", self.db, self.table)).size(15.0).semi());
+            super::table_title(ui, &self.db, &self.table);
             let mut desc = String::from(if info.is_view { crate::i18n::text("Sicht") } else { crate::i18n::text("Tabelle") });
             if !info.engine.is_empty() {
                 desc.push_str(&format!(" · {}", info.engine));

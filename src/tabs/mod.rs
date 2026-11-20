@@ -467,6 +467,20 @@ pub fn db_chip(ui: &mut egui::Ui, id: egui::Id, value: &str, width: f32) -> egui
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
+/// Titel einer Tabellenansicht: Ordneretikett der Datenbank in ihrer Farbe, daneben der Tabellenname
+pub fn table_title(ui: &mut egui::Ui, db: &str, table: &str) {
+    let p = crate::style::pal();
+    let hue = crate::style::db_color(db);
+    let g = ui.painter().layout_no_wrap(db.to_string(), crate::style::medium(12.5), p.text);
+    let (r, _) = ui.allocate_exact_size(egui::vec2(g.size().x + 30.0, 24.0), egui::Sense::hover());
+    let painter = ui.painter();
+    painter.rect_filled(r, crate::style::RADIUS as f32, crate::style::soft(hue));
+    painter.rect_filled(egui::Rect::from_min_size(r.min, egui::vec2(4.0, r.height())), egui::CornerRadius { nw: 4, sw: 4, ne: 0, se: 0 }, hue);
+    crate::icons::paint(painter, egui::Rect::from_center_size(egui::pos2(r.left() + 15.0, r.center().y), egui::vec2(13.0, 13.0)), crate::icons::Icon::Database, hue);
+    painter.galley(egui::pos2(r.left() + 25.0, r.center().y - g.size().y / 2.0), g, p.text);
+    ui.label(egui::RichText::new(table).font(crate::style::semi(16.0)).color(p.text)).on_hover_text(format!("{db}.{table}"));
+}
+
 /// Auswahl der Datenbank (gleich wie `db_select`; der Reiter traegt sein Symbol schon selbst)
 pub fn db_pick(ui: &mut egui::Ui, id: impl std::hash::Hash + std::fmt::Debug, items: &[String], value: &mut String, width: f32) -> bool {
     db_select(ui, id, items, value, width)
