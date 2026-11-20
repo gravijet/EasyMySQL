@@ -22,6 +22,10 @@ pub trait Zaehler {
     fn texte(&mut self, sql: &str) -> Vec<String>;
     /// Fremdschluessel zwischen zwei Tabellen: (Spalte in a, Spalte in b)
     fn verweise(&mut self, a: &str, b: &str) -> Vec<(String, String)>;
+    /// Spalten einer Tabelle der gewaehlten Datenbank
+    fn spalten(&mut self, _t: &str) -> Vec<String> {
+        Vec::new()
+    }
 }
 
 pub struct Server<'a, C: Queryable> {
@@ -58,9 +62,12 @@ impl<C: Queryable> Zaehler for Server<'_, C> {
 
     fn verweise(&mut self, a: &str, b: &str) -> Vec<(String, String)> {
         let lit = |s: &str| format!("'{}'", s.replace('\\', "\\\\").replace('\'', "''"));
+        // "db.tabelle": in dieser Datenbank suchen
+        let schema = a.split_once('.').map_or("DATABASE()".to_string(), |(d, _)| lit(d));
+        let (a, b) = (kurz(a), kurz(b));
         let q = format!(
             "SELECT COLUMN_NAME, REFERENCED_COLUMN_NAME, TABLE_NAME FROM information_schema.KEY_COLUMN_USAGE \
-             WHERE TABLE_SCHEMA = DATABASE() AND REFERENCED_TABLE_NAME IS NOT NULL AND \
+             WHERE TABLE_SCHEMA = {schema} AND REFERENCED_TABLE_NAME IS NOT NULL AND \
              ((TABLE_NAME = {a} AND REFERENCED_TABLE_NAME = {b}) OR (TABLE_NAME = {b} AND REFERENCED_TABLE_NAME = {a}))",
             a = lit(a),
             b = lit(b)
@@ -68,6 +75,21 @@ impl<C: Queryable> Zaehler for Server<'_, C> {
         let rows: Vec<(String, String, String)> = self.conn.query(q).unwrap_or_default();
         rows.into_iter().map(|(c, r, t)| if t.eq_ignore_ascii_case(a) { (c, r) } else { (r, c) }).collect()
     }
+
+    fn spalten(&mut self, t: &str) -> Vec<String> {
+        let db = t.split_once('.').map(|(d, _)| d.to_string());
+        self.conn.exec("SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = COALESCE(?, DATABASE()) AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION", (db, kurz(t))).unwrap_or_default()
+    }
+}
+
+/// Tabellenname ohne Datenbank ("shop.kunde" -> "kunde")
+fn kurz(t: &str) -> &str {
+    t.rsplit('.').next().unwrap_or(t)
+}
+
+/// Name fuer SQL, auch mit Datenbank ("shop.kunde" -> shop.kunde, Teile einzeln in Backticks falls noetig)
+fn qname(t: &str) -> String {
+    t.split('.').map(crate::sqledit::lint::quote_if_needed).collect::<Vec<_>>().join(".")
 }
 
 /// Teile der Anweisung (Zeichenbereiche)
@@ -613,6 +635,130 @@ fn qa(t: &str, alias: &str) -> String {
     if t == alias { q(t) } else { format!("{} {}", q(t), q(alias)) }
 }
 
+// ---------------------------------------------------------------------------
+// Kreuzprodukt: zwei Tabellen ohne Verbindung
+
+/// Zwei Tabellen in FROM (Komma oder JOIN ohne ON/USING): (Name, Alias) beider und ob per Komma verbunden
+type Paar = [(String, String); 2];
+
+fn unverbunden_teile(chars: &[char], toks: &[Tok]) -> Option<(Teile, Paar, bool)> {
+    let t = teile(chars, toks)?;
+    if t.schreibt {
+        return None;
+    }
+    let idx: Vec<usize> = (0..toks.len()).filter(|&k| toks[k].start >= t.from.0 && toks[k].end <= t.from.1).collect();
+    if idx.iter().any(|&k| toks[k].kind == Kind::Open || toks[k].is_word("ON") || toks[k].is_word("USING") || toks[k].is_word("CROSS") || toks[k].is_word("NATURAL")) {
+        return None;
+    }
+    let mut teile_from: Vec<Vec<usize>> = vec![Vec::new()];
+    let mut komma = false;
+    for &k in &idx {
+        let x = &toks[k];
+        if x.kind == Kind::Comma || x.is_word("JOIN") {
+            komma |= x.kind == Kind::Comma;
+            teile_from.push(Vec::new());
+        } else if !(x.is_word("INNER") || x.is_word("LEFT") || x.is_word("RIGHT") || x.is_word("OUTER") || x.is_word("STRAIGHT_JOIN")) {
+            teile_from.last_mut()?.push(k);
+        }
+    }
+    if teile_from.len() != 2 {
+        return None;
+    }
+    let mut paar: Vec<(String, String)> = Vec::new();
+    for teil in &teile_from {
+        let namen: Vec<&Tok> = teil.iter().map(|&k| &toks[k]).filter(|x| x.is_name() && !x.is_word("AS")).collect();
+        let dot = teil.iter().any(|&k| toks[k].kind == Kind::Dot);
+        let (name, alias) = match (namen.len(), dot) {
+            (1, false) => (namen[0].text.clone(), namen[0].text.clone()),
+            (2, false) => (namen[0].text.clone(), namen[1].text.clone()),
+            (2, true) => (format!("{}.{}", namen[0].text, namen[1].text), namen[1].text.clone()),
+            (3, true) => (format!("{}.{}", namen[0].text, namen[1].text), namen[2].text.clone()),
+            _ => return None,
+        };
+        paar.push((name, alias));
+    }
+    // Verbindet eine Bedingung im WHERE die beiden (Spalte = Spalte)?
+    if let Some((a, b)) = t.wo {
+        let w: Vec<&Tok> = toks.iter().filter(|x| x.start >= a && x.end <= b).collect();
+        for i in 1..w.len().saturating_sub(1) {
+            if w[i].kind == Kind::Op && w[i].text == "=" && w[i - 1].is_name() && w[i + 1].is_name() && !w[i + 1].is_word("NULL") {
+                return None;
+            }
+        }
+    }
+    Some((t, [paar[0].clone(), paar[1].clone()], komma))
+}
+
+/// Verbindung zweier Tabellen: Fremdschluessel, sonst Namen wie kunde_id -> kunde.id
+fn verbindung(z: &mut dyn Zaehler, a: &(String, String), b: &(String, String)) -> Option<String> {
+    if let Some((ca, cb)) = z.verweise(&a.0, &b.0).into_iter().next() {
+        return Some(format!("{}.{ca} = {}.{cb}", a.1, b.1));
+    }
+    let (sa, sb) = (z.spalten(&a.0), z.spalten(&b.0));
+    let hat = |v: &[String], n: &str| v.iter().find(|c| c.eq_ignore_ascii_case(n)).cloned();
+    for (x, sx, y, sy) in [(a, &sa, b, &sb), (b, &sb, a, &sa)] {
+        let pk = hat(sy, "id")?;
+        let yn = kurz(&y.0);
+        for kandidat in [format!("{yn}_id"), format!("{yn}id"), format!("id_{yn}")] {
+            if let Some(c) = hat(sx, &kandidat) {
+                return Some(format!("{}.{c} = {}.{pk}", x.1, y.1));
+            }
+        }
+    }
+    None
+}
+
+/// SELECT mit zwei Tabellen ohne Verbindung (liefert jede mit jeder Zeile kombiniert)
+pub fn kreuzprodukt_moeglich(sql: &str) -> bool {
+    let chars: Vec<char> = sql.trim().trim_end_matches(';').chars().collect();
+    let toks = lex(&chars).toks;
+    unverbunden_teile(&chars, &toks).is_some()
+}
+
+pub fn kreuzprodukt(sql: &str, z: &mut dyn Zaehler) -> Vec<Befund> {
+    let sql = sql.trim().trim_end_matches(';').trim_end();
+    let chars: Vec<char> = sql.chars().collect();
+    let toks = lex(&chars).toks;
+    let Some((t, [a, b], komma)) = unverbunden_teile(&chars, &toks) else { return Vec::new() };
+    let Some(cond) = verbindung(z, &a, &b) else { return Vec::new() };
+    let fix = if komma {
+        match t.wo {
+            Some((wa, wb)) => {
+                let rest = txt(&chars, (wa, wb));
+                let rest = if rest.to_ascii_uppercase().contains(" OR ") { format!("({rest})") } else { rest };
+                einsetzen(&chars, wa, wb, &format!("{cond} AND {rest}"))
+            }
+            None => einsetzen(&chars, t.from.1, t.from.1, &format!("WHERE {cond}")),
+        }
+    } else {
+        einsetzen(&chars, t.from.1, t.from.1, &format!("ON {cond}"))
+    };
+    let c2: Vec<char> = fix.chars().collect();
+    let t2 = lex(&c2).toks;
+    let Some(neu) = teile(&c2, &t2) else { return Vec::new() };
+    let from2 = txt(&c2, neu.from);
+    let n = match neu.wo {
+        Some(w) => z.zahl(&format!("SELECT COUNT(*) FROM {from2} WHERE {}", txt(&c2, w))),
+        None => z.zahl(&format!("SELECT COUNT(*) FROM {from2}")),
+    };
+    if n == Some(0) {
+        return Vec::new();
+    }
+    let (na, nb) = (z.zahl(&format!("SELECT COUNT(*) FROM {}", qname(&a.0))), z.zahl(&format!("SELECT COUNT(*) FROM {}", qname(&b.0))));
+    let mal = match (na, nb) {
+        (Some(x), Some(y)) => format!(" ({} × {} = {})", crate::i18n::tausend(x), crate::i18n::tausend(y), crate::i18n::tausend(x * y)),
+        _ => String::new(),
+    };
+    let text = crate::tr_format!(
+        "„{}“ und „{}“ sind nicht verbunden: jede Zeile der einen wird mit jeder der anderen kombiniert{mal}. Über {cond} passen sie zusammen ({} Zeilen).",
+        "“{}” and “{}” are not linked: every row of one is combined with every row of the other{mal}. Linked by {cond} they match up ({} rows).",
+        kurz(&a.0),
+        kurz(&b.0),
+        n.map(crate::i18n::tausend).unwrap_or_else(|| "?".into())
+    );
+    vec![Befund { text, fix: Some(fix), zeilen: n }]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -723,6 +869,20 @@ mod tests {
     }
 
     #[test]
+    fn kreuzprodukt_wird_verbunden() {
+        let mut z = fake(&[("SELECT COUNT(*) FROM kunde k, bestellung b WHERE k.id = b.kunde_id AND k.ort = 'Wien'", 4), ("SELECT COUNT(*) FROM kunde", 3), ("SELECT COUNT(*) FROM bestellung", 7)], &[]);
+        z.fk = vec![("id".into(), "kunde_id".into())];
+        // verweise liefert (Spalte in a, Spalte in b); a = kunde
+        let r = kreuzprodukt("SELECT * FROM kunde k, bestellung b WHERE k.ort = 'Wien'", &mut z);
+        assert_eq!(r[0].fix.as_deref(), Some("SELECT * FROM kunde k, bestellung b WHERE k.id = b.kunde_id AND k.ort = 'Wien'"), "{r:?}");
+        assert_eq!(r[0].zeilen, Some(4));
+        assert!(kreuzprodukt_moeglich("SELECT * FROM kunde JOIN bestellung"));
+        assert!(!kreuzprodukt_moeglich("SELECT * FROM kunde k JOIN bestellung b ON k.id = b.kunde_id"));
+        assert!(!kreuzprodukt_moeglich("SELECT * FROM kunde k, bestellung b WHERE k.id = b.kunde_id"));
+        assert!(!kreuzprodukt_moeglich("SELECT * FROM groesse CROSS JOIN farbe"));
+    }
+
+    #[test]
     fn leere_tabelle() {
         let mut z = fake(&[], &[]);
         let r = untersuchen("SELECT * FROM kunde WHERE ort = 'Wien'", &mut z);
@@ -771,6 +931,14 @@ mod server_tests {
             if !ok {
                 fehler.push(sql);
             }
+        }
+        // Kreuzprodukt ohne Fremdschluessel: ueber den Namen kunde_id
+        dbc.exec_in(&name, "CREATE TABLE notiz (id INT PRIMARY KEY, kunde_id INT, text VARCHAR(20)); INSERT INTO notiz VALUES (1, 1, 'a'), (2, 3, 'b')").unwrap();
+        let mut z = Server { conn: &mut conn, mariadb: true, rest: 40 };
+        let k = kreuzprodukt("SELECT * FROM kunde, notiz", &mut z);
+        eprintln!("{k:?}");
+        if k.first().and_then(|b| b.fix.as_deref()) != Some("SELECT * FROM kunde, notiz WHERE notiz.kunde_id = kunde.id") || k[0].zeilen != Some(2) {
+            fehler.push("kreuzprodukt");
         }
         let _ = dbc.exec(&format!("DROP DATABASE {name}"), ());
         assert!(fehler.is_empty(), "{fehler:?}");

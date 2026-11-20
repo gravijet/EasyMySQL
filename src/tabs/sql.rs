@@ -68,6 +68,8 @@ struct Leer {
     result: usize,
     stmt: Stmt,
     schreibt: bool,
+    /// Zu viele Zeilen: zwei Tabellen ohne Verbindung
+    kreuz: bool,
     befunde: Vec<sqledit::leer::Befund>,
     seit: Instant,
 }
@@ -621,12 +623,13 @@ impl SqlTab {
             let kopf = st.sql.split_whitespace().next().unwrap_or("").to_ascii_uppercase();
             match r.returned {
                 Some(0) => kopf == "SELECT",
+                Some(_) => kopf == "SELECT" && sqledit::leer::kreuzprodukt_moeglich(&st.sql),
                 None => (kopf == "UPDATE" || kopf == "DELETE") && r.affected == 0 && st.sql.to_ascii_uppercase().contains("WHERE"),
-                _ => false,
             }
         });
         let Some((i, (r, st))) = found else { return };
         let schreibt = r.returned.is_none();
+        let kreuz = r.returned.is_some_and(|n| n > 0);
         let pool = crate::db::Db { pool: dbc.pool.clone(), info: dbc.info.clone(), version: dbc.version.clone() };
         let mariadb = dbc.version.to_ascii_lowercase().contains("mariadb");
         let (database, sql) = (self.database.clone(), st.sql.clone());
@@ -636,7 +639,7 @@ impl SqlTab {
                 Ok(mut conn) => {
                     if database.is_empty() || conn.query_drop(format!("USE {}", db::q(&database))).is_ok() {
                         let mut z = sqledit::leer::Server { conn: &mut conn, mariadb, rest: 40 };
-                        sqledit::leer::untersuchen(&sql, &mut z)
+                        if kreuz { sqledit::leer::kreuzprodukt(&sql, &mut z) } else { sqledit::leer::untersuchen(&sql, &mut z) }
                     } else {
                         Vec::new()
                     }
@@ -645,7 +648,7 @@ impl SqlTab {
             };
             let _ = tx.send(befunde);
         });
-        self.leer = Some(Leer { rx: Some(rx), result: i, stmt: st.clone(), schreibt, befunde: Vec::new(), seit: Instant::now() });
+        self.leer = Some(Leer { rx: Some(rx), result: i, stmt: st.clone(), schreibt, kreuz, befunde: Vec::new(), seit: Instant::now() });
     }
 
     /// Lief eine Anweisung lange, im Hintergrund per EXPLAIN nach einem fehlenden Index suchen
@@ -780,7 +783,17 @@ impl SqlTab {
             return None;
         }
         let tr = crate::i18n::tr;
-        let titel = if l.schreibt { tr("Warum nichts geändert wurde", "Why nothing changed") } else { tr("Warum keine Zeilen kommen", "Why no rows come back") };
+        let titel = if l.kreuz {
+            tr("Zu viele Zeilen?", "Too many rows?")
+        } else if l.schreibt {
+            tr("Warum nichts geändert wurde", "Why nothing changed")
+        } else {
+            tr("Warum keine Zeilen kommen", "Why no rows come back")
+        };
+        // Beim Kreuzprodukt erst etwas zeigen, wenn es eine Verbindung gibt
+        if l.kreuz && l.rx.is_some() {
+            return None;
+        }
         let warten = l.rx.is_some().then(|| tr("Keine Zeilen – ich zähle nach, welche Bedingung alles wegfiltert …", "No rows – counting which condition filters everything out …"));
         let knopf = if l.schreibt { tr("Übernehmen", "Apply") } else { tr("Übernehmen und ausführen", "Apply and run") };
         let items: Vec<(&str, Option<&str>)> = l.befunde.iter().map(|b| (b.text.as_str(), b.fix.as_deref())).collect();
@@ -1160,7 +1173,7 @@ impl SqlTab {
                     ui.label(RichText::new(info).color(pal.text_weak));
                     grid::export_menu(ui, "ergebnis", &set.columns, &set.rows);
                 });
-                if set.rows.is_empty()
+                if (set.rows.is_empty() || self.leer.as_ref().is_some_and(|l| l.kreuz))
                     && let Some(k) = Self::leer_panel(self.leer.as_ref(), ui, ri)
                 {
                     act = Some(HistoryAct::LeerFix(k));
