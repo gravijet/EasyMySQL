@@ -318,14 +318,6 @@ impl EasyApp {
             ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
         }
         egui::Popup::context_menu(&grip).show(|ui| self.tool_place_menu(ui, v));
-        // Kopfband in der Registerfarbe: verbindet die Seitenleiste mit ihrer Kachel in der Registerleiste
-        if v != SideView::Terminal {
-            let outer = ui.clip_rect();
-            let band = Rect::from_min_max(outer.min, egui::pos2(outer.right(), outer.top() + 36.0));
-            let hue = tool_hue(v);
-            ui.painter().rect_filled(band, 0.0, crate::style::soft(hue));
-            ui.painter().rect_filled(Rect::from_min_max(band.min, egui::pos2(band.right(), band.top() + 3.0)), 0.0, hue);
-        }
         if v == SideView::Terminal {
             self.terminal_view(ui);
         } else {

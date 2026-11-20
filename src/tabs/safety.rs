@@ -247,7 +247,7 @@ impl SafetyTab {
                 });
             }
             if ui
-                .add_enabled_ui(!busy && connected, |ui| crate::icons::text_button(ui, crate::icons::Icon::Wizard, crate::i18n::text("Prüfen und reparieren")))
+                .add_enabled_ui(!busy && connected, |ui| crate::icons::text_button(ui, crate::icons::Icon::Wrench, crate::i18n::text("Prüfen und reparieren")))
                 .inner
                 .clicked()
             {

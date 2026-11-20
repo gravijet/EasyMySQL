@@ -447,38 +447,31 @@ pub fn error_label(ui: &mut egui::Ui, text: &str) -> Response {
     ui.add(egui::Label::new(job).selectable(true))
 }
 
-/// Stempel: Ergebnis oder Erfolg als schraeg aufgedruckter Abdruck (Rahmen und Schrift in `hue`). Beim ersten
-/// Erscheinen (je `id`) wird er aufgedrueckt: kommt gross und durchsichtig, setzt kurz zu tief auf und liegt dann.
+/// Stempel: Ergebnis oder Erfolg als Abdruck (Rahmen und Schrift in `hue`). Beim ersten Erscheinen (je `id`)
+/// wird er aufgedrueckt: kommt etwas groesser und durchsichtig, setzt kurz zu tief auf und liegt dann.
 pub fn stamp(ui: &mut egui::Ui, id: egui::Id, text: &str, hue: Color32) -> Response {
-    let font = style::semi(13.0);
-    let galley = ui.painter().layout_no_wrap(text.to_string(), font.clone(), hue);
-    let size = vec2(galley.size().x + 20.0, 24.0);
-    let (rect, resp) = ui.allocate_exact_size(size + vec2(4.0, 2.0), Sense::hover());
+    let font = style::semi(12.5);
+    let galley = ui.painter().layout_no_wrap(text.to_string(), font, hue);
+    let size = vec2(galley.size().x + 18.0, 22.0);
+    let (rect, resp) = ui.allocate_exact_size(size, Sense::hover());
     let now = ui.input(|i| i.time);
-    let key = id.with("stempel");
-    let t0 = ui.ctx().data_mut(|d| *d.get_temp_mut_or_insert_with(key, || now));
+    let t0 = ui.ctx().data_mut(|d| *d.get_temp_mut_or_insert_with(id.with("stempel"), || now));
     let reduced = ui.style().animation_time <= 0.0;
-    let t = if reduced { 1.0 } else { ((now - t0) / 0.26).clamp(0.0, 1.0) as f32 };
+    let t = if reduced { 1.0 } else { ((now - t0) / 0.24).clamp(0.0, 1.0) as f32 };
     if t < 1.0 {
         ui.ctx().request_repaint();
     }
-    // Aufdruecken: 1.5 -> 0.96 (bis 75 %) -> 1.0; Deckkraft folgt schnell
-    let scale = if t < 0.75 { egui::lerp(1.5..=0.96, 1.0 - (1.0 - t / 0.75).powi(3)) } else { egui::lerp(0.96..=1.0, (t - 0.75) / 0.25) };
+    // Aufdruecken: 1.25 -> 0.97 (bis 75 %) -> 1.0; Deckkraft folgt schnell
+    let scale = if t < 0.75 { egui::lerp(1.25..=0.97, 1.0 - (1.0 - t / 0.75).powi(3)) } else { egui::lerp(0.97..=1.0, (t - 0.75) / 0.25) };
     let alpha = (t * 2.5).min(1.0);
-    let angle = -0.045_f32;
-    let c = rect.center();
-    let (sin, cos) = angle.sin_cos();
-    let rot = |v: egui::Vec2| c + vec2(v.x * cos - v.y * sin, v.x * sin + v.y * cos) * scale;
-    let (hw, hh) = (size.x / 2.0, size.y / 2.0);
-    let corners = [vec2(-hw, -hh), vec2(hw, -hh), vec2(hw, hh), vec2(-hw, hh)];
+    let r = Rect::from_center_size(rect.center(), size * scale);
     let p = ui.painter();
-    let ink = hue.gamma_multiply(alpha);
-    // Leichte Farbflaeche wie ein Stempelkissen, darauf doppelter Rahmen
-    p.add(egui::Shape::convex_polygon(corners.iter().map(|v| rot(*v)).collect(), style::soft(hue).gamma_multiply(alpha), Stroke::new(1.6, ink)));
-    let inner = [vec2(-hw + 3.0, -hh + 3.0), vec2(hw - 3.0, -hh + 3.0), vec2(hw - 3.0, hh - 3.0), vec2(-hw + 3.0, hh - 3.0)];
-    p.add(egui::Shape::closed_line(inner.iter().map(|v| rot(*v)).collect(), Stroke::new(0.8, hue.gamma_multiply(0.55 * alpha))));
-    let g = ui.painter().layout_no_wrap(text.to_string(), egui::FontId::new(font.size * scale, font.family.clone()), ink);
-    let origin = rot(vec2(-g.size().x / 2.0 / scale, -g.size().y / 2.0 / scale));
-    ui.painter().add(egui::epaint::TextShape::new(origin, g, ink).with_angle(angle));
+    p.rect(r, 5.0 * scale, style::pal().bg.gamma_multiply(alpha), Stroke::new(1.5, hue.gamma_multiply(alpha)), StrokeKind::Inside);
+    if (scale - 1.0).abs() < 0.01 {
+        p.galley(pos2(r.center().x - galley.size().x / 2.0, r.center().y - galley.size().y / 2.0), galley, hue);
+    } else {
+        let g = p.layout_no_wrap(text.to_string(), style::semi(12.5 * scale), hue.gamma_multiply(alpha));
+        p.galley(pos2(r.center().x - g.size().x / 2.0, r.center().y - g.size().y / 2.0), g, hue.gamma_multiply(alpha));
+    }
     resp
 }

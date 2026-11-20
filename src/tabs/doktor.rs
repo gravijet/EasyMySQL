@@ -234,6 +234,10 @@ impl TabView for DoktorTab {
         Some(Icon::Shield)
     }
 
+    fn database(&self) -> Option<String> {
+        Some(self.db.clone())
+    }
+
     fn key(&self) -> Option<String> {
         Some(format!("doktor:{}", self.db))
     }
@@ -317,7 +321,7 @@ impl TabView for DoktorTab {
             let mut als_sql = false;
             ui.horizontal(|ui| {
                 ui.add_enabled_ui(n > 0 && !beschaeftigt, |ui| {
-                    if icons::primary_button(ui, Icon::Wizard, &crate::tr_format!("{n} reparieren", "Repair {n}")).clicked() {
+                    if icons::primary_button(ui, Icon::Wrench, &crate::tr_format!("{n} reparieren", "Repair {n}")).clicked() {
                         los = true;
                     }
                     if icons::text_button(ui, Icon::Code, tr("Als SQL öffnen", "Open as SQL")).clicked() {

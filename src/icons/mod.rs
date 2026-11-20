@@ -110,7 +110,7 @@ impl Icon {
             Icon::Database => "database",
             Icon::History => "clock",
             Icon::Diagram => "network",
-            Icon::Wizard => "wand-sparkles",
+            Icon::Wizard => "blocks",
             Icon::Close => "x",
             Icon::Plus => "plus",
             Icon::Refresh => "refresh-cw",
@@ -489,14 +489,8 @@ fn labelled_button_tinted(ui: &mut egui::Ui, icon: Icon, text: &str, primary: bo
         let (rest, over, _) = style::button_fills(pal);
         (rest.lerp_to_gamma(over, hot), if enabled { visuals.fg_stroke.color } else { pal.text_weak })
     };
-    // Taste: eine dunklere Unterkante gibt Tiefe; gedrueckt sinkt die Taste um diese Kante ein
-    let sink = if down && enabled { 1.5 } else { 0.0 };
-    let base = Rect::from_min_max(r.min + vec2(0.0, 1.5), r.max);
-    let r = Rect::from_min_max(r.min + vec2(0.0, sink), r.max - vec2(0.0, 1.5 - sink));
-    let edge = if primary && enabled { pal.primary.lerp_to_gamma(Color32::BLACK, 0.28) } else { pal.border.lerp_to_gamma(pal.text_weak, 0.25) };
-    if enabled && sink == 0.0 {
-        ui.painter().rect_filled(base, style::RADIUS as f32 + 1.0, edge);
-    }
+    // Beim Druecken minimal kleiner (Rueckmeldung ohne Verzoegerung)
+    let r = if down && enabled { r.shrink(0.6) } else { r };
     ui.painter().rect(r, style::RADIUS as f32 + 1.0, fill, if primary && enabled { style::primary_edge() } else { visuals.bg_stroke }, egui::StrokeKind::Inside);
     let (icon_x, text_x) = if icon_right { (r.right() - 17.0, r.left() + 10.0) } else { (r.left() + 17.0, r.left() + 31.0) };
     let icon_color = if !enabled { fg } else if primary { tint.unwrap_or(fg) } else { tint.unwrap_or_else(|| self::tint(icon)) };

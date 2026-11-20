@@ -188,9 +188,8 @@ impl EasyApp {
                 }
                 // Zeichen des Programms: Etikett eines Ordnerrueckens
                 let (r, _) = ui.allocate_exact_size(vec2(24.0, 24.0), Sense::hover());
-                let (sq, glyph) = if pal.dark { (pal.primary, pal.on_primary) } else { (pal.chrome_text, pal.primary) };
-                ui.painter().rect_filled(r, 5.0, sq);
-                icons::paint(ui.painter(), Rect::from_center_size(r.center(), vec2(15.0, 15.0)), Icon::Database, glyph);
+                ui.painter().rect_filled(r, 6.0, pal.primary);
+                icons::paint(ui.painter(), Rect::from_center_size(r.center(), vec2(15.0, 15.0)), Icon::Database, pal.on_primary);
                 ui.add_space(6.0);
                 ui.spacing_mut().button_padding = vec2(8.0, 5.0);
                 ui.spacing_mut().item_spacing.x = 0.0;
@@ -368,12 +367,13 @@ impl EasyApp {
                 }
                 // Verbindung: Zustandspunkt und Benutzer@Server; Klick zeigt die Server-Befehle
                 let st = self.server.state();
+                // Leuchtende Zustandsfarben: sie stehen auf der dunklen Titelleiste
                 let color = if st.is_running() {
-                    pal.ok_text
+                    egui::Color32::from_rgb(0x6F, 0xD8, 0x9F)
                 } else if matches!(st, State::Failed(_) | State::NotFound) {
-                    pal.error_text
+                    egui::Color32::from_rgb(0xFF, 0x8A, 0x8F)
                 } else {
-                    pal.warn_text
+                    egui::Color32::from_rgb(0xF4, 0xA5, 0x5A)
                 };
                 let text = match &self.db {
                     Some(d) => d.info.label(),
@@ -408,7 +408,7 @@ impl EasyApp {
                 if runnable {
                     divider(ui);
                     let resp = ui
-                        .add_enabled_ui(!busy, |ui| titlebar::tool_button(ui, titlebar::Lead::Icon(Icon::Play, if busy { pal.chrome_weak } else if pal.dark { pal.ok_text } else { pal.chrome_text }), "", pal.chrome_text, false))
+                        .add_enabled_ui(!busy, |ui| titlebar::tool_button(ui, titlebar::Lead::Icon(Icon::Play, if busy { pal.chrome_weak } else { egui::Color32::from_rgb(0x6F, 0xD8, 0x9F) }), "", pal.chrome_text, false))
                         .inner
                         .on_hover_text(tip_of(Cmd::RunAll));
                     if resp.clicked() {
@@ -447,25 +447,21 @@ impl EasyApp {
         const GAP: f32 = 4.0;
         let pal = style::pal();
         let ctx = ui.ctx().clone();
-        let strip_right = ui.max_rect().right() + 1.0;
-        // Registerleiste: jedes Werkzeug ist ein Register in seiner eigenen Farbe (Symbol und kurze Beschriftung).
-        // Das offene Register ist ganz eingefaerbt und laeuft als Lasche bis an die Seitenleiste, deren Kopfband
-        // dieselbe Farbe traegt. Klick blendet ein/aus, Rechtsklick verschiebt, Ziehen auf eine Zone ebenfalls.
-        let button = |ui: &mut egui::Ui, icon: Icon, hue: egui::Color32, caption: &str, active: bool, docked_left: bool, tip: String| -> egui::Response {
+        // Registerleiste: jedes Werkzeug ist ein Register in seiner eigenen Farbe (Symbol und kurze Beschriftung);
+        // das offene ist ganz eingefaerbt. Klick blendet ein/aus, Rechtsklick verschiebt, Ziehen auf eine Zone ebenfalls.
+        let button = |ui: &mut egui::Ui, icon: Icon, hue: egui::Color32, caption: &str, active: bool, tip: String| -> egui::Response {
             let (slot, resp) = ui.allocate_exact_size(vec2(ui.available_width(), TILE), Sense::click_and_drag());
             let r = Rect::from_center_size(slot.center(), vec2(slot.width() - 10.0, TILE));
             let t = ui.ctx().animate_bool_with_time(resp.id.with("offen"), active, 0.2);
             let hot = ui.ctx().animate_bool_with_time(resp.id.with("hot"), resp.hovered(), 0.12);
             let p = ui.painter();
+            // Unter der Maus eine leise Flaeche, offen ganz in der Registerfarbe (waechst aus der Mitte)
             if hot > 0.0 && t < 1.0 {
-                p.rect_filled(r, 7.0, style::soft(hue).gamma_multiply(hot * (1.0 - t)));
+                p.rect_filled(r, 8.0, pal.hover.gamma_multiply(hot * (1.0 - t)));
             }
             if t > 0.0 {
-                // Lasche: waechst beim Oeffnen von links nach rechts bis an die Seitenleiste
-                let right = if docked_left { egui::lerp(r.right()..=strip_right, t) } else { r.right() };
-                let tab = Rect::from_min_max(pos2(egui::lerp(r.center().x..=r.left(), t), r.top()), pos2(right.max(r.center().x), r.bottom()));
-                let cr = if docked_left && t > 0.95 { egui::CornerRadius { nw: 7, sw: 7, ne: 0, se: 0 } } else { egui::CornerRadius::same(7) };
-                p.rect_filled(tab, cr, hue.gamma_multiply(t));
+                let tile = Rect::from_center_size(r.center(), r.size() * egui::lerp(0.86..=1.0, t));
+                p.rect_filled(tile, 8.0, hue.gamma_multiply(t));
             }
             let on = if pal.dark { pal.face } else { egui::Color32::WHITE };
             let idle = hue.lerp_to_gamma(pal.activity_fg, 0.3 * (1.0 - hot));
@@ -487,8 +483,7 @@ impl EasyApp {
                 tip.push_str(&format!(" · {}", place.label()));
             }
             tip.push_str(crate::i18n::tr("\nZiehen zum Verschieben oder Abdocken", "\nDrag to move or undock"));
-            let docked_left = place == super::dock::Place::Left && this.settings.sidebar;
-            let resp = button(ui, super::dock::tool_icon(view), super::dock::tool_hue(view), super::dock::tool_caption(view), this.tool_open(view), docked_left, tip);
+            let resp = button(ui, super::dock::tool_icon(view), super::dock::tool_hue(view), super::dock::tool_caption(view), this.tool_open(view), tip);
             if resp.drag_started() {
                 this.dock.start_drag(view, ui.ctx().viewport_id());
             }
@@ -522,7 +517,7 @@ impl EasyApp {
             let k = keymap::text(Cmd::Settings);
             let tip = if k.is_empty() { Cmd::Settings.label().to_string() } else { format!("{} ({k})", Cmd::Settings.label()) };
             let open = self.tabs.get(self.active).is_some_and(|t| t.icon() == Some(Icon::Settings));
-            if button(ui, Icon::Settings, pal.text_weak, crate::i18n::tr("Optionen", "Options"), open, false, tip).clicked() {
+            if button(ui, Icon::Settings, pal.text_weak, crate::i18n::tr("Optionen", "Options"), open, tip).clicked() {
                 self.run_cmd(&ctx, Cmd::Settings);
             }
         });
@@ -770,9 +765,8 @@ impl EasyApp {
         let p = ui.painter().clone();
         // Kopf: Etikett des Programms, daneben Verbindung bzw. Version
         let logo = Rect::from_min_size(pos2(x0, top), vec2(40.0, 40.0));
-        let (sq, glyph) = if pal.dark { (pal.primary, pal.on_primary) } else { (pal.text, pal.primary) };
-        p.rect_filled(logo, 9.0, sq);
-        icons::paint(&p, Rect::from_center_size(logo.center(), vec2(24.0, 24.0)), Icon::Database, glyph);
+        p.rect_filled(logo, 10.0, pal.primary);
+        icons::paint(&p, Rect::from_center_size(logo.center(), vec2(24.0, 24.0)), Icon::Database, pal.on_primary);
         p.text(pos2(logo.right() + 14.0, logo.center().y - 9.0), egui::Align2::LEFT_CENTER, "EasyMySQL", crate::style::semi(21.0), pal.text);
         let sub = match &self.db {
             Some(d) => crate::tr_format!("Verbunden mit {}", "Connected to {}", d.info.label()),
@@ -1037,20 +1031,20 @@ fn tab_close_rect(r: Rect) -> Rect {
 fn paint_tab(p: &egui::Painter, r: Rect, look: &TabLook, sel: f32, hot: f32, over_close: bool, time: f32, font: &egui::FontId) {
     let pal = style::pal();
     let top = egui::CornerRadius { nw: 7, ne: 7, sw: 0, se: 0 };
-    if sel > 0.0 {
-        // Papier des aktiven Reiters (reicht 1 px ueber die Kante der Leiste, deckt sie ab)
-        let paper = Rect::from_min_max(pos2(r.left(), r.top() + 3.0 * (1.0 - sel)), r.max + vec2(0.0, 1.0));
-        p.rect_filled(paper, top, pal.bg.gamma_multiply(sel));
-        p.rect_stroke(paper, top, Stroke::new(1.0, pal.border.gamma_multiply(sel)), egui::StrokeKind::Inside);
-        p.rect_filled(Rect::from_min_max(pos2(r.left() + 1.0, r.bottom() - 1.0), pos2(r.right() - 1.0, r.bottom() + 1.0)), 0.0, pal.bg.gamma_multiply(sel));
-    }
     if hot > 0.0 && sel < 1.0 {
         p.rect_filled(r, top, pal.hover.gamma_multiply(hot * (1.0 - sel)));
     }
-    // Farbiger Reiterstreifen: beim aktiven ueber die ganze Breite, sonst ein kurzes Stueck links
-    let band_w = egui::lerp(28.0..=r.width() - 2.0, sel);
-    let band = Rect::from_min_size(pos2(r.left() + 1.0, r.top() + 3.0 * (1.0 - sel)), vec2(band_w, 3.0));
-    p.rect_filled(band, egui::CornerRadius { nw: 6, ne: if sel > 0.9 { 6 } else { 2 }, sw: 0, se: 2 }, look.hue.gamma_multiply(0.55 + 0.45 * sel.max(hot)));
+    if sel > 0.0 {
+        // Papier des aktiven Reiters mit farbiger Oberkante, die der Rundung folgt; unten offen zum Inhalt
+        let paper = Rect::from_min_max(r.min, r.max + vec2(0.0, 1.0));
+        p.rect_filled(paper, top, look.hue.gamma_multiply(sel));
+        let inner = Rect::from_min_max(paper.min + vec2(1.0, 2.5), paper.max - vec2(1.0, 0.0));
+        p.rect_filled(inner, egui::CornerRadius { nw: 6, ne: 6, sw: 0, se: 0 }, pal.bg.gamma_multiply(sel));
+        // Seitenkanten wie die Linie unter der Leiste
+        let edge = Stroke::new(1.0, pal.border.gamma_multiply(sel));
+        p.vline(paper.left() + 0.5, (paper.top() + 7.0)..=(paper.bottom() - 1.0), edge);
+        p.vline(paper.right() - 0.5, (paper.top() + 7.0)..=(paper.bottom() - 1.0), edge);
+    }
     let cy = r.center().y + 1.0;
     let color = pal.text_weak.lerp_to_gamma(pal.text, sel.max(hot * 0.7));
     let icon = look.icon.unwrap_or(Icon::File);

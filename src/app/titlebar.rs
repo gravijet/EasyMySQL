@@ -143,23 +143,22 @@ pub fn tool_button(ui: &mut egui::Ui, lead: Lead, text: &str, color: Color32, ch
 pub fn search_box(ui: &mut egui::Ui, r: Rect, hint: &str, keys: &str) -> egui::Response {
     let pal = style::pal();
     let resp = ui.interact(r, ui.id().with("titlebar-search"), Sense::click());
-    // Weisses Feld auf der Titelleiste; unter der Maus eine kraeftigere Kante
+    // Vertieftes Feld in der Titelleiste; unter der Maus etwas heller
     let hot = ui.ctx().animate_bool_with_time(resp.id.with("hot"), resp.hovered(), 0.12);
-    let edge = if pal.dark { pal.border } else { pal.chrome.lerp_to_gamma(Color32::BLACK, 0.2) };
-    let edge = edge.lerp_to_gamma(pal.chrome_text, 0.35 * hot);
+    let fill = pal.chrome_hover.lerp_to_gamma(pal.chrome_weak, 0.12 * hot);
     let p = ui.painter();
-    p.rect(r, style::RADIUS as f32 + 1.0, pal.bg, Stroke::new(1.0, edge), egui::StrokeKind::Inside);
+    p.rect_filled(r, style::RADIUS as f32 + 2.0, fill);
     let cy = r.center().y;
-    icons::paint(p, Rect::from_center_size(pos2(r.left() + 18.0, cy), vec2(14.0, 14.0)), Icon::Search, pal.text_weak);
-    let keys_g = p.layout_no_wrap(keys.to_string(), egui::FontId::proportional(12.0), pal.text_weak);
+    icons::paint(p, Rect::from_center_size(pos2(r.left() + 18.0, cy), vec2(14.0, 14.0)), Icon::Search, pal.chrome_weak);
+    let keys_g = p.layout_no_wrap(keys.to_string(), egui::FontId::proportional(12.0), pal.chrome_weak);
     let show_keys = !keys.is_empty() && r.width() >= 300.0;
     let max_text = r.width() - 36.0 - if show_keys { keys_g.size().x + 20.0 } else { 10.0 };
-    let mut job = egui::text::LayoutJob::simple_singleline(hint.to_string(), egui::FontId::proportional(13.0), pal.text_weak);
+    let mut job = egui::text::LayoutJob::simple_singleline(hint.to_string(), egui::FontId::proportional(13.0), pal.chrome_weak);
     job.wrap = egui::text::TextWrapping { max_width: max_text.max(10.0), max_rows: 1, break_anywhere: true, overflow_character: Some('…') };
     let g = p.layout_job(job);
-    p.galley(pos2(r.left() + 32.0, cy - g.size().y / 2.0), g, pal.text_weak);
+    p.galley(pos2(r.left() + 32.0, cy - g.size().y / 2.0), g, pal.chrome_weak);
     if show_keys {
-        p.galley(pos2(r.right() - 12.0 - keys_g.size().x, cy - keys_g.size().y / 2.0), keys_g, pal.text_weak);
+        p.galley(pos2(r.right() - 12.0 - keys_g.size().x, cy - keys_g.size().y / 2.0), keys_g, pal.chrome_weak);
     }
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }

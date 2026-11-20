@@ -625,7 +625,7 @@ fn fix_bar(ui: &mut egui::Ui, fixes: &[crate::dev::autofix::Suggestion], applied
                 let (r, _) = ui.allocate_exact_size(vec2(16.0, 16.0), Sense::hover());
                 icons::paint(ui.painter(), r, icon, color);
                 ui.add(egui::Label::new(egui::RichText::new(&s.problem).color(if done { pal.text_weak } else { pal.text })).wrap());
-                if s.fix.is_some() && !done && icons::text_button(ui, Icon::Wizard, &s.label).clicked() {
+                if s.fix.is_some() && !done && icons::text_button(ui, Icon::Wrench, &s.label).clicked() {
                     apply.push(i);
                 }
             });

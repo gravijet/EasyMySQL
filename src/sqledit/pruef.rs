@@ -299,7 +299,7 @@ fn wo_bereich(a: &Aufbau) -> Option<(usize, usize)> {
 }
 
 /// Teile auf oberster Ebene, getrennt durch ein Wort (OR bzw. AND; AND hinter BETWEEN zaehlt nicht)
-fn teilen(toks: &[Tok], (a, b): (usize, usize), wort: &str) -> Vec<(usize, usize)> {
+pub(super) fn teilen(toks: &[Tok], (a, b): (usize, usize), wort: &str) -> Vec<(usize, usize)> {
     let mut tiefe = 0;
     let mut out = Vec::new();
     let mut start = a;
@@ -334,17 +334,42 @@ fn bedingungs_spalte(toks: &[Tok], (a, b): (usize, usize)) -> Option<String> {
 /// "(a = 1 OR a = 2) AND b = 3" (bzw. gespiegelt "a = 1 AND b = 2 OR b = 3" -> "a = 1 AND (b = 2 OR b = 3)").
 fn vorrang(a: &Aufbau, n: u64, z: &mut dyn Zaehler) -> Option<Befund> {
     let w = wo_bereich(a)?;
-    let terme = teilen(&a.toks, w, "OR");
+    let (neu, rest, nachbar, spalte) = klammern(&a.chars, &a.toks, w)?;
+    let sql = ersetzt(&a.chars, w.0, w.1, &format!(" {neu} "));
+    let sql = sql.split_whitespace().collect::<Vec<_>>().join(" ");
+    let m = zaehle(z, &sql)?;
+    if m == n {
+        return None;
+    }
+    Some(Befund {
+        text: crate::tr_format!(
+            "AND bindet stärker als OR: „{}“ gilt so nur zusammen mit „{}“, nicht für alle {}-Werte. Mit Klammern kommen {} statt {}.",
+            "AND binds tighter than OR: “{}” only applies together with “{}”, not to every {} value. With parentheses: {} instead of {}.",
+            rest,
+            nachbar,
+            spalte,
+            zeilen(m),
+            zeilen(n)
+        ),
+        fix: Some(sql),
+        zeilen: Some(m),
+    })
+}
+
+/// Bedingung `w` mit Klammern, wie sie vermutlich gemeint ist: (neue Bedingung, die AND-Bedingung, die
+/// Nachbarbedingung, die Spalte der verODERten Bedingungen). Nur fuer den klassischen Fall gleicher Spalten.
+pub(super) fn klammern(chars: &[char], toks: &[Tok], w: (usize, usize)) -> Option<(String, String, String, String)> {
+    let terme = teilen(toks, w, "OR");
     if terme.len() < 2 {
         return None;
     }
-    let teile: Vec<Vec<(usize, usize)>> = terme.iter().map(|t| teilen(&a.toks, *t, "AND")).collect();
+    let teile: Vec<Vec<(usize, usize)>> = terme.iter().map(|t| teilen(toks, *t, "AND")).collect();
     let mit_and: Vec<usize> = (0..teile.len()).filter(|&i| teile[i].len() > 1).collect();
     if mit_and.len() != 1 {
         return None;
     }
     let i = mit_and[0];
-    let t = |r: (usize, usize)| txt(&a.chars, r);
+    let t = |r: (usize, usize)| txt(chars, r);
     let (neu, nachbar, rest) = if i == terme.len() - 1 {
         // ... OR x AND y  ->  (... OR x) AND y
         let x = teile[i][0];
@@ -361,29 +386,11 @@ fn vorrang(a: &Aufbau, n: u64, z: &mut dyn Zaehler) -> Option<Befund> {
         return None;
     };
     // Nur wenn die verODERten Bedingungen dieselbe Spalte betreffen (der klassische Fall)
-    let spalte = bedingungs_spalte(&a.toks, nachbar.1)?;
-    if !nachbar.0.iter().all(|r| bedingungs_spalte(&a.toks, *r).as_deref() == Some(spalte.as_str())) {
+    let spalte = bedingungs_spalte(toks, nachbar.1)?;
+    if !nachbar.0.iter().all(|r| bedingungs_spalte(toks, *r).as_deref() == Some(spalte.as_str())) {
         return None;
     }
-    let sql = ersetzt(&a.chars, w.0, w.1, &format!(" {neu} "));
-    let sql = sql.split_whitespace().collect::<Vec<_>>().join(" ");
-    let m = zaehle(z, &sql)?;
-    if m == n {
-        return None;
-    }
-    Some(Befund {
-        text: crate::tr_format!(
-            "AND bindet stärker als OR: „{}“ gilt so nur zusammen mit „{}“, nicht für alle {}-Werte. Mit Klammern kommen {} statt {}.",
-            "AND binds tighter than OR: “{}” only applies together with “{}”, not to every {} value. With parentheses: {} instead of {}.",
-            rest,
-            t(nachbar.1),
-            spalte,
-            zeilen(m),
-            zeilen(n)
-        ),
-        fix: Some(sql),
-        zeilen: Some(m),
-    })
+    Some((neu, rest, t(nachbar.1), spalte))
 }
 
 /// LEFT JOIN b ... WHERE b.x = ...: die Bedingung wirft alle Zeilen ohne passende b-Zeile weg (dort ist b.x NULL),

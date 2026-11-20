@@ -222,7 +222,7 @@ pub fn chip(ui: &mut egui::Ui, label: &str, color: Option<egui::Color32>, select
     let (r, resp) = ui.allocate_exact_size(egui::vec2(galley.size().x + 40.0, 28.0), egui::Sense::click());
     let p = ui.painter();
     let radius = crate::style::RADIUS as f32;
-    // Kleiner Reiter: der gewaehlte als weiche Flaeche in seiner Farbe mit Streifen unten
+    // Kleiner Reiter: der gewaehlte mit Strich unten in seiner Farbe (waechst aus der Mitte)
     let hue = color.unwrap_or(pal.accent);
     let hot = ui.ctx().animate_bool_with_time(resp.id.with("hot"), resp.hovered(), 0.12);
     let on = ui.ctx().animate_bool_with_time(resp.id.with("sel"), selected, 0.16);
@@ -230,9 +230,8 @@ pub fn chip(ui: &mut egui::Ui, label: &str, color: Option<egui::Color32>, select
         p.rect_filled(r, radius, pal.hover.gamma_multiply(hot * (1.0 - on)));
     }
     if on > 0.0 {
-        p.rect_filled(r, egui::CornerRadius { nw: radius as u8, ne: radius as u8, sw: 0, se: 0 }, crate::style::soft(hue).gamma_multiply(on));
-        let w = r.width() * on;
-        p.rect_filled(egui::Rect::from_min_max(egui::pos2(r.center().x - w / 2.0, r.bottom() - 2.0), egui::pos2(r.center().x + w / 2.0, r.bottom())), 0.0, hue);
+        let w = (r.width() - 8.0) * on;
+        p.rect_filled(egui::Rect::from_min_max(egui::pos2(r.center().x - w / 2.0, r.bottom() - 2.0), egui::pos2(r.center().x + w / 2.0, r.bottom())), 1.0, hue);
     }
     let cy = r.center().y - 1.0;
     let fg = if selected { color.map(|c| c.lerp_to_gamma(pal.text, 0.3)).unwrap_or(pal.text) } else { color.unwrap_or(pal.text_weak) };
@@ -411,7 +410,7 @@ pub fn db_combo(ui: &mut egui::Ui, id: &str, dbs: &[String], value: &mut String)
     db_select(ui, id, &dbs, value, 170.0)
 }
 
-/// Auswahl der Datenbank als Ordnerreiter in der Farbe der Datenbank (Ruecken links, Name, Pfeil);
+/// Auswahl der Datenbank: Knopf mit dem Datenbanksymbol in ihrer Farbe;
 /// leer heisst ueberall gleich "Keine Datenbank". Die Liste zeigt jede Datenbank mit ihrer Farbe.
 pub fn db_select(ui: &mut egui::Ui, id: impl std::hash::Hash + std::fmt::Debug, items: &[String], value: &mut String, width: f32) -> bool {
     let none = crate::i18n::tr("Keine Datenbank", "No database");
@@ -438,7 +437,7 @@ pub fn db_select(ui: &mut egui::Ui, id: impl std::hash::Hash + std::fmt::Debug, 
     changed
 }
 
-/// Der Reiter selbst: weiche Flaeche und Ruecken in der Farbe der Datenbank
+/// Der Knopf selbst: Symbol in der Farbe der Datenbank, Name, Pfeil
 pub fn db_chip(ui: &mut egui::Ui, id: egui::Id, value: &str, width: f32) -> egui::Response {
     let p = crate::style::pal();
     let none = value.is_empty();
@@ -451,33 +450,28 @@ pub fn db_chip(ui: &mut egui::Ui, id: egui::Id, value: &str, width: f32) -> egui
     let resp = ui.interact(r, id, egui::Sense::click());
     let hot = ui.ctx().animate_bool_with_time(id.with("hot"), resp.hovered() || resp.has_focus(), 0.12);
     let painter = ui.painter();
-    let fill = if none { crate::style::button_fills(p).0 } else { crate::style::soft(hue) };
-    let fill = fill.lerp_to_gamma(if p.dark { egui::Color32::WHITE } else { hue }, 0.07 * hot);
-    painter.rect(r, crate::style::RADIUS as f32 + 1.0, fill, egui::Stroke::new(1.0, if none { p.border } else { hue.gamma_multiply(0.35 + 0.3 * hot) }), egui::StrokeKind::Inside);
-    if !none {
-        // Ruecken des Ordners
-        painter.rect_filled(egui::Rect::from_min_size(r.min, egui::vec2(4.0, r.height())), egui::CornerRadius { nw: 5, sw: 5, ne: 0, se: 0 }, hue);
-    }
-    crate::icons::paint(painter, egui::Rect::from_center_size(egui::pos2(r.left() + 19.0, r.center().y), egui::vec2(15.0, 15.0)), crate::icons::Icon::Database, if none { p.text_weak } else { hue });
+    // Wie die anderen Knoepfe: weisse Flaeche mit feiner Kante; die Farbe der Datenbank traegt das Symbol
+    let (rest, over, _) = crate::style::button_fills(p);
+    painter.rect(r, crate::style::RADIUS as f32 + 1.0, rest.lerp_to_gamma(over, hot), egui::Stroke::new(1.0, p.border.lerp_to_gamma(p.text_weak, 0.3 * hot)), egui::StrokeKind::Inside);
+    crate::icons::paint(painter, egui::Rect::from_center_size(egui::pos2(r.left() + 17.0, r.center().y), egui::vec2(15.0, 15.0)), crate::icons::Icon::Database, if none { p.text_weak } else { hue });
     let mut job = egui::text::LayoutJob::simple_singleline(text.to_string(), if none { crate::style::medium(13.0) } else { crate::style::semi(13.0) }, if none { p.text_weak } else { p.text });
     job.wrap = egui::text::TextWrapping { max_width: r.width() - 56.0, max_rows: 1, break_anywhere: true, overflow_character: Some('…') };
     let g = painter.layout_job(job);
-    painter.galley(egui::pos2(r.left() + 32.0, r.center().y - g.size().y / 2.0), g, p.text);
+    painter.galley(egui::pos2(r.left() + 30.0, r.center().y - g.size().y / 2.0), g, p.text);
     crate::icons::paint(painter, egui::Rect::from_center_size(egui::pos2(r.right() - 13.0, r.center().y), egui::vec2(12.0, 12.0)), crate::icons::Icon::ChevronDown, p.text_weak);
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
-/// Titel einer Tabellenansicht: Ordneretikett der Datenbank in ihrer Farbe, daneben der Tabellenname
+/// Titel einer Tabellenansicht: Datenbank (Symbol in ihrer Farbe) / Tabellenname
 pub fn table_title(ui: &mut egui::Ui, db: &str, table: &str) {
     let p = crate::style::pal();
     let hue = crate::style::db_color(db);
     let g = ui.painter().layout_no_wrap(db.to_string(), crate::style::medium(12.5), p.text);
-    let (r, _) = ui.allocate_exact_size(egui::vec2(g.size().x + 30.0, 24.0), egui::Sense::hover());
+    let (r, _) = ui.allocate_exact_size(egui::vec2(g.size().x + 22.0, 24.0), egui::Sense::hover());
     let painter = ui.painter();
-    painter.rect_filled(r, crate::style::RADIUS as f32, crate::style::soft(hue));
-    painter.rect_filled(egui::Rect::from_min_size(r.min, egui::vec2(4.0, r.height())), egui::CornerRadius { nw: 4, sw: 4, ne: 0, se: 0 }, hue);
-    crate::icons::paint(painter, egui::Rect::from_center_size(egui::pos2(r.left() + 15.0, r.center().y), egui::vec2(13.0, 13.0)), crate::icons::Icon::Database, hue);
-    painter.galley(egui::pos2(r.left() + 25.0, r.center().y - g.size().y / 2.0), g, p.text);
+    crate::icons::paint(painter, egui::Rect::from_center_size(egui::pos2(r.left() + 8.0, r.center().y), egui::vec2(15.0, 15.0)), crate::icons::Icon::Database, hue);
+    painter.galley(egui::pos2(r.left() + 20.0, r.center().y - g.size().y / 2.0), g, p.text_weak);
+    ui.label(egui::RichText::new("/").color(p.border.lerp_to_gamma(p.text_weak, 0.5)));
     ui.label(egui::RichText::new(table).font(crate::style::semi(16.0)).color(p.text)).on_hover_text(format!("{db}.{table}"));
 }
 

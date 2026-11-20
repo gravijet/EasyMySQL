@@ -22,7 +22,7 @@ pub struct Pal {
     pub accent: Color32,
     /// Schrift auf einer Flaeche in Akzentfarbe
     pub on_accent: Color32,
-    /// Hauptaktion (Ausfuehren, Anlegen): Reitergelb in beiden Designs
+    /// Hauptaktion (Ausfuehren, Anlegen): Ordnergruen in beiden Designs
     pub primary: Color32,
     pub on_primary: Color32,
     /// Titelleiste: Flaeche, Schrift, schwache Schrift, Flaeche unter der Maus
@@ -83,7 +83,7 @@ const fn rgb(r: u8, g: u8, b: u8) -> Color32 {
 
 // "Registratur": die App als Aktenregistratur. Jede Datenbank ist ein Ordner mit eigener Rueckenfarbe,
 // Reiter stecken wie Haengeregister in der Farbe ihrer Datenbank, Ergebnisse werden gestempelt.
-// Hell (Standard): weisses Papier, graue Aktendeckel, reitergelbe Titelleiste. Dunkel: dieselbe Registratur bei Nacht.
+// Hell (Standard): weisses Papier, graue Aktendeckel, Titelleiste in Tinte. Dunkel: dieselbe Registratur bei Nacht.
 pub static DARK_PAL: Pal = Pal {
     dark: true,
     face: rgb(0x13, 0x15, 0x1A),
@@ -94,8 +94,8 @@ pub static DARK_PAL: Pal = Pal {
     border: rgb(0x2B, 0x30, 0x3A),
     accent: rgb(0x8E, 0xA4, 0xFF),
     on_accent: rgb(0x0B, 0x12, 0x40),
-    primary: rgb(0xFF, 0xC6, 0x29),
-    on_primary: rgb(0x16, 0x13, 0x0A),
+    primary: rgb(0x16, 0x8A, 0x5E),
+    on_primary: rgb(0xFF, 0xFF, 0xFF),
     chrome: rgb(0x0F, 0x11, 0x15),
     chrome_text: rgb(0xEC, 0xEE, 0xF2),
     chrome_weak: rgb(0x9C, 0xA3, 0xB0),
@@ -154,13 +154,13 @@ pub static LIGHT_PAL: Pal = Pal {
     // Kobalt: Fokus, Auswahl, Verweise
     accent: rgb(0x27, 0x47, 0xD6),
     on_accent: rgb(0xFF, 0xFF, 0xFF),
-    // Reitergelb: Hauptaktion und Titelleiste
-    primary: rgb(0xFF, 0xC6, 0x29),
-    on_primary: rgb(0x16, 0x13, 0x0A),
-    chrome: rgb(0xFF, 0xC6, 0x29),
-    chrome_text: rgb(0x16, 0x13, 0x0A),
-    chrome_weak: rgb(0x5C, 0x47, 0x00),
-    chrome_hover: rgb(0xF0, 0xB2, 0x00),
+    // Ordnergruen: Hauptaktion (Ausfuehren, Anlegen); Tinte: Titelleiste
+    primary: rgb(0x12, 0x7A, 0x53),
+    on_primary: rgb(0xFF, 0xFF, 0xFF),
+    chrome: rgb(0x1D, 0x22, 0x30),
+    chrome_text: rgb(0xF1, 0xF3, 0xF7),
+    chrome_weak: rgb(0xA9, 0xB0, 0xBF),
+    chrome_hover: rgb(0x2E, 0x35, 0x47),
     null_text: rgb(0x8A, 0x90, 0x9B),
     error_text: rgb(0xC4, 0x1E, 0x33),
     warn_text: rgb(0xA0, 0x52, 0x00),
@@ -443,10 +443,9 @@ pub fn button_fills(p: &Pal) -> (Color32, Color32, Color32) {
     }
 }
 
-/// Feine Kante der Hauptaktion: Gelb allein hebt sich im hellen Design zu wenig vom Papier ab
+/// Kante der Hauptaktion (gefuellt, daher ohne Kante)
 pub fn primary_edge() -> Stroke {
-    let p = pal();
-    if p.dark { Stroke::NONE } else { Stroke::new(1.0, p.primary.lerp_to_gamma(Color32::BLACK, 0.22)) }
+    Stroke::NONE
 }
 
 /// Flaeche der Hauptaktion je nach Zustand (gedrueckt etwas dunkler, unter der Maus etwas heller)
@@ -455,7 +454,7 @@ pub fn accent_fill(hot: f32, down: bool) -> Color32 {
     if down {
         p.primary.lerp_to_gamma(Color32::BLACK, 0.10)
     } else {
-        p.primary.lerp_to_gamma(Color32::WHITE, 0.18 * hot)
+        p.primary.lerp_to_gamma(Color32::WHITE, 0.12 * hot)
     }
 }
 

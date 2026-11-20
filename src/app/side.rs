@@ -740,23 +740,30 @@ impl EasyApp {
         egui::ScrollArea::vertical().id_salt("history").auto_shrink([false, false]).show_rows(ui, row_h, items.len(), |ui, range| {
             for e in &items[range] {
                 let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), row_h), Sense::click());
-                if resp.hovered() {
-                    ui.painter().rect_filled(r.shrink2(vec2(4.0, 1.0)), 6.0, pal.hover);
+                let hot = ui.ctx().animate_bool_with_time(resp.id.with("hot"), resp.hovered(), 0.12);
+                if hot > 0.0 {
+                    ui.painter().rect_filled(r.shrink2(vec2(4.0, 1.0)), 6.0, pal.hover.gamma_multiply(hot));
                 }
                 let first: String = e.sql.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(120).collect();
-                let color = if e.error { pal.error_text } else { pal.text };
                 let p = ui.painter_at(r);
-                // Links und rechts gleich viel Abstand; zu lange Zeilen enden mit "…" statt hart am Rand
-                let max_w = (r.width() - 20.0).max(20.0);
-                let line = |text: String, font: egui::FontId, color: Color32, y: f32| {
-                    let mut job = egui::text::LayoutJob::simple_singleline(text, font, color);
-                    job.wrap = egui::text::TextWrapping { max_width: max_w, max_rows: 1, break_anywhere: true, overflow_character: Some('…') };
-                    let g = p.layout_job(job);
-                    p.galley(pos2(r.left() + 10.0, y - g.size().y / 2.0), g, color);
-                };
-                line(first, egui::FontId::monospace(12.0), color, r.top() + 11.0);
-                let meta = format!("{}  ·  {}  ·  {} ms", e.short_time(), if e.db.is_empty() { "–" } else { &e.db }, e.millis);
-                line(meta, egui::FontId::proportional(12.0), pal.text_weak, r.top() + 27.0);
+                // Karteizeile: Ruecken in der Farbe der Datenbank (rot bei Fehler), SQL, darunter Zeit, Datenbank, Dauer
+                let ruecken = if e.error { pal.error_text } else { style::db_color(&e.db) };
+                p.rect_filled(Rect::from_min_size(pos2(r.left() + 8.0, r.top() + 5.0), vec2(3.0, row_h - 10.0)), 1.5, ruecken);
+                let max_w = (r.width() - 30.0).max(20.0);
+                let x0 = r.left() + 18.0;
+                let mut job = egui::text::LayoutJob::simple_singleline(first, egui::FontId::monospace(12.0), pal.text);
+                job.wrap = egui::text::TextWrapping { max_width: max_w, max_rows: 1, break_anywhere: true, overflow_character: Some('…') };
+                let g = p.layout_job(job);
+                p.galley(pos2(x0, r.top() + 11.0 - g.size().y / 2.0), g, pal.text);
+                let y = r.top() + 27.0;
+                let zeit = p.layout_no_wrap(e.short_time(), egui::FontId::proportional(12.0), pal.text_weak);
+                let zw = zeit.size().x;
+                p.galley(pos2(x0, y - zeit.size().y / 2.0), zeit, pal.text_weak);
+                if !e.db.is_empty() {
+                    p.text(pos2(x0 + zw + 10.0, y), egui::Align2::LEFT_CENTER, &e.db, style::medium(12.0), style::db_color(&e.db).lerp_to_gamma(pal.text, 0.25));
+                }
+                let dauer = if e.error { crate::i18n::tr("Fehler", "Error").to_string() } else { crate::i18n::sekunden(std::time::Duration::from_millis(e.millis)) };
+                p.text(pos2(r.right() - 12.0, y), egui::Align2::RIGHT_CENTER, dauer, egui::FontId::proportional(12.0), if e.error { pal.error_text } else { pal.text_weak });
                 let resp = resp.on_hover_text(e.sql.chars().take(1500).collect::<String>());
                 if resp.double_clicked() {
                     actions.push(Action::OpenSql { db: Some(e.db.clone()), sql: e.sql.clone() + ";\n", run: false });

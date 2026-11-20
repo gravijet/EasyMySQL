@@ -1494,7 +1494,7 @@ impl CodeTab {
                             ui.label(RichText::new(&d.message).monospace().color(color));
                             if let Some(s) = &fixes[i] {
                                 if s.fix.is_some() {
-                                    if icons::text_button(ui, Icon::Wizard, &s.label).on_hover_text(&s.problem).clicked() {
+                                    if icons::text_button(ui, Icon::Wrench, &s.label).on_hover_text(&s.problem).clicked() {
                                         apply.push(i);
                                     }
                                 } else {
@@ -1510,7 +1510,7 @@ impl CodeTab {
                             icons::paint(ui.painter(), r, Icon::Info, pal.warn_text);
                             ui.label(RichText::new(&s.problem).color(pal.text));
                             if let Some(fix) = &s.fix
-                                && icons::text_button(ui, Icon::Wizard, &s.label).clicked()
+                                && icons::text_button(ui, Icon::Wrench, &s.label).clicked()
                             {
                                 cx.actions.push(Action::AutoFix(fix.clone()));
                             }

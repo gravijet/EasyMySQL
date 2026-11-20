@@ -1345,7 +1345,7 @@ impl SqlTab {
                                 if let Some(f) = &self.failed {
                                     ui.horizontal_wrapped(|ui| {
                                         for (k, x) in f.fixes.iter().enumerate() {
-                                            if crate::icons::text_button(ui, crate::icons::Icon::Wizard, &x.label).on_hover_text(crate::tr_format!("Wird zu:\n{}", "Becomes:\n{}", x.sql)).clicked() {
+                                            if crate::icons::text_button(ui, crate::icons::Icon::Wrench, &x.label).on_hover_text(crate::tr_format!("Wird zu:\n{}", "Becomes:\n{}", x.sql)).clicked() {
                                                 fix_pick = Some(HistoryAct::ErrorFix(k));
                                             }
                                         }
@@ -1363,7 +1363,7 @@ impl SqlTab {
                                         crate::icons::paint(ui.painter(), r, crate::icons::Icon::Info, pal.text_weak);
                                         ui.label(RichText::new(&sug.problem).small().color(pal.text_weak));
                                         if let Some(f) = &sug.fix
-                                            && crate::icons::text_button(ui, crate::icons::Icon::Wizard, &sug.label).clicked()
+                                            && crate::icons::text_button(ui, crate::icons::Icon::Wrench, &sug.label).clicked()
                                         {
                                             fixes.push(f.clone());
                                         }
@@ -1949,7 +1949,7 @@ fn hinweis(ui: &mut egui::Ui, id: impl std::hash::Hash + std::fmt::Debug, titel:
     // Weich einblenden, sobald sich der Inhalt aendert
     let t = ui.ctx().animate_bool_with_time(egui::Id::new(id), true, 0.22);
     ui.add_space(4.0);
-    let frame = egui::Frame::new().fill(pal.face_light).corner_radius(style::RADIUS).inner_margin(egui::Margin { left: 14, right: 12, top: 10, bottom: 10 }).show(ui, |ui| {
+    egui::Frame::new().fill(pal.face_light).stroke(egui::Stroke::new(1.0, pal.border)).corner_radius(style::PANEL_RADIUS).inner_margin(egui::Margin { left: 14, right: 12, top: 10, bottom: 10 }).show(ui, |ui| {
         ui.set_width(ui.available_width());
         ui.set_opacity(t);
         if let Some(w) = warten {
@@ -1959,13 +1959,17 @@ fn hinweis(ui: &mut egui::Ui, id: impl std::hash::Hash + std::fmt::Debug, titel:
             });
             return;
         }
-        ui.label(RichText::new(titel).semi());
-        ui.add_space(4.0);
+        ui.horizontal(|ui| {
+            let (r, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
+            crate::icons::paint(ui.painter(), r, Icon::Wrench, pal.accent);
+            ui.label(RichText::new(titel).semi());
+        });
+        ui.add_space(2.0);
         for (k, (text, fix)) in items.iter().enumerate() {
             ui.label(*text);
             if let Some(fix) = fix {
                 ui.horizontal(|ui| {
-                    if crate::icons::primary_button(ui, Icon::Wizard, knopf).clicked() {
+                    if crate::icons::primary_button(ui, Icon::Check, knopf).clicked() {
                         pick = Some(k);
                     }
                     let one: String = fix.split_whitespace().collect::<Vec<_>>().join(" ");
@@ -1975,9 +1979,6 @@ fn hinweis(ui: &mut egui::Ui, id: impl std::hash::Hash + std::fmt::Debug, titel:
             ui.add_space(2.0);
         }
     });
-    // Kreidestrich links, so hoch wie das Feld
-    let r = frame.response.rect;
-    ui.painter().rect_filled(egui::Rect::from_min_size(r.min, egui::vec2(3.0, r.height())), egui::CornerRadius { nw: style::RADIUS, sw: style::RADIUS, ne: 0, se: 0 }, pal.accent.gamma_multiply(t));
     pick
 }
 
