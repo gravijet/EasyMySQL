@@ -31,12 +31,17 @@ pub fn german_date(s: &str) -> Option<String> {
         Some((d, t)) => (d, Some(t.trim())),
         None => (s.trim(), None),
     };
-    let mut it = date.split('.');
+    // 17.11.2026, 17/11/2026 oder 17-11-2026 (Jahr hinten); bei / auch 11/17/2026, wenn eindeutig
+    let sep = ['.', '/', '-'].into_iter().find(|c| date.contains(*c))?;
+    let mut it = date.split(sep);
     let (d, m, y) = (it.next()?, it.next()?, it.next()?);
     if it.next().is_some() || d.is_empty() || m.is_empty() || d.len() > 2 || m.len() > 2 || y.len() != 4 {
         return None;
     }
-    let (d, m, y): (u32, u32, u32) = (d.parse().ok()?, m.parse().ok()?, y.parse().ok()?);
+    let (mut d, mut m, y): (u32, u32, u32) = (d.parse().ok()?, m.parse().ok()?, y.parse().ok()?);
+    if sep == '/' && m > 12 && d <= 12 {
+        std::mem::swap(&mut d, &mut m);
+    }
     if !(1..=31).contains(&d) || !(1..=12).contains(&m) {
         return None;
     }
@@ -258,6 +263,11 @@ pub(super) fn check(chars: &[char], stmt: &[Tok], tables: &HashMap<String, &Tabl
         }
         // IDENTITY(1,1) / AUTOINCREMENT / AUTO INCREMENT -> AUTO_INCREMENT
         let auto_end = match u.as_str() {
+            // GENERATED ALWAYS|BY DEFAULT AS IDENTITY (PostgreSQL, Oracle)
+            "GENERATED" if stmt[i + 1..].iter().take(4).any(|x| x.is_word("IDENTITY")) => {
+                let k = i + 1 + stmt[i + 1..].iter().position(|x| x.is_word("IDENTITY")).unwrap_or(0);
+                Some(stmt.get(k + 1).filter(|n| n.kind == Kind::Open).and_then(|_| group_end(stmt, k + 1)).map_or(stmt[k].end, |c| stmt[c].end))
+            }
             "IDENTITY" => Some(next.filter(|n| n.kind == Kind::Open).and_then(|_| group_end(stmt, i + 1)).map_or(t.end, |c| stmt[c].end)),
             "AUTOINCREMENT" => Some(t.end),
             "AUTO" if next.is_some_and(|n| n.is_word("INCREMENT")) => next.map(|n| n.end),
@@ -494,6 +504,40 @@ fn insert_values(chars: &[char], stmt: &[Tok], tables: &HashMap<String, &TableIn
         return;
     }
     for (&(open, close), &c) in tuples.iter().zip(&counts) {
+        let its = items(stmt, open, close);
+        // (9,50) bei einer Spalte zu wenig: Dezimalkomma in einer Kommazahl-Spalte
+        if c == expected + 1
+            && let Some(cols) = &columns
+            && let Some(n) = (0..c - 1).find(|&n| {
+                let (a, b) = its[n];
+                let (a2, b2) = its[n + 1];
+                b == a + 1 && b2 == a2 + 1 && stmt[a].kind == Kind::Num && stmt[a2].kind == Kind::Num && stmt[a2].start == stmt[a].end + 1
+                    && (1..=2).contains(&(stmt[a2].end - stmt[a2].start))
+                    && cols.get(n).is_some_and(|col| ["decimal", "numeric", "float", "double", "real"].iter().any(|k| col.col_type.to_ascii_lowercase().starts_with(k)))
+            })
+        {
+            let (a, a2) = (its[n].0, its[n + 1].0);
+            let num = format!("{}.{}", text(chars, stmt[a].start, stmt[a].end), text(chars, stmt[a2].start, stmt[a2].end));
+            out.push(problem(stmt[a].start, stmt[a2].end, Severity::Error, crate::tr_format!("Kommazahlen schreibt SQL mit Punkt: {num}", "SQL writes decimals with a dot: {num}"), Some((stmt[a].start, stmt[a2].end, num))));
+            continue;
+        }
+        // Zu wenige Werte bei einer Spaltenliste: der Rest bekommt den Standardwert
+        // (nicht, wenn eher ein Komma fehlt: zwei Werte direkt hintereinander)
+        let adjacent_values = its.iter().any(|&(a, b)| {
+            stmt[a..b].windows(2).any(|w| matches!(w[0].kind, Kind::Str | Kind::Num | Kind::Quoted | Kind::Close | Kind::Var) && matches!(w[1].kind, Kind::Str | Kind::Num | Kind::Quoted | Kind::Var | Kind::Word))
+        });
+        if c < expected && c > 0 && explicit.is_some() && !adjacent_values {
+            let missing = expected - c;
+            let at = stmt[close].start;
+            out.push(problem(
+                stmt[open].start,
+                stmt[close].end,
+                Severity::Error,
+                crate::tr_format!("{c} Wert(e), aber {expected} Spalte(n): der Rest bekommt DEFAULT.", "{c} value(s) but {expected} column(s): the rest gets DEFAULT."),
+                Some((at, at, ", DEFAULT".repeat(missing))),
+            ));
+            continue;
+        }
         if c != expected {
             out.push(problem(
                 stmt[open].start,
@@ -637,6 +681,10 @@ mod tests {
         assert_eq!(german_date("17.11.2026").as_deref(), Some("2026-11-17"));
         assert_eq!(german_date("1.2.2026 9:05").as_deref(), Some("2026-02-01 09:05:00"));
         assert_eq!(german_date("32.1.2026"), None);
+        assert_eq!(german_date("24/12/2008").as_deref(), Some("2008-12-24"));
+        assert_eq!(german_date("12/24/2008").as_deref(), Some("2008-12-24"));
+        assert_eq!(german_date("24-12-2008").as_deref(), Some("2008-12-24"));
+        assert_eq!(german_date("2008-12-24"), None);
         assert_eq!(german_date("1.2.3"), None);
         assert_eq!(german_date("v1.2.2026x"), None);
     }
@@ -672,9 +720,11 @@ mod tests {
         assert_eq!(fixed("INSERT INTO Produkt (id, preis) VALUES (1, '3,50')"), "INSERT INTO Produkt (id, preis) VALUES (1, 3.50)");
         // Textspalte: Datum bleibt Text, NULL und DEFAULT sind Werte
         assert_eq!(fixed("INSERT INTO Personen (vorname, nachname, geboren) VALUES ('1.2.2000', NULL, DEFAULT)"), "INSERT INTO Personen (vorname, nachname, geboren) VALUES ('1.2.2000', NULL, DEFAULT)");
+        // Zu wenige Werte: der Rest bekommt den Standardwert; zu viele bleiben eine Meldung ohne Korrektur
+        assert_eq!(fixed("INSERT INTO Personen (vorname, nachname) VALUES ('A')"), "INSERT INTO Personen (vorname, nachname) VALUES ('A', DEFAULT)");
         let s = schema();
-        let p = lint("INSERT INTO Personen (vorname, nachname) VALUES ('A')", &Env { schema: Some(&s), databases: &[] });
-        assert!(p.iter().any(|p| p.message.contains('1') && p.fix.is_none()), "{p:?}");
+        let p = lint("INSERT INTO Personen (vorname) VALUES ('A', 'B', 'C')", &Env { schema: Some(&s), databases: &[] });
+        assert!(p.iter().any(|p| p.message.contains('3') && p.fix.is_none()), "{p:?}");
     }
 
     #[test]

@@ -17,6 +17,7 @@ mod menu;
 mod lang;
 mod lint;
 mod dialect;
+mod satzbau;
 mod script;
 pub mod block;
 pub mod ai;

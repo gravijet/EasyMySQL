@@ -727,7 +727,11 @@ fn candidates(text: &str, f: &Fail, setup: &Setup, server: &mut dyn Server, sand
         }
         Some(1049) => out.extend(aufbau::datenbank(text, f, setup)),
         Some(1054) => late.extend(aufbau::spalte(text, f)),
-        Some(1406 | 1264 | 1366 | 1265 | 1292) => out.extend(aufbau::typ_anpassen(text, f)),
+        // Spalte anpassen; laesst sich der Wert selbst umschreiben ('9,50 €' -> 9.50), kommt das zuerst
+        Some(1406 | 1264 | 1366 | 1265 | 1292) => {
+            let value_first = matches!(code, Some(1366 | 1265 | 1292)) && errfix::value_fits(&f.error, &st.sql, f.schema.as_ref());
+            if value_first { late.extend(aufbau::typ_anpassen(text, f)) } else { out.extend(aufbau::typ_anpassen(text, f)) }
+        }
         Some(1451) => late.extend(aufbau::kinder_zuerst(text, f)),
         // Tabelle gibt es schon: Skript wiederholbar machen (alte Tabellen vorher loeschen) oder IF NOT EXISTS
         Some(1050) => {
@@ -801,6 +805,11 @@ fn candidates(text: &str, f: &Fail, setup: &Setup, server: &mut dyn Server, sand
                 let table = toks[ti].text.clone();
                 if let Some(c) = loosen_column(text, &table, &col) {
                     out.push(c);
+                }
+                if code == Some(1364)
+                    && let Some(c) = add_required_value(text, f, &toks, &chars, &table, &col)
+                {
+                    late.push(c);
                 }
             }
         }
@@ -931,6 +940,41 @@ fn loosen_column(text: &str, table: &str, col: &str) -> Option<Cand> {
     None
 }
 
+/// Pflichtfeld ohne Wert (1364): Spalte mit Platzhalter in die Spaltenliste und jede Zeile aufnehmen (bitte ansehen)
+fn add_required_value(text: &str, f: &Fail, toks: &[Tok], chars: &[char], table: &str, col: &str) -> Option<Cand> {
+    let info = f.schema.as_ref()?.table(table)?;
+    let column = info.columns.iter().find(|c| c.name.eq_ignore_ascii_case(col))?;
+    let (ti, vi) = insert_parts(toks)?;
+    if !toks.get(ti + 1).is_some_and(|t| t.kind == Kind::Open) {
+        return None;
+    }
+    let list_end = group_end(toks, ti + 1)?;
+    let value = placeholder(table, column, "neu");
+    let mut edits = vec![(toks[list_end].start, format!(", {}", super::lint::quote_if_needed(&column.name)))];
+    let mut k = vi + 1;
+    while toks.get(k).is_some_and(|t| t.kind == Kind::Open) {
+        let c = group_end(toks, k)?;
+        edits.push((toks[c].start, format!(", {value}")));
+        k = c + 1;
+        if toks.get(k).is_some_and(|t| t.kind == Kind::Comma) {
+            k += 1;
+        }
+    }
+    let mut out: Vec<char> = chars.to_vec();
+    for (at, ins) in edits.into_iter().rev() {
+        out.splice(at..at, ins.chars());
+    }
+    let new: String = out.into_iter().collect();
+    let t = replace_stmt(text, &f.stmt, &new)?;
+    Some(Cand {
+        text: t,
+        label: crate::tr_format!("{table}.{col} muss ausgefüllt sein: Platzhalter {value} eingetragen", "{table}.{col} is required: placeholder {value} filled in"),
+        check: true,
+        moved: 0,
+        snippet: first_line(&new),
+    })
+}
+
 /// Fehlende Elternzeilen (1452) mit Platzhalterwerten vor dem INSERT anlegen
 fn parent_rows(text: &str, f: &Fail, toks: &[Tok], chars: &[char], server: &mut dyn Server, sandbox: &Map) -> Option<Cand> {
     // "... FOREIGN KEY (`kunde_id`) REFERENCES `kunde` (`id`))"
@@ -1022,7 +1066,23 @@ fn progressed(old: &Trial, new: &Trial, inserted: isize, seen: &HashSet<(String,
         return true;
     }
     let of = old.fail.as_ref();
-    adj == old.ok as isize && of.is_some_and(|of| errfix::code(&nf.error) != errfix::code(&of.error)) && !seen.contains(&(nf.stmt.sql.clone(), errfix::code(&nf.error)))
+    // Gleicher Syntaxfehler, aber spaeter in der Anweisung: auch ein Schritt (z. B. zwei reservierte Namen)
+    let later = |of: &Fail| errfix::code(&nf.error) == Some(1064) && errfix::code(&of.error) == Some(1064) && syntax_tail(nf).zip(syntax_tail(of)).is_some_and(|(n, o)| n < o);
+    adj == old.ok as isize
+        && of.is_some_and(|of| errfix::code(&nf.error) != errfix::code(&of.error) || later(of))
+        && !seen.contains(&(nf.stmt.sql.clone(), errfix::code(&nf.error)))
+}
+
+/// Zeichen der Anweisung ab der Stelle eines Syntaxfehlers ("near '…'")
+fn syntax_tail(f: &Fail) -> Option<usize> {
+    let rest = &f.error[f.error.find("near '")? + 6..];
+    let near = rest.rfind("' at line").map_or(rest, |e| &rest[..e]);
+    let probe: String = near.chars().take(30).collect();
+    if probe.trim().is_empty() {
+        return Some(0);
+    }
+    let at = f.stmt.sql.find(probe.as_str())?;
+    Some(f.stmt.sql[at..].chars().count())
 }
 
 fn line_of(text: &str, snippet: &str) -> Option<usize> {
@@ -1550,6 +1610,121 @@ mod corpus_tests {
         ("IN mit zwei Spalten", "SELECT * FROM klasse WHERE id IN (SELECT klasse_id, name FROM schueler);"),
         ("SELECT fehlt", "* FROM schueler;"),
         ("SELECT zerstueckelt", "T name FROM schueler WHERE klasse_id = 1;"),
+        ("WHRE", "SELECT * FROM schueler WHRE id = 1;"),
+        ("ODER BY", "SELECT * FROM schueler ODER BY name;"),
+        ("GROUP ohne BY", "SELECT klasse_id, COUNT(*) FROM schueler GROUP klasse_id;"),
+        ("INSRT", "INSRT INTO klasse (name) VALUES ('4A');"),
+        ("UPDTE", "UPDTE schueler SET name = 'Ada L' WHERE id = 1;"),
+        ("DELTE", "DELTE FROM schueler WHERE id = 2;"),
+        ("VALEUS", "INSERT INTO klasse (name) VALEUS ('4A');"),
+        ("VALUES fehlt", "INSERT INTO klasse (name) ('4A');"),
+        ("Zu viele Werte ohne Spaltenliste", "INSERT INTO klasse VALUES ('4A');"),
+        ("Mehrdeutige Spalte", "SELECT name FROM schueler s JOIN klasse k ON s.klasse_id = k.id;"),
+        ("HAVING statt WHERE", "SELECT name FROM schueler HAVING klasse_id = 1;"),
+        ("ISNULL mit zwei Werten", "SELECT ISNULL(geburt, '2000-01-01') FROM schueler;"),
+        ("GETDATE", "SELECT name, GETDATE() FROM schueler;"),
+        ("LEN", "SELECT LEN(name) FROM schueler;"),
+        ("IDENTITY", "CREATE TABLE raum (id INT IDENTITY(1,1) PRIMARY KEY, nummer NVARCHAR(5));"),
+        ("GENERATED AS IDENTITY", "CREATE TABLE raum (id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY, nummer VARCHAR(5));"),
+        ("DATETIME2 und MONEY", "CREATE TABLE zahlung (id INT PRIMARY KEY AUTO_INCREMENT, am DATETIME2, betrag MONEY);"),
+        ("Postgres-Cast", "SELECT name, klasse_id::TEXT FROM schueler;"),
+        ("ILIKE", "SELECT * FROM schueler WHERE name ILIKE 'a%';"),
+        ("DROP ohne Tabelle", "DROP TABLE lehrer;"),
+        ("Doppelte Spalte", "CREATE TABLE raum (id INT PRIMARY KEY, name VARCHAR(5), name VARCHAR(10));"),
+        ("Klammer in COUNT fehlt", "SELECT COUNT(* FROM schueler;"),
+        ("Klammer zu viel", "SELECT * FROM schueler WHERE (id = 1));"),
+        ("Komma vor FROM", "SELECT name, FROM schueler;"),
+        ("AND in SET", "UPDATE schueler SET name = 'Ada L' AND klasse_id = 2 WHERE id = 1;"),
+        ("Spaltenname in Anfuehrungszeichen", "INSERT INTO klasse ('name') VALUES ('4A');"),
+        ("Tabelle in doppelten Anfuehrungszeichen", "SELECT * FROM \"schueler\";"),
+        ("Eckige Klammern", "SELECT [name] FROM [schueler];"),
+        ("FROM fehlt", "SELECT name, geburt WHERE klasse_id = 1;"),
+        ("Leerzeichen im Namen", "CREATE TABLE lieblings fach (id INT PRIMARY KEY);"),
+        ("Bindestrich im Namen", "CREATE TABLE klasse-neu (id INT PRIMARY KEY);"),
+        ("Komma als Dezimalzeichen", "CREATE TABLE preis (id INT PRIMARY KEY AUTO_INCREMENT, betrag DECIMAL(6,2));\nINSERT INTO preis (betrag) VALUES ('9,50');"),
+        ("Datum mit Schraegstrich", "INSERT INTO schueler (name, klasse_id, geburt) VALUES ('Grace', 1, '24/12/2008');"),
+        ("Datum gibt es nicht", "INSERT INTO schueler (name, klasse_id, geburt) VALUES ('Grace', 1, '2008-02-30');"),
+        ("Spalte ohne Typ", "CREATE TABLE raum (id INT PRIMARY KEY, nummer);"),
+        ("ADD COLUMN ohne Typ", "ALTER TABLE schueler ADD COLUMN email;"),
+        ("IN ohne Klammer", "SELECT * FROM schueler WHERE id IN 1, 2;"),
+        ("BETWEEN mit Komma", "SELECT * FROM schueler WHERE id BETWEEN 1, 2;"),
+        ("LEFT JOIN ohne ON", "SELECT s.name, k.name FROM schueler s LEFT JOIN klasse k WHERE s.klasse_id = k.id;"),
+        ("ORDER BY vor WHERE", "SELECT * FROM schueler ORDER BY name WHERE klasse_id = 1;"),
+        ("LIMIT vor ORDER BY", "SELECT * FROM schueler LIMIT 1 ORDER BY name;"),
+        ("Strichpunkt zu frueh", "SELECT * FROM schueler;\nWHERE id = 1;"),
+        ("SET fehlt", "UPDATE schueler name = 'Ada L' WHERE id = 1;"),
+        ("Datenbank doppelt", "CREATE DATABASE korpus_doppelt;\nCREATE DATABASE korpus_doppelt;"),
+        ("STRING und VARCAHR", "CREATE TABLE raum (id INT PRIMARY KEY, nummer STRING, name VARCAHR(20));"),
+        ("Fremdschluessel mit anderem Typ", "CREATE TABLE note (id INT PRIMARY KEY AUTO_INCREMENT, schueler_id VARCHAR(10), FOREIGN KEY (schueler_id) REFERENCES schueler(id));"),
+        ("Grossbuchstaben im Tabellennamen", "SELECT * FROM Schueler;"),
+        ("Kommentar mit //", "SELECT * FROM schueler; // alle Schueler"),
+        ("Kommentar ohne Leerzeichen", "--alle Schueler\nSELECT * FROM schueler;"),
+        ("Unterabfrage mit mehreren Zeilen", "SELECT * FROM schueler WHERE klasse_id = (SELECT id FROM klasse);"),
+        ("DISTINCT in der Mitte", "SELECT name, DISTINCT klasse_id FROM schueler;"),
+        ("Zweimal WHERE", "SELECT * FROM schueler WHERE id > 0 WHERE name = 'Ada';"),
+        ("Doppeltes FROM", "SELECT * FROM FROM schueler;"),
+        ("SELECT in VALUES", "INSERT INTO klasse (name) VALUES (SELECT name FROM schueler WHERE id = 1);"),
+        ("AUTO INCREMENT", "CREATE TABLE raum (id INT AUTO INCREMENT PRIMARY KEY);"),
+        ("PRIMAY KEY", "CREATE TABLE raum (id INT PRIMAY KEY);"),
+        ("NOTNULL", "CREATE TABLE raum (id INT PRIMARY KEY, nummer VARCHAR(5) NOTNULL);"),
+        ("Alias in WHERE", "SELECT name AS n FROM schueler WHERE n = 'Ada';"),
+        ("Summen-Alias in WHERE", "SELECT klasse_id, COUNT(*) AS anzahl FROM schueler WHERE anzahl > 0 GROUP BY klasse_id;"),
+        ("LIMIT in IN-Unterabfrage", "SELECT * FROM schueler WHERE id IN (SELECT id FROM schueler ORDER BY geburt LIMIT 1);"),
+        ("Text ohne Ende", "SELECT * FROM schueler WHERE name = 'Ada;"),
+        ("Zeile ohne Klammer", "INSERT INTO klasse (name) VALUES ('4A'), '4B';"),
+        ("Zeilen ohne Komma", "INSERT INTO klasse (name) VALUES ('4A') ('4B');"),
+        ("CHANGE ohne neuen Namen", "ALTER TABLE schueler CHANGE name VARCHAR(80);"),
+        ("DROP COLUMN fehlt", "ALTER TABLE schueler DROP COLUMN email;"),
+        ("Reservierte Spaltennamen", "CREATE TABLE termin (id INT PRIMARY KEY, datum DATE, desc VARCHAR(50), order INT);"),
+        ("DATEDIFF mit Einheit", "SELECT DATEDIFF(day, geburt, NOW()) FROM schueler;"),
+        ("NOW ohne Klammern", "SELECT name, NOW FROM schueler;"),
+        ("Ungleich NULL", "SELECT * FROM schueler WHERE geburt != NULL;"),
+        ("=> statt >=", "SELECT * FROM schueler WHERE id => 1;"),
+        ("=< statt <=", "SELECT * FROM schueler WHERE id =< 1;"),
+        ("Fehlende Klammer bei Typ", "CREATE TABLE raum (id INT PRIMARY KEY, nummer VARCHAR(5, name VARCHAR(20));"),
+        ("NOT NULL ohne Wert", "INSERT INTO klasse (id) VALUES (7);"),
+        ("Prozent mit Gleich", "SELECT * FROM schueler WHERE name = 'A%';"),
+        ("Verkettung mit ||", "SELECT name || ' (' || klasse_id || ')' FROM schueler;"),
+        ("Leerer Text als Zahl", "INSERT INTO schueler (name, klasse_id) VALUES ('Grace', '');"),
+        ("ja als Wahrheitswert", "CREATE TABLE kurs (id INT PRIMARY KEY, aktiv BOOLEAN);\nINSERT INTO kurs VALUES (1, 'ja');"),
+        ("Tausenderpunkt", "CREATE TABLE preis (id INT PRIMARY KEY AUTO_INCREMENT, betrag DECIMAL(8,2));\nINSERT INTO preis (betrag) VALUES ('1.500,50');"),
+        ("Euro-Zeichen im Betrag", "CREATE TABLE preis (id INT PRIMARY KEY AUTO_INCREMENT, betrag DECIMAL(8,2));\nINSERT INTO preis (betrag) VALUES ('9,50 €');"),
+        ("Reservierte Spalte in SELECT", "CREATE TABLE termin (id INT PRIMARY KEY, `desc` VARCHAR(50));\nSELECT desc FROM termin;"),
+        ("Dezimalkomma ohne Anfuehrungszeichen", "CREATE TABLE preis (id INT PRIMARY KEY AUTO_INCREMENT, betrag DECIMAL(8,2));\nINSERT INTO preis (betrag) VALUES (9,50);"),
+        ("IS NUL", "SELECT * FROM schueler WHERE geburt IS NUL;"),
+        ("LIKE mit Stern", "SELECT * FROM schueler WHERE name LIKE 'A*';"),
+        ("Tabelle ohne Spalten", "CREATE TABLE leer;"),
+        ("Spalte doppelt in INSERT", "INSERT INTO schueler (name, name) VALUES ('Grace', 'Hopper');"),
+        ("Zu wenige Werte", "INSERT INTO schueler (name, klasse_id, geburt) VALUES ('Grace', 1);"),
+        ("FOREIGN KEY ohne Klammern", "CREATE TABLE note (id INT PRIMARY KEY AUTO_INCREMENT, schueler_id INT, FOREIGN KEY schueler_id REFERENCES schueler(id));"),
+        ("PRIMARY KEY ohne Klammern", "CREATE TABLE raum (nr INT, name VARCHAR(20), PRIMARY KEY nr);"),
+        ("Verweis auf falsche Spalte", "CREATE TABLE note (id INT PRIMARY KEY AUTO_INCREMENT, schueler_id INT, FOREIGN KEY (schueler_id) REFERENCES schueler(schueler_id));"),
+        ("Doppeltes Komma", "SELECT name,, klasse_id FROM schueler;"),
+        ("SHOW TABLE", "SHOW TABLE;"),
+        ("DATE_FORMAT wie in Java", "SELECT DATE_FORMAT(geburt, 'dd.MM.yyyy') FROM schueler;"),
+        ("Aggregat verschachtelt", "SELECT MAX(COUNT(*)) FROM schueler GROUP BY klasse_id;"),
+        ("Datentyp vertippt", "CREATE TABLE raum (id INTEGR PRIMARY KEY, name VARCHR(20));"),
+        ("Fremde Tabelle in SELECT-Liste", "SELECT schueler.name, klasse.name FROM schueler;"),
+        ("ORDER BY Spaltennummer zu gross", "SELECT name FROM schueler ORDER BY 3;"),
+        ("INSERT SELECT mit VALUES-Klammer", "INSERT INTO klasse (name) VALUES ((SELECT name FROM schueler));"),
+        ("Zahl zu lang fuer DECIMAL", "CREATE TABLE preis (id INT PRIMARY KEY AUTO_INCREMENT, betrag DECIMAL(4,2));\nINSERT INTO preis (betrag) VALUES (1234.5);"),
+        ("Uhrzeit deutsch", "CREATE TABLE termin (id INT PRIMARY KEY AUTO_INCREMENT, beginn DATETIME);\nINSERT INTO termin (beginn) VALUES ('24.12.2026 18:00');"),
+        ("Uhrzeit mit Uhr", "CREATE TABLE termin (id INT PRIMARY KEY AUTO_INCREMENT, beginn TIME);\nINSERT INTO termin (beginn) VALUES ('8 Uhr');"),
+        ("CREATE INDEX ohne Klammer", "CREATE INDEX ix_name ON schueler name;"),
+        ("DROP mehrere ohne Komma", "CREATE TABLE a (id INT);\nCREATE TABLE b (id INT);\nDROP TABLE a b;"),
+        ("RENAME falsch", "ALTER TABLE schueler RENAME name TO vorname;"),
+        ("MODIFY auf fehlende Spalte", "ALTER TABLE schueler MODIFY email VARCHAR(100);"),
+        ("DEFAULT ohne Wert", "CREATE TABLE raum (id INT PRIMARY KEY, plaetze INT DEFAULT);"),
+        ("VARCHAR ohne Klammer mit Zahl", "CREATE TABLE raum (id INT PRIMARY KEY, name VARCHAR 20);"),
+        ("DECIMAL mit Punkt", "CREATE TABLE preis (id INT PRIMARY KEY, betrag DECIMAL(8.2));"),
+        ("ENUM ohne Anfuehrungszeichen", "CREATE TABLE ampel (id INT PRIMARY KEY, farbe ENUM(rot, gelb, gruen));"),
+        ("CHECK mit Text", "CREATE TABLE kurs (id INT PRIMARY KEY, stufe INT CHECK (stufe BETWEEN 1, 3));"),
+        ("WHERE mit Zuweisung :=", "SELECT * FROM schueler WHERE id := 1;"),
+        ("Vergleich mit !", "SELECT * FROM schueler WHERE id ! = 1;"),
+        ("UPDATE mit FROM", "UPDATE schueler SET name = 'X' FROM schueler WHERE id = 1;"),
+        ("DELETE mit Alias", "DELETE FROM schueler s WHERE s.id = 2;"),
+        ("COUNT ohne Klammern", "SELECT COUNT * FROM schueler;"),
+        ("AS mit Text-Alias in WHERE", "SELECT name AS 'Vorname' FROM schueler ORDER BY 'Vorname';"),
     ];
 
     #[test]

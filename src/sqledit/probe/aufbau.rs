@@ -986,7 +986,7 @@ pub(super) fn spalte(text: &str, f: &Fail) -> Vec<Cand> {
         None => (None, full.clone()),
     };
     let Some(schema) = f.schema.as_ref() else { return out };
-    if known_word(&col.to_ascii_uppercase()) || col.chars().any(|c| c.is_whitespace()) {
+    if col.is_empty() || known_word(&col.to_ascii_uppercase()) || col.chars().any(|c| c.is_whitespace()) {
         return out;
     }
     let (chars, toks) = lexed(&f.stmt.sql);

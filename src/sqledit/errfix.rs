@@ -6,6 +6,8 @@ use super::dialect::{group_end, insert_parts, items, text};
 use super::lint::{Env, Kind, Tok, apply_fixes, lex, lint, nearest, quote_if_needed};
 use crate::db::{Schema, TableInfo};
 
+mod umbau;
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct ErrorFix {
     /// Beschriftung des Knopfes
@@ -71,6 +73,10 @@ pub fn for_error(err: &str, sql: &str, schema: Option<&Schema>) -> Vec<ErrorFix>
     let toks = lex(&chars).toks;
     let mut out: Vec<ErrorFix> = Vec::new();
     let tr = crate::i18n::tr;
+    // Wert passt nicht zur Spalte: zuerst den Wert umschreiben ('9,50 €' -> 9.50), erst danach die Spalte aendern
+    if matches!(code(err), Some(1366 | 1265 | 1292)) {
+        out.extend(umbau::value_fixes(err, &chars, &toks, schema));
+    }
     match code(err) {
         // Sicht, Prozedur, Funktion oder Trigger gibt es schon: ersetzen (beim erneuten Ausfuehren gewollt)
         Some(1050 | 1304 | 1359)
@@ -128,6 +134,26 @@ pub fn for_error(err: &str, sql: &str, schema: Option<&Schema>) -> Vec<ErrorFix>
                 out.push(fix(tr("Nur löschen, wenn vorhanden (IF EXISTS)", "Drop only if it exists (IF EXISTS)").into(), edit(&chars, edits)));
             }
         }
+        Some(1110) => {
+            if let Some(col) = quoted_after(err, "Column '")
+                && let Some(f) = umbau::drop_duplicate_insert_column(&chars, &toks, col)
+            {
+                out.push(f);
+            }
+        }
+        Some(1113) => {
+            if let Some(f) = umbau::table_without_columns(&chars, &toks) {
+                out.push(f);
+            }
+        }
+        // Doppelte Spalte in CREATE TABLE: die zweite Definition weglassen
+        Some(1060) if toks.first().is_some_and(|t| t.is_word("CREATE")) => {
+            if let Some(col) = quoted_after(err, "column name '")
+                && let Some(f) = drop_duplicate_column(&chars, &toks, col)
+            {
+                out.push(f);
+            }
+        }
         Some(1060) if !has_words(&toks, &["IF", "NOT", "EXISTS"]) => {
             // ADD [COLUMN] x -> ADD [COLUMN] IF NOT EXISTS x
             let mut edits = Vec::new();
@@ -159,6 +185,7 @@ pub fn for_error(err: &str, sql: &str, schema: Option<&Schema>) -> Vec<ErrorFix>
         }
         // Spalte unbekannt: aehnlicher Name in den Tabellen der Anweisung
         Some(1054) => {
+            out.extend(unknown_column_shape(err, &chars, &toks, schema));
             // In VALUES ist ein "unbekannter Name" fast immer Text ohne Anfuehrungszeichen (siehe unten)
             let in_values = insert_parts(&toks).is_some_and(|(_, vi)| quoted_after(err, "Unknown column '").is_some_and(|c| toks[vi..].iter().any(|t| t.is_name() && t.text == c)));
             if !in_values && let (Some(full), Some(s)) = (quoted_after(err, "Unknown column '"), schema) {
@@ -225,6 +252,9 @@ pub fn for_error(err: &str, sql: &str, schema: Option<&Schema>) -> Vec<ErrorFix>
         }
         // Aggregat in WHERE: Bedingung nach GROUP BY als HAVING
         Some(1111) => {
+            if let Some(f) = umbau::nested_aggregate(&chars, &toks) {
+                out.push(f);
+            }
             if let Some(f) = where_to_having(&chars, &toks) {
                 out.push(f);
             }
@@ -252,6 +282,18 @@ pub fn for_error(err: &str, sql: &str, schema: Option<&Schema>) -> Vec<ErrorFix>
         }
         // Unterabfrage liefert mehrere Zeilen: = (SELECT ...) -> IN (SELECT ...)
         Some(1242) => {
+            // INSERT … VALUES ((SELECT …)) mit mehreren Zeilen: INSERT … SELECT …
+            if let Some((_, vi)) = insert_parts(&toks)
+                && toks.get(vi + 1).is_some_and(|t| t.kind == Kind::Open)
+                && toks.get(vi + 2).is_some_and(|t| t.kind == Kind::Open)
+                && toks.get(vi + 3).is_some_and(|t| t.is_word("SELECT"))
+                && let (Some(c1), Some(c2)) = (group_end(&toks, vi + 1), group_end(&toks, vi + 2))
+                && c2 + 1 == c1
+                && c1 + 1 == toks.len()
+            {
+                let inner = text(&chars, toks[vi + 3].start, toks[c2].start).trim_end().to_string();
+                out.push(fix(tr("Alle Zeilen der Abfrage einfügen (INSERT … SELECT)", "Insert all rows of the query (INSERT … SELECT)").into(), edit(&chars, vec![(toks[vi].start, toks[c1].end, inner)])));
+            }
             let mut edits = Vec::new();
             for (k, t) in toks.iter().enumerate() {
                 if t.kind == Kind::Op && matches!(t.text.as_str(), "=" | "<>" | "!=") && toks.get(k + 1).is_some_and(|o| o.kind == Kind::Open) && toks.get(k + 2).is_some_and(|w| w.is_word("SELECT")) {
@@ -360,6 +402,36 @@ pub fn for_error(err: &str, sql: &str, schema: Option<&Schema>) -> Vec<ErrorFix>
                 out.push(f);
             }
         }
+        // Datum, das es nicht gibt (30. Februar): letzter Tag des Monats
+        Some(1292) => {
+            if let Some(v) = quoted_after(err, "value: '")
+                && let Some(ok) = clamp_date(v)
+            {
+                let edits: Vec<_> = toks
+                    .iter()
+                    .filter(|t| t.kind == Kind::Str && t.end >= t.start + 2 && text(&chars, t.start + 1, t.end - 1) == v)
+                    .map(|t| (t.start + 1, t.end - 1, ok.clone()))
+                    .collect();
+                if !edits.is_empty() {
+                    out.push(fix(crate::tr_format!("{v} gibt es nicht: {ok} verwenden", "{v} does not exist: use {ok}"), edit(&chars, edits)));
+                }
+            }
+        }
+        // LIMIT in einer IN-Unterabfrage: in eine abgeleitete Tabelle packen
+        Some(1235) if err.contains("LIMIT") => {
+            if let Some(f) = wrap_limited_subquery(&chars, &toks) {
+                out.push(f);
+            }
+        }
+        // Unbekannter Datentyp (vertippt)
+        Some(4161) => {
+            if let Some(bad) = quoted_after(err, "data type: '")
+                && let Some(good) = nearest(&bad.to_ascii_uppercase(), TYPE_NAMES.iter().copied())
+            {
+                let edits: Vec<_> = toks.iter().filter(|t| t.is_word(bad)).map(|t| (t.start, t.end, good.to_string())).collect();
+                out.push(fix(crate::tr_format!("Datentyp {good} statt {bad}", "Data type {good} instead of {bad}"), edit(&chars, edits)));
+            }
+        }
         // Fremdschluessel nicht moeglich: Datentyp an die Zielspalte anpassen
         Some(1005 | 1215 | 150) => {
             if let Some(s) = schema
@@ -381,6 +453,196 @@ pub fn for_error(err: &str, sql: &str, schema: Option<&Schema>) -> Vec<ErrorFix>
         }
     }
     out
+}
+
+/// Laesst sich der Wert selbst in die Form der Spalte bringen (statt die Spalte zu aendern)?
+pub fn value_fits(err: &str, sql: &str, schema: Option<&Schema>) -> bool {
+    let chars: Vec<char> = sql.chars().collect();
+    !umbau::value_fixes(err, &chars, &lex(&chars).toks, schema).is_empty()
+}
+
+/// Datentypen fuer vertippte Typnamen
+const TYPE_NAMES: &[&str] = &[
+    "VARCHAR", "CHAR", "TEXT", "MEDIUMTEXT", "LONGTEXT", "INT", "INTEGER", "BIGINT", "SMALLINT", "TINYINT", "DECIMAL", "NUMERIC", "FLOAT", "DOUBLE",
+    "DATE", "DATETIME", "TIMESTAMP", "TIME", "YEAR", "BOOLEAN", "BLOB", "ENUM", "JSON",
+];
+
+/// Funktionen ohne Argumente, die gern ohne Klammern geschrieben werden
+fn bare_function(word: &str) -> Option<&'static str> {
+    Some(match word.to_ascii_uppercase().as_str() {
+        "NOW" | "GETDATE" | "SYSDATETIME" => "NOW()",
+        "CURDATE" | "TODAY" => "CURDATE()",
+        "CURTIME" => "CURTIME()",
+        "UUID" | "NEWID" => "UUID()",
+        "RAND" => "RAND()",
+        "UTC_TIMESTAMP" => "UTC_TIMESTAMP()",
+        "UNIX_TIMESTAMP" => "UNIX_TIMESTAMP()",
+        "LAST_INSERT_ID" => "LAST_INSERT_ID()",
+        _ => return None,
+    })
+}
+
+/// Unbekannte Spalte, die eigentlich ein Aufbaufehler ist: HAVING ohne GROUP BY, NOW ohne Klammern, FROM vergessen,
+/// Tabelle nicht verbunden, ORDER BY mit zu grosser Nummer, MODIFY einer neuen Spalte
+fn unknown_column_shape(err: &str, chars: &[char], toks: &[Tok], schema: Option<&Schema>) -> Vec<ErrorFix> {
+    let tr = crate::i18n::tr;
+    let mut out = Vec::new();
+    let Some(col) = quoted_after(err, "Unknown column '") else { return out };
+    if let Some((q, _)) = col.rsplit_once('.')
+        && let Some(s) = schema
+        && let Some(f) = umbau::join_missing_table(chars, toks, s, q)
+    {
+        out.push(f);
+    }
+    // ORDER BY 3 bei weniger Spalten: die letzte Spalte
+    if col.bytes().all(|b| b.is_ascii_digit()) && toks.first().is_some_and(|t| t.is_word("SELECT")) {
+        let from = toks.iter().position(|t| t.is_word("FROM")).unwrap_or(toks.len());
+        let n = items_top(toks, 1, from);
+        let edits: Vec<_> = toks.windows(2).filter(|w| w[0].is_word("BY") && w[1].kind == Kind::Num && text(chars, w[1].start, w[1].end) == col).map(|w| (w[1].start, w[1].end, n.to_string())).collect();
+        if n > 0 && !edits.is_empty() {
+            out.push(fix(crate::tr_format!("Die Abfrage hat nur {n} Spalte(n): nach Spalte {n} ordnen", "The query has only {n} column(s): sort by column {n}"), edit(chars, edits)));
+        }
+    }
+    // ALTER TABLE t MODIFY neue_spalte …: die Spalte gibt es noch nicht -> ADD
+    if toks.first().is_some_and(|t| t.is_word("ALTER"))
+        && let Some(k) = toks.iter().position(|t| t.is_word("MODIFY") || t.is_word("CHANGE"))
+        && toks.get(if toks.get(k + 1).is_some_and(|t| t.is_word("COLUMN")) { k + 2 } else { k + 1 }).is_some_and(|t| t.text.eq_ignore_ascii_case(col))
+        && let Some(s) = schema
+        && let Some(table) = toks.get(2).and_then(|t| s.tables.iter().find(|x| x.name.eq_ignore_ascii_case(&t.text)))
+        && nearest(col, table.columns.iter().map(|c| c.name.as_str())).is_none()
+        && toks[k].is_word("MODIFY")
+    {
+        out.push(fix(crate::tr_format!("{col} gibt es noch nicht: Spalte hinzufügen (ADD)", "{col} does not exist yet: add the column (ADD)"), edit(chars, vec![(toks[k].start, toks[k].end, "ADD".into())])));
+    }
+    if (err.contains("'HAVING'") || err.contains("having clause")) && !toks.iter().any(|t| t.is_word("GROUP")) {
+        let edits: Vec<_> = toks.iter().filter(|t| t.is_word("HAVING")).map(|t| (t.start, t.end, "WHERE".to_string())).collect();
+        out.push(fix(tr("Ohne GROUP BY heißt die Bedingung WHERE", "Without GROUP BY the condition is WHERE").into(), edit(chars, edits)));
+    }
+    if let Some(call) = bare_function(col) {
+        let edits: Vec<_> = toks
+            .iter()
+            .enumerate()
+            .filter(|(k, t)| t.kind == Kind::Word && t.text == col && toks.get(k + 1).is_none_or(|n| n.kind != Kind::Open && n.kind != Kind::Dot))
+            .map(|(_, t)| (t.start, t.end, call.to_string()))
+            .collect();
+        if !edits.is_empty() {
+            out.push(fix(crate::tr_format!("{col} ist eine Funktion: {call}", "{col} is a function: {call}"), edit(chars, edits)));
+        }
+    }
+    // SELECT name, ort WHERE … : Tabelle mit diesen Spalten ergaenzen
+    if toks.first().is_some_and(|t| t.is_word("SELECT")) && !toks.iter().any(|t| t.is_word("FROM")) && let Some(s) = schema {
+        let names: Vec<String> = toks
+            .iter()
+            .enumerate()
+            .filter(|(k, t)| t.is_name() && (t.kind == Kind::Quoted || !super::lint::known_word(&t.upper())) && toks.get(k + 1).is_none_or(|n| n.kind != Kind::Open && n.kind != Kind::Dot))
+            .map(|(_, t)| t.text.to_ascii_lowercase())
+            .collect();
+        let best = s
+            .tables
+            .iter()
+            .filter(|t| t.columns.iter().any(|c| c.name.eq_ignore_ascii_case(col)))
+            .max_by_key(|t| names.iter().filter(|n| t.columns.iter().any(|c| c.name.eq_ignore_ascii_case(n))).count());
+        if let Some(t) = best {
+            let mut depth = 0;
+            let mut at = toks.last().map_or(0, |t| t.end);
+            for x in toks {
+                match x.kind {
+                    Kind::Open => depth += 1,
+                    Kind::Close => depth -= 1,
+                    _ if depth == 0 && ["WHERE", "GROUP", "HAVING", "ORDER", "LIMIT"].iter().any(|w| x.is_word(w)) => {
+                        at = x.start;
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+            let ins = if at == toks.last().map_or(0, |t| t.end) { format!(" FROM {}", quote_if_needed(&t.name)) } else { format!("FROM {} ", quote_if_needed(&t.name)) };
+            out.push(fix(crate::tr_format!("FROM {} ergänzen", "Add FROM {}", t.name), edit(chars, vec![(at, at, ins)])));
+        }
+    }
+    out
+}
+
+/// Anzahl der Eintraege zwischen `a` und `b` auf oberster Ebene (Kommas + 1)
+fn items_top(toks: &[Tok], a: usize, b: usize) -> usize {
+    let mut depth = 0;
+    let mut n = usize::from(b > a);
+    for t in &toks[a..b] {
+        match t.kind {
+            Kind::Open => depth += 1,
+            Kind::Close => depth -= 1,
+            Kind::Comma if depth == 0 => n += 1,
+            _ => {}
+        }
+    }
+    n
+}
+
+/// CREATE TABLE mit zwei gleich benannten Spalten: die zweite Definition entfernen
+fn drop_duplicate_column(chars: &[char], toks: &[Tok], col: &str) -> Option<ErrorFix> {
+    let open = toks.iter().position(|t| t.kind == Kind::Open)?;
+    let close = group_end(toks, open)?;
+    let its = items(toks, open, close);
+    let mut seen = false;
+    for (a, b) in its {
+        if toks[a].is_name() && toks[a].text.eq_ignore_ascii_case(col) {
+            if seen {
+                // samt Komma davor
+                return Some(fix(
+                    crate::tr_format!("Spalte {col} nur einmal anlegen", "Create the column {col} only once"),
+                    edit(chars, vec![(toks[a - 1].start, toks[b - 1].end, String::new())]),
+                ));
+            }
+            seen = true;
+        }
+    }
+    None
+}
+
+/// '2008-02-30' -> '2008-02-29' (Tag nach dem Monatsende); sonst None
+pub(super) fn clamp_date(v: &str) -> Option<String> {
+    let (date, rest) = v.split_at(v.find([' ', 'T']).unwrap_or(v.len()));
+    let p: Vec<&str> = date.split('-').collect();
+    let [y, m, d] = p.as_slice() else { return None };
+    let (y, m, d): (u32, u32, u32) = (y.parse().ok()?, m.parse().ok()?, d.parse().ok()?);
+    if !(1..=12).contains(&m) {
+        return None;
+    }
+    let leap = y % 4 == 0 && (y % 100 != 0 || y % 400 == 0);
+    let last = match m {
+        2 if leap => 29,
+        2 => 28,
+        4 | 6 | 9 | 11 => 30,
+        _ => 31,
+    };
+    (d > last && d <= 31).then(|| format!("{y:04}-{m:02}-{last:02}{rest}"))
+}
+
+/// x IN (SELECT … LIMIT n) -> x IN (SELECT * FROM (SELECT … LIMIT n) AS t)
+fn wrap_limited_subquery(chars: &[char], toks: &[Tok]) -> Option<ErrorFix> {
+    let mut edits = Vec::new();
+    for (k, t) in toks.iter().enumerate() {
+        if !["IN", "ANY", "ALL", "SOME"].iter().any(|w| t.is_word(w)) || !toks.get(k + 1).is_some_and(|o| o.kind == Kind::Open) || !toks.get(k + 2).is_some_and(|s| s.is_word("SELECT")) {
+            continue;
+        }
+        let close = group_end(toks, k + 1)?;
+        let mut depth = 0;
+        let limited = toks[k + 2..close].iter().any(|x| {
+            match x.kind {
+                Kind::Open => depth += 1,
+                Kind::Close => depth -= 1,
+                _ => {}
+            }
+            depth == 0 && x.is_word("LIMIT")
+        });
+        if limited {
+            let inner = text(chars, toks[k + 2].start, toks[close - 1].end);
+            edits.push((toks[k + 2].start, toks[close - 1].end, format!("SELECT * FROM ({inner}) AS t_limit")));
+        }
+    }
+    (!edits.is_empty()).then(|| {
+        fix(crate::i18n::tr("Unterabfrage mit LIMIT in eine abgeleitete Tabelle packen", "Wrap the subquery with LIMIT in a derived table").into(), edit(chars, edits))
+    })
 }
 
 /// Woerter, die als Tabellen- oder Spaltenname Backticks brauchen und oft so benutzt werden
@@ -416,6 +678,15 @@ pub fn syntax_guesses(err: &str, sql: &str) -> Vec<ErrorFix> {
     // MariaDB meldet eine abgeleitete Tabelle ohne Alias als Syntaxfehler am Ende
     if let Some(f) = alias_derived(&chars, &toks) {
         out.push(f);
+    }
+    // DELETE FROM t a WHERE a.x …: MariaDB will dann DELETE a FROM t a
+    if toks.first().is_some_and(|t| t.is_word("DELETE"))
+        && toks.get(1).is_some_and(|t| t.is_word("FROM"))
+        && toks.get(2).is_some_and(Tok::is_name)
+        && let Some(a) = toks.get(3).filter(|t| t.kind == Kind::Word && !super::lint::known_word(&t.upper()))
+    {
+        let at = toks[0].end;
+        out.push(fix(crate::tr_format!("Mit Alias heißt es DELETE {} FROM …", "With an alias it is DELETE {} FROM …", a.text), edit(&chars, vec![(at, at, format!(" {}", a.text))])));
     }
     // Leerzeichen zwischen Funktion und Klammer (ueberall in der Anweisung)
     let spaced: Vec<(usize, usize, String)> = toks
@@ -470,7 +741,11 @@ pub fn syntax_guesses(err: &str, sql: &str) -> Vec<ErrorFix> {
         out.push(fix(tr("DELETE ohne * schreiben", "Write DELETE without *").into(), edit(&chars, vec![(prev.map_or(t.start, |p| p.end), t.end, String::new())])));
     }
     // Reserviertes Wort als Name -> `Name`
-    let name_pos = prev.is_some_and(|p| ["TABLE", "INTO", "FROM", "JOIN", "UPDATE", "REFERENCES", "EXISTS"].iter().any(|w| p.is_word(w)) || matches!(p.kind, Kind::Comma | Kind::Open | Kind::Dot));
+    let name_pos = prev.is_some_and(|p| {
+        ["TABLE", "INTO", "FROM", "JOIN", "UPDATE", "REFERENCES", "EXISTS", "SELECT", "WHERE", "BY", "AND", "OR", "ON", "SET", "DISTINCT"].iter().any(|w| p.is_word(w))
+            || matches!(p.kind, Kind::Comma | Kind::Open | Kind::Dot)
+            || p.kind == Kind::Op && ["=", "<", ">", "<>", "!=", "<=", ">="].contains(&p.text.as_str())
+    });
     if t.kind == Kind::Word && name_pos && RESERVED_NAMES.contains(&t.upper().as_str()) {
         let word = t.upper();
         let edits: Vec<(usize, usize, String)> = toks

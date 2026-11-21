@@ -89,6 +89,7 @@ pub(super) fn lex(chars: &[char]) -> Lexed {
     let mut toks = Vec::new();
     let mut problems = Vec::new();
     let mut i = 0;
+    let mut slash_delimiter: Option<bool> = None;
     while i < n {
         let c = chars[i];
         let next = chars.get(i + 1).copied().unwrap_or('\0');
@@ -110,6 +111,23 @@ pub(super) fn lex(chars: &[char]) -> Lexed {
                 i += 1;
             }
         } else if (c == '-' && next == '-' && chars.get(i + 2).is_none_or(|c| c.is_whitespace())) || c == '#' {
+            while i < n && chars[i] != '\n' {
+                i += 1;
+            }
+        } else if c == '/' && next == '/' && !*slash_delimiter.get_or_insert_with(|| {
+            // "DELIMITER //" macht // zum Ende einer Anweisung
+            let low: String = chars.iter().collect::<String>().to_lowercase();
+            low.contains("delimiter //")
+        }) {
+            // "// Kommentar" (aus Java/C): in SQL heisst das "-- "
+            let space = chars.get(i + 2).is_some_and(|c| c.is_whitespace());
+            problems.push(Problem {
+                start,
+                end: start + 2,
+                severity: Severity::Error,
+                message: crate::tr_format!("Kommentare beginnen in SQL mit -- (oder #), nicht mit //.", "Comments in SQL start with -- (or #), not //."),
+                fix: Some(Fix { start, end: start + 2, text: if space { "--".into() } else { "-- ".into() } }),
+            });
             while i < n && chars[i] != '\n' {
                 i += 1;
             }
@@ -418,6 +436,7 @@ pub fn lint(text: &str, env: &Env) -> Vec<Problem> {
     }
     // Das Skript wird gegen ein virtuelles Schema durchgespielt: Tabellen aus CREATE TABLE sind weiter unten
     // bekannt, Fehler beim Ausfuehren werden vorhergesagt
+    super::satzbau::split_too_early(&stmts, &mut problems);
     let facts: Vec<super::script::Fact> = stmts.iter().map(|s| super::script::fact(&chars, s.toks)).collect();
     let mut sim = super::script::Sim::new(env.schema, env.databases);
     for i in 0..stmts.len() {
@@ -432,6 +451,7 @@ pub fn lint(text: &str, env: &Env) -> Vec<Problem> {
             let tables = sim.tables();
             let env = Env { schema: sim.schema(), databases: env.databases };
             super::dialect::check(&chars, stmt, &tables, &mut problems);
+            super::satzbau::check(&chars, stmt, &mut problems);
             check_statement(stmt, &env, &tables, &fw, &mut problems);
         }
         sim.step(&chars, &stmts, &facts, i, &mut problems);
@@ -501,11 +521,32 @@ fn check_statement(stmt: &[Tok], env: &Env, tables: &HashMap<String, &TableInfo>
 
 /// Klammern, Kommas, Gleichheitszeichen und fehlende Semikolons
 fn check_syntax(stmt: &[Tok], fw: &str, out: &mut Vec<Problem>) {
-    // Klammern
-    let mut stack: Vec<&Tok> = Vec::new();
-    for t in stmt {
+    // Klammern; fehlt eine schliessende, steht sie oft vor FROM ("COUNT(* FROM") oder nach der Laenge ("VARCHAR(5, name")
+    let mut budget = stmt.iter().map(|t| i32::from(t.kind == Kind::Open) - i32::from(t.kind == Kind::Close)).sum::<i32>();
+    let mut stack: Vec<usize> = Vec::new();
+    for (i, t) in stmt.iter().enumerate() {
+        if budget > 0 && let Some(&top) = stack.last() && top > 0 {
+            let before = &stmt[top - 1];
+            let type_len = t.kind == Kind::Comma && before.kind == Kind::Word && crate::sqlfmt::is_type(&before.text) && i == top + 2 && stmt[i - 1].kind == Kind::Num && stmt.get(i + 1).is_some_and(|n| n.kind != Kind::Num);
+            let func = before.kind == Kind::Word
+                && FUNCTIONS.binary_search(&before.upper().as_str()).is_ok()
+                && !["EXTRACT", "TRIM", "SUBSTRING", "SUBSTR", "POSITION", "GROUP_CONCAT", "JSON_ARRAYAGG", "OVER", "IN", "EXISTS", "VALUES"].iter().any(|w| before.is_word(w))
+                && !stmt.get(top + 1).is_some_and(|x| x.is_word("SELECT"));
+            let clause = ["FROM", "WHERE", "GROUP", "HAVING", "ORDER", "LIMIT"].iter().any(|w| t.is_word(w));
+            if type_len || func && clause && i > top + 1 {
+                let p = &stmt[i - 1];
+                out.push(problem(
+                    &stmt[top],
+                    Severity::Error,
+                    crate::tr_format!("Diese Klammer wird nicht geschlossen.", "This parenthesis is never closed."),
+                    Some(Fix { start: p.end, end: p.end, text: ")".into() }),
+                ));
+                stack.pop();
+                budget -= 1;
+            }
+        }
         match t.kind {
-            Kind::Open => stack.push(t),
+            Kind::Open => stack.push(i),
             Kind::Close
                 if stack.pop().is_none() => {
                     out.push(problem(
@@ -518,9 +559,9 @@ fn check_syntax(stmt: &[Tok], fw: &str, out: &mut Vec<Problem>) {
             _ => {}
         }
     }
-    if let (Some(open), Some(last)) = (stack.last(), stmt.last()) {
+    if let (Some(&open), Some(last)) = (stack.last(), stmt.last()) {
         out.push(problem(
-            open,
+            &stmt[open],
             Severity::Error,
             crate::tr_format!("Diese Klammer wird nicht geschlossen.", "This parenthesis is never closed."),
             Some(Fix { start: last.end, end: last.end, text: ")".repeat(stack.len()) }),
@@ -548,9 +589,17 @@ fn check_syntax(stmt: &[Tok], fw: &str, out: &mut Vec<Problem>) {
                     fix: Some(Fix { start: t.start, end: n.end, text: with.into() }),
                 });
             }
+            Kind::Comma if next.is_some_and(|n| n.kind == Kind::Comma) => out.push(problem(
+                t,
+                Severity::Error,
+                crate::tr_format!("Hier steht ein Komma zu viel.", "There is one comma too many here."),
+                Some(Fix { start: t.start, end: next.map_or(t.end, |n| n.start), text: String::new() }),
+            )),
             Kind::Comma => {
                 let closes = next.is_none()
-                    || next.is_some_and(|n| n.kind == Kind::Close || ["FROM", "WHERE", "GROUP", "ORDER", "HAVING", "LIMIT", "SET", "VALUES", "ON", "JOIN", "UNION"].iter().any(|k| n.is_word(k)));
+                    || next.is_some_and(|n| n.kind == Kind::Close || ["FROM", "WHERE", "HAVING", "LIMIT", "SET", "VALUES", "ON", "JOIN", "UNION"].iter().any(|k| n.is_word(k)))
+                    // ", order INT" ist eine Spalte namens order, ", ORDER BY" der naechste Teil
+                    || next.is_some_and(|n| n.is_word("GROUP") || n.is_word("ORDER")) && stmt.get(i + 2).is_some_and(|b| b.is_word("BY"));
                 if closes && prev.is_some_and(|p| p.kind != Kind::Open) {
                     out.push(problem(
                         t,
@@ -941,7 +990,8 @@ fn check_words<'a>(stmt: &[Tok], names: Option<(&Scope<'a>, &HashMap<String, &'a
         }
         if next.is_some_and(|n| n.kind == Kind::Open) {
             // Funktion: Tippfehler im Namen
-            if !known_word(&upper) && !known.contains(&lower) && upper.len() >= 4 {
+            // DATEADD(Einheit, n, Datum) baut satzbau zu DATE_ADD um
+            if !known_word(&upper) && !known.contains(&lower) && upper.len() >= 4 && upper != "DATEADD" {
                 let fnames = FUNCTIONS.iter().copied();
                 if let Some(f) = fnames.into_iter().find(|f| f.len() >= 4 && distance(&upper, f) == 1 && f.chars().next() == upper.chars().next()) {
                     out.push(problem(
@@ -1117,7 +1167,7 @@ mod tests {
         assert_eq!(fixed("SELECT * FROM schueler WHERE klasse_id = NULL"), "SELECT * FROM schueler WHERE klasse_id IS NULL");
         assert_eq!(fixed("SELECT * FROM schueler WHERE klasse_id <> NULL"), "SELECT * FROM schueler WHERE klasse_id IS NOT NULL");
         assert_eq!(fixed("SELECT id, FROM schueler"), "SELECT id FROM schueler");
-        assert_eq!(fixed("SELECT COUNT(id FROM schueler"), "SELECT COUNT(id FROM schueler)");
+        assert_eq!(fixed("SELECT COUNT(id FROM schueler"), "SELECT COUNT(id) FROM schueler");
         assert_eq!(fixed("SELECT id FROM schueler)"), "SELECT id FROM schueler");
         assert_eq!(fixed("SELECT * FROM schueler WHERE vorname = 'Mia"), "SELECT * FROM schueler WHERE vorname = 'Mia'");
         assert_eq!(fixed("SELECT * FROM schueler\nSELECT * FROM klasse"), "SELECT * FROM schueler;\nSELECT * FROM klasse");
